@@ -5,6 +5,7 @@ const {
   globalShortcut,
   ipcMain,
   Menu,
+  safeStorage,
   session,
   screen,
   Tray,
@@ -12,10 +13,17 @@ const {
 const Store = require("electron-store");
 const { autoUpdater } = require("electron-updater");
 const remoteMain = require("@electron/remote/main");
+const { createHash } = require("crypto");
 const { join } = require("path");
+const {
+  mapDeepLTargetLanguage,
+  testDeepLApiKey,
+  translateWholeLyricWithDeepL,
+} = require("./machineTranslation");
 
 const store = new Store();
 const iconPath = join(__dirname, "/listen1_chrome_extension/images/logo.png");
+const MACHINE_TRANSLATION_CACHE_LIMIT = 80;
 
 autoUpdater.checkForUpdatesAndNotify();
 
@@ -60,6 +68,309 @@ const windowState = store.get("windowState") || {
 let proxyConfig = store.get("proxyConfig") || {
   mode: "system",
 };
+
+function getStoredMachineTranslationConfig() {
+  const config = store.get("machineTranslation") || {};
+  return {
+    enabled: config.enabled === true,
+    provider: "deepl",
+    encryptedApiKey:
+      typeof config.encryptedApiKey === "string"
+        ? config.encryptedApiKey
+        : "",
+  };
+}
+
+function getPublicMachineTranslationConfig() {
+  const config = getStoredMachineTranslationConfig();
+  return {
+    enabled: config.enabled,
+    provider: config.provider,
+    hasApiKey: Boolean(config.encryptedApiKey),
+    secureStorageAvailable: safeStorage.isEncryptionAvailable(),
+  };
+}
+
+function encryptMachineTranslationApiKey(apiKey) {
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw Object.assign(
+      new Error("Secure credential storage is unavailable."),
+      { code: "secure-storage-unavailable" }
+    );
+  }
+  return safeStorage
+    .encryptString(String(apiKey || "").trim())
+    .toString("base64");
+}
+
+function decryptMachineTranslationApiKey(encryptedApiKey) {
+  if (!encryptedApiKey) {
+    return "";
+  }
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw Object.assign(
+      new Error("Secure credential storage is unavailable."),
+      { code: "secure-storage-unavailable" }
+    );
+  }
+  return safeStorage.decryptString(
+    Buffer.from(encryptedApiKey, "base64")
+  );
+}
+
+function getMachineTranslationFetch() {
+  const targetSession =
+    mainWindow && !mainWindow.isDestroyed()
+      ? mainWindow.webContents.session
+      : session.defaultSession;
+  return targetSession.fetch.bind(targetSession);
+}
+
+async function withMachineTranslationTimeout(operation) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+  try {
+    return await operation(controller.signal);
+  } catch (error) {
+    if (error && error.name === "AbortError") {
+      throw Object.assign(new Error("Translation request timed out."), {
+        code: "request-timeout",
+      });
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function getMachineTranslationCacheKey(lyric, targetLanguage) {
+  return createHash("sha256")
+    .update("deepl-whole-lyric-v1\0")
+    .update(mapDeepLTargetLanguage(targetLanguage))
+    .update("\0")
+    .update(String(lyric || ""))
+    .digest("hex");
+}
+
+function getMachineTranslationCacheEntry(cacheKey) {
+  const cache = store.get("machineTranslationCache") || {};
+  const entry = cache[cacheKey];
+  return entry && typeof entry === "object" ? entry : null;
+}
+
+function saveMachineTranslationCacheEntry(cacheKey, entry) {
+  const cache = store.get("machineTranslationCache") || {};
+  cache[cacheKey] = {
+    ...entry,
+    translatedAt: Date.now(),
+  };
+  const keys = Object.keys(cache).sort(
+    (left, right) =>
+      Number(cache[left].translatedAt || 0) -
+      Number(cache[right].translatedAt || 0)
+  );
+  while (keys.length > MACHINE_TRANSLATION_CACHE_LIMIT) {
+    delete cache[keys.shift()];
+  }
+  store.set("machineTranslationCache", cache);
+}
+
+function machineTranslationFailure(error) {
+  return {
+    ok: false,
+    status:
+      error && typeof error.code === "string"
+        ? error.code
+        : "request-failed",
+    httpStatus: Number((error && error.status) || 0),
+  };
+}
+
+function ensureTrustedMachineTranslationSender(event) {
+  const senderUrl =
+    (event &&
+      event.senderFrame &&
+      typeof event.senderFrame.url === "string" &&
+      event.senderFrame.url) ||
+    "";
+  try {
+    const parsed = new URL(senderUrl);
+    if (
+      parsed.protocol === "file:" &&
+      parsed.pathname.endsWith(
+        "/listen1_chrome_extension/listen1.html"
+      )
+    ) {
+      return;
+    }
+  } catch (error) {
+    // Fall through to the denied response.
+  }
+  throw Object.assign(new Error("Untrusted translation request."), {
+    code: "ipc-forbidden",
+  });
+}
+
+ipcMain.handle("machine-translation:get-config", (event) => {
+  try {
+    ensureTrustedMachineTranslationSender(event);
+    return {
+      ok: true,
+      config: getPublicMachineTranslationConfig(),
+    };
+  } catch (error) {
+    return machineTranslationFailure(error);
+  }
+});
+
+ipcMain.handle("machine-translation:set-config", (event, payload = {}) => {
+  try {
+    ensureTrustedMachineTranslationSender(event);
+    const current = getStoredMachineTranslationConfig();
+    let { encryptedApiKey } = current;
+    if (payload.clearApiKey === true) {
+      encryptedApiKey = "";
+    } else if (String(payload.apiKey || "").trim()) {
+      encryptedApiKey = encryptMachineTranslationApiKey(payload.apiKey);
+    }
+    const enabled = payload.enabled === true;
+    if (enabled && !encryptedApiKey) {
+      throw Object.assign(new Error("A DeepL API key is required."), {
+        code: "missing-api-key",
+      });
+    }
+    store.set("machineTranslation", {
+      enabled,
+      provider: "deepl",
+      encryptedApiKey,
+    });
+    return {
+      ok: true,
+      config: getPublicMachineTranslationConfig(),
+    };
+  } catch (error) {
+    return machineTranslationFailure(error);
+  }
+});
+
+ipcMain.handle("machine-translation:test", async (event) => {
+  try {
+    ensureTrustedMachineTranslationSender(event);
+    const config = getStoredMachineTranslationConfig();
+    const apiKey = decryptMachineTranslationApiKey(
+      config.encryptedApiKey
+    );
+    if (!apiKey) {
+      throw Object.assign(new Error("A DeepL API key is required."), {
+        code: "missing-api-key",
+      });
+    }
+    const usage = await withMachineTranslationTimeout((signal) =>
+      testDeepLApiKey({
+        fetchImpl: getMachineTranslationFetch(),
+        apiKey,
+        signal,
+      })
+    );
+    return {
+      ok: true,
+      status: "ready",
+      provider: "DeepL",
+      ...usage,
+    };
+  } catch (error) {
+    return machineTranslationFailure(error);
+  }
+});
+
+ipcMain.handle(
+  "machine-translation:translate-lyrics",
+  async (event, payload = {}) => {
+    try {
+      ensureTrustedMachineTranslationSender(event);
+      const config = getStoredMachineTranslationConfig();
+      if (!config.enabled) {
+        return { ok: false, status: "disabled" };
+      }
+      const apiKey = decryptMachineTranslationApiKey(
+        config.encryptedApiKey
+      );
+      if (!apiKey) {
+        return { ok: false, status: "missing-api-key" };
+      }
+      const lyric = String(payload.lyric || "");
+      if (!lyric) {
+        return { ok: false, status: "empty-lyric" };
+      }
+      const targetLanguage = String(
+        payload.targetLanguage || "zh-CN"
+      );
+      const cacheKey = getMachineTranslationCacheKey(
+        lyric,
+        targetLanguage
+      );
+      const cached = getMachineTranslationCacheEntry(cacheKey);
+      if (cached) {
+        return cached.sameLanguage
+          ? {
+              ok: false,
+              status: "same-language",
+              provider: cached.provider,
+              detectedSourceLanguage:
+                cached.detectedSourceLanguage || "",
+              cached: true,
+            }
+          : {
+              ok: true,
+              status: "translated",
+              tlyric: cached.tlyric,
+              provider: cached.provider,
+              targetLanguage: cached.targetLanguage,
+              detectedSourceLanguage:
+                cached.detectedSourceLanguage || "",
+              lineCount: cached.lineCount,
+              cached: true,
+            };
+      }
+
+      const result = await withMachineTranslationTimeout((signal) =>
+        translateWholeLyricWithDeepL({
+          fetchImpl: getMachineTranslationFetch(),
+          apiKey,
+          lyric,
+          targetLanguage,
+          title: payload.title,
+          artist: payload.artist,
+          signal,
+        })
+      );
+      saveMachineTranslationCacheEntry(cacheKey, result);
+      if (result.sameLanguage) {
+        return {
+          ok: false,
+          status: "same-language",
+          provider: result.provider,
+          detectedSourceLanguage: result.detectedSourceLanguage,
+          billedCharacters: result.billedCharacters,
+          cached: false,
+        };
+      }
+      return {
+        ok: true,
+        status: "translated",
+        tlyric: result.tlyric,
+        provider: result.provider,
+        targetLanguage: result.targetLanguage,
+        detectedSourceLanguage: result.detectedSourceLanguage,
+        billedCharacters: result.billedCharacters,
+        lineCount: result.lineCount,
+        cached: false,
+      };
+    } catch (error) {
+      return machineTranslationFailure(error);
+    }
+  }
+);
 
 const globalShortcutMapping = {
   "CmdOrCtrl+Alt+Left": "left",

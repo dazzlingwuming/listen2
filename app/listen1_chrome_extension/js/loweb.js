@@ -1,5 +1,7 @@
 /* global async LRUCache setPrototypeOfLocalStorage getLocalStorageValue */
 /* global netease xiami qq kugou kuwo bilibili migu taihe localmusic myplaylist */
+/* global isElectron require */
+/* eslint-disable global-require */
 
 const PROVIDERS = [
   {
@@ -108,6 +110,21 @@ const playlistCache = new LRUCache({
 function queryStringify(options) {
   const query = JSON.parse(JSON.stringify(options));
   return new URLSearchParams(query).toString();
+}
+
+function getMachineTranslationIpcRenderer() {
+  if (
+    typeof isElectron !== 'function' ||
+    !isElectron() ||
+    typeof require !== 'function'
+  ) {
+    return null;
+  }
+  try {
+    return require('electron').ipcRenderer;
+  } catch (error) {
+    return null;
+  }
 }
 
 setPrototypeOfLocalStorage();
@@ -224,6 +241,108 @@ const MediaService = {
     if (provider && typeof provider.save_manual_lyric === 'function') {
       provider.save_manual_lyric(trackId, candidate);
     }
+  },
+
+  enrichManualLyricCandidate(trackInfo, candidate) {
+    const provider = getProviderByItemId(trackInfo.id);
+    if (
+      provider &&
+      typeof provider.enrich_manual_lyric_candidate === 'function'
+    ) {
+      return provider.enrich_manual_lyric_candidate(candidate, trackInfo);
+    }
+    return Promise.resolve(candidate);
+  },
+
+  getMachineTranslationConfig() {
+    const ipcRenderer = getMachineTranslationIpcRenderer();
+    if (!ipcRenderer) {
+      return Promise.resolve({
+        ok: false,
+        status: 'unsupported',
+      });
+    }
+    return ipcRenderer.invoke('machine-translation:get-config');
+  },
+
+  setMachineTranslationConfig(config) {
+    const ipcRenderer = getMachineTranslationIpcRenderer();
+    if (!ipcRenderer) {
+      return Promise.resolve({
+        ok: false,
+        status: 'unsupported',
+      });
+    }
+    return ipcRenderer.invoke(
+      'machine-translation:set-config',
+      config || {}
+    );
+  },
+
+  testMachineTranslationConfig() {
+    const ipcRenderer = getMachineTranslationIpcRenderer();
+    if (!ipcRenderer) {
+      return Promise.resolve({
+        ok: false,
+        status: 'unsupported',
+      });
+    }
+    return ipcRenderer.invoke('machine-translation:test');
+  },
+
+  machineTranslateLyricCandidate(
+    trackInfo,
+    candidate,
+    targetLanguage
+  ) {
+    const ipcRenderer = getMachineTranslationIpcRenderer();
+    if (!ipcRenderer || !candidate || !candidate.lyric) {
+      return Promise.resolve({
+        ...candidate,
+        machineTranslationStatus: ipcRenderer
+          ? 'empty-lyric'
+          : 'unsupported',
+      });
+    }
+    return ipcRenderer
+      .invoke('machine-translation:translate-lyrics', {
+        lyric: candidate.lyric,
+        title: candidate.title || trackInfo.title || '',
+        artist: candidate.artist || trackInfo.artist || '',
+        targetLanguage,
+      })
+      .then((response) => {
+        if (
+          !response ||
+          response.ok !== true ||
+          !String(response.tlyric || '').trim()
+        ) {
+          return {
+            ...candidate,
+            machineTranslationStatus:
+              (response && response.status) || 'request-failed',
+          };
+        }
+        return {
+          ...candidate,
+          tlyric: response.tlyric,
+          translationProvider: response.provider || 'DeepL',
+          translationEnriched: false,
+          machineTranslated: true,
+          machineTranslationProvider: response.provider || 'DeepL',
+          machineTranslationTarget: response.targetLanguage || '',
+          machineTranslationDetectedSource:
+            response.detectedSourceLanguage || '',
+          machineTranslationCached: response.cached === true,
+          machineTranslationLineCount:
+            Number(response.lineCount || 0),
+          machineTranslationStatus: 'translated',
+        };
+      })
+      .catch(() => ({
+        ...candidate,
+        machineTranslationStatus: 'request-failed',
+      }));
   },
 
   clearManualLyric(trackId) {

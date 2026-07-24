@@ -89,6 +89,17 @@ class bilibili {
       matchedDuration: candidate.duration || 0,
       matchedProvider: candidate.provider || '',
       candidateId: candidate.id || '',
+      selectedProvider: candidate.selectedProvider || '',
+      selectedCandidateId: candidate.selectedCandidateId || '',
+      translationProvider: candidate.translationProvider || '',
+      translationEnriched: candidate.translationEnriched === true,
+      machineTranslated: candidate.machineTranslated === true,
+      machineTranslationProvider:
+        candidate.machineTranslationProvider || '',
+      machineTranslationTarget:
+        candidate.machineTranslationTarget || '',
+      machineTranslationDetectedSource:
+        candidate.machineTranslationDetectedSource || '',
       selectedAt: Date.now(),
     };
     const trackIds = Object.keys(selections).sort(
@@ -861,6 +872,67 @@ class bilibili {
     });
   }
 
+  static find_bilingual_catalog_lyric(hints) {
+    return Promise.allSettled([
+      this.search_qq_lyric_candidates(hints),
+      this.search_netease_lyric_candidates(hints),
+    ]).then((results) => {
+      const candidates = results
+        .filter((result) => result.status === 'fulfilled')
+        .flatMap((result) => result.value || [])
+        .filter(
+          (candidate) =>
+            candidate &&
+            candidate.lyric &&
+            candidate.matchScore >= BILIBILI_AUTO_LYRIC_MATCH_THRESHOLD &&
+            this.has_meaningful_lyric(candidate.tlyric)
+        )
+        .sort(
+          (left, right) =>
+            Number(right.matchScore || 0) -
+            Number(left.matchScore || 0)
+        );
+      return candidates[0] || null;
+    });
+  }
+
+  static enrich_manual_lyric_candidate(candidate, trackInfo = {}) {
+    if (!candidate || !candidate.lyric) {
+      return Promise.resolve(candidate);
+    }
+    if (this.has_meaningful_lyric(candidate.tlyric)) {
+      return Promise.resolve(candidate);
+    }
+    const hints = {
+      title: candidate.title || trackInfo.title || '',
+      artist: candidate.artist || trackInfo.artist || '',
+      duration: candidate.duration || trackInfo.duration || 0,
+    };
+    return this.find_bilingual_catalog_lyric(hints)
+      .then((bilingualCandidate) => {
+        if (!bilingualCandidate) {
+          return candidate;
+        }
+        return {
+          ...candidate,
+          id: bilingualCandidate.id || candidate.id,
+          provider: bilingualCandidate.provider || candidate.provider,
+          title: bilingualCandidate.title || candidate.title,
+          artist: bilingualCandidate.artist || candidate.artist,
+          album: bilingualCandidate.album || candidate.album,
+          duration: bilingualCandidate.duration || candidate.duration,
+          lyric: bilingualCandidate.lyric,
+          tlyric: bilingualCandidate.tlyric,
+          matchScore: bilingualCandidate.matchScore,
+          selectedProvider: candidate.provider || '',
+          selectedCandidateId: candidate.id || '',
+          translationProvider: bilingualCandidate.provider || '',
+          translationEnriched: true,
+        };
+      })
+      .catch(() => candidate);
+  }
+
   static clean_lrclib_album(value) {
     const text = String(value || '').trim();
     const optionalMatch = /^Optional\(["']?(.*?)["']?\)$/.exec(text);
@@ -1259,19 +1331,36 @@ class bilibili {
       if (this.has_meaningful_lyric(manualLyric.tlyric)) {
         return Promise.resolve(manualLyric);
       }
-      const manualHints = {
-        title: manualLyric.matchedTitle || options.title,
-        artist: manualLyric.matchedArtist || options.artist,
-        duration:
-          manualLyric.matchedDuration || options.duration,
+      const manualCandidate = {
+        id: manualLyric.candidateId,
+        provider: manualLyric.matchedProvider,
+        title: manualLyric.matchedTitle,
+        artist: manualLyric.matchedArtist,
+        album: manualLyric.matchedAlbum,
+        duration: manualLyric.matchedDuration,
+        lyric: manualLyric.lyric,
+        tlyric: manualLyric.tlyric,
+        machineTranslated: manualLyric.machineTranslated === true,
+        machineTranslationProvider:
+          manualLyric.machineTranslationProvider || '',
+        machineTranslationTarget:
+          manualLyric.machineTranslationTarget || '',
+        machineTranslationDetectedSource:
+          manualLyric.machineTranslationDetectedSource || '',
       };
-      return this.find_netease_lyric(manualHints).then(
-        (translatedResult) =>
-          translatedResult.lyric &&
-          this.has_meaningful_lyric(translatedResult.tlyric)
-            ? translatedResult
-            : manualLyric
-      );
+      return this.enrich_manual_lyric_candidate(
+        manualCandidate,
+        options
+      ).then((enrichedCandidate) => {
+        if (
+          !enrichedCandidate ||
+          !this.has_meaningful_lyric(enrichedCandidate.tlyric)
+        ) {
+          return manualLyric;
+        }
+        this.save_manual_lyric(options.trackId, enrichedCandidate);
+        return this.get_manual_lyric(options.trackId) || manualLyric;
+      });
     }
     return this.fetch_bilibili_audio_lyric(options.lyricUrl).then(
       (audioLyric) => {

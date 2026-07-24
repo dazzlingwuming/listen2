@@ -1213,6 +1213,79 @@
                                   >{{_SHOW_DESKTOP_LYRIC_TRANSLATION}}
                                 </div>
                               </div>
+                              <div class="settings-title" ng-if="!isChrome">
+                                <span>{{_MACHINE_TRANSLATION_TITLE}}</span>
+                              </div>
+                              <div
+                                class="settings-content machine-translation-settings"
+                                ng-if="!isChrome"
+                              >
+                                <label class="machine-translation-toggle">
+                                  <input
+                                    type="checkbox"
+                                    ng-model="machineTranslationConfig.enabled"
+                                  />
+                                  <span>{{_MACHINE_TRANSLATION_ENABLE}}</span>
+                                </label>
+                                <p class="machine-translation-description">
+                                  {{_MACHINE_TRANSLATION_DESCRIPTION}}
+                                </p>
+                                <label class="machine-translation-key-label">
+                                  <span>{{_MACHINE_TRANSLATION_API_KEY}}</span>
+                                  <input
+                                    type="password"
+                                    autocomplete="new-password"
+                                    ng-model="machineTranslationConfig.apiKeyInput"
+                                    placeholder="{{_MACHINE_TRANSLATION_API_KEY_PLACEHOLDER}}"
+                                  />
+                                </label>
+                                <p
+                                  class="machine-translation-key-saved"
+                                  ng-if="machineTranslationConfig.hasApiKey"
+                                >
+                                  {{_MACHINE_TRANSLATION_KEY_SAVED}}
+                                </p>
+                                <div class="machine-translation-actions">
+                                  <button
+                                    type="button"
+                                    class="btn btn-primary confirm-button"
+                                    ng-click="openDeepLApiPage()"
+                                  >
+                                    {{_MACHINE_TRANSLATION_GET_KEY}}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="btn btn-primary confirm-button"
+                                    ng-disabled="machineTranslationConfigPending"
+                                    ng-click="saveMachineTranslationConfig()"
+                                  >
+                                    {{_MACHINE_TRANSLATION_SAVE}}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="btn btn-primary confirm-button"
+                                    ng-disabled="machineTranslationConfigPending"
+                                    ng-click="testMachineTranslationConfig()"
+                                  >
+                                    {{_MACHINE_TRANSLATION_TEST}}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="btn btn-warning confirm-button"
+                                    ng-if="machineTranslationConfig.hasApiKey"
+                                    ng-disabled="machineTranslationConfigPending"
+                                    ng-click="clearMachineTranslationApiKey()"
+                                  >
+                                    {{_MACHINE_TRANSLATION_CLEAR_KEY}}
+                                  </button>
+                                </div>
+                                <p
+                                  class="machine-translation-usage"
+                                  ng-if="machineTranslationTestResult"
+                                >
+                                  {{formatMachineTranslationUsage()}}
+                                </p>
+                              </div>
                               <div class="settings-title">
                                 <span>{{_BACKUP_PLAYLIST}}</span>
                               </div>
@@ -3851,6 +3924,79 @@
                                   >{{_SHOW_DESKTOP_LYRIC_TRANSLATION}}
                                 </div>
                               </div>
+                              <div class="settings-title" ng-if="!isChrome">
+                                <span>{{_MACHINE_TRANSLATION_TITLE}}</span>
+                              </div>
+                              <div
+                                class="settings-content machine-translation-settings"
+                                ng-if="!isChrome"
+                              >
+                                <label class="machine-translation-toggle">
+                                  <input
+                                    type="checkbox"
+                                    ng-model="machineTranslationConfig.enabled"
+                                  />
+                                  <span>{{_MACHINE_TRANSLATION_ENABLE}}</span>
+                                </label>
+                                <p class="machine-translation-description">
+                                  {{_MACHINE_TRANSLATION_DESCRIPTION}}
+                                </p>
+                                <label class="machine-translation-key-label">
+                                  <span>{{_MACHINE_TRANSLATION_API_KEY}}</span>
+                                  <input
+                                    type="password"
+                                    autocomplete="new-password"
+                                    ng-model="machineTranslationConfig.apiKeyInput"
+                                    placeholder="{{_MACHINE_TRANSLATION_API_KEY_PLACEHOLDER}}"
+                                  />
+                                </label>
+                                <p
+                                  class="machine-translation-key-saved"
+                                  ng-if="machineTranslationConfig.hasApiKey"
+                                >
+                                  {{_MACHINE_TRANSLATION_KEY_SAVED}}
+                                </p>
+                                <div class="machine-translation-actions">
+                                  <button
+                                    type="button"
+                                    class="btn btn-primary confirm-button"
+                                    ng-click="openDeepLApiPage()"
+                                  >
+                                    {{_MACHINE_TRANSLATION_GET_KEY}}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="btn btn-primary confirm-button"
+                                    ng-disabled="machineTranslationConfigPending"
+                                    ng-click="saveMachineTranslationConfig()"
+                                  >
+                                    {{_MACHINE_TRANSLATION_SAVE}}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="btn btn-primary confirm-button"
+                                    ng-disabled="machineTranslationConfigPending"
+                                    ng-click="testMachineTranslationConfig()"
+                                  >
+                                    {{_MACHINE_TRANSLATION_TEST}}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="btn btn-warning confirm-button"
+                                    ng-if="machineTranslationConfig.hasApiKey"
+                                    ng-disabled="machineTranslationConfigPending"
+                                    ng-click="clearMachineTranslationApiKey()"
+                                  >
+                                    {{_MACHINE_TRANSLATION_CLEAR_KEY}}
+                                  </button>
+                                </div>
+                                <p
+                                  class="machine-translation-usage"
+                                  ng-if="machineTranslationTestResult"
+                                >
+                                  {{formatMachineTranslationUsage()}}
+                                </p>
+                              </div>
                               <div class="settings-title">
                                 <span>{{_BACKUP_PLAYLIST}}</span>
                               </div>
@@ -4938,6 +5084,11 @@
                                     <b ng-if="lyricSource === 'kuwo-match'"
                                       >{{_LYRIC_SOURCE_MATCHED}}</b
                                     >
+                                    <b
+                                      class="is-machine"
+                                      ng-if="lyricTranslationSource === 'machine'"
+                                      >{{_LYRIC_MACHINE_TRANSLATED}}</b
+                                    >
                                   </span>
                                 </div>
                               </div>
@@ -4994,6 +5145,12 @@
                                   ng-if="lyricSource === 'kuwo-match'"
                                   title="{{lyricMatchedTrack}}"
                                   >{{_LYRIC_SOURCE_MATCHED}}</span
+                                >
+                                <span
+                                  class="now-playing-lyrics-source is-machine"
+                                  ng-if="lyricTranslationSource === 'machine'"
+                                  title="{{lyricMachineTranslationProvider}}"
+                                  >{{_LYRIC_MACHINE_TRANSLATED}}</span
                                 >
                               </div>
                               <div class="now-playing-lyrics-actions">
@@ -5147,6 +5304,11 @@
                                     >
                                   </span>
                                   <span class="lyric-candidate-meta">
+                                    <span
+                                      class="lyric-candidate-translation"
+                                      ng-if="candidate.hasTranslation"
+                                      >{{_LYRIC_CANDIDATE_TRANSLATED}}</span
+                                    >
                                     <span>{{candidate.provider}}</span>
                                     <time
                                       >{{formatLyricCandidateDuration(candidate.duration)}}</time
