@@ -1,0 +1,63 @@
+{
+  "background": {
+    "service_worker": "js/background.js"
+  },
+  "action": {
+    "default_icon": "images/logo.png",
+    "default_title": "Listen 1"
+  },
+  "description": "One for all free music in China",
+  "icons": {
+    "128": "images/logo.png",
+    "16": "images/logo_16.png",
+    "48": "images/logo_48.png"
+  },
+  "manifest_version": 3,
+  "name": "Listen 1",
+  "permissions": [
+    "notifications",
+    "unlimitedStorage",
+    "cookies",
+    "declarativeNetRequest"
+  ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "ruleset_1",
+        "enabled": true,
+        "path": "rules_1.json"
+      }
+    ]
+  },
+  "host_permissions": [
+    "*://music.163.com/*",
+    "*://*.music.163.com/*",
+    "*://*.xiami.com/*",
+    "*://*.qq.com/*",
+    "*://*.kugou.com/*",
+    "*://*.kuwo.cn/*",
+    "*://*.bilibili.com/*",
+    "*://*.lrclib.net/*",
+    "*://*.bilivideo.com/*",
+    "*://*.bilivideo.cn/*",
+    "*://*.migu.cn/*",
+    "*://*.taihe.com/*",
+    "*://music.91q.com/*",
+    "*://api.github.com/*",
+    "*://github.com/*",
+    "*://gist.githubusercontent.com/*"
+  ],
+  "version": "2.33.0",
+  "web_accessible_resources": [
+    {
+      "resources": ["images/*"],
+      "matches": ["*://*/*"]
+    }
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://listen1.github.io/listen1/*"],
+      "js": ["js/oauth_callback.js"]
+    }
+  ]
+}

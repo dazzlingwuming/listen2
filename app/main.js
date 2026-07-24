@@ -194,6 +194,44 @@ async function updateProxyConfig(params) {
   await mainWindow.webContents.session.setProxy(params);
   await mainWindow.webContents.session.forceReloadProxyConfig();
 }
+
+function destroyFloatingWindow() {
+  if (!floatingWindow) {
+    return;
+  }
+  if (!floatingWindow.isDestroyed()) {
+    store.set("floatingWindowBounds", floatingWindow.getBounds());
+    floatingWindow.setIgnoreMouseEvents(false);
+    floatingWindow.destroy();
+  }
+  floatingWindow = null;
+  floatingWindowCssKey = undefined;
+}
+
+function keepFloatingWindowAboveOtherWindows() {
+  if (!floatingWindow || floatingWindow.isDestroyed()) {
+    return;
+  }
+  floatingWindow.setAlwaysOnTop(
+    true,
+    process.platform === "darwin" ? "screen-saver" : "floating"
+  );
+}
+
+function configureFloatingWindowSpaces() {
+  if (!floatingWindow || floatingWindow.isDestroyed()) {
+    return;
+  }
+  if (process.platform === "darwin") {
+    floatingWindow.setVisibleOnAllWorkspaces(true, {
+      visibleOnFullScreen: true,
+    });
+  } else {
+    floatingWindow.setVisibleOnAllWorkspaces(true);
+  }
+  keepFloatingWindowAboveOtherWindows();
+}
+
 /**
  * @param {string} cssStyle
  */
@@ -201,8 +239,7 @@ function createFloatingWindow(cssStyle) {
   const display = screen.getPrimaryDisplay();
   if (process.platform === "linux") {
     // fix transparent window not working in linux bug
-    floatingWindow?.destroy();
-    floatingWindow = null;
+    destroyFloatingWindow();
   }
   if (!floatingWindow) {
     /** @type {Electron.Rectangle} */
@@ -213,12 +250,16 @@ function createFloatingWindow(cssStyle) {
       minWidth: 640,
       maxWidth: 1920,
       height: 70,
-      titleBarStyle: "hidden",
       transparent: true,
       frame: false,
       resizable: true,
       hasShadow: false,
       alwaysOnTop: true,
+      fullscreenable: false,
+      minimizable: false,
+      maximizable: false,
+      backgroundColor: "#00000000",
+      ...(process.platform === "darwin" ? { type: "panel" } : {}),
       webPreferences: {
         sandbox: true,
         preload: join(__dirname, "preload.js"),
@@ -232,10 +273,18 @@ function createFloatingWindow(cssStyle) {
         display.bounds.height - 150
       );
     }
-    floatingWindow.setVisibleOnAllWorkspaces(true);
+    // A macOS fullscreen app is its own Space. The panel window type plus this
+    // collection behavior keeps lyrics above normal windows and fullscreen
+    // Spaces without moving them between physical displays.
+    configureFloatingWindowSpaces();
     floatingWindow.setSkipTaskbar(true);
+    if (
+      process.platform === "darwin" &&
+      typeof floatingWindow.setWindowButtonVisibility === "function"
+    ) {
+      floatingWindow.setWindowButtonVisibility(false);
+    }
     floatingWindow.loadURL(`file://${__dirname}/floatingWindow.html`);
-    floatingWindow.setAlwaysOnTop(true, "floating");
     floatingWindow.setIgnoreMouseEvents(false);
     // NOTICE: setResizable should be set, otherwise mouseleave event won't trigger in windows environment
     floatingWindow.webContents.on("did-finish-load", async () => {
@@ -243,11 +292,12 @@ function createFloatingWindow(cssStyle) {
     });
     floatingWindow.on("closed", () => {
       floatingWindow = null;
+      floatingWindowCssKey = undefined;
     });
-
     // floatingWindow.webContents.openDevTools();
   }
   floatingWindow.showInactive();
+  keepFloatingWindowAboveOtherWindows();
 }
 
 const previousButton = {
@@ -321,6 +371,31 @@ function createWindow() {
         hack_referer_header(details);
       }
       callback({ cancel: false, requestHeaders: details.requestHeaders });
+    }
+  );
+  // The player intentionally streams through HTMLMediaElement so long tracks do
+  // not have to be downloaded into memory. The visualizer taps that same media
+  // element through Web Audio in the desktop client. Remote music CDNs are
+  // therefore made CORS-readable for media responses only; API, page and script
+  // responses keep their original security policy.
+  session.defaultSession.webRequest.onHeadersReceived(
+    { urls: ["*://*/*"] },
+    (details, callback) => {
+      const responseHeaders = details.responseHeaders || {};
+      if (details.resourceType === "media") {
+        Object.keys(responseHeaders).forEach((headerName) => {
+          const normalizedName = headerName.toLowerCase();
+          if (
+            normalizedName === "access-control-allow-origin" ||
+            normalizedName === "cross-origin-resource-policy"
+          ) {
+            delete responseHeaders[headerName];
+          }
+        });
+        responseHeaders["Access-Control-Allow-Origin"] = ["*"];
+        responseHeaders["Cross-Origin-Resource-Policy"] = ["cross-origin"];
+      }
+      callback({ responseHeaders });
     }
   );
   // Create the browser window.
@@ -629,7 +704,7 @@ ipcMain.on("control", async (event, arg, params) => {
       break;
 
     case "disable_lyric_floating_window":
-      floatingWindow?.hide();
+      destroyFloatingWindow();
       break;
 
     case "window_min":
@@ -646,11 +721,16 @@ ipcMain.on("control", async (event, arg, params) => {
       break;
 
     case "float_window_accept_mouse_event":
-      floatingWindow.setIgnoreMouseEvents(false);
+      floatingWindow?.setIgnoreMouseEvents(false);
+      keepFloatingWindowAboveOtherWindows();
       break;
 
     case "float_window_ignore_mouse_event":
-      floatingWindow.setIgnoreMouseEvents(true, { forward: true });
+      // Keep the locked lyric strip click-through. Forward only mouse movement
+      // so the renderer can expose its small unlock button without allowing the
+      // rest of the toolbar or lyric surface to intercept clicks.
+      floatingWindow?.setIgnoreMouseEvents(true, { forward: true });
+      keepFloatingWindowAboveOtherWindows();
       break;
 
     case "float_window_close":

@@ -37,33 +37,83 @@
         height: 100%;
       }
       .feather {
-        height: 16px;
         width: 16px;
+        height: 16px;
         fill: none;
-        stroke: #999999;
+        stroke: rgba(255, 255, 255, 0.72);
+        stroke-width: 1.8;
         display: inline-block;
-        background-color: rgba(255,255,255,0.01);
+        pointer-events: none;
       }
       #toolbar {
+        display: none;
         user-select: none;
         position: fixed;
-        top: 3px;
+        top: 4px;
         z-index: 9999;
-        margin: 0 auto;
         left: 0;
         right: 0;
+        width: max-content;
+        margin: 0 auto;
+        padding: 4px 9px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 999px;
+        background: rgba(18, 20, 28, 0.82);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+        backdrop-filter: blur(14px) saturate(135%);
         text-align: center;
       }
-      .icon:hover,
+      #toolbar .unlocked {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+      }
+      #toolbar .locked {
+        display: none;
+        align-items: center;
+        justify-content: center;
+      }
+      .icon {
+        display: inline-flex;
+        min-width: 18px;
+        height: 20px;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        cursor: pointer;
+      }
       .icon:hover .feather {
         stroke: #ffffff;
       }
       .group-first-icon {
-        margin-left: 10px;
+        margin-left: 5px;
       }
       #currentLyricAll {
         width: 100%;
         height: 100%;
+      }
+      body.window-locked #toolbar .unlocked {
+        display: none;
+      }
+      body.window-locked #toolbar .locked {
+        display: flex;
+      }
+      body.window-locked #toolbar {
+        padding: 4px 7px;
+        border-color: rgba(64, 224, 190, 0.32);
+        background: rgba(14, 24, 27, 0.88);
+        box-shadow: 0 6px 20px rgba(34, 211, 178, 0.12);
+      }
+      body.window-locked #unlock-icon {
+        width: 24px;
+        height: 20px;
+      }
+      body.window-locked #unlock-icon .feather {
+        stroke: #45dfbd;
       }
     </style>
   </head>
@@ -74,17 +124,9 @@
       <!-- load feather icon svg sprite -->
       <svg xmlns="http://www.w3.org/2000/svg">
         <defs>
-          <symbol id="x" viewBox="0 0 24 24">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </symbol>
           <symbol id="lock" viewBox="0 0 24 24">
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
             <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-          </symbol>
-          <symbol id="unlock" viewBox="0 0 24 24">
-            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-            <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
           </symbol>
           <symbol id="type" viewBox="0 0 24 24">
             <polyline points="4 7 4 4 20 4 20 7"></polyline>
@@ -127,24 +169,34 @@
     </div>
     <div id="toolbar">
       <div class="locked">
-        <svg class="feather icon window-action" id="lock-icon">
-          <use href="#lock"></use>
-        </svg>
+        <button
+          type="button"
+          class="icon window-action"
+          id="unlock-icon"
+          aria-label="解锁桌面歌词"
+          title="桌面歌词已锁定，点击解锁"
+        >
+          <svg class="feather">
+            <use href="#lock"></use>
+          </svg>
+        </button>
       </div>
       <div class="unlocked">
-        <svg
-          class="feather icon control-action"
-          id="close-icon"
-          data-msg="float_window_close"
+        <button
+          type="button"
+          class="icon window-action"
+          id="lock-icon"
+          aria-label="锁定桌面歌词"
+          title="锁定桌面歌词"
         >
-          <use href="#x"></use>
-        </svg>
-        <svg class="feather icon window-action" id="unlock-icon">
-          <use href="#unlock"></use>
-        </svg>
+          <svg class="feather">
+            <use href="#lock"></use>
+          </svg>
+        </button>
         <a
           class="icon control-action group-first-icon"
           id="font-small-icon"
+          title="减小字号"
           data-msg="float_window_font_small"
         >
           <svg class="feather">
@@ -157,6 +209,7 @@
         <a
           class="icon control-action"
           id="font-large-icon"
+          title="增大字号"
           data-msg="float_window_font_large"
         >
           <svg class="feather">
@@ -168,6 +221,7 @@
         </a>
         <a
           class="icon control-action group-first-icon"
+          title="降低背景不透明度"
           data-msg="float_window_background_dark"
         >
           <svg class="feather">
@@ -177,7 +231,11 @@
             <use href="#minus"></use>
           </svg>
         </a>
-        <a class="icon control-action" data-msg="float_window_background_light">
+        <a
+          class="icon control-action"
+          title="提高背景不透明度"
+          data-msg="float_window_background_light"
+        >
           <svg class="feather">
             <use href="#sun"></use>
           </svg>
@@ -187,7 +245,7 @@
         </a>
         <a
           class="icon control-action group-first-icon"
-          id="font-large-icon"
+          title="切换歌词颜色"
           data-msg="float_window_font_change_color"
         >
           <svg class="feather">
@@ -208,50 +266,41 @@
     </script>
     <script>
       let IS_WINDOW_LOCKED = false;
+      const toolbar = document.getElementById("toolbar");
+      const unlockIcon = document.getElementById("unlock-icon");
 
       function renderToolBar() {
+        document.body.classList.toggle("window-locked", IS_WINDOW_LOCKED);
         if (IS_WINDOW_LOCKED) {
-          document.getElementsByClassName("locked")[0].style.display = "block";
-          document.getElementsByClassName("unlocked")[0].style.display = "none";
-          document.querySelector("body").classList.remove("unlocked-body");
-        } else {
-          document.getElementsByClassName("locked")[0].style.display = "none";
-          document.getElementsByClassName("unlocked")[0].style.display =
-            "block";
-          document.querySelector("body").classList.add("unlocked-body");
+          // Keep only the unlock affordance visible while the pointer is still
+          // inside the lyric strip. All editing controls are hidden by CSS.
+          toolbar.style.display = "block";
         }
       }
 
-      // enter lyric window zone, show/hide lock icon
-      document.getElementById("toolbar").style.display = "none";
-
-      document.addEventListener("mouseenter", (event) => {
-        document.getElementById("toolbar").style.display = "block";
+      document.addEventListener("mouseenter", () => {
+        toolbar.style.display = "block";
       });
-      document.addEventListener("mouseleave", (event) => {
-        document.getElementById("toolbar").style.display = "none";
+      document.addEventListener("mouseleave", () => {
+        toolbar.style.display = "none";
+        if (IS_WINDOW_LOCKED) {
+          window.api.send("control", "float_window_ignore_mouse_event");
+        }
       });
 
-      // enter lock icon zone, make window start to receive mouse event
-      document
-        .getElementById("lock-icon")
-        .addEventListener("mouseenter", (event) => {
-          if (!IS_WINDOW_LOCKED) {
-            return;
-          }
-          const message = "float_window_accept_mouse_event";
-          window.api.send("control", message);
-        });
-
-      document
-        .getElementById("lock-icon")
-        .addEventListener("mouseleave", (event) => {
-          if (!IS_WINDOW_LOCKED) {
-            return;
-          }
-          const message = "float_window_ignore_mouse_event";
-          window.api.send("control", message);
-        });
+      // Electron can only make the whole native window click-through. While
+      // locked, forwarded mouse movement lets this one small button temporarily
+      // receive a click; leaving it restores click-through immediately.
+      unlockIcon.addEventListener("mouseenter", () => {
+        if (IS_WINDOW_LOCKED) {
+          window.api.send("control", "float_window_accept_mouse_event");
+        }
+      });
+      unlockIcon.addEventListener("mouseleave", () => {
+        if (IS_WINDOW_LOCKED) {
+          window.api.send("control", "float_window_ignore_mouse_event");
+        }
+      });
 
       Array.from(document.getElementsByClassName("window-action")).forEach(
         (elem) => {
@@ -291,10 +340,10 @@
         mouseY = e.clientY;
 
         document.addEventListener("mouseup", onMouseUp);
-        requestAnimationFrame(this.moveWindow);
+        animationId = requestAnimationFrame(moveWindow);
       }
 
-      function onMouseUp(e) {
+      function onMouseUp() {
         document.removeEventListener("mouseup", onMouseUp);
         cancelAnimationFrame(animationId);
       }

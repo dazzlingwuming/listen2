@@ -1,7 +1,7 @@
 {
   "name": "listen1",
   "version": "2.33.0",
-  "description": "One for all free music in China",
+  "description": "A modern Listen1 desktop experience with enhanced Bilibili, lyrics, and visualizations",
   "main": "app/main.js",
   "scripts": {
     "postinstall": "electron-builder install-app-deps",
@@ -18,18 +18,21 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/listen1/listen1_desktop.git"
+    "url": "git+https://github.com/dazzlingwuming/listen2.git"
   },
   "keywords": [
     "Electron",
-    "Listen 1"
+    "Listen 1",
+    "Bilibili",
+    "music player",
+    "lyrics"
   ],
   "author": "Listen 1 <githublisten1@gmail.com>",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/listen1/listen1_desktop/issues"
+    "url": "https://github.com/dazzlingwuming/listen2/issues"
   },
-  "homepage": "https://github.com/listen1/listen1_desktop#readme",
+  "homepage": "https://github.com/dazzlingwuming/listen2#readme",
   "build": {
     "appId": "com.listen1.listen1",
     "productName": "Listen1",
