@@ -2,6 +2,7 @@
 (function initBilibiliMvPlayer(global) {
   const DRIFT_IGNORE_SECONDS = 0.12;
   const DRIFT_HARD_SEEK_SECONDS = 0.5;
+  const DRIFT_ADJUST_INTERVAL_MS = 180;
   const LOAD_TIMEOUT_MS = 15000;
 
   function parseTrackId(track) {
@@ -59,6 +60,8 @@
       this.loadToken = 0;
       this.lastPosition = 0;
       this.lastPlaying = false;
+      this.lastDriftAdjustmentAt = 0;
+      this.videoElement = null;
       this.recoveryAttempted = false;
       this.state = {
         available: false,
@@ -75,17 +78,13 @@
       if (typeof document === 'undefined') {
         return null;
       }
-      const elements = [...document.querySelectorAll('.bilibili-mv-video')];
-      return (
-        elements.find(
-          (element) =>
-            element.offsetParent !== null ||
-            (element.parentElement &&
-              element.parentElement.offsetParent !== null)
-        ) ||
-        elements[0] ||
-        null
+      if (this.videoElement && this.videoElement.isConnected) {
+        return this.videoElement;
+      }
+      this.videoElement = document.querySelector(
+        '.bilibili-mv-primary-video'
       );
+      return this.videoElement;
     }
 
     setState(next) {
@@ -230,8 +229,7 @@
       });
       try {
         // Angular applies the loading state asynchronously. Yield once so the
-        // visible theme's <video> is selected instead of the hidden duplicate
-        // that belongs to the other player layout.
+        // one full-window video surface is visible before loading its stream.
         await new Promise((resolve) => setTimeout(resolve, 0));
         const response = await MediaService.getBilibiliMediaManifest({
           bvid: parsedTrack.bvid,
@@ -324,10 +322,16 @@
       if (absoluteDrift > DRIFT_HARD_SEEK_SECONDS) {
         this.seekVideo(video, this.lastPosition);
         video.playbackRate = 1;
-      } else if (absoluteDrift > DRIFT_IGNORE_SECONDS) {
-        video.playbackRate = drift > 0 ? 0.97 : 1.03;
-      } else if (video.playbackRate !== 1) {
-        video.playbackRate = 1;
+        this.lastDriftAdjustmentAt = Date.now();
+      } else if (
+        Date.now() - this.lastDriftAdjustmentAt >= DRIFT_ADJUST_INTERVAL_MS
+      ) {
+        if (absoluteDrift > DRIFT_IGNORE_SECONDS) {
+          video.playbackRate = drift > 0 ? 0.97 : 1.03;
+        } else if (video.playbackRate !== 1) {
+          video.playbackRate = 1;
+        }
+        this.lastDriftAdjustmentAt = Date.now();
       }
     }
 
@@ -383,6 +387,13 @@
       this.loadToken += 1;
       const video = this.getVideoElement();
       if (video) {
+        if (
+          typeof document !== 'undefined' &&
+          document.fullscreenElement === video &&
+          typeof document.exitFullscreen === 'function'
+        ) {
+          document.exitFullscreen().catch(() => undefined);
+        }
         video.removeEventListener('error', this.handleVideoError);
         video.pause();
         video.removeAttribute('src');
@@ -391,6 +402,7 @@
       this.track = null;
       this.manifest = null;
       this.variant = null;
+      this.lastDriftAdjustmentAt = 0;
       this.recoveryAttempted = false;
       this.setState({
         active: false,
@@ -403,6 +415,7 @@
 
     destroy() {
       this.close();
+      this.videoElement = null;
     }
   }
 

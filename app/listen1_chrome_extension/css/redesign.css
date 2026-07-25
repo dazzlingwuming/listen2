@@ -205,6 +205,20 @@
   display: block;
   width: 100%;
   height: 100%;
+  background: #fff;
+  fill: #fff !important;
+  stroke: none !important;
+  shape-rendering: crispEdges;
+}
+
+.dialog-bilibili-qr .bilibili-qr-code svg rect {
+  fill: #fff !important;
+  stroke: none !important;
+}
+
+.dialog-bilibili-qr .bilibili-qr-code svg path {
+  fill: #111827 !important;
+  stroke: none !important;
 }
 
 .dialog-bilibili-qr .bilibili-qr-status {
@@ -223,62 +237,92 @@
   color: #d45b5b;
 }
 
-/* The video is silent by design. Listen2's existing Howler player remains the
- * sole audio clock, while this surface only follows its position and state. */
-.detail-head-cover {
-  position: relative;
+/* MV takes over the player surface. Howler remains the only audio clock and
+ * this one video element only follows its position and play state. */
+.wrap.mv-underlay-hidden {
+  visibility: hidden;
+  pointer-events: none;
 }
 
-.bilibili-mv-stage {
-  position: absolute;
-  z-index: 12;
+.bilibili-mv-overlay {
+  position: fixed;
+  z-index: 2147483000;
   inset: 0;
   overflow: hidden;
-  border-radius: inherit;
-  background: #05070d;
+  background: #000;
+  contain: layout paint style;
 }
 
-.bilibili-mv-video {
+.bilibili-mv-overlay .bilibili-mv-video {
   display: block;
   width: 100%;
   height: 100%;
-  background: #05070d;
+  background: #000;
   object-fit: contain;
+  transform: translateZ(0);
 }
 
-.bilibili-mv-controls {
+.bilibili-mv-toolbar {
   position: absolute;
   z-index: 2;
-  right: 10px;
-  bottom: 10px;
+  top: 18px;
+  right: 18px;
   display: flex;
-  gap: 7px;
+  gap: 8px;
   align-items: center;
-  padding: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 9px;
-  background: rgba(5, 7, 13, 0.72);
-  backdrop-filter: blur(10px);
+  max-width: calc(100vw - 36px);
+  padding: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  background: rgba(8, 9, 14, 0.74);
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(12px);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-6px);
+  transition: opacity 160ms ease, transform 160ms ease;
+  -webkit-app-region: no-drag;
 }
 
-.bilibili-mv-controls select,
-.bilibili-mv-controls button {
-  min-height: 27px;
+.bilibili-mv-overlay:hover .bilibili-mv-toolbar,
+.bilibili-mv-overlay:focus-within .bilibili-mv-toolbar {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.bilibili-mv-toolbar-title {
+  max-width: min(34vw, 260px);
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bilibili-mv-toolbar select,
+.bilibili-mv-toolbar button {
+  min-height: 30px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 7px;
   background: rgba(255, 255, 255, 0.14);
   color: #fff;
+  font-family: inherit;
   font-size: 12px;
 }
 
-.bilibili-mv-controls select {
-  max-width: 146px;
-  padding: 0 6px;
+.bilibili-mv-toolbar select {
+  max-width: 164px;
+  padding: 0 7px;
 }
 
-.bilibili-mv-controls button {
-  padding: 0 8px;
+.bilibili-mv-toolbar button {
+  padding: 0 10px;
   cursor: pointer;
+}
+
+.bilibili-mv-toolbar .bilibili-mv-close {
+  background: rgba(255, 255, 255, 0.22);
 }
 
 .bilibili-mv-loading {
@@ -329,10 +373,6 @@
   to {
     opacity: 1;
   }
-}
-
-.modern-body .bilibili-mv-stage {
-  border-radius: 20px;
 }
 
 .modern-body .bilibili-mv-switch.slidedown {

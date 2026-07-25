@@ -895,7 +895,7 @@ angular.module('listenone').controller('PlayController', [
         return;
       }
       if ($scope.bilibiliMv.active || $scope.bilibiliMv.loading) {
-        player.close();
+        $scope.closeBilibiliMv();
         return;
       }
       const track = $scope.currentPlaying;
@@ -909,6 +909,13 @@ angular.module('listenone').controller('PlayController', [
           notyf.info($scope.getBilibiliMvErrorText());
         }
       });
+    };
+
+    $scope.closeBilibiliMv = () => {
+      const player = getBilibiliMvPlayer();
+      if (player) {
+        player.close();
+      }
     };
 
     $scope.changeBilibiliMvQuality = () => {
@@ -1865,6 +1872,12 @@ angular.module('listenone').controller('PlayController', [
     // define keybind
     // description: '播放/暂停',
     hotkeys('p', l1Player.togglePlayPause);
+
+    hotkeys('esc', () => {
+      if ($scope.bilibiliMv.active || $scope.bilibiliMv.loading) {
+        $scope.$evalAsync(() => $scope.closeBilibiliMv());
+      }
+    });
 
     // description: '上一首',
     hotkeys('[', l1Player.prev);

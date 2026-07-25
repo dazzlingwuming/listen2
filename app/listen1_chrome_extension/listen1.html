@@ -105,7 +105,10 @@
           <div ng-controller="AuthController" ng-init="refreshAuthStatus()">
             <div>
               <div ng-controller="NavigationController">
-                <div class="wrap">
+                <div
+                  class="wrap"
+                  ng-class="{'mv-underlay-hidden': bilibiliMv.active || bilibiliMv.loading}"
+                >
                   <!-- dialog-->
                   <div class="shadow" ng-hide="is_dialog_hidden==1"></div>
                   <div
@@ -1952,46 +1955,6 @@
                                     ng-src="{{ currentPlaying.img_url  }}"
                                     err-src="https://y.gtimg.cn/mediastyle/global/img/album_300.png"
                                   />
-                                  <div
-                                    class="bilibili-mv-stage"
-                                    ng-show="bilibiliMv.active || bilibiliMv.loading"
-                                  >
-                                    <video
-                                      class="bilibili-mv-video"
-                                      muted
-                                      playsinline
-                                    ></video>
-                                    <div
-                                      class="bilibili-mv-controls"
-                                      ng-show="bilibiliMv.active"
-                                    >
-                                      <select
-                                        ng-model="bilibiliMv.selectedVariantKey"
-                                        ng-change="changeBilibiliMvQuality()"
-                                        ng-if="bilibiliMv.videoVariants.length > 1"
-                                        aria-label="MV 画质"
-                                      >
-                                        <option
-                                          ng-repeat="variant in bilibiliMv.videoVariants track by variant.key"
-                                          value="{{variant.key}}"
-                                        >
-                                          {{variant.label}} · {{variant.codecs}}
-                                        </option>
-                                      </select>
-                                      <button
-                                        type="button"
-                                        ng-click="toggleBilibiliMvFullscreen()"
-                                      >
-                                        全屏
-                                      </button>
-                                    </div>
-                                    <div
-                                      class="bilibili-mv-loading"
-                                      ng-show="bilibiliMv.loading"
-                                    >
-                                      MV 加载中…
-                                    </div>
-                                  </div>
                                 </div>
                                 <div class="detail-head-title">
                                   <!--<a title="加入收藏" class="clone" ng-click="showDialog(0, currentPlaying)">收藏</a>
@@ -4493,6 +4456,12 @@
                                     >
                                       咪咕音乐
                                     </div>
+                                    <div
+                                      ng-if="source=='bilibili'"
+                                      class="usercard-info"
+                                    >
+                                      哔哩哔哩
+                                    </div>
                                   </div>
                                   <button ng-click="logout(source)">
                                     {{_LOGOUT}}
@@ -4527,7 +4496,7 @@
 
                                   <div class="usercard-title">
                                     <div class="usercard-nickname">
-                                      {{_NOT_LOGIN_NICKNAME}}
+                                      {{source=='bilibili' ? '登录哔哩哔哩' : _NOT_LOGIN_NICKNAME}}
                                     </div>
                                     <div
                                       ng-if="source=='netease'"
@@ -4546,6 +4515,12 @@
                                       class="usercard-info"
                                     >
                                       咪咕音乐
+                                    </div>
+                                    <div
+                                      ng-if="source=='bilibili'"
+                                      class="usercard-info"
+                                    >
+                                      扫码登录 · 哔哩哔哩
                                     </div>
                                   </div>
                                 </div>
@@ -5134,7 +5109,7 @@
                                   audio-visualizer-progress="myProgress"
                                   audio-visualizer-playing="isPlaying"
                                   audio-visualizer-has-track="playlist && playlist.length > 0"
-                                  audio-visualizer-active="window_type == 'track' && playlist && playlist.length > 0"
+                                  audio-visualizer-active="window_type == 'track' && playlist && playlist.length > 0 && !bilibiliMv.active && !bilibiliMv.loading"
                                   aria-hidden="true"
                                 >
                                 </div>
@@ -5149,46 +5124,6 @@
                                   err-src="https://y.gtimg.cn/mediastyle/global/img/album_300.png"
                                   alt="{{ currentPlaying.title || _NOW_PLAYING_STAGE }}"
                                 />
-                                <div
-                                  class="bilibili-mv-stage"
-                                  ng-show="bilibiliMv.active || bilibiliMv.loading"
-                                >
-                                  <video
-                                    class="bilibili-mv-video"
-                                    muted
-                                    playsinline
-                                  ></video>
-                                  <div
-                                    class="bilibili-mv-controls"
-                                    ng-show="bilibiliMv.active"
-                                  >
-                                    <select
-                                      ng-model="bilibiliMv.selectedVariantKey"
-                                      ng-change="changeBilibiliMvQuality()"
-                                      ng-if="bilibiliMv.videoVariants.length > 1"
-                                      aria-label="MV 画质"
-                                    >
-                                      <option
-                                        ng-repeat="variant in bilibiliMv.videoVariants track by variant.key"
-                                        value="{{variant.key}}"
-                                      >
-                                        {{variant.label}} · {{variant.codecs}}
-                                      </option>
-                                    </select>
-                                    <button
-                                      type="button"
-                                      ng-click="toggleBilibiliMvFullscreen()"
-                                    >
-                                      全屏
-                                    </button>
-                                  </div>
-                                  <div
-                                    class="bilibili-mv-loading"
-                                    ng-show="bilibiliMv.loading"
-                                  >
-                                    MV 加载中…
-                                  </div>
-                                </div>
                               </div>
                               <div class="now-playing-copy">
                                 <p class="now-playing-eyebrow">
@@ -5270,7 +5205,7 @@
                                 audio-visualizer-layout="linear"
                                 audio-visualizer-playing="isPlaying"
                                 audio-visualizer-has-track="playlist && playlist.length > 0"
-                                audio-visualizer-active="window_type == 'track' && playlist && playlist.length > 0"
+                                audio-visualizer-active="window_type == 'track' && playlist && playlist.length > 0 && !bilibiliMv.active && !bilibiliMv.loading"
                                 aria-hidden="true"
                               ></div>
                               <div class="now-playing-spectrum-caption">
@@ -6237,6 +6172,63 @@
                           <!-- <div class="song-time">00:00</div> -->
                         </li>
                       </ul>
+                    </div>
+                  </div>
+                  <div
+                    class="bilibili-mv-overlay"
+                    ng-show="bilibiliMv.active || bilibiliMv.loading"
+                    ng-class="{active: bilibiliMv.active, loading: bilibiliMv.loading}"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="哔哩哔哩 MV 播放器"
+                  >
+                    <video
+                      class="bilibili-mv-video bilibili-mv-primary-video"
+                      muted
+                      playsinline
+                      preload="auto"
+                      aria-label="哔哩哔哩 MV 视频"
+                    ></video>
+                    <div
+                      class="bilibili-mv-loading"
+                      ng-show="bilibiliMv.loading"
+                      aria-live="polite"
+                    >
+                      MV 加载中…
+                    </div>
+                    <div
+                      class="bilibili-mv-toolbar"
+                      ng-show="bilibiliMv.active"
+                    >
+                      <span class="bilibili-mv-toolbar-title"
+                        >{{ currentPlaying.title }}</span
+                      >
+                      <select
+                        ng-model="bilibiliMv.selectedVariantKey"
+                        ng-change="changeBilibiliMvQuality()"
+                        ng-if="bilibiliMv.videoVariants.length > 1"
+                        aria-label="MV 画质"
+                      >
+                        <option
+                          ng-repeat="variant in bilibiliMv.videoVariants track by variant.key"
+                          value="{{variant.key}}"
+                        >
+                          {{variant.label}} · {{variant.codecs}}
+                        </option>
+                      </select>
+                      <button
+                        type="button"
+                        ng-click="toggleBilibiliMvFullscreen()"
+                      >
+                        全屏
+                      </button>
+                      <button
+                        type="button"
+                        class="bilibili-mv-close"
+                        ng-click="closeBilibiliMv()"
+                      >
+                        退出 MV
+                      </button>
                     </div>
                   </div>
                 </div>

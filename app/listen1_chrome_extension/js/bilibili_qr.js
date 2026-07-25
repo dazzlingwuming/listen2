@@ -331,9 +331,9 @@
     });
     const quietZone = 4;
     const viewSize = SIZE + quietZone * 2;
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-${quietZone} -${quietZone} ${viewSize} ${viewSize}" role="img" aria-label="Bilibili login QR code"><rect x="-${quietZone}" y="-${quietZone}" width="${viewSize}" height="${viewSize}" fill="#fff"/><path d="${cells.join(
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-${quietZone} -${quietZone} ${viewSize} ${viewSize}" role="img" aria-label="Bilibili login QR code" shape-rendering="crispEdges" style="display:block;background:#fff;fill:#fff!important;stroke:none!important"><rect x="-${quietZone}" y="-${quietZone}" width="${viewSize}" height="${viewSize}" fill="#fff" style="fill:#fff!important;stroke:none!important"/><path d="${cells.join(
       ''
-    )}" fill="#111827"/></svg>`;
+    )}" fill="#111827" style="fill:#111827!important;stroke:none!important"/></svg>`;
   }
 
   global.BilibiliQrCode = {
