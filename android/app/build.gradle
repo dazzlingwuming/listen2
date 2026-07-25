@@ -1,0 +1,51 @@
+plugins {
+    id 'com.android.application'
+}
+
+def listen1SourceDirectory = file("${rootDir}/../app/listen1_chrome_extension")
+def generatedAssetsDirectory = layout.buildDirectory.dir('generated/listen1-assets')
+
+tasks.register('syncListen1Assets', Copy) {
+    from(listen1SourceDirectory) {
+        exclude '.git/**', '.github/**', 'node_modules/**', 'test/**'
+    }
+    into(generatedAssetsDirectory.map { it.dir('listen1') })
+    includeEmptyDirs = false
+}
+
+android {
+    namespace 'com.dazzlingwuming.listen2'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.dazzlingwuming.listen2'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '2.33.0'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    sourceSets {
+        main {
+            assets.srcDir(generatedAssetsDirectory)
+        }
+    }
+}
+
+tasks.configureEach { task ->
+    if (task.name == 'mergeDebugAssets' || task.name == 'mergeReleaseAssets') {
+        task.dependsOn(tasks.named('syncListen1Assets'))
+    }
+}
