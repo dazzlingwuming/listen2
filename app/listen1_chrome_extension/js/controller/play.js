@@ -2,7 +2,7 @@
 /* eslint-disable no-shadow */
 /* eslint-disable import/no-unresolved */
 /* eslint-disable global-require */
-/* global angular notyf i18next MediaService l1Player hotkeys GithubClient isElectron require getLocalStorageValue getPlayer getPlayerAsync getPlayerMode canUseBackgroundPlayer addPlayerListener smoothScrollTo lastfm */
+/* global angular notyf i18next MediaService l1Player hotkeys GithubClient isElectron require getLocalStorageValue getPlayer getPlayerAsync getPlayerMode canUseBackgroundPlayer addPlayerListener smoothScrollTo lastfm BilibiliMvPlayer */
 
 function getCSSStringFromSetting(setting) {
   let { backgroundAlpha } = setting;
@@ -133,12 +133,22 @@ angular.module('listenone').controller('PlayController', [
     };
     $scope.machineTranslationConfigPending = false;
     $scope.machineTranslationTestResult = null;
+    $scope.bilibiliMv = {
+      available: false,
+      active: false,
+      loading: false,
+      error: '',
+      selectedVariantKey: '',
+      videoVariants: [],
+    };
 
     const LYRIC_OFFSET_STORAGE_KEY = 'bilibili-lyric-offsets';
     const MAX_LYRIC_OFFSET_MS = 60000;
     let lyricRequestToken = 0;
     let lyricSearchToken = 0;
     let manualLyricResolveToken = 0;
+    let bilibiliMvPlayer = null;
+    let lastMvPosition = 0;
 
     function getLyricOffsets() {
       return localStorage.getObject(LYRIC_OFFSET_STORAGE_KEY) || {};
@@ -843,6 +853,84 @@ angular.module('listenone').controller('PlayController', [
       );
     }
 
+    function isBilibiliVideoTrack(track) {
+      return Boolean(track && String(track.id || '').startsWith('bitrack_v_'));
+    }
+
+    function getBilibiliMvPlayer() {
+      if (!isElectron() || typeof BilibiliMvPlayer === 'undefined') {
+        return null;
+      }
+      if (!bilibiliMvPlayer) {
+        bilibiliMvPlayer = new BilibiliMvPlayer((state) => {
+          $scope.$evalAsync(() => {
+            $scope.bilibiliMv = {
+              ...$scope.bilibiliMv,
+              ...state,
+            };
+          });
+        });
+      }
+      return bilibiliMvPlayer;
+    }
+
+    $scope.canPlayBilibiliMv = () =>
+      isElectron() && isBilibiliVideoTrack($scope.currentPlaying);
+
+    $scope.getBilibiliMvErrorText = () => {
+      const code = String($scope.bilibiliMv.error || '');
+      const messages = {
+        'unsupported-video-codec': '当前电脑不支持此视频编码，已继续音频播放。',
+        'video-load-timeout': 'MV 加载超时，已继续音频播放。',
+        'video-load-failed': 'MV 加载失败，已继续音频播放。',
+        'video-playback-failed': 'MV 播放失败，已继续音频播放。',
+        'manifest-refresh-failed': 'MV 地址刷新失败，已继续音频播放。',
+      };
+      return messages[code] || 'MV 暂时不可用，已继续音频播放。';
+    };
+
+    $scope.toggleBilibiliMv = () => {
+      const player = getBilibiliMvPlayer();
+      if (!player || !$scope.canPlayBilibiliMv()) {
+        return;
+      }
+      if ($scope.bilibiliMv.active || $scope.bilibiliMv.loading) {
+        player.close();
+        return;
+      }
+      const track = $scope.currentPlaying;
+      const position = Number(
+        (l1Player.status.playing && l1Player.status.playing.pos) ||
+          lastMvPosition ||
+          0
+      );
+      player.open(track, position, Boolean($scope.isPlaying)).then((opened) => {
+        if (!opened && $scope.bilibiliMv.error) {
+          notyf.info($scope.getBilibiliMvErrorText());
+        }
+      });
+    };
+
+    $scope.changeBilibiliMvQuality = () => {
+      const player = getBilibiliMvPlayer();
+      const key = $scope.bilibiliMv.selectedVariantKey;
+      if (!player || !key) {
+        return;
+      }
+      player.switchQuality(key).then((switched) => {
+        if (!switched) {
+          notyf.info($scope.getBilibiliMvErrorText());
+        }
+      });
+    };
+
+    $scope.toggleBilibiliMvFullscreen = () => {
+      const player = getBilibiliMvPlayer();
+      if (player) {
+        player.toggleFullscreen();
+      }
+    };
+
     function resetLyricDisplay() {
       $scope.lyricArray = [];
       $scope.lyricLineNumber = -1;
@@ -973,9 +1061,7 @@ angular.module('listenone').controller('PlayController', [
         lyric: safeCandidate.lyric || '',
         tlyric: safeCandidate.tlyric || '',
         source:
-          source ||
-          (originalResult && originalResult.source) ||
-          'bilibili',
+          source || (originalResult && originalResult.source) || 'bilibili',
         matchedTitle: safeCandidate.title || '',
         matchedArtist: safeCandidate.artist || '',
         matchedAlbum: safeCandidate.album || '',
@@ -1064,11 +1150,7 @@ angular.module('listenone').controller('PlayController', [
     function requestCurrentLyricTranslation() {
       const track = $scope.currentPlaying;
       const originalResult = $scope.currentLyricResult;
-      if (
-        !isBilibiliTrack(track) ||
-        !originalResult ||
-        !originalResult.lyric
-      ) {
+      if (!isBilibiliTrack(track) || !originalResult || !originalResult.lyric) {
         notyf.info(i18next.t('_LYRIC_TRANSLATION_UNAVAILABLE'));
         return;
       }
@@ -1497,11 +1579,18 @@ angular.module('listenone').controller('PlayController', [
             // update lyric position
             if (!l1Player.status.playing.id) break;
             const currentSeconds = msg.data.pos;
+            lastMvPosition = Number(currentSeconds || 0);
+            if (bilibiliMvPlayer) {
+              bilibiliMvPlayer.sync(
+                $scope.currentPlaying,
+                lastMvPosition,
+                Boolean($scope.isPlaying)
+              );
+            }
             let lastObject = null;
             let lastObjectTrans = null;
             $scope.lyricArray.forEach((lyric) => {
-              const lyricTime =
-                (lyric.seconds + $scope.lyricOffsetMs) / 1000;
+              const lyricTime = (lyric.seconds + $scope.lyricOffsetMs) / 1000;
               if (currentSeconds >= lyricTime) {
                 if (lyric.translationFlag !== true) {
                   lastObject = lyric;
@@ -1587,7 +1676,22 @@ angular.module('listenone').controller('PlayController', [
           }
 
           case 'LOAD': {
+            const previousTrackId =
+              $scope.currentPlaying && $scope.currentPlaying.id;
             $scope.currentPlaying = msg.data.currentPlaying;
+            const isVideoTrack = isBilibiliVideoTrack(msg.data.currentPlaying);
+            if (
+              bilibiliMvPlayer &&
+              previousTrackId !== msg.data.currentPlaying.id &&
+              ($scope.bilibiliMv.active || $scope.bilibiliMv.loading)
+            ) {
+              bilibiliMvPlayer.close();
+            }
+            $scope.bilibiliMv = {
+              ...$scope.bilibiliMv,
+              available: isElectron() && isVideoTrack,
+              error: isVideoTrack ? $scope.bilibiliMv.error : '',
+            };
             const { length, index } = msg.data.playlist;
 
             if (useModernTheme()) {
@@ -1675,6 +1779,13 @@ angular.module('listenone').controller('PlayController', [
             $scope.$evalAsync(() => {
               $scope.isPlaying = !!msg.data.isPlaying;
             });
+            if (bilibiliMvPlayer) {
+              bilibiliMvPlayer.sync(
+                $scope.currentPlaying,
+                lastMvPosition,
+                Boolean(msg.data.isPlaying)
+              );
+            }
             let title = 'Listen 1';
             if ($rootScope.page_title !== undefined) {
               title = '';
@@ -1893,5 +2004,12 @@ angular.module('listenone').controller('PlayController', [
         $scope.enableNowplayingPlatform
       );
     };
+
+    $scope.$on('$destroy', () => {
+      if (bilibiliMvPlayer) {
+        bilibiliMvPlayer.destroy();
+        bilibiliMvPlayer = null;
+      }
+    });
   },
 ]);

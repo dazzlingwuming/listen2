@@ -44,7 +44,7 @@ const PROVIDERS = [
     name: 'bilibili',
     instance: bilibili,
     searchable: true,
-    support_login: false,
+    support_login: true,
     id: 'bi',
   },
   {
@@ -125,6 +125,10 @@ function getMachineTranslationIpcRenderer() {
   } catch (error) {
     return null;
   }
+}
+
+function getBilibiliIpcRenderer() {
+  return getMachineTranslationIpcRenderer();
 }
 
 setPrototypeOfLocalStorage();
@@ -398,6 +402,73 @@ const MediaService = {
         });
       },
     };
+  },
+
+  getBilibiliAuthState() {
+    const ipcRenderer = getBilibiliIpcRenderer();
+    if (!ipcRenderer) {
+      return Promise.resolve({ ok: false, status: 'unsupported' });
+    }
+    return ipcRenderer.invoke('bilibili-auth:get-state');
+  },
+
+  beginBilibiliQrLogin() {
+    const ipcRenderer = getBilibiliIpcRenderer();
+    if (!ipcRenderer) {
+      return Promise.resolve({ ok: false, status: 'unsupported' });
+    }
+    return ipcRenderer.invoke('bilibili-auth:begin-qr');
+  },
+
+  cancelBilibiliQrLogin(sessionId) {
+    const ipcRenderer = getBilibiliIpcRenderer();
+    if (!ipcRenderer) {
+      return Promise.resolve({ ok: false, status: 'unsupported' });
+    }
+    return ipcRenderer.invoke('bilibili-auth:cancel-qr', {
+      sessionId: String(sessionId || ''),
+    });
+  },
+
+  onBilibiliQrState(listener) {
+    const ipcRenderer = getBilibiliIpcRenderer();
+    if (!ipcRenderer || typeof listener !== 'function') {
+      return () => {};
+    }
+    const wrapped = (event, state) => listener(state || {});
+    ipcRenderer.on('bilibili-auth:qr-state', wrapped);
+    return () => ipcRenderer.removeListener('bilibili-auth:qr-state', wrapped);
+  },
+
+  logoutBilibili() {
+    const ipcRenderer = getBilibiliIpcRenderer();
+    if (!ipcRenderer) {
+      return Promise.resolve({ ok: false, status: 'unsupported' });
+    }
+    return ipcRenderer.invoke('bilibili-auth:logout');
+  },
+
+  getBilibiliMediaManifest(options) {
+    const ipcRenderer = getBilibiliIpcRenderer();
+    if (!ipcRenderer) {
+      return Promise.resolve({ ok: false, status: 'unsupported' });
+    }
+    return ipcRenderer.invoke('bilibili-media:get-manifest', {
+      bvid: String((options && options.bvid) || ''),
+      cid: Number((options && options.cid) || 0),
+      forceRefresh: Boolean(options && options.forceRefresh),
+    });
+  },
+
+  clearBilibiliMediaManifest(options) {
+    const ipcRenderer = getBilibiliIpcRenderer();
+    if (!ipcRenderer) {
+      return Promise.resolve({ ok: false, status: 'unsupported' });
+    }
+    return ipcRenderer.invoke('bilibili-media:clear-manifest', {
+      bvid: String((options && options.bvid) || ''),
+      cid: Number((options && options.cid) || 0),
+    });
   },
 
   removeMyPlaylist(id, type) {

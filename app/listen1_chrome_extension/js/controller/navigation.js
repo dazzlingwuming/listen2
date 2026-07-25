@@ -31,6 +31,18 @@ angular.module('listenone').controller('NavigationController', [
 
     $scope.isOpenSidebar = true;
 
+    $scope.$on('bilibili-auth:open-dialog', () => {
+      $scope.showDialog(13, 'bilibili');
+    });
+
+    $scope.$on('bilibili-auth:login-success', () => {
+      $scope.closeDialog();
+    });
+
+    $scope.$on('auth:open-login-dialog', (event, source) => {
+      $scope.showDialog(11, source);
+    });
+
     $scope.$on('isdoubanlogin:update', (event, data) => {
       $scope.isDoubanLogin = data;
     });
@@ -288,6 +300,9 @@ angular.module('listenone').controller('NavigationController', [
       if (dialog_type === 12) {
         $scope.dialog_title = i18next.t('_PROXY_CONFIG');
       }
+      if (dialog_type === 13) {
+        $scope.dialog_title = '哔哩哔哩扫码登录';
+      }
     };
 
     $scope.onSidebarPlaylistDrop = (
@@ -449,8 +464,12 @@ angular.module('listenone').controller('NavigationController', [
     };
 
     $scope.closeDialog = () => {
+      const closingDialogType = $scope.dialog_type;
       $scope.is_dialog_hidden = 1;
       $scope.dialog_type = 0;
+      if (closingDialogType === 13) {
+        $scope.$emit('bilibili-auth:dialog-closed');
+      }
       // update lastfm status if not authorized
       if (lastfm.isAuthRequested()) {
         lastfm.updateStatus();

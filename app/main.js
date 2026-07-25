@@ -20,6 +20,7 @@ const {
   testDeepLApiKey,
   translateWholeLyricWithDeepL,
 } = require("./machineTranslation");
+const { BilibiliService } = require("./bilibiliService");
 
 const store = new Store();
 const iconPath = join(__dirname, "/listen1_chrome_extension/images/logo.png");
@@ -32,6 +33,7 @@ let floatingWindowCssKey = undefined,
   willQuitApp = false,
   transparent = false,
   trayIconPath;
+let bilibiliService;
 /** @type {electron.BrowserWindow} */
 let mainWindow;
 /** @type {electron.BrowserWindow} */
@@ -126,6 +128,17 @@ function getMachineTranslationFetch() {
   return targetSession.fetch.bind(targetSession);
 }
 
+function getBilibiliService() {
+  if (!bilibiliService) {
+    bilibiliService = new BilibiliService({
+      electronSession: session.defaultSession,
+      store,
+      safeStorage,
+    });
+  }
+  return bilibiliService;
+}
+
 async function withMachineTranslationTimeout(operation) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30000);
@@ -209,6 +222,19 @@ function ensureTrustedMachineTranslationSender(event) {
   throw Object.assign(new Error("Untrusted translation request."), {
     code: "ipc-forbidden",
   });
+}
+
+function bilibiliFailure(error) {
+  return {
+    ok: false,
+    status:
+      error && typeof error.code === "string" ? error.code : "request-failed",
+    httpStatus: Number((error && error.httpStatus) || 0),
+  };
+}
+
+function ensureTrustedBilibiliSender(event) {
+  ensureTrustedMachineTranslationSender(event);
 }
 
 ipcMain.handle("machine-translation:get-config", (event) => {
@@ -371,6 +397,80 @@ ipcMain.handle(
     }
   }
 );
+
+ipcMain.handle("bilibili-auth:get-state", async (event) => {
+  try {
+    ensureTrustedBilibiliSender(event);
+    return {
+      ok: true,
+      state: await getBilibiliService().getPublicAuthState(),
+    };
+  } catch (error) {
+    return bilibiliFailure(error);
+  }
+});
+
+ipcMain.handle("bilibili-auth:begin-qr", async (event) => {
+  try {
+    ensureTrustedBilibiliSender(event);
+    const sender = event.sender;
+    const state = await getBilibiliService().startQrLogin((update) => {
+      if (sender && !sender.isDestroyed()) {
+        sender.send("bilibili-auth:qr-state", update);
+      }
+    });
+    return { ok: true, state };
+  } catch (error) {
+    return bilibiliFailure(error);
+  }
+});
+
+ipcMain.handle("bilibili-auth:cancel-qr", (event, payload = {}) => {
+  try {
+    ensureTrustedBilibiliSender(event);
+    getBilibiliService().cancelQrLogin(String(payload.sessionId || ""));
+    return { ok: true };
+  } catch (error) {
+    return bilibiliFailure(error);
+  }
+});
+
+ipcMain.handle("bilibili-auth:logout", async (event) => {
+  try {
+    ensureTrustedBilibiliSender(event);
+    const result = await getBilibiliService().logout();
+    return { ok: true, ...result };
+  } catch (error) {
+    return bilibiliFailure(error);
+  }
+});
+
+ipcMain.handle("bilibili-media:get-manifest", async (event, payload = {}) => {
+  try {
+    ensureTrustedBilibiliSender(event);
+    const manifest = await getBilibiliService().getManifest({
+      bvid: String(payload.bvid || ""),
+      cid: Number(payload.cid || 0),
+      forceRefresh: payload.forceRefresh === true,
+    });
+    return { ok: true, manifest };
+  } catch (error) {
+    return bilibiliFailure(error);
+  }
+});
+
+ipcMain.handle("bilibili-media:clear-manifest", (event, payload = {}) => {
+  try {
+    ensureTrustedBilibiliSender(event);
+    getBilibiliService().clearManifest({
+      bvid: payload.bvid ? String(payload.bvid) : "",
+      cid: payload.cid ? Number(payload.cid) : 0,
+    });
+    return { ok: true };
+  } catch (error) {
+    return bilibiliFailure(error);
+  }
+});
 
 const globalShortcutMapping = {
   "CmdOrCtrl+Alt+Left": "left",
@@ -1149,5 +1249,8 @@ app.on("before-quit", () => {
 });
 
 app.on("will-quit", () => {
+  if (bilibiliService) {
+    bilibiliService.shutdown();
+  }
   disableGlobalShortcuts();
 });

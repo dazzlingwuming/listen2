@@ -10,11 +10,18 @@ const LRCLIB_LYRIC_REQUEST_TIMEOUT = 15000;
 const LRCLIB_SEARCH_CACHE_TTL = 10 * 60 * 1000;
 const QQ_LYRIC_SEARCH_CACHE_TTL = 10 * 60 * 1000;
 const NETEASE_LYRIC_SEARCH_CACHE_TTL = 10 * 60 * 1000;
+const BILIBILI_AUDIO_QUALITY_LABELS = {
+  30216: '64K',
+  30232: '132K',
+  30280: '192K',
+  30250: '杜比音频',
+  30251: 'Hi-Res / FLAC',
+};
 const BILIBILI_MANUAL_LYRIC_STORAGE_KEY = 'bilibili-manual-lyrics';
 const BILIBILI_AUTO_LYRIC_MATCH_THRESHOLD = 0.88;
 const LRCLIB_CLIENT_ID =
   'Listen1 v2.33.0 (https://github.com/listen1/listen1_chrome_extension)';
-/* global getParameterByName kuwo */
+/* global getParameterByName kuwo MediaService isElectron */
 // eslint-disable-next-line no-unused-vars
 /* global cookieSet cookieGet */
 // eslint-disable-next-line no-unused-vars
@@ -1343,24 +1350,22 @@ class bilibili {
         machineTranslated: manualLyric.machineTranslated === true,
         machineTranslationProvider:
           manualLyric.machineTranslationProvider || '',
-        machineTranslationTarget:
-          manualLyric.machineTranslationTarget || '',
+        machineTranslationTarget: manualLyric.machineTranslationTarget || '',
         machineTranslationDetectedSource:
           manualLyric.machineTranslationDetectedSource || '',
       };
-      return this.enrich_manual_lyric_candidate(
-        manualCandidate,
-        options
-      ).then((enrichedCandidate) => {
-        if (
-          !enrichedCandidate ||
-          !this.has_meaningful_lyric(enrichedCandidate.tlyric)
-        ) {
-          return manualLyric;
+      return this.enrich_manual_lyric_candidate(manualCandidate, options).then(
+        (enrichedCandidate) => {
+          if (
+            !enrichedCandidate ||
+            !this.has_meaningful_lyric(enrichedCandidate.tlyric)
+          ) {
+            return manualLyric;
+          }
+          this.save_manual_lyric(options.trackId, enrichedCandidate);
+          return this.get_manual_lyric(options.trackId) || manualLyric;
         }
-        this.save_manual_lyric(options.trackId, enrichedCandidate);
-        return this.get_manual_lyric(options.trackId) || manualLyric;
-      });
+      );
     }
     return this.fetch_bilibili_audio_lyric(options.lyricUrl).then(
       (audioLyric) => {
@@ -1759,34 +1764,156 @@ class bilibili {
     };
   }
 
-  static bootstrap_track(track, success, failure) {
-    const trackId = track.id;
-    if (trackId.startsWith('bitrack_v_')) {
-      const sound = {};
-      let bvid = track.id.slice('bitrack_v_'.length);
+  static get_can_play_type(kind, variant) {
+    if (!variant || typeof document === 'undefined') {
+      return 'maybe';
+    }
+    const element = document.createElement(
+      kind === 'video' ? 'video' : 'audio'
+    );
+    const mimeType = String(variant.mimeType || '');
+    const codecs = String(variant.codecs || '');
+    const type = codecs ? `${mimeType}; codecs="${codecs}"` : mimeType;
+    return element.canPlayType(type);
+  }
 
-      const trackIdCheck = trackId.split('-');
-      if (trackIdCheck.length > 1) {
-        bvid = trackIdCheck[0].slice('bitrack_v_'.length);
+  static select_playable_audio_variant(manifest) {
+    const variants = Array.isArray(manifest && manifest.audioVariants)
+      ? manifest.audioVariants
+      : [];
+    const normalAudio = variants.filter(
+      (variant) => variant.specialType === 'normal'
+    );
+    const playable = variants.filter(
+      (variant) => this.get_can_play_type('audio', variant) !== ''
+    );
+    // The main process keeps this array quality-ranked. Prefer the best format
+    // Chromium can really decode (including Dolby/Hi-Res when supported), then
+    // fall back to a normal stream if codec probing is unavailable.
+    return playable[0] || normalAudio[0] || variants[0];
+  }
+
+  static get_video_media_manifest(track, forceRefresh = false) {
+    const idParts = this.get_video_id_parts(track && track.id);
+    if (
+      !idParts ||
+      typeof MediaService === 'undefined' ||
+      typeof MediaService.getBilibiliMediaManifest !== 'function'
+    ) {
+      return Promise.reject(
+        new Error('Bilibili desktop media bridge is unavailable.')
+      );
+    }
+    return MediaService.getBilibiliMediaManifest({
+      bvid: idParts.bvid,
+      cid: idParts.cid,
+      forceRefresh,
+    }).then((response) => {
+      if (!response || response.ok !== true || !response.manifest) {
+        throw new Error(
+          (response && response.status) ||
+            'Bilibili media manifest is unavailable.'
+        );
       }
-      const target_url = `https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`;
-      return axios.get(target_url).then((response) => {
-        let { cid } = response.data.data.pages[0];
-        if (trackIdCheck.length > 1) {
-          [, cid] = trackIdCheck;
+      return response.manifest;
+    });
+  }
+
+  static bootstrap_video_track_legacy(track, success, failure) {
+    const sound = {};
+    const idParts = this.get_video_id_parts(track && track.id);
+    if (!idParts) {
+      failure(sound);
+      return;
+    }
+    const targetUrl = `https://api.bilibili.com/x/web-interface/view?bvid=${encodeURIComponent(
+      idParts.bvid
+    )}`;
+    axios
+      .get(targetUrl)
+      .then((response) => {
+        const pages =
+          (response.data && response.data.data && response.data.data.pages) ||
+          [];
+        const page =
+          pages.find((item) => Number(item.cid) === Number(idParts.cid)) ||
+          pages[0];
+        const cid = idParts.cid || (page && Number(page.cid));
+        if (!cid) {
+          failure(sound);
+          return null;
         }
-        const target_url2 = `http://api.bilibili.com/x/player/playurl?fnval=16&bvid=${bvid}&cid=${cid}`;
-        axios.get(target_url2).then((response2) => {
-          if (response2.data.data.dash.audio.length > 0) {
-            const url = response2.data.data.dash.audio[0].baseUrl;
-            sound.url = url;
-            sound.platform = 'bilibili';
-            success(sound);
-          } else {
-            failure(sound);
-          }
-        });
-      });
+        return axios.get(
+          `https://api.bilibili.com/x/player/playurl?fnval=4048&bvid=${encodeURIComponent(
+            idParts.bvid
+          )}&cid=${cid}`
+        );
+      })
+      .then((response) => {
+        if (!response) {
+          return;
+        }
+        const audio =
+          response.data &&
+          response.data.data &&
+          response.data.data.dash &&
+          Array.isArray(response.data.data.dash.audio)
+            ? response.data.data.dash.audio
+            : [];
+        const variants = audio
+          .map((variant) => ({
+            ...variant,
+            mimeType: variant.mimeType || 'audio/mp4',
+            url: variant.baseUrl || variant.base_url,
+            specialType: 'normal',
+          }))
+          .filter((variant) => Boolean(variant.url))
+          .sort((left, right) => {
+            const quality = Number(right.id || 0) - Number(left.id || 0);
+            return (
+              quality ||
+              Number(right.bandwidth || 0) - Number(left.bandwidth || 0)
+            );
+          });
+        const selected = variants.find(
+          (variant) => this.get_can_play_type('audio', variant) !== ''
+        );
+        if (!selected) {
+          failure(sound);
+          return;
+        }
+        sound.url = selected.url;
+        sound.bitrate = BILIBILI_AUDIO_QUALITY_LABELS[selected.id] || '';
+        sound.platform = 'bilibili';
+        success(sound);
+      })
+      .catch(() => failure(sound));
+  }
+
+  static bootstrap_track(track, success, failure) {
+    const trackId = String((track && track.id) || '');
+    if (trackId.startsWith('bitrack_v_')) {
+      if (
+        typeof isElectron === 'function' &&
+        isElectron() &&
+        typeof MediaService !== 'undefined' &&
+        typeof MediaService.getBilibiliMediaManifest === 'function'
+      ) {
+        return this.get_video_media_manifest(track)
+          .then((manifest) => {
+            const audio = this.select_playable_audio_variant(manifest);
+            if (!audio || !audio.url) {
+              throw new Error('No compatible Bilibili audio stream.');
+            }
+            success({
+              url: audio.url,
+              bitrate: audio.label || '',
+              platform: 'bilibili',
+            });
+          })
+          .catch(() => failure({}));
+      }
+      return this.bootstrap_video_track_legacy(track, success, failure);
     }
     const sound = {};
     const song_id = track.id.slice('bitrack_'.length);
@@ -1899,7 +2026,39 @@ class bilibili {
 
   static get_user() {
     return {
-      success: (fn) => fn({ status: 'fail', data: {} }),
+      success: (fn) => {
+        if (
+          typeof MediaService === 'undefined' ||
+          typeof MediaService.getBilibiliAuthState !== 'function'
+        ) {
+          fn({ status: 'fail', data: {} });
+          return;
+        }
+        MediaService.getBilibiliAuthState()
+          .then((response) => {
+            const state = response && response.state;
+            if (
+              !response ||
+              response.ok !== true ||
+              !state ||
+              !state.loggedIn
+            ) {
+              fn({ status: 'fail', data: {} });
+              return;
+            }
+            fn({
+              status: 'success',
+              data: {
+                is_login: true,
+                avatar: state.face || 'images/placeholder.png',
+                nickname: state.uname || '哔哩哔哩用户',
+                vip_type: state.vipType || 0,
+                vip_status: state.vipStatus || 0,
+              },
+            });
+          })
+          .catch(() => fn({ status: 'fail', data: {} }));
+      },
     };
   }
 
@@ -1907,7 +2066,15 @@ class bilibili {
     return `https://www.bilibili.com`;
   }
 
-  static logout() {}
+  static logout() {
+    if (
+      typeof MediaService !== 'undefined' &&
+      typeof MediaService.logoutBilibili === 'function'
+    ) {
+      return MediaService.logoutBilibili();
+    }
+    return Promise.resolve({ ok: false, status: 'unsupported' });
+  }
 
   // return {
   //   show_playlist: bi_show_playlist,

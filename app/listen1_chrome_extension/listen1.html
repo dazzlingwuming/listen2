@@ -59,6 +59,8 @@
     <script type="text/javascript" src="js/provider/localmusic.js"></script>
 
     <script type="text/javascript" src="js/bridge.js"></script>
+    <script type="text/javascript" src="js/bilibili_qr.js"></script>
+    <script type="text/javascript" src="js/bilibili_mv_player.js"></script>
     <script type="text/javascript" src="js/player_thread.js"></script>
     <script type="text/javascript" src="js/myplaylist.js"></script>
     <script type="text/javascript" src="js/loweb.js"></script>
@@ -346,6 +348,46 @@
                             ng-click="openLogin(dialog_data);"
                           >
                             {{_LOGIN_FAIL_RETRY}}
+                          </button>
+                        </div>
+                      </div>
+                      <div class="dialog-bilibili-qr" ng-show="dialog_type==13">
+                        <p class="bilibili-qr-notice">
+                          使用哔哩哔哩手机客户端扫描二维码。登录只会使用账号实际有权访问的音质和画质。
+                        </p>
+                        <div
+                          class="bilibili-qr-frame"
+                          ng-class="{'is-loading': bilibiliQr.status === 'loading'}"
+                        >
+                          <div
+                            class="bilibili-qr-code"
+                            aria-label="哔哩哔哩登录二维码"
+                          ></div>
+                          <span ng-if="bilibiliQr.status === 'loading'"
+                            >正在生成二维码…</span
+                          >
+                        </div>
+                        <p
+                          class="bilibili-qr-status"
+                          ng-class="bilibiliQr.status"
+                        >
+                          {{bilibiliQr.statusText}}
+                          <span ng-if="bilibiliQr.secondsRemaining > 0"
+                            >（{{bilibiliQr.secondsRemaining}} 秒后失效）</span
+                          >
+                        </p>
+                        <div class="buttons">
+                          <button
+                            class="btn btn-primary confirm-button"
+                            ng-click="refreshBilibiliQrLogin()"
+                          >
+                            刷新二维码
+                          </button>
+                          <button
+                            class="btn btn-default"
+                            ng-click="closeDialog()"
+                          >
+                            {{_CANCEL}}
                           </button>
                         </div>
                       </div>
@@ -1637,9 +1679,7 @@
                                     <div class="usercard-info">{{source}}</div>
                                   </div>
 
-                                  <button
-                                    ng-click=" openLogin(source);showDialog(11, source);"
-                                  >
+                                  <button ng-click="launchLogin(source)">
                                     {{_LOGIN}}
                                   </button>
                                 </div>
@@ -1872,6 +1912,15 @@
                               译
                             </div>
                             <div
+                              class="bilibili-mv-switch"
+                              ng-show="canPlayBilibiliMv()"
+                              ng-click="toggleBilibiliMv()"
+                              ng-class="{selected: bilibiliMv.active, loading: bilibiliMv.loading}"
+                              title="{{bilibiliMv.error ? getBilibiliMvErrorText() : '播放 MV'}}"
+                            >
+                              MV
+                            </div>
+                            <div
                               class="close"
                               ng-class="isMac? 'mac':'' "
                               ng-click="popWindow()"
@@ -1903,6 +1952,46 @@
                                     ng-src="{{ currentPlaying.img_url  }}"
                                     err-src="https://y.gtimg.cn/mediastyle/global/img/album_300.png"
                                   />
+                                  <div
+                                    class="bilibili-mv-stage"
+                                    ng-show="bilibiliMv.active || bilibiliMv.loading"
+                                  >
+                                    <video
+                                      class="bilibili-mv-video"
+                                      muted
+                                      playsinline
+                                    ></video>
+                                    <div
+                                      class="bilibili-mv-controls"
+                                      ng-show="bilibiliMv.active"
+                                    >
+                                      <select
+                                        ng-model="bilibiliMv.selectedVariantKey"
+                                        ng-change="changeBilibiliMvQuality()"
+                                        ng-if="bilibiliMv.videoVariants.length > 1"
+                                        aria-label="MV 画质"
+                                      >
+                                        <option
+                                          ng-repeat="variant in bilibiliMv.videoVariants track by variant.key"
+                                          value="{{variant.key}}"
+                                        >
+                                          {{variant.label}} · {{variant.codecs}}
+                                        </option>
+                                      </select>
+                                      <button
+                                        type="button"
+                                        ng-click="toggleBilibiliMvFullscreen()"
+                                      >
+                                        全屏
+                                      </button>
+                                    </div>
+                                    <div
+                                      class="bilibili-mv-loading"
+                                      ng-show="bilibiliMv.loading"
+                                    >
+                                      MV 加载中…
+                                    </div>
+                                  </div>
                                 </div>
                                 <div class="detail-head-title">
                                   <!--<a title="加入收藏" class="clone" ng-click="showDialog(0, currentPlaying)">收藏</a>
@@ -2491,6 +2580,7 @@
                           <h2>{{ backup.id }} {{backup.description}}</h2>
                         </li>
                       </ul>
+                      <!-- modern Bilibili login dialog -->
                       <div class="dialog-open-login" ng-show="dialog_type==11">
                         <p>{{_LOGIN_DIALOG_NOTICE}}</p>
                         <div class="buttons">
@@ -2505,6 +2595,46 @@
                             ng-click="openLogin(dialog_data);"
                           >
                             {{_LOGIN_FAIL_RETRY}}
+                          </button>
+                        </div>
+                      </div>
+                      <div class="dialog-bilibili-qr" ng-show="dialog_type==13">
+                        <p class="bilibili-qr-notice">
+                          使用哔哩哔哩手机客户端扫描二维码。登录只会使用账号实际有权访问的音质和画质。
+                        </p>
+                        <div
+                          class="bilibili-qr-frame"
+                          ng-class="{'is-loading': bilibiliQr.status === 'loading'}"
+                        >
+                          <div
+                            class="bilibili-qr-code"
+                            aria-label="哔哩哔哩登录二维码"
+                          ></div>
+                          <span ng-if="bilibiliQr.status === 'loading'"
+                            >正在生成二维码…</span
+                          >
+                        </div>
+                        <p
+                          class="bilibili-qr-status"
+                          ng-class="bilibiliQr.status"
+                        >
+                          {{bilibiliQr.statusText}}
+                          <span ng-if="bilibiliQr.secondsRemaining > 0"
+                            >（{{bilibiliQr.secondsRemaining}} 秒后失效）</span
+                          >
+                        </p>
+                        <div class="buttons">
+                          <button
+                            class="btn btn-primary confirm-button"
+                            ng-click="refreshBilibiliQrLogin()"
+                          >
+                            刷新二维码
+                          </button>
+                          <button
+                            class="btn btn-default"
+                            ng-click="closeDialog()"
+                          >
+                            {{_CANCEL}}
                           </button>
                         </div>
                       </div>
@@ -4371,7 +4501,7 @@
                               </div>
                               <div ng-show="!is_login(source)">
                                 <div
-                                  ng-click=" openLogin(source);showDialog(11, source);"
+                                  ng-click="launchLogin(source)"
                                   class="usercard"
                                 >
                                   <div class="logoin-icon">
@@ -5019,6 +5149,46 @@
                                   err-src="https://y.gtimg.cn/mediastyle/global/img/album_300.png"
                                   alt="{{ currentPlaying.title || _NOW_PLAYING_STAGE }}"
                                 />
+                                <div
+                                  class="bilibili-mv-stage"
+                                  ng-show="bilibiliMv.active || bilibiliMv.loading"
+                                >
+                                  <video
+                                    class="bilibili-mv-video"
+                                    muted
+                                    playsinline
+                                  ></video>
+                                  <div
+                                    class="bilibili-mv-controls"
+                                    ng-show="bilibiliMv.active"
+                                  >
+                                    <select
+                                      ng-model="bilibiliMv.selectedVariantKey"
+                                      ng-change="changeBilibiliMvQuality()"
+                                      ng-if="bilibiliMv.videoVariants.length > 1"
+                                      aria-label="MV 画质"
+                                    >
+                                      <option
+                                        ng-repeat="variant in bilibiliMv.videoVariants track by variant.key"
+                                        value="{{variant.key}}"
+                                      >
+                                        {{variant.label}} · {{variant.codecs}}
+                                      </option>
+                                    </select>
+                                    <button
+                                      type="button"
+                                      ng-click="toggleBilibiliMvFullscreen()"
+                                    >
+                                      全屏
+                                    </button>
+                                  </div>
+                                  <div
+                                    class="bilibili-mv-loading"
+                                    ng-show="bilibiliMv.loading"
+                                  >
+                                    MV 加载中…
+                                  </div>
+                                </div>
                               </div>
                               <div class="now-playing-copy">
                                 <p class="now-playing-eyebrow">
@@ -5875,6 +6045,15 @@
                                 p-id="1414"
                               ></path>
                             </svg>
+                          </div>
+                          <div
+                            class="bilibili-mv-switch"
+                            ng-show="canPlayBilibiliMv()"
+                            ng-click="toggleBilibiliMv()"
+                            ng-class="{selected: bilibiliMv.active, loading: bilibiliMv.loading, slidedown: window_type=='track'}"
+                            title="{{bilibiliMv.error ? getBilibiliMvErrorText() : '播放 MV'}}"
+                          >
+                            MV
                           </div>
                           <div
                             ng-click="toggleNowPlaying()"

@@ -166,6 +166,192 @@
   background: var(--ui-bg);
 }
 
+/* Bilibili QR login is rendered locally; no third-party QR image endpoint is used. */
+.dialog-bilibili-qr {
+  display: grid;
+  gap: 14px;
+  padding: 2px 4px 6px;
+  text-align: center;
+}
+
+.dialog-bilibili-qr .bilibili-qr-notice {
+  margin: 0;
+  color: var(--text-subtitle-color, #7c8495);
+  font-size: 13px;
+  line-height: 1.55;
+  text-align: left;
+}
+
+.dialog-bilibili-qr .bilibili-qr-frame {
+  display: grid;
+  min-height: 246px;
+  place-items: center;
+  padding: 14px;
+  border: 1px solid var(--line-default-color, rgba(127, 127, 127, 0.2));
+  border-radius: 14px;
+  background: #fff;
+}
+
+.dialog-bilibili-qr .bilibili-qr-frame.is-loading {
+  color: #687184;
+}
+
+.dialog-bilibili-qr .bilibili-qr-code {
+  width: min(222px, 100%);
+  aspect-ratio: 1;
+}
+
+.dialog-bilibili-qr .bilibili-qr-code svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.dialog-bilibili-qr .bilibili-qr-status {
+  min-height: 20px;
+  margin: 0;
+  color: var(--text-subtitle-color, #7c8495);
+  font-size: 13px;
+}
+
+.dialog-bilibili-qr .bilibili-qr-status.scanned {
+  color: #1f9a79;
+}
+
+.dialog-bilibili-qr .bilibili-qr-status.expired,
+.dialog-bilibili-qr .bilibili-qr-status.error {
+  color: #d45b5b;
+}
+
+/* The video is silent by design. Listen2's existing Howler player remains the
+ * sole audio clock, while this surface only follows its position and state. */
+.detail-head-cover {
+  position: relative;
+}
+
+.bilibili-mv-stage {
+  position: absolute;
+  z-index: 12;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  background: #05070d;
+}
+
+.bilibili-mv-video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: #05070d;
+  object-fit: contain;
+}
+
+.bilibili-mv-controls {
+  position: absolute;
+  z-index: 2;
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 9px;
+  background: rgba(5, 7, 13, 0.72);
+  backdrop-filter: blur(10px);
+}
+
+.bilibili-mv-controls select,
+.bilibili-mv-controls button {
+  min-height: 27px;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 12px;
+}
+
+.bilibili-mv-controls select {
+  max-width: 146px;
+  padding: 0 6px;
+}
+
+.bilibili-mv-controls button {
+  padding: 0 8px;
+  cursor: pointer;
+}
+
+.bilibili-mv-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 13px;
+  background: rgba(5, 7, 13, 0.35);
+}
+
+.page .songdetail-wrapper .bilibili-mv-switch {
+  position: absolute;
+  z-index: 14;
+  right: 62px;
+  bottom: 30px;
+  display: flex;
+  width: 32px;
+  height: 22px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  color: #888;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  -webkit-app-region: no-drag;
+}
+
+.page .songdetail-wrapper .bilibili-mv-switch:hover,
+.page .songdetail-wrapper .bilibili-mv-switch.selected {
+  color: var(--theme-color, #7665e8);
+}
+
+.page .songdetail-wrapper .bilibili-mv-switch.loading {
+  animation: bilibili-mv-pulse 1s ease-in-out infinite alternate;
+}
+
+@keyframes bilibili-mv-pulse {
+  from {
+    opacity: 0.5;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.modern-body .bilibili-mv-stage {
+  border-radius: 20px;
+}
+
+.modern-body .bilibili-mv-switch.slidedown {
+  position: static;
+  width: 34px;
+  height: 34px;
+  margin: 0;
+  border-color: transparent;
+  border-radius: 10px;
+  color: var(--stage-muted, var(--ui-muted));
+}
+
+.modern-body .bilibili-mv-switch.slidedown:hover,
+.modern-body .bilibili-mv-switch.slidedown.selected {
+  border-color: var(--stage-border, var(--ui-border));
+  background: var(--stage-surface-hover, var(--ui-surface-hover));
+  color: var(--stage-text, var(--ui-text));
+}
+
 /* Keep first paint pinned to the top while async playlist content settles. */
 .modern-body .main .content .browser,
 .modern-body .editorial-discovery-page {
