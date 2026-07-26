@@ -1890,7 +1890,7 @@ class bilibili {
       .catch(() => failure(sound));
   }
 
-  static bootstrap_track(track, success, failure) {
+  static bootstrap_track(track, success, failure, options = {}) {
     const trackId = String((track && track.id) || '');
     if (trackId.startsWith('bitrack_v_')) {
       if (
@@ -1899,14 +1899,25 @@ class bilibili {
         typeof MediaService !== 'undefined' &&
         typeof MediaService.getBilibiliMediaManifest === 'function'
       ) {
-        return this.get_video_media_manifest(track)
+        return this.get_video_media_manifest(
+          track,
+          options.forceRefresh === true
+        )
           .then((manifest) => {
             const audio = this.select_playable_audio_variant(manifest);
             if (!audio || !audio.url) {
               throw new Error('No compatible Bilibili audio stream.');
             }
+            // Bilibili returns several equivalent CDN routes for the same
+            // stream. Preserve all of them so the player can recover when a
+            // single MCDN node is unavailable.
+            const urlCandidates = [
+              audio.url,
+              ...(Array.isArray(audio.backupUrls) ? audio.backupUrls : []),
+            ].filter(Boolean);
             success({
-              url: audio.url,
+              url: urlCandidates[0],
+              urlCandidates: [...new Set(urlCandidates)],
               bitrate: audio.label || '',
               platform: 'bilibili',
             });

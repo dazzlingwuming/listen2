@@ -29,6 +29,7 @@
       this.index = -1;
       this._loop_mode = 0;
       this._media_uri_list = {};
+      this._media_retry_state = {};
       this.playedFrom = 0;
       this.mode = 'background';
       this.skipTime = 15;
@@ -290,6 +291,7 @@
       this.stopAll(); // stop the loadded track before remove list
       this.playlist = [];
       this.index = -1;
+      this._media_retry_state = {};
       this.resetShuffleState();
       Howler.unload();
       this.sendPlaylistEvent();
@@ -310,6 +312,7 @@
         this.stopAll();
         Howler.unload();
 
+        this._media_retry_state = {};
         this.playlist = list.map((audio) => ({
           ...audio,
           howl: null,
@@ -358,7 +361,91 @@
       }
     }
 
-    retrieveMediaUrl(index, playNow) {
+    getMediaUrlCandidates(bootinfo) {
+      const candidateUrls = [
+        bootinfo && bootinfo.url,
+        ...(Array.isArray(bootinfo && bootinfo.urlCandidates)
+          ? bootinfo.urlCandidates
+          : []),
+      ];
+      return [
+        ...new Set(
+          candidateUrls
+            .map((url) => (typeof url === 'string' ? url.trim() : ''))
+            .filter(Boolean)
+        ),
+      ];
+    }
+
+    setMediaRetryState(track, candidates, options = {}) {
+      if (!track || !track.id) {
+        return;
+      }
+      this._media_retry_state[track.id] = {
+        candidates,
+        candidateIndex: 0,
+        canForceRefresh: options.canForceRefresh === true,
+        forceRefreshAttempted: options.forceRefreshAttempted === true,
+      };
+    }
+
+    clearMediaRetryState(trackId) {
+      delete this._media_retry_state[trackId];
+    }
+
+    unloadTrackHowl(track) {
+      if (track && track.howl && typeof track.howl.unload === 'function') {
+        track.howl.unload();
+      }
+      if (track) {
+        track.howl = null;
+      }
+    }
+
+    handleMediaLoadError(index, data, playNow, error) {
+      if (!data || this.playlist[index] !== data) {
+        return;
+      }
+
+      const retryState = this._media_retry_state[data.id];
+      if (
+        retryState &&
+        retryState.candidateIndex + 1 < retryState.candidates.length
+      ) {
+        retryState.candidateIndex += 1;
+        this.unloadTrackHowl(data);
+        this.setMediaURI(
+          retryState.candidates[retryState.candidateIndex],
+          data.id
+        );
+        this.finishLoad(index, playNow);
+        return;
+      }
+
+      if (
+        retryState &&
+        retryState.canForceRefresh &&
+        !retryState.forceRefreshAttempted
+      ) {
+        retryState.forceRefreshAttempted = true;
+        this.unloadTrackHowl(data);
+        delete this._media_uri_list[data.id];
+        this.retrieveMediaUrl(index, playNow, { forceRefresh: true });
+        return;
+      }
+
+      playerSendMessage(this.mode, {
+        type: 'BG_PLAYER:PLAY_FAILED',
+        data: error,
+      });
+      this.setAudioDisabled(true, index);
+      this.sendPlayingEvent('err');
+      this.unloadTrackHowl(data);
+      delete this._media_uri_list[data.id];
+      this.clearMediaRetryState(data.id);
+    }
+
+    retrieveMediaUrl(index, playNow, options = {}) {
       const msg = {
         type: 'BG_PLAYER:RETRIEVE_URL',
         data: {
@@ -379,7 +466,22 @@
           this.playlist[index].bitrate = bootinfo.bitrate;
           this.playlist[index].platform = bootinfo.platform;
 
-          this.setMediaURI(msg.data.url, msg.data.id);
+          const urlCandidates = this.getMediaUrlCandidates(bootinfo);
+          if (!urlCandidates.length) {
+            this.setAudioDisabled(true, msg.data.index);
+            playerSendMessage(this.mode, {
+              type: 'BG_PLAYER:RETRIEVE_URL_FAIL',
+            });
+            this.skip('next');
+            return;
+          }
+          this.setMediaRetryState(msg.data, urlCandidates, {
+            canForceRefresh:
+              bootinfo.platform === 'bilibili' &&
+              String(msg.data.id || '').startsWith('bitrack_v_'),
+            forceRefreshAttempted: options.forceRefresh === true,
+          });
+          this.setMediaURI(urlCandidates[0], msg.data.id);
           this.setAudioDisabled(false, msg.data.index);
           this.finishLoad(msg.data.index, playNow);
           playerSendMessage(this.mode, msg);
@@ -388,10 +490,12 @@
           msg.type = 'BG_PLAYER:RETRIEVE_URL_FAIL';
 
           this.setAudioDisabled(true, msg.data.index);
+          this.clearMediaRetryState(msg.data.id);
           playerSendMessage(this.mode, msg);
 
           this.skip('next');
-        }
+        },
+        { forceRefresh: options.forceRefresh === true }
       );
     }
 
@@ -483,18 +587,10 @@
           onseek() {},
           onvolume() {},
           onloaderror(id, err) {
-            playerSendMessage(this.mode, {
-              type: 'BG_PLAYER:PLAY_FAILED',
-              data: err,
-            });
-            self.currentAudio.disabled = true;
-            self.sendPlayingEvent('err');
-            self.currentHowl.unload();
-            data.howl = null;
-            delete self._media_uri_list[data.id];
+            self.handleMediaLoadError(index, data, playNow, err);
           },
           onplayerror(id, err) {
-            playerSendMessage(this.mode, {
+            playerSendMessage(self.mode, {
               type: 'BG_PLAYER:PLAY_FAILED',
               data: err,
             });

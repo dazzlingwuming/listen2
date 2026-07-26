@@ -579,7 +579,12 @@ const MediaService = {
     };
   },
 
-  bootstrapTrack(track, playerSuccessCallback, playerFailCallback) {
+  bootstrapTrack(
+    track,
+    playerSuccessCallback,
+    playerFailCallback,
+    bootstrapOptions = {}
+  ) {
     const successCallback = playerSuccessCallback;
     const sound = {};
     function failureCallback() {
@@ -643,7 +648,12 @@ const MediaService = {
 
     const provider = getProviderByName(track.source);
 
-    provider.bootstrap_track(track, successCallback, failureCallback);
+    provider.bootstrap_track(
+      track,
+      successCallback,
+      failureCallback,
+      bootstrapOptions
+    );
   },
 
   login(source, options) {
