@@ -67,7 +67,7 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        gap: 7px;
+        gap: 6px;
       }
       #toolbar .locked {
         display: none;
@@ -76,21 +76,100 @@
       }
       .icon {
         display: inline-flex;
-        min-width: 18px;
-        height: 20px;
+        width: 26px;
+        height: 26px;
         align-items: center;
         justify-content: center;
         padding: 0;
         border: 0;
         border-radius: 6px;
         background: transparent;
+        color: inherit;
         cursor: pointer;
+        transition:
+          background-color 120ms ease,
+          transform 120ms ease,
+          box-shadow 120ms ease;
+      }
+      .icon:hover {
+        background: rgba(255, 255, 255, 0.09);
       }
       .icon:hover .feather {
         stroke: #ffffff;
       }
-      .group-first-icon {
-        margin-left: 5px;
+      .icon:active {
+        transform: scale(0.92);
+      }
+      .icon:focus-visible {
+        outline: 2px solid rgba(77, 225, 210, 0.82);
+        outline-offset: 1px;
+      }
+      .toolbar-section {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 2px;
+      }
+      .toolbar-divider {
+        width: 1px;
+        height: 18px;
+        background: rgba(255, 255, 255, 0.13);
+      }
+      .playback-controls {
+        padding: 1px 2px;
+        border: 1px solid rgba(128, 118, 255, 0.16);
+        border-radius: 9px;
+        background: rgba(92, 80, 190, 0.1);
+      }
+      .playback-control .feather {
+        width: 15px;
+        height: 15px;
+      }
+      .playback-toggle {
+        width: 30px;
+        height: 28px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 8px;
+        background: linear-gradient(
+          135deg,
+          rgba(124, 92, 255, 0.94),
+          rgba(34, 211, 238, 0.88)
+        );
+        box-shadow: 0 4px 12px rgba(88, 80, 220, 0.28);
+      }
+      .playback-toggle:hover {
+        background: linear-gradient(
+          135deg,
+          rgba(139, 107, 255, 1),
+          rgba(45, 225, 242, 0.96)
+        );
+        box-shadow: 0 5px 15px rgba(76, 201, 240, 0.3);
+      }
+      .playback-toggle .feather {
+        width: 16px;
+        height: 16px;
+        stroke: #ffffff;
+      }
+      .playback-toggle .pause-glyph {
+        display: none;
+      }
+      body.player-is-playing .playback-toggle .play-glyph {
+        display: none;
+      }
+      body.player-is-playing .playback-toggle .pause-glyph {
+        display: inline-block;
+      }
+      .appearance-controls .feather {
+        width: 15px;
+        height: 15px;
+      }
+      .appearance-control.is-composite {
+        width: 29px;
+      }
+      .appearance-control.is-composite .feather + .feather {
+        width: 10px;
+        height: 10px;
+        margin-left: -6px;
       }
       #currentLyricAll {
         width: 100%;
@@ -127,6 +206,21 @@
           <symbol id="lock" viewBox="0 0 24 24">
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
             <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </symbol>
+          <symbol id="skip-back" viewBox="0 0 24 24">
+            <polygon points="19 20 9 12 19 4 19 20"></polygon>
+            <line x1="5" y1="19" x2="5" y2="5"></line>
+          </symbol>
+          <symbol id="play" viewBox="0 0 24 24">
+            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+          </symbol>
+          <symbol id="pause" viewBox="0 0 24 24">
+            <line x1="8" y1="5" x2="8" y2="19"></line>
+            <line x1="16" y1="5" x2="16" y2="19"></line>
+          </symbol>
+          <symbol id="skip-forward" viewBox="0 0 24 24">
+            <polygon points="5 4 15 12 5 20 5 4"></polygon>
+            <line x1="19" y1="5" x2="19" y2="19"></line>
           </symbol>
           <symbol id="type" viewBox="0 0 24 24">
             <polyline points="4 7 4 4 20 4 20 7"></polyline>
@@ -182,6 +276,129 @@
         </button>
       </div>
       <div class="unlocked">
+        <div
+          class="toolbar-section playback-controls"
+          role="group"
+          aria-label="播放控制"
+        >
+          <button
+            type="button"
+            class="icon control-action playback-control"
+            id="previous-track-icon"
+            title="上一首"
+            aria-label="上一首"
+            data-msg="float_window_previous"
+          >
+            <svg class="feather">
+              <use href="#skip-back"></use>
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="icon control-action playback-control playback-toggle"
+            id="playback-toggle-icon"
+            title="播放"
+            aria-label="播放"
+            aria-pressed="false"
+            data-msg="float_window_toggle_playback"
+          >
+            <svg class="feather play-glyph">
+              <use href="#play"></use>
+            </svg>
+            <svg class="feather pause-glyph">
+              <use href="#pause"></use>
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="icon control-action playback-control"
+            id="next-track-icon"
+            title="下一首"
+            aria-label="下一首"
+            data-msg="float_window_next"
+          >
+            <svg class="feather">
+              <use href="#skip-forward"></use>
+            </svg>
+          </button>
+        </div>
+        <span class="toolbar-divider" aria-hidden="true"></span>
+        <div
+          class="toolbar-section appearance-controls"
+          role="group"
+          aria-label="歌词样式"
+        >
+          <button
+            type="button"
+            class="icon control-action appearance-control is-composite"
+            id="font-small-icon"
+            title="减小字号"
+            aria-label="减小字号"
+            data-msg="float_window_font_small"
+          >
+            <svg class="feather">
+              <use href="#type"></use>
+            </svg>
+            <svg class="feather">
+              <use href="#minus"></use>
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="icon control-action appearance-control is-composite"
+            id="font-large-icon"
+            title="增大字号"
+            aria-label="增大字号"
+            data-msg="float_window_font_large"
+          >
+            <svg class="feather">
+              <use href="#type"></use>
+            </svg>
+            <svg class="feather">
+              <use href="#plus"></use>
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="icon control-action appearance-control is-composite"
+            title="降低背景不透明度"
+            aria-label="降低背景不透明度"
+            data-msg="float_window_background_dark"
+          >
+            <svg class="feather">
+              <use href="#sun"></use>
+            </svg>
+            <svg class="feather">
+              <use href="#minus"></use>
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="icon control-action appearance-control is-composite"
+            title="提高背景不透明度"
+            aria-label="提高背景不透明度"
+            data-msg="float_window_background_light"
+          >
+            <svg class="feather">
+              <use href="#sun"></use>
+            </svg>
+            <svg class="feather">
+              <use href="#plus"></use>
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="icon control-action appearance-control"
+            title="切换歌词颜色"
+            aria-label="切换歌词颜色"
+            data-msg="float_window_font_change_color"
+          >
+            <svg class="feather">
+              <use href="#aperture"></use>
+            </svg>
+          </button>
+        </div>
+        <span class="toolbar-divider" aria-hidden="true"></span>
         <button
           type="button"
           class="icon window-action"
@@ -193,65 +410,6 @@
             <use href="#lock"></use>
           </svg>
         </button>
-        <a
-          class="icon control-action group-first-icon"
-          id="font-small-icon"
-          title="减小字号"
-          data-msg="float_window_font_small"
-        >
-          <svg class="feather">
-            <use href="#type"></use>
-          </svg>
-          <svg class="feather" style="margin-left: -10px">
-            <use href="#minus"></use>
-          </svg>
-        </a>
-        <a
-          class="icon control-action"
-          id="font-large-icon"
-          title="增大字号"
-          data-msg="float_window_font_large"
-        >
-          <svg class="feather">
-            <use href="#type"></use>
-          </svg>
-          <svg class="feather icon" style="margin-left: -10px">
-            <use href="#plus"></use>
-          </svg>
-        </a>
-        <a
-          class="icon control-action group-first-icon"
-          title="降低背景不透明度"
-          data-msg="float_window_background_dark"
-        >
-          <svg class="feather">
-            <use href="#sun"></use>
-          </svg>
-          <svg class="feather icon" style="margin-left: -10px">
-            <use href="#minus"></use>
-          </svg>
-        </a>
-        <a
-          class="icon control-action"
-          title="提高背景不透明度"
-          data-msg="float_window_background_light"
-        >
-          <svg class="feather">
-            <use href="#sun"></use>
-          </svg>
-          <svg class="feather icon" style="margin-left: -10px">
-            <use href="#plus"></use>
-          </svg>
-        </a>
-        <a
-          class="icon control-action group-first-icon"
-          title="切换歌词颜色"
-          data-msg="float_window_font_change_color"
-        >
-          <svg class="feather">
-            <use href="#aperture"></use>
-          </svg>
-        </a>
       </div>
     </div>
     <script>
@@ -262,6 +420,14 @@
       currentLyricTrans = document.getElementById("currentLyricTrans");
       window.api.onTranslLyric((arg) => {
         currentLyricTrans.innerHTML = arg;
+      });
+      const playbackToggle = document.getElementById("playback-toggle-icon");
+      window.api.onPlaybackState((state) => {
+        const isPlaying = Boolean(state && state.isPlaying);
+        document.body.classList.toggle("player-is-playing", isPlaying);
+        playbackToggle.title = isPlaying ? "暂停" : "播放";
+        playbackToggle.setAttribute("aria-label", isPlaying ? "暂停" : "播放");
+        playbackToggle.setAttribute("aria-pressed", String(isPlaying));
       });
     </script>
     <script>

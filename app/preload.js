@@ -13,4 +13,8 @@ contextBridge.exposeInMainWorld("api", {
     // Deliberately strip event as it includes `sender`
     ipcRenderer.on("currentLyricTrans", (event, ...args) => fn(...args));
   },
+  onPlaybackState: (fn) => {
+    // Deliberately strip event as it includes `sender`
+    ipcRenderer.on("playbackState", (event, state) => fn(state));
+  },
 });

@@ -34,6 +34,7 @@ let floatingWindowCssKey = undefined,
   transparent = false,
   trayIconPath;
 let bilibiliService;
+let playerIsPlaying = false;
 /** @type {electron.BrowserWindow} */
 let mainWindow;
 /** @type {electron.BrowserWindow} */
@@ -643,6 +644,19 @@ function configureFloatingWindowSpaces() {
   keepFloatingWindowAboveOtherWindows();
 }
 
+function sendFloatingWindowPlaybackState() {
+  if (
+    !floatingWindow ||
+    floatingWindow.isDestroyed() ||
+    floatingWindow.webContents.isDestroyed()
+  ) {
+    return;
+  }
+  floatingWindow.webContents.send("playbackState", {
+    isPlaying: playerIsPlaying,
+  });
+}
+
 /**
  * @param {string} cssStyle
  */
@@ -700,6 +714,7 @@ function createFloatingWindow(cssStyle) {
     // NOTICE: setResizable should be set, otherwise mouseleave event won't trigger in windows environment
     floatingWindow.webContents.on("did-finish-load", async () => {
       await updateFloatingWindow(cssStyle);
+      sendFloatingWindowPlaybackState();
     });
     floatingWindow.on("closed", () => {
       floatingWindow = null;
@@ -1097,7 +1112,9 @@ ipcMain.on("trackPlayingNow", (event, track) => {
 });
 
 ipcMain.on("isPlaying", (event, isPlaying) => {
-  isPlaying ? setThumbbarPlay() : setThumbarPause();
+  playerIsPlaying = isPlaying === true;
+  playerIsPlaying ? setThumbbarPlay() : setThumbarPause();
+  sendFloatingWindowPlaybackState();
 });
 
 ipcMain.on("control", async (event, arg, params) => {
@@ -1142,6 +1159,18 @@ ipcMain.on("control", async (event, arg, params) => {
       // rest of the toolbar or lyric surface to intercept clicks.
       floatingWindow?.setIgnoreMouseEvents(true, { forward: true });
       keepFloatingWindowAboveOtherWindows();
+      break;
+
+    case "float_window_previous":
+      mainWindow?.webContents.send("globalShortcut", "left");
+      break;
+
+    case "float_window_toggle_playback":
+      mainWindow?.webContents.send("globalShortcut", "space");
+      break;
+
+    case "float_window_next":
+      mainWindow?.webContents.send("globalShortcut", "right");
       break;
 
     case "float_window_close":
