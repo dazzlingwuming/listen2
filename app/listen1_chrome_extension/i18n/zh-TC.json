@@ -1,4 +1,4 @@
-﻿{
+{
   "HELLO": "你好",
   "_ALL_MUSIC": "所有音樂",
   "_NETEASE_MUSIC": "網易雲音樂",
@@ -205,6 +205,13 @@
   "_LYRIC_CANDIDATE_TRANSLATED": "有翻譯",
   "_LYRIC_TRANSLATION_ENRICHED": "已從 {{source}} 補充同步譯文。",
   "_LYRIC_TRANSLATION_UNAVAILABLE": "目前歌詞來源沒有可用譯文。",
+  "_LYRIC_SAVE_STORAGE_CORRUPTED": "本機歌詞資料已損壞，未覆寫原有歌詞。請先匯出設定後再處理本機資料。",
+  "_LYRIC_SAVE_STORAGE_UNAVAILABLE": "本機歌詞儲存空間無法使用，歌詞沒有儲存。",
+  "_LYRIC_SAVE_STORAGE_WRITE_FAILED": "歌詞沒有儲存：本機儲存空間不足或目前設定檔不可寫入。",
+  "_LYRIC_SAVE_AMBIGUOUS_TRACK": "無法確認目前 B 站影片分 P，為避免套用到其他分集，未儲存歌詞。",
+  "_LYRIC_SAVE_INVALID_SELECTION": "歌詞候選無效，未儲存。",
+  "_LYRIC_SAVE_UNSUPPORTED": "目前歌曲來源不支援儲存手動選擇的歌詞。",
+  "_LYRIC_SAVE_FAILED": "歌詞沒有儲存，請再試一次。",
   "_MACHINE_TRANSLATION_TITLE": "機器翻譯備援",
   "_MACHINE_TRANSLATION_ENABLE": "歌詞來源沒有譯文時，使用 DeepL 翻譯",
   "_MACHINE_TRANSLATION_DESCRIPTION": "僅在所有歌詞來源都沒有譯文時啟用。整首歌詞會一次傳送給 DeepL，再依原時間戳逐行回填。",

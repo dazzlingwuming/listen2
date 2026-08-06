@@ -157,10 +157,7 @@ angular.module('listenone').controller('PlayController', [
     function getTrackLyricOffset(trackId) {
       const value = Number(getLyricOffsets()[trackId]);
       return Number.isFinite(value)
-        ? Math.max(
-            -MAX_LYRIC_OFFSET_MS,
-            Math.min(MAX_LYRIC_OFFSET_MS, value)
-          )
+        ? Math.max(-MAX_LYRIC_OFFSET_MS, Math.min(MAX_LYRIC_OFFSET_MS, value))
         : 0;
     }
 
@@ -268,11 +265,7 @@ angular.module('listenone').controller('PlayController', [
     }
 
     function getMachineTranslationTargetLanguage() {
-      return (
-        i18next.resolvedLanguage ||
-        i18next.language ||
-        'zh-CN'
-      );
+      return i18next.resolvedLanguage || i18next.language || 'zh-CN';
     }
 
     function getMachineTranslationErrorMessage(status) {
@@ -284,16 +277,13 @@ angular.module('listenone').controller('PlayController', [
         'quota-exceeded': '_MACHINE_TRANSLATION_QUOTA_EXCEEDED',
         'rate-limited': '_MACHINE_TRANSLATION_RATE_LIMITED',
         'request-timeout': '_MACHINE_TRANSLATION_TIMEOUT',
-        'line-count-mismatch':
-          '_MACHINE_TRANSLATION_ALIGNMENT_FAILED',
+        'line-count-mismatch': '_MACHINE_TRANSLATION_ALIGNMENT_FAILED',
         'invalid-line-map': '_MACHINE_TRANSLATION_ALIGNMENT_FAILED',
         'missing-line': '_MACHINE_TRANSLATION_ALIGNMENT_FAILED',
         'same-language': '_MACHINE_TRANSLATION_SAME_LANGUAGE',
         disabled: '_MACHINE_TRANSLATION_DISABLED',
       };
-      return i18next.t(
-        messages[status] || '_MACHINE_TRANSLATION_FAILED'
-      );
+      return i18next.t(messages[status] || '_MACHINE_TRANSLATION_FAILED');
     }
 
     function applyMachineTranslationConfigResponse(response) {
@@ -329,13 +319,8 @@ angular.module('listenone').controller('PlayController', [
       const payload = {
         enabled: $scope.machineTranslationConfig.enabled === true,
       };
-      if (
-        String(
-          $scope.machineTranslationConfig.apiKeyInput || ''
-        ).trim()
-      ) {
-        payload.apiKey =
-          $scope.machineTranslationConfig.apiKeyInput.trim();
+      if (String($scope.machineTranslationConfig.apiKeyInput || '').trim()) {
+        payload.apiKey = $scope.machineTranslationConfig.apiKeyInput.trim();
       }
       return MediaService.setMachineTranslationConfig(payload)
         .then((response) => {
@@ -353,23 +338,21 @@ angular.module('listenone').controller('PlayController', [
             }
             $scope.machineTranslationConfig.apiKeyInput = '';
             if (showNotice) {
-              notyf.success(
-                i18next.t('_MACHINE_TRANSLATION_SETTINGS_SAVED')
-              );
+              notyf.success(i18next.t('_MACHINE_TRANSLATION_SETTINGS_SAVED'));
             }
           });
-          return response || {
-            ok: false,
-            status: 'request-failed',
-          };
+          return (
+            response || {
+              ok: false,
+              status: 'request-failed',
+            }
+          );
         })
         .catch(() => {
           $scope.$evalAsync(() => {
             $scope.machineTranslationConfigPending = false;
             if (showNotice) {
-              notyf.error(
-                i18next.t('_MACHINE_TRANSLATION_FAILED')
-              );
+              notyf.error(i18next.t('_MACHINE_TRANSLATION_FAILED'));
             }
           });
           return {
@@ -405,23 +388,17 @@ angular.module('listenone').controller('PlayController', [
           $scope.$evalAsync(() => {
             $scope.machineTranslationConfigPending = false;
             if (!applyMachineTranslationConfigResponse(response)) {
-              notyf.error(
-                i18next.t('_MACHINE_TRANSLATION_FAILED')
-              );
+              notyf.error(i18next.t('_MACHINE_TRANSLATION_FAILED'));
               return;
             }
             $scope.machineTranslationConfig.apiKeyInput = '';
-            notyf.success(
-              i18next.t('_MACHINE_TRANSLATION_KEY_CLEARED')
-            );
+            notyf.success(i18next.t('_MACHINE_TRANSLATION_KEY_CLEARED'));
           });
         })
         .catch(() => {
           $scope.$evalAsync(() => {
             $scope.machineTranslationConfigPending = false;
-            notyf.error(
-              i18next.t('_MACHINE_TRANSLATION_FAILED')
-            );
+            notyf.error(i18next.t('_MACHINE_TRANSLATION_FAILED'));
           });
         });
     };
@@ -435,8 +412,7 @@ angular.module('listenone').controller('PlayController', [
         if (!saveResponse || saveResponse.ok !== true) {
           notyf.error(
             getMachineTranslationErrorMessage(
-              (saveResponse && saveResponse.status) ||
-                'request-failed'
+              (saveResponse && saveResponse.status) || 'request-failed'
             )
           );
           return;
@@ -455,17 +431,13 @@ angular.module('listenone').controller('PlayController', [
                 return;
               }
               $scope.machineTranslationTestResult = response;
-              notyf.success(
-                i18next.t('_MACHINE_TRANSLATION_TEST_SUCCESS')
-              );
+              notyf.success(i18next.t('_MACHINE_TRANSLATION_TEST_SUCCESS'));
             });
           })
           .catch(() => {
             $scope.$evalAsync(() => {
               $scope.machineTranslationConfigPending = false;
-              notyf.error(
-                i18next.t('_MACHINE_TRANSLATION_FAILED')
-              );
+              notyf.error(i18next.t('_MACHINE_TRANSLATION_FAILED'));
             });
           });
       });
@@ -938,34 +910,12 @@ angular.module('listenone').controller('PlayController', [
       }
     };
 
-    function resetLyricDisplay() {
-      $scope.lyricArray = [];
-      $scope.lyricLineNumber = -1;
-      $scope.lyricLineNumberTrans = -1;
-      $scope.hasLyricTranslation = false;
-      $scope.lyricSource = '';
-      $scope.lyricMatchedTrack = '';
-      $scope.lyricTranslationSource = '';
-      $scope.lyricMachineTranslationProvider = '';
-      $scope.currentLyricResult = null;
-      refreshFloatingLyric();
-      const lyricElement =
-        document.querySelector(
-          '.playsong-detail .detail-songinfo .lyric'
-        ) || document.querySelector('.lyric');
-      if (lyricElement) {
-        smoothScrollTo(lyricElement, 0, 300);
-      }
-    }
-
     function getCurrentLyricLine(lineNumber) {
       if (!Array.isArray($scope.lyricArray) || lineNumber < 0) {
         return null;
       }
       return (
-        $scope.lyricArray.find(
-          (line) => line.lineNumber === lineNumber
-        ) || null
+        $scope.lyricArray.find((line) => line.lineNumber === lineNumber) || null
       );
     }
 
@@ -973,9 +923,7 @@ angular.module('listenone').controller('PlayController', [
       if (!isElectron()) {
         return;
       }
-      const currentLine = getCurrentLyricLine(
-        $scope.lyricLineNumber
-      );
+      const currentLine = getCurrentLyricLine($scope.lyricLineNumber);
       const currentTranslation = getCurrentLyricLine(
         $scope.lyricLineNumberTrans
       );
@@ -990,11 +938,27 @@ angular.module('listenone').controller('PlayController', [
       });
     }
 
+    function resetLyricDisplay() {
+      $scope.lyricArray = [];
+      $scope.lyricLineNumber = -1;
+      $scope.lyricLineNumberTrans = -1;
+      $scope.hasLyricTranslation = false;
+      $scope.lyricSource = '';
+      $scope.lyricMatchedTrack = '';
+      $scope.lyricTranslationSource = '';
+      $scope.lyricMachineTranslationProvider = '';
+      $scope.currentLyricResult = null;
+      refreshFloatingLyric();
+      const lyricElement =
+        document.querySelector('.playsong-detail .detail-songinfo .lyric') ||
+        document.querySelector('.lyric');
+      if (lyricElement) {
+        smoothScrollTo(lyricElement, 0, 300);
+      }
+    }
+
     function applyLyricResult(track, result) {
-      if (
-        !$scope.currentPlaying ||
-        $scope.currentPlaying.id !== track.id
-      ) {
+      if (!$scope.currentPlaying || $scope.currentPlaying.id !== track.id) {
         return;
       }
       const safeResult = result || {};
@@ -1010,20 +974,19 @@ angular.module('listenone').controller('PlayController', [
       ]
         .filter(Boolean)
         .join(' · ');
-      $scope.lyricArray = parseLyric(
-        safeResult.lyric,
-        safeResult.tlyric
-      );
+      $scope.lyricArray = parseLyric(safeResult.lyric, safeResult.tlyric);
       $scope.hasLyricTranslation = $scope.lyricArray.some(
         (line) =>
           line.translationFlag === true &&
           String(line.content || '').trim().length > 0
       );
-      $scope.lyricTranslationSource = safeResult.machineTranslated
-        ? 'machine'
-        : $scope.hasLyricTranslation
-          ? 'catalog'
-          : '';
+      let lyricTranslationSource = '';
+      if (safeResult.machineTranslated) {
+        lyricTranslationSource = 'machine';
+      } else if ($scope.hasLyricTranslation) {
+        lyricTranslationSource = 'catalog';
+      }
+      $scope.lyricTranslationSource = lyricTranslationSource;
       $scope.lyricMachineTranslationProvider =
         safeResult.machineTranslationProvider ||
         (safeResult.machineTranslated
@@ -1036,9 +999,7 @@ angular.module('listenone').controller('PlayController', [
       return {
         id: safeResult.candidateId || track.id,
         provider:
-          safeResult.matchedProvider ||
-          safeResult.translationProvider ||
-          '',
+          safeResult.matchedProvider || safeResult.translationProvider || '',
         title: safeResult.matchedTitle || track.title || '',
         artist: safeResult.matchedArtist || track.artist || '',
         album: safeResult.matchedAlbum || track.album || '',
@@ -1049,13 +1010,10 @@ angular.module('listenone').controller('PlayController', [
         selectedProvider: safeResult.selectedProvider || '',
         selectedCandidateId: safeResult.selectedCandidateId || '',
         translationProvider: safeResult.translationProvider || '',
-        translationEnriched:
-          safeResult.translationEnriched === true,
+        translationEnriched: safeResult.translationEnriched === true,
         machineTranslated: safeResult.machineTranslated === true,
-        machineTranslationProvider:
-          safeResult.machineTranslationProvider || '',
-        machineTranslationTarget:
-          safeResult.machineTranslationTarget || '',
+        machineTranslationProvider: safeResult.machineTranslationProvider || '',
+        machineTranslationTarget: safeResult.machineTranslationTarget || '',
         machineTranslationDetectedSource:
           safeResult.machineTranslationDetectedSource || '',
       };
@@ -1076,30 +1034,21 @@ angular.module('listenone').controller('PlayController', [
         matchedProvider: safeCandidate.provider || '',
         candidateId: safeCandidate.id || '',
         selectedProvider: safeCandidate.selectedProvider || '',
-        selectedCandidateId:
-          safeCandidate.selectedCandidateId || '',
-        translationProvider:
-          safeCandidate.translationProvider || '',
-        translationEnriched:
-          safeCandidate.translationEnriched === true,
-        machineTranslated:
-          safeCandidate.machineTranslated === true,
+        selectedCandidateId: safeCandidate.selectedCandidateId || '',
+        translationProvider: safeCandidate.translationProvider || '',
+        translationEnriched: safeCandidate.translationEnriched === true,
+        machineTranslated: safeCandidate.machineTranslated === true,
         machineTranslationProvider:
           safeCandidate.machineTranslationProvider || '',
-        machineTranslationTarget:
-          safeCandidate.machineTranslationTarget || '',
+        machineTranslationTarget: safeCandidate.machineTranslationTarget || '',
         machineTranslationDetectedSource:
           safeCandidate.machineTranslationDetectedSource || '',
-        machineTranslationStatus:
-          safeCandidate.machineTranslationStatus || '',
+        machineTranslationStatus: safeCandidate.machineTranslationStatus || '',
       };
     }
 
     function resolveCandidateTranslation(track, candidate) {
-      return MediaService.enrichManualLyricCandidate(
-        track,
-        candidate
-      )
+      return MediaService.enrichManualLyricCandidate(track, candidate)
         .catch(() => candidate)
         .then((sourceCandidate) => {
           const resolvedCandidate = decorateLyricCandidate(
@@ -1146,12 +1095,45 @@ angular.module('listenone').controller('PlayController', [
       if (candidate.translationEnriched) {
         notyf.success(
           i18next.t('_LYRIC_TRANSLATION_ENRICHED', {
-            source:
-              candidate.translationProvider ||
-              candidate.provider,
+            source: candidate.translationProvider || candidate.provider,
           })
         );
       }
+    }
+
+    function isManualLyricSource(source) {
+      return source === 'manual-selection' || source === 'lrclib-manual';
+    }
+
+    function getLyricStorageFailureMessage(result) {
+      const status = (result && result.status) || '';
+      const messages = {
+        'storage-corrupted': '_LYRIC_SAVE_STORAGE_CORRUPTED',
+        'storage-unavailable': '_LYRIC_SAVE_STORAGE_UNAVAILABLE',
+        'storage-write-failed': '_LYRIC_SAVE_STORAGE_WRITE_FAILED',
+        'ambiguous-track': '_LYRIC_SAVE_AMBIGUOUS_TRACK',
+        'invalid-selection': '_LYRIC_SAVE_INVALID_SELECTION',
+        unsupported: '_LYRIC_SAVE_UNSUPPORTED',
+      };
+      return i18next.t(messages[status] || '_LYRIC_SAVE_FAILED');
+    }
+
+    function saveManualLyricOrNotify(track, candidate) {
+      const result = MediaService.saveManualLyric(track.id, candidate, track);
+      if (!result || result.ok !== true) {
+        notyf.warning(getLyricStorageFailureMessage(result));
+        return false;
+      }
+      return true;
+    }
+
+    function clearManualLyricOrNotify(track) {
+      const result = MediaService.clearManualLyric(track.id, track);
+      if (!result || result.ok !== true) {
+        notyf.warning(getLyricStorageFailureMessage(result));
+        return false;
+      }
+      return true;
     }
 
     function requestCurrentLyricTranslation() {
@@ -1161,7 +1143,8 @@ angular.module('listenone').controller('PlayController', [
         notyf.info(i18next.t('_LYRIC_TRANSLATION_UNAVAILABLE'));
         return;
       }
-      const resolveToken = ++manualLyricResolveToken;
+      manualLyricResolveToken += 1;
+      const resolveToken = manualLyricResolveToken;
       const source = $scope.lyricSource || originalResult.source;
       $scope.lyricTranslationLookupPending = true;
       resolveCandidateTranslation(
@@ -1181,28 +1164,20 @@ angular.module('listenone').controller('PlayController', [
             if (!resolvedCandidate.hasTranslation) {
               notyf.info(
                 getMachineTranslationErrorMessage(
-                  resolvedCandidate.machineTranslationStatus ||
-                    'request-failed'
+                  resolvedCandidate.machineTranslationStatus || 'request-failed'
                 )
               );
               return;
             }
             if (
-              source === 'manual-selection' ||
-              source === 'lrclib-manual'
+              isManualLyricSource(source) &&
+              !saveManualLyricOrNotify(track, resolvedCandidate)
             ) {
-              MediaService.saveManualLyric(
-                track.id,
-                resolvedCandidate
-              );
+              return;
             }
             applyLyricResult(
               track,
-              candidateToLyricResult(
-                resolvedCandidate,
-                originalResult,
-                source
-              )
+              candidateToLyricResult(resolvedCandidate, originalResult, source)
             );
             notifyTranslationResult(resolvedCandidate);
           });
@@ -1224,7 +1199,8 @@ angular.module('listenone').controller('PlayController', [
       }
       manualLyricResolveToken += 1;
       $scope.lyricTranslationLookupPending = false;
-      const requestToken = ++lyricRequestToken;
+      lyricRequestToken += 1;
+      const requestToken = lyricRequestToken;
       resetLyricDisplay();
       MediaService.getLyric(
         track.id,
@@ -1273,12 +1249,15 @@ angular.module('listenone').controller('PlayController', [
                 if (!resolvedCandidate.hasTranslation) {
                   return;
                 }
+                if (
+                  isManualLyricSource(result.source) &&
+                  !saveManualLyricOrNotify(track, resolvedCandidate)
+                ) {
+                  return;
+                }
                 applyLyricResult(
                   track,
-                  candidateToLyricResult(
-                    resolvedCandidate,
-                    result
-                  )
+                  candidateToLyricResult(resolvedCandidate, result)
                 );
               });
             })
@@ -1389,7 +1368,8 @@ angular.module('listenone').controller('PlayController', [
         $scope.lyricSearchPending = false;
         return;
       }
-      const searchToken = ++lyricSearchToken;
+      lyricSearchToken += 1;
+      const searchToken = lyricSearchToken;
       const trackId = track.id;
       const candidatesById = new Map();
       let completedRequests = 0;
@@ -1400,8 +1380,7 @@ angular.module('listenone').controller('PlayController', [
 
       const requests = [
         () => MediaService.searchLyricCandidates(track, query),
-        () =>
-          MediaService.searchSupplementalLyricCandidates(track, query),
+        () => MediaService.searchSupplementalLyricCandidates(track, query),
       ];
       const settleRequest = (results, failed) => {
         completedRequests += 1;
@@ -1426,19 +1405,15 @@ angular.module('listenone').controller('PlayController', [
           ) {
             return;
           }
-          $scope.lyricSearchResults = Array.from(
-            candidatesById.values()
-          );
+          $scope.lyricSearchResults = Array.from(candidatesById.values());
           $scope.lyricSearchResults.sort(compareLyricCandidates);
-          $scope.lyricSearchPending =
-            completedRequests < requests.length;
+          $scope.lyricSearchPending = completedRequests < requests.length;
           if ($scope.lyricSearchResults.length > 0) {
             $scope.lyricSearchState = 'results';
           } else if ($scope.lyricSearchPending) {
             $scope.lyricSearchState = 'loading';
           } else {
-            $scope.lyricSearchState =
-              failedRequests > 0 ? 'error' : 'empty';
+            $scope.lyricSearchState = failedRequests > 0 ? 'error' : 'empty';
           }
         });
       };
@@ -1457,19 +1432,20 @@ angular.module('listenone').controller('PlayController', [
         return;
       }
       const selectedCandidate = decorateLyricCandidate(candidate);
-      const resolveToken = ++manualLyricResolveToken;
+      if (!saveManualLyricOrNotify(track, selectedCandidate)) {
+        return;
+      }
+      manualLyricResolveToken += 1;
+      const resolveToken = manualLyricResolveToken;
       lyricRequestToken += 1;
-      MediaService.saveManualLyric(track.id, selectedCandidate);
       applyLyricResult(track, {
         lyric: selectedCandidate.lyric,
         tlyric: selectedCandidate.tlyric || '',
         source: 'manual-selection',
         matchedTitle: selectedCandidate.title,
         matchedArtist: selectedCandidate.artist,
-        translationProvider:
-          selectedCandidate.translationProvider || '',
-        machineTranslated:
-          selectedCandidate.machineTranslated === true,
+        translationProvider: selectedCandidate.translationProvider || '',
+        machineTranslated: selectedCandidate.machineTranslated === true,
         machineTranslationProvider:
           selectedCandidate.machineTranslationProvider || '',
       });
@@ -1504,7 +1480,9 @@ angular.module('listenone').controller('PlayController', [
               }
               return;
             }
-            MediaService.saveManualLyric(track.id, enrichedCandidate);
+            if (!saveManualLyricOrNotify(track, enrichedCandidate)) {
+              return;
+            }
             applyLyricResult(
               track,
               candidateToLyricResult(
@@ -1523,9 +1501,7 @@ angular.module('listenone').controller('PlayController', [
             }
             $scope.lyricTranslationLookupPending = false;
             if ($scope.enableLyricTranslation) {
-              notyf.info(
-                i18next.t('_MACHINE_TRANSLATION_FAILED')
-              );
+              notyf.info(i18next.t('_MACHINE_TRANSLATION_FAILED'));
             }
           });
         });
@@ -1538,7 +1514,9 @@ angular.module('listenone').controller('PlayController', [
       }
       manualLyricResolveToken += 1;
       $scope.lyricTranslationLookupPending = false;
-      MediaService.clearManualLyric(track.id);
+      if (!clearManualLyricOrNotify(track)) {
+        return;
+      }
       $scope.closeLyricPicker();
       requestTrackLyric(track);
     };
@@ -1607,14 +1585,12 @@ angular.module('listenone').controller('PlayController', [
               }
             });
             const originalLineChanged =
-              lastObject &&
-              lastObject.lineNumber !== $scope.lyricLineNumber;
+              lastObject && lastObject.lineNumber !== $scope.lyricLineNumber;
             const nextTranslationLineNumber = lastObjectTrans
               ? lastObjectTrans.lineNumber
               : -1;
             const translationLineChanged =
-              nextTranslationLineNumber !==
-              $scope.lyricLineNumberTrans;
+              nextTranslationLineNumber !== $scope.lyricLineNumberTrans;
 
             if (originalLineChanged) {
               const lineElement = document.querySelector(
@@ -1628,23 +1604,19 @@ angular.module('listenone').controller('PlayController', [
                 let windowHeight = lyricElement.offsetHeight;
                 if (useModernTheme()) {
                   windowHeight =
-                    document.querySelector('body').offsetHeight -
-                    100;
+                    document.querySelector('body').offsetHeight - 100;
                 }
 
                 const adjustOffset = 30;
                 const offset =
-                  lineElement.offsetTop -
-                  windowHeight / 2 +
-                  adjustOffset;
+                  lineElement.offsetTop - windowHeight / 2 + adjustOffset;
                 smoothScrollTo(lyricElement, offset, 500);
               }
 
               $scope.lyricLineNumber = lastObject.lineNumber;
             }
             if (translationLineChanged) {
-              $scope.lyricLineNumberTrans =
-                nextTranslationLineNumber;
+              $scope.lyricLineNumberTrans = nextTranslationLineNumber;
             }
             if (originalLineChanged || translationLineChanged) {
               refreshFloatingLyric();

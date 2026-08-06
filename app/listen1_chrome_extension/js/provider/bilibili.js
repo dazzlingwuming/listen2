@@ -18,6 +18,7 @@ const BILIBILI_AUDIO_QUALITY_LABELS = {
   30251: 'Hi-Res / FLAC',
 };
 const BILIBILI_MANUAL_LYRIC_STORAGE_KEY = 'bilibili-manual-lyrics';
+const BILIBILI_MANUAL_LYRIC_STORAGE_VERSION = 2;
 const BILIBILI_AUTO_LYRIC_MATCH_THRESHOLD = 0.88;
 const LRCLIB_CLIENT_ID =
   'Listen1 v2.33.0 (https://github.com/listen1/listen1_chrome_extension)';
@@ -63,30 +64,228 @@ class bilibili {
     }
   }
 
-  static get_manual_lyric_selections() {
+  static create_manual_lyric_store() {
+    return {
+      version: BILIBILI_MANUAL_LYRIC_STORAGE_VERSION,
+      records: {},
+      aliases: {},
+    };
+  }
+
+  static is_manual_lyric_record(value) {
+    return (
+      value &&
+      typeof value === 'object' &&
+      typeof value.lyric === 'string' &&
+      value.lyric.trim().length > 0
+    );
+  }
+
+  static normalize_manual_lyric_store(value) {
+    const emptyStore = this.create_manual_lyric_store();
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return {
+        ok: false,
+        status: 'storage-corrupted',
+        store: emptyStore,
+      };
+    }
+
+    if (value.version === BILIBILI_MANUAL_LYRIC_STORAGE_VERSION) {
+      if (
+        !value.records ||
+        typeof value.records !== 'object' ||
+        Array.isArray(value.records) ||
+        (value.aliases !== undefined &&
+          (!value.aliases ||
+            typeof value.aliases !== 'object' ||
+            Array.isArray(value.aliases)))
+      ) {
+        return {
+          ok: false,
+          status: 'storage-corrupted',
+          store: emptyStore,
+        };
+      }
+      const records = {};
+      Object.keys(value.records).forEach((key) => {
+        if (this.is_manual_lyric_record(value.records[key])) {
+          records[key] = value.records[key];
+        }
+      });
+      const aliases = {};
+      Object.keys(value.aliases || {}).forEach((alias) => {
+        const target = value.aliases[alias];
+        if (typeof target === 'string' && records[target]) {
+          aliases[alias] = target;
+        }
+      });
+      return {
+        ok: true,
+        store: {
+          version: BILIBILI_MANUAL_LYRIC_STORAGE_VERSION,
+          records,
+          aliases,
+        },
+      };
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(value, 'version') ||
+      Object.prototype.hasOwnProperty.call(value, 'records') ||
+      Object.prototype.hasOwnProperty.call(value, 'aliases')
+    ) {
+      return {
+        ok: false,
+        status: 'storage-corrupted',
+        store: emptyStore,
+      };
+    }
+
+    const records = {};
+    Object.keys(value).forEach((key) => {
+      if (this.is_manual_lyric_record(value[key])) {
+        records[key] = value[key];
+      }
+    });
+    return {
+      ok: true,
+      migrated: true,
+      store: {
+        version: BILIBILI_MANUAL_LYRIC_STORAGE_VERSION,
+        records,
+        aliases: {},
+      },
+    };
+  }
+
+  static read_manual_lyric_store() {
+    let rawValue = null;
     try {
-      const stored = JSON.parse(
-        localStorage.getItem(BILIBILI_MANUAL_LYRIC_STORAGE_KEY) || '{}'
-      );
-      return stored && typeof stored === 'object' ? stored : {};
+      rawValue = localStorage.getItem(BILIBILI_MANUAL_LYRIC_STORAGE_KEY);
     } catch (error) {
-      return {};
+      return {
+        ok: false,
+        status: 'storage-unavailable',
+        store: this.create_manual_lyric_store(),
+      };
+    }
+    if (rawValue === null || rawValue === '') {
+      return {
+        ok: true,
+        store: this.create_manual_lyric_store(),
+      };
+    }
+    try {
+      return this.normalize_manual_lyric_store(JSON.parse(rawValue));
+    } catch (error) {
+      return {
+        ok: false,
+        status: 'storage-corrupted',
+        store: this.create_manual_lyric_store(),
+      };
     }
   }
 
-  static get_manual_lyric(trackId) {
-    const selection = this.get_manual_lyric_selections()[trackId];
-    return selection && typeof selection.lyric === 'string'
-      ? selection
+  static write_manual_lyric_store(store) {
+    try {
+      localStorage.setItem(
+        BILIBILI_MANUAL_LYRIC_STORAGE_KEY,
+        JSON.stringify(store)
+      );
+      return { ok: true, status: 'saved' };
+    } catch (error) {
+      return { ok: false, status: 'storage-write-failed' };
+    }
+  }
+
+  static get_manual_lyric_selections() {
+    const result = this.read_manual_lyric_store();
+    return result.ok ? result.store.records : {};
+  }
+
+  static get_manual_lyric_page(trackInfo = {}) {
+    const sourceUrl = String(trackInfo.sourceUrl || trackInfo.source_url || '');
+    const match = /[?&]p=(\d+)/.exec(sourceUrl);
+    const page = match ? Number(match[1]) : 0;
+    return Number.isInteger(page) && page > 0 ? page : 0;
+  }
+
+  static get_manual_lyric_identity(trackId, trackInfo = {}) {
+    const safeTrackId = String(trackId || '');
+    const idParts = this.get_video_id_parts(safeTrackId);
+    if (!idParts || !idParts.bvid) {
+      return {
+        key: safeTrackId,
+        isReliable: Boolean(safeTrackId),
+        canUseDefaultPageAlias: false,
+        shouldCreateDefaultPageAlias: false,
+      };
+    }
+
+    const defaultPageKey = `bitrack_v_${idParts.bvid}`;
+    const hasCid = Number.isFinite(idParts.cid) && idParts.cid > 0;
+    const page = this.get_manual_lyric_page(trackInfo);
+    if (!hasCid && page > 1) {
+      return {
+        key: safeTrackId,
+        isReliable: false,
+        canUseDefaultPageAlias: false,
+        shouldCreateDefaultPageAlias: false,
+      };
+    }
+
+    // The existing video resolver maps a no-CID video ID to pages[0]. A
+    // contradictory ?p=2+ URL has no stable CID, so it is rejected above
+    // instead of risking a lyric alias across different parts.
+    const isDefaultPageTrack = !hasCid && (page === 0 || page === 1);
+    const isExplicitFirstPage = hasCid && page === 1;
+    return {
+      key: hasCid ? `bitrack_v_${idParts.bvid}-${idParts.cid}` : defaultPageKey,
+      defaultPageKey,
+      isReliable: true,
+      canUseDefaultPageAlias: isDefaultPageTrack || isExplicitFirstPage,
+      shouldCreateDefaultPageAlias: isExplicitFirstPage,
+    };
+  }
+
+  static find_manual_lyric_record(store, identity) {
+    if (!identity || !identity.isReliable) {
+      return null;
+    }
+    const direct = store.records[identity.key];
+    if (this.is_manual_lyric_record(direct)) {
+      return { key: identity.key, record: direct };
+    }
+    if (!identity.canUseDefaultPageAlias || !identity.defaultPageKey) {
+      return null;
+    }
+    const aliasTarget = store.aliases[identity.defaultPageKey];
+    const aliasedRecord = aliasTarget && store.records[aliasTarget];
+    if (this.is_manual_lyric_record(aliasedRecord)) {
+      return { key: aliasTarget, record: aliasedRecord };
+    }
+    const legacyDefaultPageRecord = store.records[identity.defaultPageKey];
+    return this.is_manual_lyric_record(legacyDefaultPageRecord)
+      ? {
+          key: identity.defaultPageKey,
+          record: legacyDefaultPageRecord,
+        }
       : null;
   }
 
-  static save_manual_lyric(trackId, candidate) {
-    if (!trackId || !candidate || !candidate.lyric) {
-      return;
+  static get_manual_lyric(trackId, trackInfo = {}) {
+    const readResult = this.read_manual_lyric_store();
+    if (!readResult.ok) {
+      return null;
     }
-    const selections = this.get_manual_lyric_selections();
-    selections[trackId] = {
+    const identity = this.get_manual_lyric_identity(trackId, trackInfo);
+    const found = this.find_manual_lyric_record(readResult.store, identity);
+    return found ? found.record : null;
+  }
+
+  static build_manual_lyric_record(candidate) {
+    return {
       lyric: candidate.lyric,
       tlyric: candidate.tlyric || '',
       source: 'manual-selection',
@@ -101,37 +300,147 @@ class bilibili {
       translationProvider: candidate.translationProvider || '',
       translationEnriched: candidate.translationEnriched === true,
       machineTranslated: candidate.machineTranslated === true,
-      machineTranslationProvider:
-        candidate.machineTranslationProvider || '',
-      machineTranslationTarget:
-        candidate.machineTranslationTarget || '',
+      machineTranslationProvider: candidate.machineTranslationProvider || '',
+      machineTranslationTarget: candidate.machineTranslationTarget || '',
       machineTranslationDetectedSource:
         candidate.machineTranslationDetectedSource || '',
       selectedAt: Date.now(),
     };
-    const trackIds = Object.keys(selections).sort(
-      (left, right) =>
-        Number(selections[left].selectedAt || 0) -
-        Number(selections[right].selectedAt || 0)
-    );
-    while (trackIds.length > 40) {
-      delete selections[trackIds.shift()];
-    }
-    localStorage.setItem(
-      BILIBILI_MANUAL_LYRIC_STORAGE_KEY,
-      JSON.stringify(selections)
-    );
-    bilibiliLyricCache.delete(trackId);
   }
 
-  static clear_manual_lyric(trackId) {
-    const selections = this.get_manual_lyric_selections();
-    delete selections[trackId];
-    localStorage.setItem(
-      BILIBILI_MANUAL_LYRIC_STORAGE_KEY,
-      JSON.stringify(selections)
+  static invalidate_manual_lyric_cache(
+    trackId,
+    recordKey,
+    identity = {},
+    aliasMappings = []
+  ) {
+    const cacheKeys = new Set();
+    [trackId, recordKey, identity.key, identity.defaultPageKey].forEach(
+      (key) => {
+        if (typeof key === 'string' && key) {
+          cacheKeys.add(key);
+        }
+      }
     );
-    bilibiliLyricCache.delete(trackId);
+
+    const aliasEntries = [];
+    (Array.isArray(aliasMappings) ? aliasMappings : []).forEach((aliases) => {
+      if (!aliases || typeof aliases !== 'object') {
+        return;
+      }
+      Object.keys(aliases).forEach((alias) => {
+        const target = aliases[alias];
+        if (typeof target === 'string' && target) {
+          aliasEntries.push([alias, target]);
+        }
+      });
+    });
+
+    // A no-CID page ID and its canonical CID record can both be cache keys.
+    // Walk linked aliases so replacing or removing an alias cannot leave an
+    // automatic lyric cached under either side of the relationship.
+    let addedRelatedKey = true;
+    while (addedRelatedKey) {
+      addedRelatedKey = false;
+      for (
+        let entryIndex = 0;
+        entryIndex < aliasEntries.length;
+        entryIndex += 1
+      ) {
+        const [alias, target] = aliasEntries[entryIndex];
+        if (cacheKeys.has(alias) || cacheKeys.has(target)) {
+          if (!cacheKeys.has(alias)) {
+            cacheKeys.add(alias);
+            addedRelatedKey = true;
+          }
+          if (!cacheKeys.has(target)) {
+            cacheKeys.add(target);
+            addedRelatedKey = true;
+          }
+        }
+      }
+    }
+    cacheKeys.forEach((key) => bilibiliLyricCache.delete(key));
+  }
+
+  static save_manual_lyric(trackId, candidate, trackInfo = {}) {
+    if (!trackId || !candidate || !candidate.lyric) {
+      return { ok: false, status: 'invalid-selection' };
+    }
+    const readResult = this.read_manual_lyric_store();
+    if (!readResult.ok) {
+      return { ok: false, status: readResult.status };
+    }
+    const identity = this.get_manual_lyric_identity(trackId, trackInfo);
+    if (!identity.isReliable) {
+      return { ok: false, status: 'ambiguous-track' };
+    }
+    const { store } = readResult;
+    const aliasesBeforeSave = { ...store.aliases };
+    let recordKey = identity.key;
+    if (identity.defaultPageKey && !identity.shouldCreateDefaultPageAlias) {
+      const aliasTarget = store.aliases[identity.defaultPageKey];
+      if (
+        aliasTarget &&
+        this.is_manual_lyric_record(store.records[aliasTarget])
+      ) {
+        recordKey = aliasTarget;
+      }
+    }
+    if (identity.shouldCreateDefaultPageAlias) {
+      const legacyDefaultPageRecord = store.records[identity.defaultPageKey];
+      if (legacyDefaultPageRecord && recordKey !== identity.defaultPageKey) {
+        delete store.records[identity.defaultPageKey];
+      }
+      recordKey = identity.key;
+      store.aliases[identity.defaultPageKey] = recordKey;
+    }
+    store.records[recordKey] = this.build_manual_lyric_record(candidate);
+    const writeResult = this.write_manual_lyric_store(store);
+    if (!writeResult.ok) {
+      return writeResult;
+    }
+    this.invalidate_manual_lyric_cache(trackId, recordKey, identity, [
+      aliasesBeforeSave,
+      store.aliases,
+    ]);
+    return {
+      ok: true,
+      status: 'saved',
+      recordKey,
+      migrated: readResult.migrated === true,
+    };
+  }
+
+  static clear_manual_lyric(trackId, trackInfo = {}) {
+    const readResult = this.read_manual_lyric_store();
+    if (!readResult.ok) {
+      return { ok: false, status: readResult.status };
+    }
+    const identity = this.get_manual_lyric_identity(trackId, trackInfo);
+    const aliasesBeforeClear = { ...readResult.store.aliases };
+    const found = this.find_manual_lyric_record(readResult.store, identity);
+    if (!found) {
+      this.invalidate_manual_lyric_cache(trackId, identity.key, identity, [
+        aliasesBeforeClear,
+      ]);
+      return { ok: true, status: 'not-found' };
+    }
+    delete readResult.store.records[found.key];
+    Object.keys(readResult.store.aliases).forEach((alias) => {
+      if (readResult.store.aliases[alias] === found.key) {
+        delete readResult.store.aliases[alias];
+      }
+    });
+    const writeResult = this.write_manual_lyric_store(readResult.store);
+    if (!writeResult.ok) {
+      return writeResult;
+    }
+    this.invalidate_manual_lyric_cache(trackId, found.key, identity, [
+      aliasesBeforeClear,
+      readResult.store.aliases,
+    ]);
+    return { ok: true, status: 'cleared' };
   }
 
   static format_lrc_time(seconds) {
@@ -172,14 +481,14 @@ class bilibili {
   static clean_music_title(value) {
     return this.htmlDecode(String(value || ''))
       .replace(
-        /[【\[][^】\]]*(?:4k|8k|hdr|hi-?res|无损|修复|画质|音质|字幕|歌词|完整版|收藏级|珍藏|超清)[^】\]]*[】\]]/gi,
+        /(?:【|\u005B)[^】\u005D]*(?:4k|8k|hdr|hi-?res|无损|修复|画质|音质|字幕|歌词|完整版|收藏级|珍藏|超清)[^】\u005D]*(?:】|\u005D)/gi,
         ' '
       )
       .replace(
         /[（(][^）)]*(?:4k|8k|hdr|hi-?res|无损|修复|画质|音质|字幕|完整版)[^）)]*[）)]/gi,
         ' '
       )
-      .replace(/[《》「」『』“”"'【】\[\]]/g, ' ')
+      .replace(/[《》「」『』“”"'【】\u005B\u005D]/g, ' ')
       .replace(
         /(?:\b(?:mv|pv|amv|official|video|audio)\b|\b\d{3,4}p\b|\b\d{2,3}fps\b|官方|完整版|高清|超清|修复版|重制版|歌词版|中字|单曲循环)/gi,
         ' '
@@ -200,7 +509,10 @@ class bilibili {
     return String(value || '')
       .normalize('NFKC')
       .toLowerCase()
-      .replace(/[\s·•,，。.!！?？:：;；'"“”‘’()（）[\]【】《》<>_\-/\\|｜]+/g, '');
+      .replace(
+        /[\s·•,，。.!！?？:：;；'"“”‘’()（）[\]【】《》<>_\-/\\|｜]+/g,
+        ''
+      );
   }
 
   static dice_similarity(leftValue, rightValue) {
@@ -245,9 +557,7 @@ class bilibili {
       if (
         cleaned &&
         normalized.length >= 2 &&
-        !variants.some(
-          (item) => this.normalize_match_text(item) === normalized
-        )
+        !variants.some((item) => this.normalize_match_text(item) === normalized)
       ) {
         variants.push(cleaned);
       }
@@ -302,9 +612,9 @@ class bilibili {
       }
     }
 
-    const candidateVersionText = `${item.NAME || ''} ${
-      item.SONGNAME || ''
-    } ${item.SUFFIX || ''} ${item.ALIAS || ''}`;
+    const candidateVersionText = `${item.NAME || ''} ${item.SONGNAME || ''} ${
+      item.SUFFIX || ''
+    } ${item.ALIAS || ''}`;
     const versionPenalty =
       this.has_version_marker(candidateVersionText) &&
       !this.has_version_marker(hints.rawTitle)
@@ -419,8 +729,7 @@ class bilibili {
             }
           )
           .then((signedResponse) => {
-            const signedResult =
-              this.get_player_music_metadata(signedResponse);
+            const signedResult = this.get_player_music_metadata(signedResponse);
             return {
               bgmTitle: signedResult.bgmTitle || result.bgmTitle,
             };
@@ -486,11 +795,7 @@ class bilibili {
           payload.data &&
           payload.data.song &&
           payload.data.song.list;
-        if (
-          !payload ||
-          Number(payload.code) !== 0 ||
-          !Array.isArray(items)
-        ) {
+        if (!payload || Number(payload.code) !== 0 || !Array.isArray(items)) {
           throw new Error('QQ lyric search returned an invalid response');
         }
         return items;
@@ -543,8 +848,7 @@ class bilibili {
       {
         NAME: item.name || item.songname,
         SONGNAME: item.name || item.songname,
-        ARTIST:
-          item.singer && item.singer[0] ? item.singer[0].name : '',
+        ARTIST: item.singer && item.singer[0] ? item.singer[0].name : '',
         ALBUM: item.album ? item.album.name : item.albumname,
         DURATION: item.interval,
       },
@@ -590,13 +894,8 @@ class bilibili {
               id: `qq_${songMid}`,
               provider: 'QQ',
               title: item.name || item.songname || '',
-              artist:
-                item.singer && item.singer[0]
-                  ? item.singer[0].name
-                  : '',
-              album: item.album
-                ? item.album.name || ''
-                : item.albumname || '',
+              artist: item.singer && item.singer[0] ? item.singer[0].name : '',
+              album: item.album ? item.album.name || '' : item.albumname || '',
               duration: this.parse_duration(item.interval),
               lyric: lyricResult.lyric,
               tlyric: lyricResult.tlyric,
@@ -611,9 +910,7 @@ class bilibili {
         if (fulfilled.length === 0) {
           throw new Error('QQ lyric requests failed');
         }
-        return fulfilled
-          .map((result) => result.value)
-          .filter(Boolean);
+        return fulfilled.map((result) => result.value).filter(Boolean);
       });
     });
   }
@@ -622,8 +919,7 @@ class bilibili {
     return this.search_qq_lyric_candidates(hints)
       .then((candidates) => {
         const candidate = candidates.find(
-          (item) =>
-            item.matchScore >= BILIBILI_AUTO_LYRIC_MATCH_THRESHOLD
+          (item) => item.matchScore >= BILIBILI_AUTO_LYRIC_MATCH_THRESHOLD
         );
         if (!candidate) {
           return { lyric: '' };
@@ -672,12 +968,9 @@ class bilibili {
       })
       .then((response) => {
         const payload = this.parse_json_payload(response.data);
-        const items =
-          payload && payload.result && payload.result.songs;
+        const items = payload && payload.result && payload.result.songs;
         if (!Array.isArray(items)) {
-          throw new Error(
-            'NetEase lyric search returned an invalid response'
-          );
+          throw new Error('NetEase lyric search returned an invalid response');
         }
         return items;
       })
@@ -752,11 +1045,7 @@ class bilibili {
         .filter((item) => item && item.id)
         .map((item, index) => ({
           item,
-          scored: this.score_netease_candidate(
-            item,
-            scoringHints,
-            index
-          ),
+          scored: this.score_netease_candidate(item, scoringHints, index),
         }))
         .filter((candidate) => candidate.scored.score >= 0.3)
         .sort((left, right) => right.scored.score - left.scored.score)
@@ -766,25 +1055,23 @@ class bilibili {
       }
       return Promise.allSettled(
         scoredCandidates.map((candidate) =>
-          this.fetch_netease_lyric(candidate.item.id).then(
-            (lyricResult) => {
-              if (!lyricResult) {
-                return null;
-              }
-              const { item, scored } = candidate;
-              return {
-                id: `netease_${item.id}`,
-                provider: '网易云',
-                title: item.name || '',
-                artist: this.get_netease_artist(item),
-                album: this.get_netease_album(item),
-                duration: scored.candidateDuration,
-                lyric: lyricResult.lyric,
-                tlyric: lyricResult.tlyric,
-                matchScore: scored.score,
-              };
+          this.fetch_netease_lyric(candidate.item.id).then((lyricResult) => {
+            if (!lyricResult) {
+              return null;
             }
-          )
+            const { item, scored } = candidate;
+            return {
+              id: `netease_${item.id}`,
+              provider: '网易云',
+              title: item.name || '',
+              artist: this.get_netease_artist(item),
+              album: this.get_netease_album(item),
+              duration: scored.candidateDuration,
+              lyric: lyricResult.lyric,
+              tlyric: lyricResult.tlyric,
+              matchScore: scored.score,
+            };
+          })
         )
       ).then((results) => {
         const fulfilled = results.filter(
@@ -793,9 +1080,7 @@ class bilibili {
         if (fulfilled.length === 0) {
           throw new Error('NetEase lyric requests failed');
         }
-        return fulfilled
-          .map((result) => result.value)
-          .filter(Boolean);
+        return fulfilled.map((result) => result.value).filter(Boolean);
       });
     });
   }
@@ -817,17 +1102,13 @@ class bilibili {
       .then((candidates) => {
         const eligible = candidates
           .filter(
-            (item) =>
-              item.matchScore >= BILIBILI_AUTO_LYRIC_MATCH_THRESHOLD
+            (item) => item.matchScore >= BILIBILI_AUTO_LYRIC_MATCH_THRESHOLD
           )
           .sort((left, right) => {
             const translationDifference =
               Number(this.has_meaningful_lyric(right.tlyric)) -
               Number(this.has_meaningful_lyric(left.tlyric));
-            return (
-              translationDifference ||
-              right.matchScore - left.matchScore
-            );
+            return translationDifference || right.matchScore - left.matchScore;
           });
         const candidate = eligible[0];
         if (!candidate) {
@@ -856,15 +1137,12 @@ class bilibili {
       const candidates = results
         .filter(
           (result) =>
-            result.status === 'fulfilled' &&
-            result.value &&
-            result.value.lyric
+            result.status === 'fulfilled' && result.value && result.value.lyric
         )
         .map((result) => result.value)
         .sort(
           (left, right) =>
-            Number(right.matchScore || 0) -
-            Number(left.matchScore || 0)
+            Number(right.matchScore || 0) - Number(left.matchScore || 0)
         );
       if (candidates.length === 0) {
         return { lyric: '' };
@@ -896,8 +1174,7 @@ class bilibili {
         )
         .sort(
           (left, right) =>
-            Number(right.matchScore || 0) -
-            Number(left.matchScore || 0)
+            Number(right.matchScore || 0) - Number(left.matchScore || 0)
         );
       return candidates[0] || null;
     });
@@ -950,9 +1227,7 @@ class bilibili {
     return String(value || '')
       .split('\n')
       .map((line) =>
-        line
-          .replace(/<\d{2,}:\d{2}(?:\.\d{1,3})?>/g, '')
-          .replace(/\s+$/g, '')
+        line.replace(/<\d{2,}:\d{2}(?:\.\d{1,3})?>/g, '').replace(/\s+$/g, '')
       )
       .join('\n');
   }
@@ -1012,21 +1287,16 @@ class bilibili {
     const explicitQuery = this.clean_music_title(hints.query);
     const scoringTitles = explicitQuery
       ? [explicitQuery]
-      : [
-          hints.title,
-          hints.partTitle,
-          hints.videoTitle,
-          hints.bgmTitle,
-        ];
+      : [hints.title, hints.partTitle, hints.videoTitle, hints.bgmTitle];
     return {
       variants: this.build_title_variants(scoringTitles),
       artist: explicitQuery ? '' : hints.artist || '',
       duration: this.parse_duration(hints.duration),
-      rawTitle: explicitQuery
-        ? explicitQuery
-        : `${hints.title || ''} ${hints.partTitle || ''} ${
-            hints.videoTitle || ''
-          }`,
+      rawTitle:
+        explicitQuery ||
+        `${hints.title || ''} ${hints.partTitle || ''} ${
+          hints.videoTitle || ''
+        }`,
     };
   }
 
@@ -1059,11 +1329,7 @@ class bilibili {
       return items
         .filter((item) => item && item.syncedLyrics && !item.instrumental)
         .map((item, index) => {
-          const scored = this.score_lrclib_candidate(
-            item,
-            scoringHints,
-            index
-          );
+          const scored = this.score_lrclib_candidate(item, scoringHints, index);
           return {
             id: `lrclib_${item.id}`,
             provider: 'LRCLIB',
@@ -1129,7 +1395,9 @@ class bilibili {
           request.then((results) => {
             const musicId =
               candidate.item.DC_TARGETID ||
-              String(candidate.item.MUSICRID || '').split('_').pop();
+              String(candidate.item.MUSICRID || '')
+                .split('_')
+                .pop();
             if (!musicId) {
               return results;
             }
@@ -1145,9 +1413,7 @@ class bilibili {
                   lyricResponse.data
                 );
                 const lyric = this.kuwo_lyric_to_lrc(
-                  lyricPayload &&
-                    lyricPayload.data &&
-                    lyricPayload.data.lrclist
+                  lyricPayload && lyricPayload.data && lyricPayload.data.lrclist
                 );
                 if (!lyric) {
                   return results;
@@ -1157,10 +1423,7 @@ class bilibili {
                   {
                     id: `kuwo_${musicId}`,
                     provider: 'KUWO',
-                    title:
-                      candidate.item.NAME ||
-                      candidate.item.SONGNAME ||
-                      '',
+                    title: candidate.item.NAME || candidate.item.SONGNAME || '',
                     artist: candidate.item.ARTIST || '',
                     album: candidate.item.ALBUM || '',
                     duration: candidate.candidateDuration,
@@ -1255,8 +1518,7 @@ class bilibili {
     if (variants.length === 0) {
       return Promise.resolve({ lyric: '' });
     }
-    const searchText =
-      this.clean_music_title(hints.bgmTitle) || variants[0];
+    const searchText = this.clean_music_title(hints.bgmTitle) || variants[0];
     const targetUrl =
       'https://www.kuwo.cn/search/searchMusicBykeyWord' +
       '?vipver=1&client=kt&ft=music&cluster=0&strategy=2012' +
@@ -1274,8 +1536,7 @@ class bilibili {
 
     return this.fetch_kuwo_search(targetUrl)
       .then((response) => {
-        const payload =
-          response && this.parse_json_payload(response.data);
+        const payload = response && this.parse_json_payload(response.data);
         const items =
           payload && Array.isArray(payload.abslist) ? payload.abslist : [];
         return items
@@ -1297,7 +1558,9 @@ class bilibili {
           const candidate = candidates[index];
           const musicId =
             candidate.item.DC_TARGETID ||
-            String(candidate.item.MUSICRID || '').split('_').pop();
+            String(candidate.item.MUSICRID || '')
+              .split('_')
+              .pop();
           if (!musicId) {
             return tryCandidate(index + 1);
           }
@@ -1333,7 +1596,7 @@ class bilibili {
   }
 
   static resolve_lyric(options) {
-    const manualLyric = this.get_manual_lyric(options.trackId);
+    const manualLyric = this.get_manual_lyric(options.trackId, options);
     if (manualLyric) {
       if (this.has_meaningful_lyric(manualLyric.tlyric)) {
         return Promise.resolve(manualLyric);
@@ -1362,8 +1625,14 @@ class bilibili {
           ) {
             return manualLyric;
           }
-          this.save_manual_lyric(options.trackId, enrichedCandidate);
-          return this.get_manual_lyric(options.trackId) || manualLyric;
+          const saveResult = this.save_manual_lyric(
+            options.trackId,
+            enrichedCandidate,
+            options
+          );
+          return saveResult.ok
+            ? this.get_manual_lyric(options.trackId, options) || manualLyric
+            : manualLyric;
         }
       );
     }
@@ -1401,31 +1670,27 @@ class bilibili {
                     ).then((playerMetadata) => {
                       const enhancedHints = {
                         title: options.title,
-                        artist:
-                          options.artist || safeContext.artist,
-                        duration:
-                          safeContext.duration || options.duration,
+                        artist: options.artist || safeContext.artist,
+                        duration: safeContext.duration || options.duration,
                         partTitle: safeContext.partTitle,
                         videoTitle: safeContext.videoTitle,
                         bgmTitle: playerMetadata.bgmTitle,
                       };
-                      return this.find_catalog_lyric(
-                        enhancedHints
-                      ).then((enhancedCatalogResult) => {
-                        if (enhancedCatalogResult.lyric) {
-                          return enhancedCatalogResult;
-                        }
-                        return this.find_lrclib_lyric(
-                          enhancedHints
-                        ).then((enhancedLRCLIBResult) => {
-                          if (enhancedLRCLIBResult.lyric) {
-                            return enhancedLRCLIBResult;
+                      return this.find_catalog_lyric(enhancedHints).then(
+                        (enhancedCatalogResult) => {
+                          if (enhancedCatalogResult.lyric) {
+                            return enhancedCatalogResult;
                           }
-                          return this.find_kuwo_lyric(
-                            enhancedHints
+                          return this.find_lrclib_lyric(enhancedHints).then(
+                            (enhancedLRCLIBResult) => {
+                              if (enhancedLRCLIBResult.lyric) {
+                                return enhancedLRCLIBResult;
+                              }
+                              return this.find_kuwo_lyric(enhancedHints);
+                            }
                           );
-                        });
-                      });
+                        }
+                      );
                     });
                   }
                 );
@@ -2000,6 +2265,7 @@ class bilibili {
             title: getParameterByName('title', url),
             artist: getParameterByName('artist', url),
             duration: getParameterByName('duration', url),
+            sourceUrl: getParameterByName('source_url', url),
           })
           .then((result) => {
             const safeResult = result || { lyric: '' };

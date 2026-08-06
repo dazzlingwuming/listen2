@@ -121,6 +121,8 @@ function getMachineTranslationIpcRenderer() {
     return null;
   }
   try {
+    // Electron is supplied by the desktop parent package, not this extension.
+    // eslint-disable-next-line import/no-unresolved
     return require('electron').ipcRenderer;
   } catch (error) {
     return null;
@@ -199,6 +201,7 @@ const MediaService = {
       title: trackInfo.title,
       artist: trackInfo.artist,
       duration: trackInfo.duration,
+      source_url: trackInfo.source_url || trackInfo.sourceUrl || '',
     })}`;
     return provider.lyric(url);
   },
@@ -240,11 +243,12 @@ const MediaService = {
     return trackInfo.title || trackInfo.artist || '';
   },
 
-  saveManualLyric(trackId, candidate) {
+  saveManualLyric(trackId, candidate, trackInfo = {}) {
     const provider = getProviderByItemId(trackId);
     if (provider && typeof provider.save_manual_lyric === 'function') {
-      provider.save_manual_lyric(trackId, candidate);
+      return provider.save_manual_lyric(trackId, candidate, trackInfo);
     }
+    return { ok: false, status: 'unsupported' };
   },
 
   enrichManualLyricCandidate(trackInfo, candidate) {
@@ -277,10 +281,7 @@ const MediaService = {
         status: 'unsupported',
       });
     }
-    return ipcRenderer.invoke(
-      'machine-translation:set-config',
-      config || {}
-    );
+    return ipcRenderer.invoke('machine-translation:set-config', config || {});
   },
 
   testMachineTranslationConfig() {
@@ -294,18 +295,12 @@ const MediaService = {
     return ipcRenderer.invoke('machine-translation:test');
   },
 
-  machineTranslateLyricCandidate(
-    trackInfo,
-    candidate,
-    targetLanguage
-  ) {
+  machineTranslateLyricCandidate(trackInfo, candidate, targetLanguage) {
     const ipcRenderer = getMachineTranslationIpcRenderer();
     if (!ipcRenderer || !candidate || !candidate.lyric) {
       return Promise.resolve({
         ...candidate,
-        machineTranslationStatus: ipcRenderer
-          ? 'empty-lyric'
-          : 'unsupported',
+        machineTranslationStatus: ipcRenderer ? 'empty-lyric' : 'unsupported',
       });
     }
     return ipcRenderer
@@ -338,8 +333,7 @@ const MediaService = {
           machineTranslationDetectedSource:
             response.detectedSourceLanguage || '',
           machineTranslationCached: response.cached === true,
-          machineTranslationLineCount:
-            Number(response.lineCount || 0),
+          machineTranslationLineCount: Number(response.lineCount || 0),
           machineTranslationStatus: 'translated',
         };
       })
@@ -349,11 +343,12 @@ const MediaService = {
       }));
   },
 
-  clearManualLyric(trackId) {
+  clearManualLyric(trackId, trackInfo = {}) {
     const provider = getProviderByItemId(trackId);
     if (provider && typeof provider.clear_manual_lyric === 'function') {
-      provider.clear_manual_lyric(trackId);
+      return provider.clear_manual_lyric(trackId, trackInfo);
     }
+    return { ok: false, status: 'unsupported' };
   },
 
   showFavPlaylist() {
