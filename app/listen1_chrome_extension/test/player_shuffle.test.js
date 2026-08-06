@@ -35,6 +35,76 @@ function createPlayer() {
   return context.window.threadPlayer;
 }
 
+function createL1PlayerForStartup(playerSettings, currentPlaying) {
+  const filename = path.join(__dirname, '..', 'js', 'l1_player.js');
+  const source = fs.readFileSync(filename, 'utf8');
+  const operations = [];
+  let loopMode = 0;
+  const player = {
+    muted: false,
+    volume: 1,
+    playing: false,
+    playlist: [],
+    index: -1,
+    setNewPlaylist(list) {
+      operations.push(`setNewPlaylist:${loopMode}`);
+      this.playlist = list;
+      this.index = loopMode === 2 ? 'fresh-shuffle-track' : 0;
+    },
+    loadById(id) {
+      operations.push(`loadById:${id}`);
+      this.index = `restored:${id}`;
+    },
+    sendPlaylistEvent() {
+      operations.push('sendPlaylistEvent');
+    },
+    sendPlayingEvent() {
+      operations.push('sendPlayingEvent');
+    },
+    sendLoadEvent() {
+      operations.push('sendLoadEvent');
+    },
+  };
+  Object.defineProperty(player, 'loop_mode', {
+    get() {
+      return loopMode;
+    },
+    set(value) {
+      const loopModes = { all: 0, shuffle: 2, one: 1 };
+      loopMode = loopModes[value] === undefined ? value : loopModes[value];
+      operations.push(`loopMode:${value}`);
+    },
+  });
+
+  const context = {
+    addPlayerListener() {},
+    getPlayer() {
+      return player;
+    },
+    getPlayerAsync(_mode, callback) {
+      callback(player);
+    },
+    getPlayerMode() {
+      return 'front';
+    },
+    localStorage: {
+      getObject(key) {
+        if (key === 'player-settings') {
+          return playerSettings;
+        }
+        if (key === 'current-playing') {
+          return currentPlaying;
+        }
+        return null;
+      },
+    },
+    window: {},
+  };
+  vm.createContext(context);
+  vm.runInContext(source, context, { filename });
+  return { l1Player: context.window.l1Player, operations, player };
+}
+
 function createTracks(length, disabledIndices = []) {
   return Array.from({ length }, (_value, index) => ({
     id: `track-${index}`,
@@ -53,19 +123,21 @@ function seededRandom(seed) {
 }
 
 function prepareShuffle(player, length, disabledIndices = []) {
-  player.playlist = createTracks(length, disabledIndices);
-  player.index = 0;
-  player._loop_mode = 2;
-  player._shuffle_random = seededRandom(42);
-  player.resetShuffleState(player.index);
+  const targetPlayer = player;
+  targetPlayer.playlist = createTracks(length, disabledIndices);
+  targetPlayer.index = 0;
+  targetPlayer._loop_mode = 2;
+  targetPlayer._shuffle_random = seededRandom(42);
+  targetPlayer.resetShuffleState(targetPlayer.index);
 }
 
 function takeNext(player, count) {
+  const targetPlayer = player;
   const result = [];
   for (let i = 0; i < count; i += 1) {
-    const nextIndex = player.nextShuffleIndex(player.index);
+    const nextIndex = targetPlayer.nextShuffleIndex(targetPlayer.index);
     result.push(nextIndex);
-    player.index = nextIndex;
+    targetPlayer.index = nextIndex;
   }
   return result;
 }
@@ -117,7 +189,7 @@ function sorted(values) {
   );
 }
 
-{
+function testAllPlaylistLengths() {
   for (let length = 1; length <= 30; length += 1) {
     const player = createPlayer();
     prepareShuffle(player, length);
@@ -126,9 +198,10 @@ function sorted(values) {
     const initialRemainder = takeNext(player, Math.max(0, length - 1));
     assert.deepStrictEqual(
       sorted(initialRemainder),
-      Array.from({ length: Math.max(0, length - 1) }, (_value, index) => {
-        return index + 1;
-      })
+      Array.from(
+        { length: Math.max(0, length - 1) },
+        (_value, index) => index + 1
+      )
     );
 
     let previousCycle = null;
@@ -149,6 +222,8 @@ function sorted(values) {
     }
   }
 }
+
+testAllPlaylistLengths();
 
 {
   const player = createPlayer();
@@ -253,5 +328,46 @@ function sorted(values) {
   );
   assert.notStrictEqual(player.index, currentIndex);
 }
+
+{
+  const { l1Player, operations, player } = createL1PlayerForStartup(
+    { playmode: 1, nowplaying_track_id: 'track-1' },
+    createTracks(4)
+  );
+  l1Player.connectPlayer();
+
+  assert.deepStrictEqual(
+    operations.slice(0, 2),
+    ['loopMode:shuffle', 'setNewPlaylist:2'],
+    'the saved shuffle mode must reach the player before its playlist is restored'
+  );
+  assert.ok(
+    !operations.includes('loadById:track-1'),
+    'shuffle startup must not overwrite its fresh random first track with the persisted track'
+  );
+  assert.strictEqual(player.index, 'fresh-shuffle-track');
+}
+
+[
+  [0, 'all'],
+  [2, 'one'],
+].forEach(([playmode, loopMode]) => {
+  const { l1Player, operations, player } = createL1PlayerForStartup(
+    { playmode, nowplaying_track_id: 'track-2' },
+    createTracks(4)
+  );
+  l1Player.connectPlayer();
+
+  assert.deepStrictEqual(
+    operations.slice(0, 3),
+    [
+      `loopMode:${loopMode}`,
+      `setNewPlaylist:${playmode === 2 ? 1 : 0}`,
+      'loadById:track-2',
+    ],
+    'non-shuffle startup must retain the saved playback mode and last track'
+  );
+  assert.strictEqual(player.index, 'restored:track-2');
+});
 
 console.log('player shuffle tests passed');

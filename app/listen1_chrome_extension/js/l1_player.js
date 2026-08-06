@@ -130,7 +130,20 @@
     connectPlayer() {
       getPlayerAsync(mode, (player) => {
         if (!player.playing) {
-          // load local storage settings
+          const localPlayerSettings = localStorage.getObject('player-settings');
+          const savedPlaymode = Number(
+            localPlayerSettings && localPlayerSettings.playmode
+          );
+          const loopModes = ['all', 'shuffle', 'one'];
+
+          // Restore the loop mode before the playlist. In shuffle mode,
+          // setNewPlaylist chooses a fresh first track, so do not overwrite it
+          // with the last persisted track below.
+          if (Number.isInteger(savedPlaymode) && loopModes[savedPlaymode]) {
+            player.loop_mode = loopModes[savedPlaymode];
+          }
+
+          // Restore the queued tracks after restoring the playback mode.
           if (!player.playlist.length) {
             const localCurrentPlaying =
               localStorage.getObject('current-playing');
@@ -142,8 +155,7 @@
             }
           }
 
-          const localPlayerSettings = localStorage.getObject('player-settings');
-          if (localPlayerSettings !== null) {
+          if (localPlayerSettings !== null && player.loop_mode !== 2) {
             player.loadById(localPlayerSettings.nowplaying_track_id);
           }
         }
