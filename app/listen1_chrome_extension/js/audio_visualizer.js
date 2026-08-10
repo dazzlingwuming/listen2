@@ -1,4 +1,5 @@
-/* global angular */
+/* eslint-disable no-bitwise, no-underscore-dangle */
+/* global angular process */
 
 /*
  * Real-time audio analysis for the Now Playing stage.
@@ -27,6 +28,7 @@
     const bassHistory = [];
 
     let ownedContext = null;
+    let ownedContextStateListener = null;
     let analyserContext = null;
     let analyser = null;
     let frequencyData = null;
@@ -41,6 +43,16 @@
     let lastBeatAt = -Infinity;
     let peakEnvelope = 0.32;
     let status = 'idle';
+    // `createMediaElementSource()` takes over an HTMLMediaElement's audible
+    // route. Keep that output lifecycle separate from visualizer sampling: a
+    // hidden now-playing page must never disable recovery for active audio.
+    let outputStatus = 'native';
+    let outputRecoveryAttempts = 0;
+    let outputRecoveryTimer = null;
+    let outputResumeInFlight = false;
+    let outputRecoveryNode = null;
+    let outputFailure = null;
+    let outputRecoveryHint = '';
     let beatCount = 0;
     let publishedRoot = null;
     let publishedSignal = '';
@@ -76,30 +88,209 @@
       return (activeSound || soundsWithNodes[0] || {})._node || null;
     };
 
+    const timerSet = (callback, delay) => {
+      const schedule = $window.setTimeout || setTimeout;
+      return schedule(callback, delay);
+    };
+
+    const timerClear = (timer) => {
+      const cancel = $window.clearTimeout || clearTimeout;
+      cancel(timer);
+    };
+
+    const safeError = (error) => ({
+      name: (error && error.name) || 'AudioContextError',
+      message: String((error && error.message) || 'Audio output unavailable')
+        .replace(/https?:\/\/\S+/gi, '[url]')
+        .replace(/\?[^\s]*/g, '?[redacted]')
+        .slice(0, 180),
+    });
+
+    const recordOutputFailure = (stage, error, hint = '') => {
+      outputStatus = 'unavailable';
+      outputFailure = {
+        stage,
+        ...safeError(error),
+      };
+      outputRecoveryHint = hint;
+    };
+
+    const clearOutputRecoveryTimer = () => {
+      if (outputRecoveryTimer !== null) {
+        timerClear(outputRecoveryTimer);
+        outputRecoveryTimer = null;
+      }
+    };
+
+    const markOutputRunning = () => {
+      clearOutputRecoveryTimer();
+      outputResumeInFlight = false;
+      outputRecoveryAttempts = 0;
+      outputFailure = null;
+      outputRecoveryHint = '';
+      outputStatus = 'running';
+    };
+
+    let requestOwnedContextResume = () => false;
+
+    const observeOwnedContext = (context) => {
+      if (!context || context === ownedContext) {
+        return;
+      }
+      if (ownedContext && ownedContextStateListener) {
+        if (typeof ownedContext.removeEventListener === 'function') {
+          ownedContext.removeEventListener(
+            'statechange',
+            ownedContextStateListener
+          );
+        } else if (ownedContext.onstatechange === ownedContextStateListener) {
+          ownedContext.onstatechange = null;
+        }
+      }
+      ownedContext = context;
+      ownedContextStateListener = () => {
+        if (context.state === 'running') {
+          markOutputRunning();
+          return;
+        }
+        if (context.state === 'closed') {
+          clearOutputRecoveryTimer();
+          outputResumeInFlight = false;
+          recordOutputFailure(
+            'context-closed',
+            new Error('The audio output context was closed'),
+            'recreate-media-element'
+          );
+          return;
+        }
+        if (!outputRecoveryNode) {
+          return;
+        }
+        // Chromium normally reports `suspended`; WebKit may report
+        // `interrupted`. Treat both as recoverable, but never spin forever.
+        requestOwnedContextResume('statechange');
+      };
+      if (typeof context.addEventListener === 'function') {
+        context.addEventListener('statechange', ownedContextStateListener);
+      } else {
+        context.onstatechange = ownedContextStateListener;
+      }
+    };
+
     const ensureOwnedContext = () => {
       if (!AudioContextClass) {
         return null;
       }
       if (!ownedContext || ownedContext.state === 'closed') {
         try {
-          ownedContext = new AudioContextClass({
-            latencyHint: 'interactive',
-          });
+          observeOwnedContext(
+            new AudioContextClass({
+              latencyHint: 'interactive',
+            })
+          );
         } catch (error) {
-          ownedContext = new AudioContextClass();
+          try {
+            observeOwnedContext(new AudioContextClass());
+          } catch (fallbackError) {
+            recordOutputFailure('create-context', fallbackError);
+            return null;
+          }
         }
       }
       return ownedContext;
     };
 
-    const resumeContext = (context) => {
+    const resumeExternalContext = (context) => {
       if (
         context &&
-        context.state === 'suspended' &&
+        context.state !== 'running' &&
+        context.state !== 'closed' &&
         typeof context.resume === 'function'
       ) {
-        context.resume().catch(() => {});
+        Promise.resolve(context.resume()).catch(() => {});
       }
+    };
+
+    const scheduleOwnedContextResume = (trigger) => {
+      const context = ownedContext;
+      if (
+        !context ||
+        context.state === 'running' ||
+        context.state === 'closed' ||
+        outputResumeInFlight ||
+        outputRecoveryTimer !== null
+      ) {
+        return false;
+      }
+      if (outputRecoveryAttempts >= 3) {
+        recordOutputFailure(
+          'resume-exhausted',
+          new Error('Audio output did not resume after bounded retries'),
+          'recreate-media-element'
+        );
+        return false;
+      }
+      const retryDelays = [0, 350, 1400];
+      const delay = retryDelays[outputRecoveryAttempts] || 1400;
+      outputStatus = 'recovering';
+      outputRecoveryTimer = timerSet(() => {
+        outputRecoveryTimer = null;
+        requestOwnedContextResume(trigger);
+      }, delay);
+      return true;
+    };
+
+    requestOwnedContextResume = (trigger = 'ensure-output') => {
+      const context = ownedContext;
+      if (!context) {
+        return false;
+      }
+      if (context.state === 'running') {
+        markOutputRunning();
+        return true;
+      }
+      if (context.state === 'closed') {
+        recordOutputFailure(
+          'context-closed',
+          new Error('The audio output context was closed'),
+          'recreate-media-element'
+        );
+        return false;
+      }
+      if (outputResumeInFlight) {
+        return true;
+      }
+      if (typeof context.resume !== 'function') {
+        recordOutputFailure(
+          'resume-unsupported',
+          new Error('AudioContext.resume is unavailable'),
+          'recreate-media-element'
+        );
+        return false;
+      }
+
+      outputResumeInFlight = true;
+      outputRecoveryAttempts += 1;
+      outputStatus = 'recovering';
+      Promise.resolve(context.resume())
+        .then(() => {
+          outputResumeInFlight = false;
+          if (context.state === 'running') {
+            markOutputRunning();
+          } else {
+            recordOutputFailure(
+              'resume-incomplete',
+              new Error(`AudioContext remained ${context.state} after resume`)
+            );
+            scheduleOwnedContextResume(trigger);
+          }
+        })
+        .catch((error) => {
+          outputResumeInFlight = false;
+          recordOutputFailure('resume', error);
+          scheduleOwnedContextResume(trigger);
+        });
+      return true;
     };
 
     const disconnectAnalyserTap = () => {
@@ -170,7 +361,7 @@
         currentTap &&
         analyserContext === context
       ) {
-        resumeContext(context);
+        requestOwnedContextResume('existing-html5-output');
         return true;
       }
 
@@ -181,23 +372,64 @@
           const source = context.createMediaElementSource(node);
           // MediaElementAudioSourceNode replaces the element's native output,
           // so preserve normal playback while adding a passive analysis branch.
-          source.connect(context.destination);
-          record = { context, source };
+          try {
+            source.connect(context.destination);
+          } catch (error) {
+            // At this point the element has already been claimed by this
+            // AudioContext, so native output cannot be restored in place.
+            // Keep the record for diagnostics and let Player recreate the
+            // media element when it receives this recovery hint.
+            record = { context, source, outputConnected: false };
+            mediaSourceRecords.set(node, record);
+            recordOutputFailure(
+              'connect-destination',
+              error,
+              'recreate-media-element'
+            );
+            return false;
+          }
+          record = { context, source, outputConnected: true };
           mediaSourceRecords.set(node, record);
         }
-        if (record.context !== context) {
+        if (record.context !== context || !record.outputConnected) {
+          recordOutputFailure(
+            'reuse-media-source',
+            new Error('Audio output source is attached to an unusable context'),
+            'recreate-media-element'
+          );
           return false;
         }
         record.source.connect(nextAnalyser);
-        resumeContext(context);
-        return markConnected(howl, node, record.source, 'html5-media');
+        const connected = markConnected(
+          howl,
+          node,
+          record.source,
+          'html5-media'
+        );
+        if (outputRecoveryNode !== node) {
+          outputRecoveryNode = node;
+          outputRecoveryAttempts = 0;
+          outputFailure = null;
+          outputRecoveryHint = '';
+        }
+        requestOwnedContextResume('connect-html5-output');
+        return connected;
       } catch (error) {
+        recordOutputFailure('connect-html5-source', error);
         status = 'unavailable';
         return false;
       }
     };
 
     const connectCapturedElement = (howl, node) => {
+      // Browser capture is analysis-only: HTMLMediaElement keeps its native
+      // output path, so any capture failure must never look like an audible
+      // output outage in diagnostics.
+      if (!outputRecoveryNode) {
+        outputStatus = 'native';
+        outputFailure = null;
+        outputRecoveryHint = '';
+      }
       const capture =
         node.captureStream || node.mozCaptureStream || node.webkitCaptureStream;
       if (typeof capture !== 'function') {
@@ -214,7 +446,7 @@
         currentTap &&
         analyserContext === context
       ) {
-        resumeContext(context);
+        resumeExternalContext(context);
         return true;
       }
 
@@ -231,8 +463,16 @@
           return false;
         }
         record.source.connect(nextAnalyser);
-        resumeContext(context);
-        return markConnected(howl, node, record.source, 'captured-media');
+        const connected = markConnected(
+          howl,
+          node,
+          record.source,
+          'captured-media'
+        );
+        // This observer never replaces browser-native audio output. Resume is
+        // best effort for analysis only, so it must not report an audio outage.
+        resumeExternalContext(context);
+        return connected;
       } catch (error) {
         status = 'unavailable';
         return false;
@@ -259,14 +499,14 @@
         currentTap === howler.masterGain &&
         analyserContext === howler.ctx
       ) {
-        resumeContext(howler.ctx);
+        resumeExternalContext(howler.ctx);
         return true;
       }
 
       disconnectAnalyserTap();
       try {
         howler.masterGain.connect(nextAnalyser);
-        resumeContext(howler.ctx);
+        resumeExternalContext(howler.ctx);
         return markConnected(howl, null, howler.masterGain, 'howler-web-audio');
       } catch (error) {
         status = 'unavailable';
@@ -562,13 +802,20 @@
       };
     };
 
-    const prepareHowl = (howl) => {
+    const ensureOutput = (howl) => {
       const connected = connectHowl(howl);
-      if (connected && analyserContext) {
-        resumeContext(analyserContext);
+      if (connected && currentMode === 'html5-media') {
+        requestOwnedContextResume('ensure-output');
+      } else if (connected && analyserContext) {
+        resumeExternalContext(analyserContext);
       }
       return connected;
     };
+
+    // Existing callers expect this synchronous boolean API. `ensureOutput`
+    // additionally gives Player/recovery code a name that describes the
+    // audible-output contract rather than the visualizer implementation.
+    const prepareHowl = (howl) => ensureOutput(howl);
 
     const sanitizedSource = () => {
       if (!currentNode || !currentNode.currentSrc) {
@@ -590,6 +837,13 @@
       frequencyBins: frequencyData ? frequencyData.length : 0,
       source: sanitizedSource(),
       crossOrigin: currentNode ? currentNode.crossOrigin || '' : '',
+      output: {
+        status: outputStatus,
+        attempts: outputRecoveryAttempts,
+        hint: outputRecoveryHint,
+        failure: outputFailure,
+        ownsMediaElementOutput: Boolean(outputRecoveryNode),
+      },
       peak: Math.max(...bars),
       beatCount,
       ...metrics,
@@ -598,6 +852,7 @@
     return {
       barCount: BAR_COUNT,
       debug,
+      ensureOutput,
       prepareHowl,
       sample,
     };
@@ -750,34 +1005,24 @@
         const roundedRect = (x, y, width, height, radius) => {
           const safeRadius = Math.min(radius, width / 2, height / 2);
           context.beginPath();
-          context.roundRect
-            ? context.roundRect(x, y, width, height, safeRadius)
-            : (() => {
-                context.moveTo(x + safeRadius, y);
-                context.lineTo(x + width - safeRadius, y);
-                context.quadraticCurveTo(
-                  x + width,
-                  y,
-                  x + width,
-                  y + safeRadius
-                );
-                context.lineTo(x + width, y + height - safeRadius);
-                context.quadraticCurveTo(
-                  x + width,
-                  y + height,
-                  x + width - safeRadius,
-                  y + height
-                );
-                context.lineTo(x + safeRadius, y + height);
-                context.quadraticCurveTo(
-                  x,
-                  y + height,
-                  x,
-                  y + height - safeRadius
-                );
-                context.lineTo(x, y + safeRadius);
-                context.quadraticCurveTo(x, y, x + safeRadius, y);
-              })();
+          if (context.roundRect) {
+            context.roundRect(x, y, width, height, safeRadius);
+          } else {
+            context.moveTo(x + safeRadius, y);
+            context.lineTo(x + width - safeRadius, y);
+            context.quadraticCurveTo(x + width, y, x + width, y + safeRadius);
+            context.lineTo(x + width, y + height - safeRadius);
+            context.quadraticCurveTo(
+              x + width,
+              y + height,
+              x + width - safeRadius,
+              y + height
+            );
+            context.lineTo(x + safeRadius, y + height);
+            context.quadraticCurveTo(x, y + height, x, y + height - safeRadius);
+            context.lineTo(x, y + safeRadius);
+            context.quadraticCurveTo(x, y, x + safeRadius, y);
+          }
           context.closePath();
           context.fill();
         };
@@ -971,6 +1216,9 @@
             animationFrame === null &&
             needsAnotherFrame()
           ) {
+            // The scheduler and callback intentionally reference each other
+            // while keeping exactly one animation frame in flight.
+            // eslint-disable-next-line no-use-before-define
             animationFrame = requestFrame(drawNextFrame);
           }
         };

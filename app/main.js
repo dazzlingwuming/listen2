@@ -20,6 +20,7 @@ const {
   testDeepLApiKey,
   translateWholeLyricWithDeepL,
 } = require("./machineTranslation");
+const { createBilibiliFailure } = require("./bilibiliFailure");
 const { BilibiliService } = require("./bilibiliService");
 
 const store = new Store();
@@ -225,13 +226,8 @@ function ensureTrustedMachineTranslationSender(event) {
   });
 }
 
-function bilibiliFailure(error) {
-  return {
-    ok: false,
-    status:
-      error && typeof error.code === "string" ? error.code : "request-failed",
-    httpStatus: Number((error && error.httpStatus) || 0),
-  };
+function bilibiliFailure(error, stage = "bilibili") {
+  return createBilibiliFailure(error, stage);
 }
 
 function ensureTrustedBilibiliSender(event) {
@@ -407,7 +403,7 @@ ipcMain.handle("bilibili-auth:get-state", async (event) => {
       state: await getBilibiliService().getPublicAuthState(),
     };
   } catch (error) {
-    return bilibiliFailure(error);
+    return bilibiliFailure(error, "auth");
   }
 });
 
@@ -456,7 +452,7 @@ ipcMain.handle("bilibili-media:get-manifest", async (event, payload = {}) => {
     });
     return { ok: true, manifest };
   } catch (error) {
-    return bilibiliFailure(error);
+    return bilibiliFailure(error, "manifest");
   }
 });
 

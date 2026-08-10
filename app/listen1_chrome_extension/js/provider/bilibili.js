@@ -2042,6 +2042,94 @@ class bilibili {
     return element.canPlayType(type);
   }
 
+  static create_media_failure(error, fallback = {}) {
+    const source = error && typeof error === 'object' ? error : {};
+    const rawStatus = String(
+      source.status || source.code || fallback.status || 'request-failed'
+    );
+    const status = /^[a-z0-9-]{1,64}$/i.test(rawStatus)
+      ? rawStatus.toLowerCase()
+      : 'request-failed';
+    const httpStatus = Number(source.httpStatus || fallback.httpStatus || 0);
+    const bilibiliCode = Number(
+      source.bilibiliCode || fallback.bilibiliCode || 0
+    );
+    const permanentStatuses = [
+      'auth-required',
+      'invalid-bvid',
+      'invalid-cid',
+      'missing-cid',
+      'no-audio-stream',
+      'no-compatible-audio-stream',
+      'not-found',
+      'private-video',
+    ];
+    const isPermanent =
+      permanentStatuses.includes(status) ||
+      httpStatus === 404 ||
+      httpStatus === 410 ||
+      bilibiliCode === -404 ||
+      bilibiliCode === -101;
+    const retryable = !isPermanent && source.retryable !== false;
+    let permanentKind = status;
+    if (httpStatus === 404 || httpStatus === 410 || bilibiliCode === -404) {
+      permanentKind = 'not-found';
+    } else if (bilibiliCode === -101) {
+      permanentKind = 'auth-required';
+    }
+    let fallbackKind = 'network';
+    if (isPermanent) {
+      fallbackKind = permanentKind;
+    } else if (status === 'request-timeout') {
+      fallbackKind = 'timeout';
+    }
+    const rawKind = String(source.kind || fallback.kind || fallbackKind);
+    const safeKinds = [
+      'auth-required',
+      'invalid-bvid',
+      'invalid-cid',
+      'missing-cid',
+      'no-audio-stream',
+      'no-compatible-audio-stream',
+      'not-found',
+      'private-video',
+      'timeout',
+      'network',
+      'rate-limited',
+      'request-rejected',
+      'server',
+      'unavailable',
+    ];
+    const kind =
+      !isPermanent && safeKinds.includes(rawKind) ? rawKind : fallbackKind;
+    const messages = {
+      'auth-required': 'This Bilibili resource requires account access.',
+      'no-audio-stream': 'No playable Bilibili audio stream is available.',
+      'no-compatible-audio-stream':
+        'No compatible Bilibili audio stream is available.',
+      'not-found': 'This Bilibili resource is no longer available.',
+      'private-video': 'This Bilibili resource is private.',
+      timeout: 'The Bilibili request timed out.',
+      network: 'The network request to Bilibili failed.',
+      unavailable: 'The Bilibili media request failed.',
+    };
+    return {
+      stage: ['manifest', 'legacy-manifest'].includes(
+        String(source.stage || fallback.stage)
+      )
+        ? String(source.stage || fallback.stage)
+        : 'manifest',
+      kind,
+      status,
+      httpStatus: Number.isSafeInteger(httpStatus) ? httpStatus : 0,
+      bilibiliCode: Number.isSafeInteger(bilibiliCode) ? bilibiliCode : 0,
+      retryable,
+      // The main process sends a safe message. Legacy Axios errors may contain
+      // request URLs, so this callback always uses a local fixed message.
+      message: messages[kind] || messages.unavailable,
+    };
+  }
+
   static select_playable_audio_variant(manifest) {
     const variants = Array.isArray(manifest && manifest.audioVariants)
       ? manifest.audioVariants
@@ -2075,10 +2163,11 @@ class bilibili {
       forceRefresh,
     }).then((response) => {
       if (!response || response.ok !== true || !response.manifest) {
-        throw new Error(
-          (response && response.status) ||
-            'Bilibili media manifest is unavailable.'
-        );
+        throw this.create_media_failure(response, {
+          kind: 'unavailable',
+          stage: 'manifest',
+          status: 'request-failed',
+        });
       }
       return response.manifest;
     });
@@ -2088,7 +2177,15 @@ class bilibili {
     const sound = {};
     const idParts = this.get_video_id_parts(track && track.id);
     if (!idParts) {
-      failure(sound);
+      failure(
+        this.create_media_failure(
+          {},
+          {
+            status: 'invalid-bvid',
+            stage: 'legacy-manifest',
+          }
+        )
+      );
       return;
     }
     const targetUrl = `https://api.bilibili.com/x/web-interface/view?bvid=${encodeURIComponent(
@@ -2105,7 +2202,15 @@ class bilibili {
           pages[0];
         const cid = idParts.cid || (page && Number(page.cid));
         if (!cid) {
-          failure(sound);
+          failure(
+            this.create_media_failure(
+              {},
+              {
+                status: 'missing-cid',
+                stage: 'legacy-manifest',
+              }
+            )
+          );
           return null;
         }
         return axios.get(
@@ -2144,7 +2249,15 @@ class bilibili {
           (variant) => this.get_can_play_type('audio', variant) !== ''
         );
         if (!selected) {
-          failure(sound);
+          failure(
+            this.create_media_failure(
+              {},
+              {
+                status: 'no-compatible-audio-stream',
+                stage: 'legacy-manifest',
+              }
+            )
+          );
           return;
         }
         sound.url = selected.url;
@@ -2152,7 +2265,13 @@ class bilibili {
         sound.platform = 'bilibili';
         success(sound);
       })
-      .catch(() => failure(sound));
+      .catch((error) =>
+        failure(
+          this.create_media_failure(error, {
+            stage: 'legacy-manifest',
+          })
+        )
+      );
   }
 
   static bootstrap_track(track, success, failure, options = {}) {
@@ -2171,7 +2290,13 @@ class bilibili {
           .then((manifest) => {
             const audio = this.select_playable_audio_variant(manifest);
             if (!audio || !audio.url) {
-              throw new Error('No compatible Bilibili audio stream.');
+              throw this.create_media_failure(
+                {},
+                {
+                  status: 'no-compatible-audio-stream',
+                  stage: 'manifest',
+                }
+              );
             }
             // Bilibili returns several equivalent CDN routes for the same
             // stream. Preserve all of them so the player can recover when a
@@ -2187,24 +2312,58 @@ class bilibili {
               platform: 'bilibili',
             });
           })
-          .catch(() => failure({}));
+          .catch((error) => failure(this.create_media_failure(error)));
       }
       return this.bootstrap_video_track_legacy(track, success, failure);
     }
     const sound = {};
     const song_id = track.id.slice('bitrack_'.length);
     const target_url = `https://www.bilibili.com/audio/music-service-c/web/url?sid=${song_id}`;
-    return axios.get(target_url).then((response) => {
-      const { data } = response;
-      if (data.code === 0) {
-        [sound.url] = data.data.cdns;
-        sound.platform = 'bilibili';
-
-        success(sound);
-      } else {
-        failure(sound);
-      }
-    });
+    return axios
+      .get(target_url)
+      .then((response) => {
+        const data = response && response.data;
+        if (data && Number(data.code) === 0) {
+          const cdns = Array.isArray(data.data && data.data.cdns)
+            ? data.data.cdns.filter((url) => typeof url === 'string' && url)
+            : [];
+          if (!cdns.length) {
+            failure(
+              this.create_media_failure(
+                {},
+                {
+                  status: 'no-audio-stream',
+                  stage: 'legacy-manifest',
+                }
+              )
+            );
+            return;
+          }
+          [sound.url] = cdns;
+          sound.platform = 'bilibili';
+          success(sound);
+          return;
+        }
+        failure(
+          this.create_media_failure(
+            {
+              code: 'bilibili-api-error',
+              bilibiliCode: Number(data && data.code) || 0,
+              httpStatus: Number(response && response.status) || 0,
+            },
+            {
+              stage: 'legacy-manifest',
+            }
+          )
+        );
+      })
+      .catch((error) =>
+        failure(
+          this.create_media_failure(error, {
+            stage: 'legacy-manifest',
+          })
+        )
+      );
   }
 
   static search(url) {

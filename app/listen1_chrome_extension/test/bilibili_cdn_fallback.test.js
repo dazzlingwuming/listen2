@@ -1,5 +1,5 @@
 /* eslint-env node */
-/* eslint-disable no-console, no-underscore-dangle */
+/* eslint-disable class-methods-use-this, max-classes-per-file, no-console, no-underscore-dangle */
 
 const assert = require('assert');
 const fs = require('fs');
@@ -60,40 +60,40 @@ function createPlayer(mediaService) {
   };
 }
 
-function createBilibiliProvider(manifestCalls) {
-  const filename = path.join(
-    __dirname,
-    '..',
-    'js',
-    'provider',
-    'bilibili.js'
-  );
+function createBilibiliProvider(
+  manifestCalls,
+  manifestResponse,
+  axiosImpl = {}
+) {
+  const filename = path.join(__dirname, '..', 'js', 'provider', 'bilibili.js');
   const source = fs.readFileSync(filename, 'utf8');
   const storage = new Map();
   const context = {
     MediaService: {
       getBilibiliMediaManifest(options) {
         manifestCalls.push(options);
-        return Promise.resolve({
-          ok: true,
-          manifest: {
-            audioVariants: [
-              {
-                url: 'https://primary.example/audio.m4s',
-                backupUrls: [
-                  'https://backup-one.example/audio.m4s',
-                  'https://backup-two.example/audio.m4s',
-                ],
-                specialType: 'normal',
-                mimeType: 'audio/mp4',
-                codecs: 'mp4a.40.2',
-              },
-            ],
-          },
-        });
+        return Promise.resolve(
+          manifestResponse || {
+            ok: true,
+            manifest: {
+              audioVariants: [
+                {
+                  url: 'https://primary.example/audio.m4s',
+                  backupUrls: [
+                    'https://backup-one.example/audio.m4s',
+                    'https://backup-two.example/audio.m4s',
+                  ],
+                  specialType: 'normal',
+                  mimeType: 'audio/mp4',
+                  codecs: 'mp4a.40.2',
+                },
+              ],
+            },
+          }
+        );
       },
     },
-    axios: {},
+    axios: axiosImpl,
     console,
     DOMParser: class {
       parseFromString(value) {
@@ -140,9 +140,7 @@ function createMediaServiceHarness() {
   };
   const emptyProvider = {};
   const context = {
-    LRUCache: class {
-      constructor() {}
-    },
+    LRUCache: class {},
     bilibili: bilibiliProvider,
     kugou: emptyProvider,
     kuwo: emptyProvider,
@@ -156,9 +154,13 @@ function createMediaServiceHarness() {
     xiami: emptyProvider,
   };
   vm.createContext(context);
-  vm.runInContext(`${source}\nthis.MediaServiceForTest = MediaService;`, context, {
-    filename,
-  });
+  vm.runInContext(
+    `${source}\nthis.MediaServiceForTest = MediaService;`,
+    context,
+    {
+      filename,
+    }
+  );
   return {
     mediaService: context.MediaServiceForTest,
     getBootstrapArgs() {
@@ -192,6 +194,164 @@ async function run() {
       'https://backup-one.example/audio.m4s',
       'https://backup-two.example/audio.m4s',
     ]);
+  }
+
+  {
+    const provider = createBilibiliProvider([], {
+      ok: false,
+      stage: 'manifest',
+      kind: 'timeout',
+      status: 'request-timeout',
+      httpStatus: 0,
+      bilibiliCode: 0,
+      retryable: true,
+      message: 'This must not be forwarded.',
+    });
+    const failure = await new Promise((resolve, reject) => {
+      provider.bootstrap_track(
+        { id: 'bitrack_v_BV1ipCgB8Enx-34002175114' },
+        () => reject(new Error('Bilibili bootstrap unexpectedly succeeded')),
+        resolve
+      );
+    });
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(failure)), {
+      stage: 'manifest',
+      kind: 'timeout',
+      status: 'request-timeout',
+      httpStatus: 0,
+      bilibiliCode: 0,
+      retryable: true,
+      message: 'The Bilibili request timed out.',
+    });
+  }
+
+  {
+    const provider = createBilibiliProvider([]);
+    const conflicts = [
+      {
+        error: { httpStatus: 404, kind: 'network', retryable: true },
+        kind: 'not-found',
+      },
+      {
+        error: { bilibiliCode: -404, kind: 'network', retryable: true },
+        kind: 'not-found',
+      },
+      {
+        error: { bilibiliCode: -101, kind: 'network', retryable: true },
+        kind: 'auth-required',
+      },
+    ];
+    conflicts.forEach(({ error, kind }) => {
+      const failure = provider.create_media_failure(error);
+      assert.strictEqual(failure.kind, kind);
+      assert.strictEqual(failure.retryable, false);
+    });
+  }
+
+  {
+    const provider = createBilibiliProvider([], undefined, {
+      get() {
+        return Promise.reject(
+          Object.assign(new Error('simulated network reset'), {
+            code: 'ECONNRESET',
+          })
+        );
+      },
+    });
+    let failure;
+    await provider.bootstrap_track(
+      { id: 'bitrack_123' },
+      () => {
+        throw new Error('Bilibili legacy bootstrap unexpectedly succeeded');
+      },
+      (error) => {
+        failure = error;
+      }
+    );
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(failure)), {
+      stage: 'legacy-manifest',
+      kind: 'network',
+      status: 'econnreset',
+      httpStatus: 0,
+      bilibiliCode: 0,
+      retryable: true,
+      message: 'The network request to Bilibili failed.',
+    });
+  }
+
+  {
+    const provider = createBilibiliProvider([], undefined, {
+      get() {
+        return Promise.resolve({ data: { code: -404 } });
+      },
+    });
+    let failure;
+    await provider.bootstrap_track(
+      { id: 'bitrack_123' },
+      () => {
+        throw new Error('Bilibili legacy bootstrap unexpectedly succeeded');
+      },
+      (error) => {
+        failure = error;
+      }
+    );
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(failure)), {
+      stage: 'legacy-manifest',
+      kind: 'not-found',
+      status: 'bilibili-api-error',
+      httpStatus: 0,
+      bilibiliCode: -404,
+      retryable: false,
+      message: 'This Bilibili resource is no longer available.',
+    });
+  }
+
+  {
+    const provider = createBilibiliProvider([], undefined, {
+      get() {
+        return Promise.resolve({ data: { code: 0, data: { cdns: [] } } });
+      },
+    });
+    let failure;
+    await provider.bootstrap_track(
+      { id: 'bitrack_123' },
+      () => {
+        throw new Error('Bilibili legacy bootstrap unexpectedly succeeded');
+      },
+      (error) => {
+        failure = error;
+      }
+    );
+    assert.strictEqual(failure.kind, 'no-audio-stream');
+    assert.strictEqual(failure.retryable, false);
+  }
+
+  {
+    const provider = createBilibiliProvider([], {
+      ok: false,
+      stage: 'manifest',
+      kind: 'not-found',
+      status: 'bilibili-api-error',
+      httpStatus: 404,
+      bilibiliCode: -404,
+      retryable: false,
+    });
+    const failure = await new Promise((resolve, reject) => {
+      provider.bootstrap_track(
+        { id: 'bitrack_v_BV1ipCgB8Enx-34002175114' },
+        () => reject(new Error('Bilibili bootstrap unexpectedly succeeded')),
+        resolve
+      );
+    });
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(failure)), {
+      stage: 'manifest',
+      kind: 'not-found',
+      status: 'bilibili-api-error',
+      httpStatus: 404,
+      bilibiliCode: -404,
+      retryable: false,
+      message: 'This Bilibili resource is no longer available.',
+    });
   }
 
   {
@@ -307,9 +467,8 @@ async function run() {
       'the refresh loop must be bounded to one forced refresh'
     );
     assert.strictEqual(
-      messages.filter(
-        ({ message }) => message.type === 'BG_PLAYER:PLAY_FAILED'
-      ).length,
+      messages.filter(({ message }) => message.type === 'BG_PLAYER:PLAY_FAILED')
+        .length,
       1,
       'intermediate CDN errors should stay silent while a retry remains'
     );

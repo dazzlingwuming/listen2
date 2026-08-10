@@ -4,7 +4,7 @@
   "description": "The embedded Listen2 player frontend with enhanced Bilibili and lyric support",
   "main": "index.js",
   "scripts": {
-    "test": "node test/player_shuffle.test.js && node test/bilibili_lyric_translation.test.js && node test/bilibili_cdn_fallback.test.js"
+    "test": "node test/player_shuffle.test.js && node test/player_recovery.test.js && node test/audio_visualizer_output_recovery.test.js && node test/media_bootstrap_error.test.js && node test/bilibili_lyric_translation.test.js && node test/bilibili_cdn_fallback.test.js"
   },
   "repository": {
     "type": "git",

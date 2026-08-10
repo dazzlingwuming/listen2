@@ -1,5 +1,6 @@
 /* eslint-disable no-param-reassign */
 /* eslint-disable no-shadow */
+/* eslint-disable import/no-extraneous-dependencies */
 /* eslint-disable import/no-unresolved */
 /* eslint-disable global-require */
 /* global angular notyf i18next MediaService l1Player hotkeys GithubClient isElectron require getLocalStorageValue getPlayer getPlayerAsync getPlayerMode canUseBackgroundPlayer addPlayerListener smoothScrollTo lastfm BilibiliMvPlayer */
@@ -692,8 +693,78 @@ angular.module('listenone').controller('PlayController', [
     $scope.myProgress = 0;
     $scope.changingProgress = false;
 
+    const unavailablePlaybackKinds = new Set([
+      'auth-required',
+      'invalid-bvid',
+      'invalid-cid',
+      'missing-cid',
+      'no-audio-stream',
+      'no-compatible-audio-stream',
+      'not-found',
+      'private-video',
+    ]);
+    let lastPlaybackNotice = { key: '', timestamp: 0 };
+    const showPlaybackNotice = (key, type = 'info') => {
+      const timestamp = Date.now();
+      if (
+        lastPlaybackNotice.key === key &&
+        timestamp - lastPlaybackNotice.timestamp < 800
+      ) {
+        return;
+      }
+      lastPlaybackNotice = { key, timestamp };
+      if (type === 'success') {
+        notyf.dismissAll();
+        notyf.success(i18next.t(key));
+        return;
+      }
+      notyf[type](i18next.t(key), true);
+    };
+    const getPlaybackFailureMessageKey = (failure = {}) => {
+      if (
+        failure.kind === 'rate-limited' ||
+        failure.kind === 'request-rejected'
+      ) {
+        return '_PLAYBACK_RATE_LIMITED';
+      }
+      if (unavailablePlaybackKinds.has(failure.kind)) {
+        return '_PLAYBACK_SOURCE_UNAVAILABLE';
+      }
+      if (failure.retryable === false) {
+        return '_PLAYBACK_RECOVERY_FAILED';
+      }
+      return '_COPYRIGHT_ISSUE';
+    };
+    $scope.playbackFailureNotice = (failure) => {
+      showPlaybackNotice(getPlaybackFailureMessageKey(failure), 'warning');
+    };
+    $scope.playbackRetryNotice = (failure = {}) => {
+      const key =
+        failure.kind === 'rate-limited' || failure.kind === 'request-rejected'
+          ? '_PLAYBACK_RATE_LIMITED'
+          : '_PLAYBACK_RETRYING';
+      showPlaybackNotice(key);
+    };
+    $scope.playbackRecoveryNotice = (recovery = {}) => {
+      switch (recovery.state) {
+        case 'buffering':
+          showPlaybackNotice('_PLAYBACK_BUFFERING');
+          break;
+        case 'retrying':
+          showPlaybackNotice('_PLAYBACK_RETRYING');
+          break;
+        case 'recovered':
+          showPlaybackNotice('_PLAYBACK_RECOVERED', 'success');
+          break;
+        case 'failed':
+          showPlaybackNotice('_PLAYBACK_RECOVERY_FAILED', 'warning');
+          break;
+        default:
+          break;
+      }
+    };
     $scope.copyrightNotice = () => {
-      notyf.info(i18next.t('_COPYRIGHT_ISSUE'), true);
+      $scope.playbackFailureNotice({});
     };
     $scope.failAllNotice = () => {
       notyf.warning(i18next.t('_FAIL_ALL_NOTICE'), true);
@@ -1548,7 +1619,12 @@ angular.module('listenone').controller('PlayController', [
             break;
           }
           case 'PLAY_FAILED': {
-            notyf.info(i18next.t('_COPYRIGHT_ISSUE'), true);
+            $scope.playbackFailureNotice(msg.data);
+            break;
+          }
+
+          case 'PLAYBACK_RECOVERY': {
+            $scope.playbackRecoveryNotice(msg.data);
             break;
           }
 
@@ -1822,7 +1898,11 @@ angular.module('listenone').controller('PlayController', [
             break;
           }
           case 'RETRIEVE_URL_FAIL': {
-            $scope.copyrightNotice();
+            if (msg.data && msg.data.retryable === true) {
+              $scope.playbackRetryNotice(msg.data);
+            } else {
+              $scope.playbackFailureNotice(msg.data);
+            }
             break;
           }
           case 'RETRIEVE_URL_FAIL_ALL': {

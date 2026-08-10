@@ -2,6 +2,7 @@
 /* global netease xiami qq kugou kuwo bilibili migu taihe localmusic myplaylist */
 /* global isElectron require */
 /* eslint-disable global-require */
+/* eslint-disable import/no-extraneous-dependencies */
 
 const PROVIDERS = [
   {
@@ -582,9 +583,9 @@ const MediaService = {
   ) {
     const successCallback = playerSuccessCallback;
     const sound = {};
-    function failureCallback() {
+    function failureCallback(originalError = {}) {
       if (localStorage.getObject('enable_auto_choose_source') === false) {
-        playerFailCallback();
+        playerFailCallback(originalError);
         return;
       }
       const trackPlatform = getProviderNameByItemId(track.id);
@@ -635,7 +636,7 @@ const MediaService = {
       );
       // TODO: Use Promise.any() in ES2021 replace the tricky workaround
       Promise.all(getUrlPromises)
-        .then(playerFailCallback)
+        .then(() => playerFailCallback(originalError))
         .catch((response) => {
           playerSuccessCallback(response);
         });
