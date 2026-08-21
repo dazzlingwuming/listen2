@@ -16,7 +16,8 @@
     "dist:linuxArmv7l": "electron-builder --linux --armv7l",
     "dist:win": "electron-builder --win",
     "test:bilibili": "node --test app/test/bilibiliService.test.js app/test/bilibiliFailureContract.test.js",
-    "test:desktop-lyric": "node --test app/test/floatingWindowControls.test.js"
+    "test:desktop-lyric": "node --test app/test/floatingWindowControls.test.js",
+    "test:machine-translation": "node app/test/machineTranslationDeepSeek.test.js"
   },
   "repository": {
     "type": "git",

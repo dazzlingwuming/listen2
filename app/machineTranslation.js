@@ -1,6 +1,7 @@
-const DEEPL_FREE_ENDPOINT = "https://api-free.deepl.com";
-const DEEPL_PRO_ENDPOINT = "https://api.deepl.com";
-const MAX_DEEPL_REQUEST_BYTES = 128 * 1024;
+const DEEPSEEK_ENDPOINT = "https://api.deepseek.com/chat/completions";
+const DEEPSEEK_PROVIDER = "deepseek";
+const DEEPSEEK_MODEL = "deepseek-v4-flash";
+const DEEPSEEK_PROMPT_VERSION = "deepseek-lyrics-v1";
 
 class MachineTranslationError extends Error {
   constructor(code, message, status = 0) {
@@ -9,30 +10,6 @@ class MachineTranslationError extends Error {
     this.code = code;
     this.status = status;
   }
-}
-
-function escapeXml(value) {
-  return String(value || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
-}
-
-function decodeXml(value) {
-  return String(value || "")
-    .replace(/&#x([0-9a-f]+);/gi, (match, code) =>
-      String.fromCodePoint(parseInt(code, 16))
-    )
-    .replace(/&#(\d+);/g, (match, code) =>
-      String.fromCodePoint(parseInt(code, 10))
-    )
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&amp;/g, "&");
 }
 
 function extractTimedLyricLines(lyric) {
@@ -48,67 +25,51 @@ function extractTimedLyricLines(lyric) {
       if (!text) {
         return null;
       }
-      return {
-        timestamps: match[0],
-        text,
-      };
+      return { timestamps: match[0], text };
     })
     .filter(Boolean)
     .map((line, index) => ({
       ...line,
-      id: index,
+      id: `L${String(index + 1).padStart(4, "0")}`,
     }));
 }
 
-function buildWholeLyricDocument(lines) {
+function normalizeTargetLanguage(language) {
+  const normalized = String(language || "zh-CN").trim().toLowerCase();
+  if (!normalized || normalized === "zh" || normalized === "zh-cn" || normalized === "zh-hans") {
+    return "zh-CN";
+  }
+  return String(language).trim();
+}
+
+function targetLanguageInstruction(targetLanguage) {
+  return normalizeTargetLanguage(targetLanguage) === "zh-CN"
+    ? "简体中文（zh-CN）"
+    : normalizeTargetLanguage(targetLanguage);
+}
+
+function buildDeepSeekLyricPrompt({ lines, targetLanguage, title, artist }) {
   if (!Array.isArray(lines) || lines.length === 0) {
     throw new MachineTranslationError(
       "no-timed-lines",
       "The lyric does not contain translatable timed lines."
     );
   }
-  const content = lines
-    .map((line) => `<line id="${line.id}">${escapeXml(line.text)}</line>`)
-    .join("\n");
-  return `<?xml version="1.0" encoding="UTF-8"?><lyrics>\n${content}\n</lyrics>`;
-}
 
-function parseWholeLyricDocument(document, expectedLines) {
-  const translations = new Map();
-  const linePattern =
-    /<line\b[^>]*\bid\s*=\s*(["'])(\d+)\1[^>]*>([\s\S]*?)<\/line>/gi;
-  let match = linePattern.exec(String(document || ""));
-  while (match) {
-    const id = Number(match[2]);
-    if (!Number.isInteger(id) || translations.has(id)) {
-      throw new MachineTranslationError(
-        "invalid-line-map",
-        "The translation response contains duplicate or invalid line IDs."
-      );
-    }
-    translations.set(id, decodeXml(match[3]).trim());
-    match = linePattern.exec(String(document || ""));
-  }
-
-  if (translations.size !== expectedLines.length) {
-    throw new MachineTranslationError(
-      "line-count-mismatch",
-      "The translation response does not match the source lyric line count."
-    );
-  }
-
-  return expectedLines.map((line) => {
-    if (!translations.has(line.id) || !translations.get(line.id)) {
-      throw new MachineTranslationError(
-        "missing-line",
-        `The translation response is missing lyric line ${line.id}.`
-      );
-    }
-    return {
-      ...line,
-      translatedText: translations.get(line.id),
-    };
-  });
+  return [
+    "You are an expert lyric translator.",
+    `Translate this complete song into ${targetLanguageInstruction(targetLanguage)}.`,
+    "Write elegant, natural lyrics while remaining faithful to the original meaning.",
+    "Preserve imagery, emotional tone, voice, and repeated phrases.",
+    "Never merge, split, reorder, omit, or add lyric lines.",
+    "Return only one JSON object. Its keys must be exactly the supplied line IDs, and every value must be a non-empty translated string. Do not include markdown or any extra keys.",
+    `Song title: ${String(title || "").trim() || "(unknown)"}`,
+    `Artist: ${String(artist || "").trim() || "(unknown)"}`,
+    "Lyrics (each object key is a fixed line ID):",
+    JSON.stringify(
+      Object.fromEntries(lines.map((line) => [line.id, line.text]))
+    ),
+  ].join("\n");
 }
 
 function buildTranslatedLrc(lines) {
@@ -117,66 +78,163 @@ function buildTranslatedLrc(lines) {
     .join("\n");
 }
 
-function mapDeepLTargetLanguage(language) {
-  const normalized = String(language || "zh-CN")
-    .trim()
-    .toLowerCase();
-  const targetLanguages = {
-    "zh-cn": "ZH-HANS",
-    "zh-hans": "ZH-HANS",
-    zh: "ZH-HANS",
-    "zh-tw": "ZH-HANT",
-    "zh-hk": "ZH-HANT",
-    "zh-hant": "ZH-HANT",
-    "zh-tc": "ZH-HANT",
-    "en-us": "EN-US",
-    en: "EN-US",
-    "en-gb": "EN-GB",
-    fr: "FR",
-    "fr-fr": "FR",
-    ko: "KO",
-    "ko-kr": "KO",
-    pt: "PT-BR",
-    "pt-br": "PT-BR",
-    "pt-pt": "PT-PT",
+function readJsonStringEnd(value, start) {
+  let index = start + 1;
+  while (index < value.length) {
+    if (value[index] === "\\") {
+      index += 2;
+    } else if (value[index] === '"') {
+      return index + 1;
+    } else {
+      index += 1;
+    }
+  }
+  return -1;
+}
+
+function parseTopLevelJsonObjectKeys(content) {
+  const value = String(content || "");
+  let index = 0;
+  const skipWhitespace = () => {
+    while (/\s/.test(value[index] || "")) {
+      index += 1;
+    }
   };
-  return targetLanguages[normalized] || "ZH-HANS";
+  const keys = [];
+  skipWhitespace();
+  if (value[index] !== "{") {
+    return keys;
+  }
+  index += 1;
+  skipWhitespace();
+  if (value[index] === "}") {
+    return keys;
+  }
+
+  while (index < value.length) {
+    if (value[index] !== '"') {
+      return keys;
+    }
+    const keyEnd = readJsonStringEnd(value, index);
+    if (keyEnd < 0) {
+      return keys;
+    }
+    keys.push(JSON.parse(value.slice(index, keyEnd)));
+    index = keyEnd;
+    skipWhitespace();
+    if (value[index] !== ":") {
+      return keys;
+    }
+    index += 1;
+    skipWhitespace();
+
+    let nesting = 0;
+    while (index < value.length) {
+      if (value[index] === '"') {
+        index = readJsonStringEnd(value, index);
+        if (index < 0) {
+          return keys;
+        }
+        continue;
+      }
+      if (value[index] === "{" || value[index] === "[") {
+        nesting += 1;
+      } else if (value[index] === "}" || value[index] === "]") {
+        if (nesting === 0) {
+          break;
+        }
+        nesting -= 1;
+      } else if (value[index] === "," && nesting === 0) {
+        break;
+      }
+      index += 1;
+    }
+    skipWhitespace();
+    if (value[index] === ",") {
+      index += 1;
+      skipWhitespace();
+      continue;
+    }
+    return keys;
+  }
+  return keys;
 }
 
-function getLanguageFamily(language) {
-  return String(language || "")
-    .toUpperCase()
-    .split("-")[0];
+function parseDeepSeekLineMap(content, expectedLines) {
+  let translations;
+  try {
+    translations = JSON.parse(String(content || ""));
+  } catch (error) {
+    throw new MachineTranslationError(
+      "invalid-json",
+      "DeepSeek returned invalid JSON."
+    );
+  }
+
+  if (
+    !translations ||
+    Array.isArray(translations) ||
+    Object.getPrototypeOf(translations) !== Object.prototype
+  ) {
+    throw new MachineTranslationError(
+      "invalid-alignment",
+      "DeepSeek returned an invalid lyric line map."
+    );
+  }
+
+  const expectedIds = expectedLines.map((line) => line.id);
+  const receivedIds = Object.keys(translations);
+  const rawIds = parseTopLevelJsonObjectKeys(content);
+  if (
+    receivedIds.length !== expectedIds.length ||
+    receivedIds.some((id) => !expectedIds.includes(id)) ||
+    rawIds.length !== expectedIds.length ||
+    new Set(rawIds).size !== rawIds.length
+  ) {
+    throw new MachineTranslationError(
+      "invalid-alignment",
+      "DeepSeek returned lyric IDs that do not exactly match the source."
+    );
+  }
+
+  return expectedLines.map((line) => {
+    const translation = translations[line.id];
+    if (typeof translation !== "string" || !translation.trim()) {
+      throw new MachineTranslationError(
+        "invalid-alignment",
+        "DeepSeek returned an empty or invalid lyric translation line."
+      );
+    }
+    return { ...line, translatedText: translation.trim() };
+  });
 }
 
-function getDeepLEndpoint(apiKey) {
-  return String(apiKey || "")
-    .trim()
-    .endsWith(":fx")
-    ? DEEPL_FREE_ENDPOINT
-    : DEEPL_PRO_ENDPOINT;
+function deepSeekErrorCode(status) {
+  return {
+    400: "bad-request",
+    401: "invalid-api-key",
+    402: "quota-exceeded",
+    422: "invalid-request",
+    429: "rate-limited",
+    500: "server-error",
+    503: "service-unavailable",
+  }[status] || "request-failed";
 }
 
 async function readErrorResponse(response) {
   try {
     const payload = await response.json();
-    return payload && payload.message
-      ? String(payload.message)
-      : `DeepL request failed with status ${response.status}.`;
+    return String(
+      (payload && payload.error && payload.error.message) ||
+        (payload && payload.message) ||
+        `DeepSeek request failed with status ${response.status}.`
+    );
   } catch (error) {
-    return `DeepL request failed with status ${response.status}.`;
+    return `DeepSeek request failed with status ${response.status}.`;
   }
 }
 
-async function translateWholeLyricWithDeepL({
-  fetchImpl,
-  apiKey,
-  lyric,
-  targetLanguage,
-  title,
-  artist,
-  signal,
-}) {
+async function requestDeepSeek({ fetchImpl, apiKey, body, signal }) {
   if (typeof fetchImpl !== "function") {
     throw new MachineTranslationError(
       "fetch-unavailable",
@@ -187,148 +245,171 @@ async function translateWholeLyricWithDeepL({
   if (!normalizedApiKey) {
     throw new MachineTranslationError(
       "missing-api-key",
-      "A DeepL API key is required."
+      "A DeepSeek API key is required."
     );
   }
 
-  const lines = extractTimedLyricLines(lyric);
-  const document = buildWholeLyricDocument(lines);
-  const targetLang = mapDeepLTargetLanguage(targetLanguage);
-  const contextParts = [
-    "This is one complete song lyric. Translate it coherently as a whole, preserving repeated motifs, pronouns, tone, and imagery.",
-  ];
-  if (title) {
-    contextParts.push(`Song title: ${String(title).trim()}.`);
-  }
-  if (artist) {
-    contextParts.push(`Artist: ${String(artist).trim()}.`);
-  }
-  const body = {
-    text: [document],
-    target_lang: targetLang,
-    context: contextParts.join(" "),
-    tag_handling: "xml",
-    tag_handling_version: "v2",
-    outline_detection: false,
-    non_splitting_tags: ["line"],
-    split_sentences: "nonewlines",
-    preserve_formatting: true,
-    show_billed_characters: true,
-  };
-  const serializedBody = JSON.stringify(body);
-  if (Buffer.byteLength(serializedBody, "utf8") > MAX_DEEPL_REQUEST_BYTES) {
+  const response = await fetchImpl(DEEPSEEK_ENDPOINT, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${normalizedApiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!response || !response.ok) {
+    const status = Number((response && response.status) || 0);
     throw new MachineTranslationError(
-      "lyric-too-large",
-      "The complete lyric exceeds DeepL's request size limit."
+      deepSeekErrorCode(status),
+      response ? await readErrorResponse(response) : "DeepSeek request failed.",
+      status
     );
   }
-
-  const response = await fetchImpl(
-    `${getDeepLEndpoint(normalizedApiKey)}/v2/translate`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `DeepL-Auth-Key ${normalizedApiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: serializedBody,
-      signal,
-    }
-  );
-  if (!response.ok) {
-    const message = await readErrorResponse(response);
-    const code =
-      response.status === 403
-        ? "invalid-api-key"
-        : response.status === 429
-        ? "rate-limited"
-        : response.status === 456
-        ? "quota-exceeded"
-        : "request-failed";
-    throw new MachineTranslationError(code, message, response.status);
+  try {
+    return await response.json();
+  } catch (error) {
+    throw new MachineTranslationError(
+      "invalid-json",
+      "DeepSeek returned invalid JSON."
+    );
   }
+}
 
-  const payload = await response.json();
-  const translation =
-    payload && Array.isArray(payload.translations) && payload.translations[0];
-  if (!translation || typeof translation.text !== "string") {
+function getDeepSeekMessageContent(payload) {
+  if (!payload || !Array.isArray(payload.choices) || payload.choices.length !== 1) {
     throw new MachineTranslationError(
       "invalid-response",
-      "DeepL returned an invalid translation response."
+      "DeepSeek returned an invalid response."
     );
   }
-
-  const detectedSourceLanguage = String(
-    translation.detected_source_language || ""
-  ).toUpperCase();
-  if (
-    detectedSourceLanguage &&
-    getLanguageFamily(detectedSourceLanguage) === getLanguageFamily(targetLang)
-  ) {
-    return {
-      tlyric: "",
-      provider: "DeepL",
-      targetLanguage: targetLang,
-      detectedSourceLanguage,
-      sameLanguage: true,
-      billedCharacters: Number(translation.billed_characters || 0),
-      lineCount: lines.length,
-    };
+  const choice = payload.choices[0];
+  if (!choice || choice.finish_reason !== "stop") {
+    throw new MachineTranslationError(
+      "unexpected-finish-reason",
+      "DeepSeek did not finish the translation normally."
+    );
   }
+  if (!choice.message || typeof choice.message.content !== "string") {
+    throw new MachineTranslationError(
+      "invalid-response",
+      "DeepSeek returned no translation content."
+    );
+  }
+  return choice.message.content;
+}
 
-  const translatedLines = parseWholeLyricDocument(translation.text, lines);
+function usageFromPayload(payload) {
+  const usage = (payload && payload.usage) || {};
   return {
-    tlyric: buildTranslatedLrc(translatedLines),
-    provider: "DeepL",
-    targetLanguage: targetLang,
-    detectedSourceLanguage,
-    sameLanguage: false,
-    billedCharacters: Number(translation.billed_characters || 0),
-    lineCount: translatedLines.length,
+    promptTokens: Number(usage.prompt_tokens || 0),
+    completionTokens: Number(usage.completion_tokens || 0),
+    totalTokens: Number(usage.total_tokens || 0),
   };
 }
 
-async function testDeepLApiKey({ fetchImpl, apiKey, signal }) {
-  const normalizedApiKey = String(apiKey || "").trim();
-  if (!normalizedApiKey) {
-    throw new MachineTranslationError(
-      "missing-api-key",
-      "A DeepL API key is required."
-    );
-  }
-  const response = await fetchImpl(
-    `${getDeepLEndpoint(normalizedApiKey)}/v2/usage`,
-    {
-      method: "GET",
-      headers: {
-        Authorization: `DeepL-Auth-Key ${normalizedApiKey}`,
-      },
-      signal,
-    }
+async function translateWholeLyricWithDeepSeek({
+  fetchImpl,
+  apiKey,
+  lyric,
+  targetLanguage,
+  title,
+  artist,
+  signal,
+}) {
+  const lines = extractTimedLyricLines(lyric);
+  const normalizedTargetLanguage = normalizeTargetLanguage(targetLanguage);
+  const payload = await requestDeepSeek({
+    fetchImpl,
+    apiKey,
+    signal,
+    body: {
+      model: DEEPSEEK_MODEL,
+      thinking: { type: "disabled" },
+      stream: false,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: "Follow the requested lyric translation format exactly.",
+        },
+        {
+          role: "user",
+          content: buildDeepSeekLyricPrompt({
+            lines,
+            targetLanguage: normalizedTargetLanguage,
+            title,
+            artist,
+          }),
+        },
+      ],
+    },
+  });
+  const translatedLines = parseDeepSeekLineMap(
+    getDeepSeekMessageContent(payload),
+    lines
   );
-  if (!response.ok) {
-    const message = await readErrorResponse(response);
+  return {
+    tlyric: buildTranslatedLrc(translatedLines),
+    provider: DEEPSEEK_PROVIDER,
+    model: DEEPSEEK_MODEL,
+    promptVersion: DEEPSEEK_PROMPT_VERSION,
+    targetLanguage: normalizedTargetLanguage,
+    lineCount: translatedLines.length,
+    ...usageFromPayload(payload),
+  };
+}
+
+async function testDeepSeekApiKey({ fetchImpl, apiKey, signal }) {
+  const payload = await requestDeepSeek({
+    fetchImpl,
+    apiKey,
+    signal,
+    body: {
+      model: DEEPSEEK_MODEL,
+      thinking: { type: "disabled" },
+      stream: false,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "user",
+          content: 'Return only this JSON object: {"ok":true}',
+        },
+      ],
+    },
+  });
+  const content = getDeepSeekMessageContent(payload);
+  try {
+    const result = JSON.parse(content);
+    if (!result || result.ok !== true) {
+      throw new Error("Unexpected test response.");
+    }
+  } catch (error) {
     throw new MachineTranslationError(
-      response.status === 403 ? "invalid-api-key" : "request-failed",
-      message,
-      response.status
+      "invalid-json",
+      "DeepSeek returned invalid JSON for the test request."
     );
   }
-  const payload = await response.json();
   return {
-    characterCount: Number(payload.character_count || 0),
-    characterLimit: Number(payload.character_limit || 0),
+    provider: DEEPSEEK_PROVIDER,
+    model: DEEPSEEK_MODEL,
+    usage: usageFromPayload(payload),
   };
 }
 
 module.exports = {
+  DEEPSEEK_ENDPOINT,
+  DEEPSEEK_MODEL,
+  DEEPSEEK_PROMPT_VERSION,
+  DEEPSEEK_PROVIDER,
   MachineTranslationError,
+  buildDeepSeekLyricPrompt,
   buildTranslatedLrc,
-  buildWholeLyricDocument,
+  deepSeekErrorCode,
   extractTimedLyricLines,
-  getDeepLEndpoint,
-  mapDeepLTargetLanguage,
-  parseWholeLyricDocument,
-  testDeepLApiKey,
-  translateWholeLyricWithDeepL,
+  normalizeTargetLanguage,
+  parseDeepSeekLineMap,
+  parseTopLevelJsonObjectKeys,
+  testDeepSeekApiKey,
+  translateWholeLyricWithDeepSeek,
 };

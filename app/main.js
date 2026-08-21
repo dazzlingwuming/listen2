@@ -16,9 +16,11 @@ const remoteMain = require("@electron/remote/main");
 const { createHash } = require("crypto");
 const { join } = require("path");
 const {
-  mapDeepLTargetLanguage,
-  testDeepLApiKey,
-  translateWholeLyricWithDeepL,
+  DEEPSEEK_MODEL,
+  DEEPSEEK_PROMPT_VERSION,
+  DEEPSEEK_PROVIDER,
+  testDeepSeekApiKey,
+  translateWholeLyricWithDeepSeek,
 } = require("./machineTranslation");
 const { createBilibiliFailure } = require("./bilibiliFailure");
 const { BilibiliService } = require("./bilibiliService");
@@ -75,11 +77,12 @@ let proxyConfig = store.get("proxyConfig") || {
 
 function getStoredMachineTranslationConfig() {
   const config = store.get("machineTranslation") || {};
+  const isDeepSeekConfig = config.provider === DEEPSEEK_PROVIDER;
   return {
-    enabled: config.enabled === true,
-    provider: "deepl",
+    provider: DEEPSEEK_PROVIDER,
+    model: DEEPSEEK_MODEL,
     encryptedApiKey:
-      typeof config.encryptedApiKey === "string"
+      isDeepSeekConfig && typeof config.encryptedApiKey === "string"
         ? config.encryptedApiKey
         : "",
   };
@@ -88,8 +91,8 @@ function getStoredMachineTranslationConfig() {
 function getPublicMachineTranslationConfig() {
   const config = getStoredMachineTranslationConfig();
   return {
-    enabled: config.enabled,
     provider: config.provider,
+    model: config.model,
     hasApiKey: Boolean(config.encryptedApiKey),
     secureStorageAvailable: safeStorage.isEncryptionAvailable(),
   };
@@ -158,12 +161,21 @@ async function withMachineTranslationTimeout(operation) {
   }
 }
 
-function getMachineTranslationCacheKey(lyric, targetLanguage) {
+function getMachineTranslationCacheKey(lyric, title, artist) {
   return createHash("sha256")
-    .update("deepl-whole-lyric-v1\0")
-    .update(mapDeepLTargetLanguage(targetLanguage))
+    .update(DEEPSEEK_PROVIDER)
+    .update("\0")
+    .update(DEEPSEEK_MODEL)
+    .update("\0")
+    .update(DEEPSEEK_PROMPT_VERSION)
+    .update("\0")
+    .update("zh-CN")
     .update("\0")
     .update(String(lyric || ""))
+    .update("\0")
+    .update(String(title || ""))
+    .update("\0")
+    .update(String(artist || ""))
     .digest("hex");
 }
 
@@ -249,6 +261,7 @@ ipcMain.handle("machine-translation:get-config", (event) => {
 ipcMain.handle("machine-translation:set-config", (event, payload = {}) => {
   try {
     ensureTrustedMachineTranslationSender(event);
+    payload = payload && typeof payload === "object" ? payload : {};
     const current = getStoredMachineTranslationConfig();
     let { encryptedApiKey } = current;
     if (payload.clearApiKey === true) {
@@ -256,15 +269,9 @@ ipcMain.handle("machine-translation:set-config", (event, payload = {}) => {
     } else if (String(payload.apiKey || "").trim()) {
       encryptedApiKey = encryptMachineTranslationApiKey(payload.apiKey);
     }
-    const enabled = payload.enabled === true;
-    if (enabled && !encryptedApiKey) {
-      throw Object.assign(new Error("A DeepL API key is required."), {
-        code: "missing-api-key",
-      });
-    }
     store.set("machineTranslation", {
-      enabled,
-      provider: "deepl",
+      provider: DEEPSEEK_PROVIDER,
+      model: DEEPSEEK_MODEL,
       encryptedApiKey,
     });
     return {
@@ -284,12 +291,12 @@ ipcMain.handle("machine-translation:test", async (event) => {
       config.encryptedApiKey
     );
     if (!apiKey) {
-      throw Object.assign(new Error("A DeepL API key is required."), {
+      throw Object.assign(new Error("A DeepSeek API key is required."), {
         code: "missing-api-key",
       });
     }
     const usage = await withMachineTranslationTimeout((signal) =>
-      testDeepLApiKey({
+      testDeepSeekApiKey({
         fetchImpl: getMachineTranslationFetch(),
         apiKey,
         signal,
@@ -298,7 +305,8 @@ ipcMain.handle("machine-translation:test", async (event) => {
     return {
       ok: true,
       status: "ready",
-      provider: "DeepL",
+      provider: DEEPSEEK_PROVIDER,
+      model: DEEPSEEK_MODEL,
       ...usage,
     };
   } catch (error) {
@@ -311,53 +319,43 @@ ipcMain.handle(
   async (event, payload = {}) => {
     try {
       ensureTrustedMachineTranslationSender(event);
-      const config = getStoredMachineTranslationConfig();
-      if (!config.enabled) {
-        return { ok: false, status: "disabled" };
+      payload = payload && typeof payload === "object" ? payload : {};
+      const lyric = String(payload.lyric || "");
+      if (!lyric) {
+        return { ok: false, status: "empty-lyric" };
       }
+      const targetLanguage = "zh-CN";
+      const cacheKey = getMachineTranslationCacheKey(
+        lyric,
+        payload.title,
+        payload.artist
+      );
+      const cached = getMachineTranslationCacheEntry(cacheKey);
+      if (cached) {
+        return {
+          ok: true,
+          status: "translated",
+          tlyric: cached.tlyric,
+          provider: cached.provider,
+          model: cached.model,
+          targetLanguage: cached.targetLanguage,
+          lineCount: cached.lineCount,
+          cached: true,
+        };
+      }
+      if (payload.allowNetwork !== true) {
+        return { ok: false, status: "not-cached" };
+      }
+      const config = getStoredMachineTranslationConfig();
       const apiKey = decryptMachineTranslationApiKey(
         config.encryptedApiKey
       );
       if (!apiKey) {
         return { ok: false, status: "missing-api-key" };
       }
-      const lyric = String(payload.lyric || "");
-      if (!lyric) {
-        return { ok: false, status: "empty-lyric" };
-      }
-      const targetLanguage = String(
-        payload.targetLanguage || "zh-CN"
-      );
-      const cacheKey = getMachineTranslationCacheKey(
-        lyric,
-        targetLanguage
-      );
-      const cached = getMachineTranslationCacheEntry(cacheKey);
-      if (cached) {
-        return cached.sameLanguage
-          ? {
-              ok: false,
-              status: "same-language",
-              provider: cached.provider,
-              detectedSourceLanguage:
-                cached.detectedSourceLanguage || "",
-              cached: true,
-            }
-          : {
-              ok: true,
-              status: "translated",
-              tlyric: cached.tlyric,
-              provider: cached.provider,
-              targetLanguage: cached.targetLanguage,
-              detectedSourceLanguage:
-                cached.detectedSourceLanguage || "",
-              lineCount: cached.lineCount,
-              cached: true,
-            };
-      }
 
       const result = await withMachineTranslationTimeout((signal) =>
-        translateWholeLyricWithDeepL({
+        translateWholeLyricWithDeepSeek({
           fetchImpl: getMachineTranslationFetch(),
           apiKey,
           lyric,
@@ -368,24 +366,13 @@ ipcMain.handle(
         })
       );
       saveMachineTranslationCacheEntry(cacheKey, result);
-      if (result.sameLanguage) {
-        return {
-          ok: false,
-          status: "same-language",
-          provider: result.provider,
-          detectedSourceLanguage: result.detectedSourceLanguage,
-          billedCharacters: result.billedCharacters,
-          cached: false,
-        };
-      }
       return {
         ok: true,
         status: "translated",
         tlyric: result.tlyric,
         provider: result.provider,
+        model: result.model,
         targetLanguage: result.targetLanguage,
-        detectedSourceLanguage: result.detectedSourceLanguage,
-        billedCharacters: result.billedCharacters,
         lineCount: result.lineCount,
         cached: false,
       };

@@ -296,7 +296,12 @@ const MediaService = {
     return ipcRenderer.invoke('machine-translation:test');
   },
 
-  machineTranslateLyricCandidate(trackInfo, candidate, targetLanguage) {
+  machineTranslateLyricCandidate(
+    trackInfo,
+    candidate,
+    targetLanguage,
+    options = {}
+  ) {
     const ipcRenderer = getMachineTranslationIpcRenderer();
     if (!ipcRenderer || !candidate || !candidate.lyric) {
       return Promise.resolve({
@@ -310,6 +315,7 @@ const MediaService = {
         title: candidate.title || trackInfo.title || '',
         artist: candidate.artist || trackInfo.artist || '',
         targetLanguage,
+        allowNetwork: options && options.allowNetwork === true,
       })
       .then((response) => {
         if (
@@ -326,10 +332,10 @@ const MediaService = {
         return {
           ...candidate,
           tlyric: response.tlyric,
-          translationProvider: response.provider || 'DeepL',
+          translationProvider: response.provider || 'deepseek',
           translationEnriched: false,
           machineTranslated: true,
-          machineTranslationProvider: response.provider || 'DeepL',
+          machineTranslationProvider: response.provider || 'deepseek',
           machineTranslationTarget: response.targetLanguage || '',
           machineTranslationDetectedSource:
             response.detectedSourceLanguage || '',

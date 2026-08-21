@@ -17,7 +17,10 @@
 
     <link href="css/origin.css" rel="stylesheet" id="theme-css" />
     <link href="css/common.css" rel="stylesheet" id="common-css" />
-    <link href="css/redesign.css?v=audio-reactive-stage-8" rel="stylesheet" />
+    <link
+      href="css/redesign.css?v=audio-reactive-stage-8"
+      rel="stylesheet"
+    />
 
     <link href="images/logo_16.png" rel="shortcut icon" />
     <link href="images/logo_16.png" rel="bookmark" />
@@ -1259,10 +1262,7 @@
                                 <span>{{_MACHINE_TRANSLATION_TITLE}}</span>
                               </div>
                               <div
-                                class="
-                                  settings-content
-                                  machine-translation-settings
-                                "
+                                class="settings-content machine-translation-settings"
                                 ng-if="!isChrome"
                               >
                                 <p class="machine-translation-description">
@@ -2941,12 +2941,7 @@
                             focusable="false"
                             data-prefix="fas"
                             data-icon="angle-left"
-                            class="
-                              svg-inline--fa
-                              fa-angle-left fa-w-8
-                              icon
-                              li-back
-                            "
+                            class="svg-inline--fa fa-angle-left fa-w-8 icon li-back"
                             ng-click="popWindow()"
                             role="img"
                             xmlns="http://www.w3.org/2000/svg"
@@ -2964,12 +2959,7 @@
                             focusable="false"
                             data-prefix="fas"
                             data-icon="angle-right"
-                            class="
-                              svg-inline--fa
-                              fa-angle-right fa-w-8
-                              icon
-                              li-advance
-                            "
+                            class="svg-inline--fa fa-angle-right fa-w-8 icon li-advance"
                             ng-click="forwardWindow()"
                             role="img"
                             xmlns="http://www.w3.org/2000/svg"
@@ -3085,10 +3075,7 @@
                         <div class="topbar-spacer"></div>
                         <!-- hot playlist window-->
                         <div
-                          class="
-                            page page-hot-playlist
-                            editorial-discovery-page
-                          "
+                          class="page page-hot-playlist editorial-discovery-page"
                           ng-show="current_tag==2 && is_window_hidden==1"
                           ng-controller="PlayListController"
                           ng-init="loadPlaylist();"
@@ -3176,10 +3163,7 @@
                                   role="img"
                                   xmlns="http://www.w3.org/2000/svg"
                                   viewBox="0 0 512 512"
-                                  class="
-                                    svg-inline--fa
-                                    fa-ellipsis-h fa-w-16 fa-9x
-                                  "
+                                  class="svg-inline--fa fa-ellipsis-h fa-w-16 fa-9x"
                                 >
                                   <path
                                     fill="currentColor"
@@ -3228,9 +3212,7 @@
                                 id="playlist-content"
                               >
                                 <div
-                                  class="
-                                    discovery-state discovery-state-loading
-                                  "
+                                  class="discovery-state discovery-state-loading"
                                   ng-if="loading && result.length === 0"
                                   role="status"
                                   aria-live="polite"
@@ -4038,10 +4020,7 @@
                                 <span>{{_MACHINE_TRANSLATION_TITLE}}</span>
                               </div>
                               <div
-                                class="
-                                  settings-content
-                                  machine-translation-settings
-                                "
+                                class="settings-content machine-translation-settings"
                                 ng-if="!isChrome"
                               >
                                 <p class="machine-translation-description">
@@ -4498,10 +4477,7 @@
                                       focusable="false"
                                       data-prefix="fas"
                                       data-icon="sign-in-alt"
-                                      class="
-                                        svg-inline--fa
-                                        fa-sign-in-alt fa-w-16
-                                      "
+                                      class="svg-inline--fa fa-sign-in-alt fa-w-16"
                                       role="img"
                                       xmlns="http://www.w3.org/2000/svg"
                                       viewBox="0 0 512 512"
@@ -4518,8 +4494,7 @@
 
                                   <div class="usercard-title">
                                     <div class="usercard-nickname">
-                                      {{source=='bilibili' ? '登录哔哩哔哩' :
-                                      _NOT_LOGIN_NICKNAME}}
+                                      {{source=='bilibili' ? '登录哔哩哔哩' : _NOT_LOGIN_NICKNAME}}
                                     </div>
                                     <div
                                       ng-if="source=='netease'"
@@ -5063,25 +5038,16 @@
                         class="songdetail-wrapper now-playing-stage"
                       >
                         <div class="draggable-zone"></div>
-                        <div
-                          class="now-playing-vignette"
-                          aria-hidden="true"
-                        ></div>
+                        <div class="now-playing-vignette" aria-hidden="true"></div>
                         <div class="now-playing-ambient" aria-hidden="true">
                           <span
                             class="now-playing-ambient-cover"
                             ng-style="currentPlaying && currentPlaying.img_url ? {'background-image': 'url(' + currentPlaying.img_url + ')'} : {}"
                           ></span>
-                          <span
-                            class="now-playing-ambient-orb orb-violet"
-                          ></span>
+                          <span class="now-playing-ambient-orb orb-violet"></span>
                           <span class="now-playing-ambient-orb orb-mint"></span>
-                          <span
-                            class="now-playing-ambient-beam beam-one"
-                          ></span>
-                          <span
-                            class="now-playing-ambient-beam beam-two"
-                          ></span>
+                          <span class="now-playing-ambient-beam beam-one"></span>
+                          <span class="now-playing-ambient-beam beam-two"></span>
                           <span class="now-playing-ambient-grid"></span>
                           <span class="now-playing-ambient-stars"></span>
                         </div>
@@ -5143,7 +5109,8 @@
                                   audio-visualizer-has-track="playlist && playlist.length > 0"
                                   audio-visualizer-active="window_type == 'track' && playlist && playlist.length > 0 && !bilibiliMv.active && !bilibiliMv.loading"
                                   aria-hidden="true"
-                                ></div>
+                                >
+                                </div>
                                 <div
                                   ng-if="window_type=='track'"
                                   class="covershadow"

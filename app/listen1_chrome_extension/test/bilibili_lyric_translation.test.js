@@ -5,10 +5,14 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const {
+  DEEPSEEK_ENDPOINT,
+  DEEPSEEK_MODEL,
+  buildDeepSeekLyricPrompt,
+  deepSeekErrorCode,
   extractTimedLyricLines,
-  getDeepLEndpoint,
-  mapDeepLTargetLanguage,
-  translateWholeLyricWithDeepL,
+  parseDeepSeekLineMap,
+  testDeepSeekApiKey,
+  translateWholeLyricWithDeepSeek,
 } = require('../../machineTranslation');
 
 function createProvider(options = {}) {
@@ -124,8 +128,8 @@ async function run() {
 
     let requestCount = 0;
     let requestBody = null;
-    const result = await translateWholeLyricWithDeepL({
-      apiKey: 'test-key:fx',
+    const result = await translateWholeLyricWithDeepSeek({
+      apiKey: 'test-key',
       lyric,
       targetLanguage: 'zh-CN',
       title: 'Traveling Light',
@@ -133,24 +137,25 @@ async function run() {
       fetchImpl: async (url, options) => {
         requestCount += 1;
         requestBody = JSON.parse(options.body);
-        assert.strictEqual(url, 'https://api-free.deepl.com/v2/translate');
+        assert.strictEqual(url, DEEPSEEK_ENDPOINT);
+        assert.strictEqual(options.headers.Authorization, 'Bearer test-key');
         return {
           ok: true,
           async json() {
             return {
-              translations: [
+              choices: [
                 {
-                  detected_source_language: 'EN',
-                  billed_characters: 82,
-                  text: [
-                    '<lyrics>',
-                    '<line id="0">现在我轻装前行</line>',
-                    '<line id="1">我的精神振翅高飞</line>',
-                    '<line id="2">如今我找到了自由</line>',
-                    '</lyrics>',
-                  ].join('\n'),
+                  finish_reason: 'stop',
+                  message: {
+                    content: JSON.stringify({
+                      L0001: '现在我轻装前行',
+                      L0002: '我的心灵高高飞扬',
+                      L0003: '如今我终于寻得自由',
+                    }),
+                  },
                 },
               ],
+              usage: { prompt_tokens: 82, completion_tokens: 30, total_tokens: 112 },
             };
           },
         };
@@ -162,53 +167,158 @@ async function run() {
       'the complete lyric must use one translation request'
     );
     assert.strictEqual(
-      requestBody.text.length,
-      1,
-      'the complete lyric must be one API text document'
+      requestBody.model,
+      DEEPSEEK_MODEL,
+      'the DeepSeek model must be fixed by the adapter'
     );
     assert.ok(
-      requestBody.text[0].includes('Now I am traveling light') &&
-        requestBody.text[0].includes('I found my freedom now'),
-      'one document must contain every lyric line'
+      requestBody.messages[1].content.includes('Now I am traveling light') &&
+        requestBody.messages[1].content.includes('I found my freedom now'),
+      'one DeepSeek prompt must contain every lyric line'
     );
-    assert.strictEqual(requestBody.tag_handling, 'xml');
+    assert.strictEqual(requestBody.thinking.type, 'disabled');
+    assert.strictEqual(requestBody.stream, false);
+    assert.strictEqual(requestBody.response_format.type, 'json_object');
+    assert.ok(
+      requestBody.messages[1].content.includes('elegant, natural lyrics') &&
+        requestBody.messages[1].content.includes('Preserve imagery, emotional tone'),
+      'the prompt must explicitly request a beautiful, faithful lyric translation'
+    );
     assert.strictEqual(
       result.tlyric,
       [
         '[00:01.00]现在我轻装前行',
-        '[00:05.25]我的精神振翅高飞',
-        '[00:09.00][00:13.00]如今我找到了自由',
+        '[00:05.25]我的心灵高高飞扬',
+        '[00:09.00][00:13.00]如今我终于寻得自由',
       ].join('\n')
     );
     assert.strictEqual(result.lineCount, 3);
-    assert.strictEqual(result.sameLanguage, false);
-    assert.strictEqual(mapDeepLTargetLanguage('zh-TC'), 'ZH-HANT');
-    assert.strictEqual(getDeepLEndpoint('paid-key'), 'https://api.deepl.com');
+    assert.strictEqual(result.provider, 'deepseek');
+    assert.strictEqual(result.totalTokens, 112);
   }
+
+  {
+    const expectedLines = extractTimedLyricLines(
+      '[00:01.00]First line\n[00:02.00]Second line'
+    );
+    assert.deepStrictEqual(
+      expectedLines.map((line) => line.id),
+      ['L0001', 'L0002']
+    );
+    [
+      '{not-json',
+      JSON.stringify({ L0001: '第一行' }),
+      JSON.stringify({ L0001: '第一行', L0002: '第二行', L0003: '多余行' }),
+      JSON.stringify({ L0001: '第一行', L0002: '' }),
+      '{"L0001":"第一行","L0001":"重复第一行","L0002":"第二行"}',
+    ].forEach((response) => {
+      assert.throws(
+        () => parseDeepSeekLineMap(response, expectedLines),
+        (error) => error && ['invalid-json', 'invalid-alignment'].includes(error.code),
+        'invalid, missing, extra, and empty lyric IDs must discard the complete result'
+      );
+    });
+    assert.throws(
+      () =>
+        buildDeepSeekLyricPrompt({
+          lines: [],
+          targetLanguage: 'zh-CN',
+        }),
+      (error) => error && error.code === 'no-timed-lines'
+    );
+    assert.strictEqual(deepSeekErrorCode(400), 'bad-request');
+    assert.strictEqual(deepSeekErrorCode(401), 'invalid-api-key');
+    assert.strictEqual(deepSeekErrorCode(402), 'quota-exceeded');
+    assert.strictEqual(deepSeekErrorCode(422), 'invalid-request');
+    assert.strictEqual(deepSeekErrorCode(429), 'rate-limited');
+    assert.strictEqual(deepSeekErrorCode(500), 'server-error');
+    assert.strictEqual(deepSeekErrorCode(503), 'service-unavailable');
+  }
+
+  await Promise.all(
+    [
+      [400, 'bad-request'],
+      [401, 'invalid-api-key'],
+      [402, 'quota-exceeded'],
+      [422, 'invalid-request'],
+      [429, 'rate-limited'],
+      [500, 'server-error'],
+      [503, 'service-unavailable'],
+    ].map(([status, expectedCode]) =>
+      assert.rejects(
+        () =>
+          translateWholeLyricWithDeepSeek({
+            apiKey: 'test-key',
+            lyric: '[00:01.00]First line',
+            fetchImpl: async () => ({
+              ok: false,
+              status,
+              async json() {
+                return { error: { message: 'test error' } };
+              },
+            }),
+          }),
+        (error) => error && error.code === expectedCode,
+        `HTTP ${status} must map to ${expectedCode}`
+      )
+    )
+  );
 
   await assert.rejects(
     () =>
-      translateWholeLyricWithDeepL({
-        apiKey: 'test-key:fx',
-        lyric: '[00:01.00]First line\n[00:02.00]Second line',
-        targetLanguage: 'zh-CN',
+      translateWholeLyricWithDeepSeek({
+        apiKey: 'test-key',
+        lyric: '[00:01.00]First line',
         fetchImpl: async () => ({
           ok: true,
           async json() {
             return {
-              translations: [
+              choices: [
                 {
-                  detected_source_language: 'EN',
-                  text: '<lyrics><line id="0">第一行</line></lyrics>',
+                  finish_reason: 'length',
+                  message: { content: '{"L0001":"第一行"}' },
                 },
               ],
             };
           },
         }),
       }),
-    (error) => error && error.code === 'line-count-mismatch',
-    'an incomplete line map must discard the whole translation'
+    (error) => error && error.code === 'unexpected-finish-reason',
+    'a non-stop completion must discard the complete translation'
   );
+
+  {
+    let testRequest = null;
+    const result = await testDeepSeekApiKey({
+      apiKey: 'test-key',
+      fetchImpl: async (url, options) => {
+        testRequest = { url, body: JSON.parse(options.body) };
+        return {
+          ok: true,
+          async json() {
+            return {
+              choices: [
+                {
+                  finish_reason: 'stop',
+                  message: { content: '{"ok":true}' },
+                },
+              ],
+              usage: { prompt_tokens: 8, completion_tokens: 4, total_tokens: 12 },
+            };
+          },
+        };
+      },
+    });
+    assert.strictEqual(testRequest.url, DEEPSEEK_ENDPOINT);
+    assert.strictEqual(testRequest.body.model, DEEPSEEK_MODEL);
+    assert.strictEqual(result.provider, 'deepseek');
+    assert.strictEqual(result.model, DEEPSEEK_MODEL);
+    assert.deepStrictEqual(result.usage, {
+      promptTokens: 8,
+      completionTokens: 4,
+      totalTokens: 12,
+    });
+  }
 
   {
     const helpers = createPlayHelpers();
