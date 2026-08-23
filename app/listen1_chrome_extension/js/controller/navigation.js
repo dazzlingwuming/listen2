@@ -3,7 +3,7 @@
 /* eslint-disable no-shadow */
 /* eslint-disable no-unused-vars */
 /* eslint-disable no-param-reassign */
-/* global angular notyf i18next MediaService l1Player hotkeys isElectron require GithubClient lastfm */
+/* global angular notyf i18next MediaService l1Player hotkeys isElectron require GithubClient lastfm playlistBackup */
 // control main view of page, it can be called any place
 angular.module('listenone').controller('NavigationController', [
   '$scope',
@@ -24,6 +24,12 @@ angular.module('listenone').controller('NavigationController', [
     $scope.dialog_song = '';
     $scope.dialog_type = 0;
     $scope.dialog_title = '';
+    $scope.playlistBackupImportLoading = false;
+    $scope.playlistBackupFileLoading = false;
+    $scope.gistRestoreLoading = false;
+    $scope.pendingPlaylistBackup = null;
+    let gistRestoreRequestId = 0;
+    let backupDialogRequestId = 0;
 
     $scope.isDoubanLogin = false;
 
@@ -285,14 +291,31 @@ angular.module('listenone').controller('NavigationController', [
       }
       if (dialog_type === 10) {
         $scope.dialog_title = i18next.t('_RECOVER_FROM_GITHUB_GIST');
+        backupDialogRequestId += 1;
+        const requestId = backupDialogRequestId;
         GithubClient.gist.listExistBackup().then(
           (res) => {
+            if (
+              $scope.dialog_type !== 10 ||
+              requestId !== backupDialogRequestId
+            ) {
+              return;
+            }
             $scope.myBackup = res;
           },
-          (err) => {
+          () => {
+            if (
+              $scope.dialog_type !== 10 ||
+              requestId !== backupDialogRequestId
+            ) {
+              return;
+            }
             $scope.myBackup = [];
           }
         );
+      }
+      if (dialog_type === 14) {
+        $scope.dialog_title = i18next.t('_RECOVER_OVERWRITE_TITLE');
       }
       if (dialog_type === 11) {
         $scope.dialog_title = i18next.t('_LOGIN');
@@ -467,6 +490,13 @@ angular.module('listenone').controller('NavigationController', [
       const closingDialogType = $scope.dialog_type;
       $scope.is_dialog_hidden = 1;
       $scope.dialog_type = 0;
+      if (closingDialogType === 10) {
+        gistRestoreRequestId += 1;
+        $scope.gistRestoreLoading = false;
+      }
+      if (closingDialogType === 14) {
+        $scope.pendingPlaylistBackup = null;
+      }
       if (closingDialogType === 13) {
         $scope.$emit('bilibili-auth:dialog-closed');
       }
@@ -525,55 +555,189 @@ angular.module('listenone').controller('NavigationController', [
       link.remove();
     };
 
-    $scope.backupMySettings = () => {
-      const items = {};
-      Object.keys(localStorage).forEach((key) => {
-        items[key] = localStorage.getObject(key);
-      });
+    function getPlaylistBackupApi() {
+      if (
+        typeof playlistBackup === 'undefined' ||
+        !playlistBackup ||
+        typeof playlistBackup.createBackup !== 'function' ||
+        typeof playlistBackup.importBackup !== 'function'
+      ) {
+        throw new Error(i18next.t('_PLAYLIST_BACKUP_IMPORT_FAILED'));
+      }
+      return playlistBackup;
+    }
 
-      const content = JSON.stringify(items);
+    function backupSummaryValue(summary, name) {
+      const value = Number((summary || {})[name]);
+      return Number.isFinite(value) ? value : 0;
+    }
+
+    function getMaxPlaylistBackupBytes() {
+      const backupApi = getPlaylistBackupApi();
+      const configuredLimit = Number(backupApi.MAX_BACKUP_BYTES);
+      return Number.isFinite(configuredLimit) && configuredLimit > 0
+        ? configuredLimit
+        : 5 * 1024 * 1024;
+    }
+
+    function getPlaylistBackupFailureMessage(error) {
+      if (
+        error &&
+        (error.code === 'BACKUP_ROLLBACK_FAILED' ||
+          (Array.isArray(error.rollbackErrors) &&
+            error.rollbackErrors.length > 0))
+      ) {
+        return i18next.t('_PLAYLIST_BACKUP_PARTIAL_WRITE_FAILURE');
+      }
+      return error && error.message
+        ? `${i18next.t('_PLAYLIST_BACKUP_IMPORT_FAILED')} ${error.message}`
+        : i18next.t('_PLAYLIST_BACKUP_IMPORT_FAILED');
+    }
+
+    function showPlaylistBackupSummary(summary) {
+      notyf.success(
+        i18next.t('_PLAYLIST_BACKUP_IMPORT_SUMMARY', {
+          added: backupSummaryValue(summary, 'added'),
+          skipped: backupSummaryValue(summary, 'skipped'),
+          conflicts: backupSummaryValue(summary, 'conflicts'),
+          favorites: backupSummaryValue(summary, 'favorites'),
+        })
+      );
+    }
+
+    function importPlaylistBackup(data, mode) {
+      if ($scope.playlistBackupImportLoading) {
+        return false;
+      }
+
+      $scope.playlistBackupImportLoading = true;
+      notyf.info(i18next.t('_IMPORTING_PLAYLIST'));
+      try {
+        const summary = getPlaylistBackupApi().importBackup(
+          localStorage,
+          data,
+          {
+            mode,
+          }
+        );
+        $rootScope.$broadcast('myplaylist:update');
+        $rootScope.$broadcast('favoriteplaylist:update');
+        notyf.dismissAll();
+        showPlaylistBackupSummary(summary);
+        return true;
+      } catch (error) {
+        notyf.dismissAll();
+        notyf.error(getPlaylistBackupFailureMessage(error));
+        return false;
+      } finally {
+        $scope.playlistBackupImportLoading = false;
+      }
+    }
+
+    function preparePlaylistBackupReplace(data, source) {
+      $scope.pendingPlaylistBackup = { data, source };
+      $scope.showDialog(14, $scope.pendingPlaylistBackup);
+    }
+
+    $scope.confirmPlaylistBackupReplace = () => {
+      const pending = $scope.pendingPlaylistBackup;
+      if (!pending || !pending.data) {
+        $scope.closeDialog();
+        return;
+      }
+      $scope.pendingPlaylistBackup = null;
+      $scope.closeDialog();
+      importPlaylistBackup(pending.data, 'replace');
+    };
+
+    $scope.cancelPlaylistBackupReplace = () => {
+      $scope.pendingPlaylistBackup = null;
+      $scope.closeDialog();
+    };
+
+    $scope.backupMySettings = () => {
+      let backup = null;
+      try {
+        backup = getPlaylistBackupApi().createBackup(localStorage);
+      } catch (error) {
+        notyf.warning(i18next.t('_PLAYLIST_BACKUP_IMPORT_FAILED'));
+        return;
+      }
+
+      const content = JSON.stringify(backup);
       $scope.downloadFile('listen1_backup.json', 'application/json', content);
     };
 
     $scope.importMySettings = (event) => {
       const fileObject = event.target.files[0];
-      if (fileObject === null) {
-        notyf.warning('请选择备份文件');
+      const mode = event.target.dataset.backupImportMode || 'merge';
+      event.target.value = '';
+      if (!fileObject || $scope.playlistBackupFileLoading) {
         return;
       }
+      let maxBackupBytes = 0;
+      try {
+        maxBackupBytes = getMaxPlaylistBackupBytes();
+      } catch (error) {
+        notyf.error(getPlaylistBackupFailureMessage(error));
+        return;
+      }
+      if (fileObject.size > maxBackupBytes) {
+        notyf.warning(
+          i18next.t('_PLAYLIST_BACKUP_FILE_TOO_LARGE', {
+            maxSize: Math.floor(maxBackupBytes / (1024 * 1024)),
+          })
+        );
+        return;
+      }
+      $scope.playlistBackupFileLoading = true;
       const reader = new FileReader();
+      let fileReadFailed = false;
+      reader.onerror = () => {
+        fileReadFailed = true;
+        $scope.$evalAsync(() => {
+          $scope.playlistBackupFileLoading = false;
+          notyf.warning(i18next.t('_PLAYLIST_BACKUP_FILE_READ_FAILED'));
+        });
+      };
       reader.onloadend = (readerEvent) => {
-        if (readerEvent.target.readyState === FileReader.DONE) {
-          const data_json = readerEvent.target.result;
-          // parse json
+        $scope.$evalAsync(() => {
+          $scope.playlistBackupFileLoading = false;
+          if (
+            fileReadFailed ||
+            readerEvent.target.readyState !== FileReader.DONE
+          ) {
+            return;
+          }
           let data = null;
           try {
-            data = JSON.parse(data_json);
-          } catch (e) {
-            notyf.warning('备份文件格式错误，请重新选择');
+            data = JSON.parse(readerEvent.target.result);
+          } catch (error) {
+            notyf.warning(i18next.t('_PLAYLIST_BACKUP_FILE_INVALID'));
             return;
           }
 
-          Object.keys(data).forEach((item) =>
-            localStorage.setObject(item, data[item])
-          );
-          $rootScope.$broadcast('myplaylist:update');
-          notyf.success('成功导入我的歌单');
-        }
+          if (mode === 'replace') {
+            preparePlaylistBackupReplace(data, 'local-file');
+            return;
+          }
+          importPlaylistBackup(data, 'merge');
+        });
       };
       reader.readAsText(fileObject);
     };
 
     $scope.gistBackupLoading = false;
     $scope.backupMySettings2Gist = (gistId, isPublic) => {
-      const items = {};
-      Object.keys(localStorage).forEach((key) => {
-        if (key !== 'gistid' && key !== 'githubOauthAccessKey') {
-          // avoid token leak
-          items[key] = localStorage.getObject(key);
-        }
-      });
-      const gistFiles = GithubClient.gist.json2gist(items);
+      let gistFiles = null;
+      try {
+        gistFiles = GithubClient.gist.json2gist(
+          getPlaylistBackupApi().createBackup(localStorage)
+        );
+      } catch (error) {
+        notyf.warning(i18next.t('_PLAYLIST_BACKUP_IMPORT_FAILED'));
+        return;
+      }
       $scope.gistBackupLoading = true;
       GithubClient.gist.backupMySettings2Gist(gistFiles, gistId, isPublic).then(
         () => {
@@ -590,31 +754,61 @@ angular.module('listenone').controller('NavigationController', [
       notyf.info('正在导出我的歌单到Gist...');
     };
 
-    $scope.gistRestoreLoading = false;
-    $scope.importMySettingsFromGist = (gistId) => {
+    $scope.importMySettingsFromGist = (gistId, mode = 'merge') => {
+      if ($scope.gistRestoreLoading || $scope.playlistBackupImportLoading) {
+        return;
+      }
+      gistRestoreRequestId += 1;
+      const requestId = gistRestoreRequestId;
       $scope.gistRestoreLoading = true;
-      GithubClient.gist.importMySettingsFromGist(gistId).then(
-        (raw) => {
-          GithubClient.gist.gist2json(raw, (data) => {
-            Object.keys(data).forEach((item) =>
-              localStorage.setObject(item, data[item])
-            );
-            notyf.dismissAll();
-            notyf.success('导入我的歌单成功');
-            $scope.gistRestoreLoading = false;
-            $rootScope.$broadcast('myplaylist:update');
+      GithubClient.gist
+        .importMySettingsFromGist(gistId)
+        .then((raw) => GithubClient.gist.gist2json(raw))
+        .then((data) => {
+          $scope.$evalAsync(() => {
+            if (requestId !== gistRestoreRequestId) {
+              return;
+            }
+            if (mode === 'replace') {
+              preparePlaylistBackupReplace(data, 'gist');
+              return;
+            }
+            importPlaylistBackup(data, 'merge');
           });
-        },
-        (err) => {
-          notyf.dismissAll();
-          if (err === 404) {
-            notyf.warning('未找到备份歌单，请先备份');
-          } else {
-            notyf.warning('导入我的歌单失败，检查后重试');
-          }
-          $scope.gistRestoreLoading = false;
-        }
-      );
+        })
+        .catch((error) => {
+          $scope.$evalAsync(() => {
+            if (requestId !== gistRestoreRequestId) {
+              return;
+            }
+            notyf.dismissAll();
+            const status =
+              error && error.response && Number(error.response.status);
+            if (
+              status === 404 ||
+              (error && error.code === 'BACKUP_FILE_MISSING')
+            ) {
+              notyf.warning(i18next.t('_PLAYLIST_BACKUP_GIST_NOT_FOUND'));
+              return;
+            }
+            if (
+              error &&
+              (error.code === 'INVALID_JSON' ||
+                error.code === 'BACKUP_JSON_INVALID')
+            ) {
+              notyf.warning(i18next.t('_PLAYLIST_BACKUP_FILE_INVALID'));
+              return;
+            }
+            notyf.warning(i18next.t('_PLAYLIST_BACKUP_GIST_FAILED'));
+          });
+        })
+        .finally(() => {
+          $scope.$evalAsync(() => {
+            if (requestId === gistRestoreRequestId) {
+              $scope.gistRestoreLoading = false;
+            }
+          });
+        });
       notyf.info('正在从Gist导入我的歌单...');
     };
 

@@ -3290,6 +3290,81 @@
   border-radius: 10px;
 }
 
+.modern-body .page .playlist-backup-settings {
+  display: grid;
+  gap: 12px;
+}
+
+.modern-body .page .playlist-backup-settings p,
+.modern-body .dialog-playlist-backup-replace p {
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.modern-body .playlist-backup-actions,
+.modern-body .playlist-backup-gist-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.modern-body .page .settings-content .playlist-backup-merge-action {
+  border-color: rgba(var(--ui-accent-rgb), 0.5);
+  background: var(--ui-accent);
+  color: #ffffff;
+}
+
+.modern-body .page .settings-content .playlist-backup-merge-action:hover,
+.modern-body .page .settings-content .playlist-backup-merge-action:focus-visible {
+  border-color: var(--ui-accent);
+  background: var(--ui-accent);
+  color: #ffffff;
+  box-shadow: 0 0 0 3px rgba(var(--ui-accent-rgb), 0.15);
+}
+
+.modern-body .page .settings-content .playlist-backup-replace-action {
+  width: fit-content;
+  color: var(--ui-muted);
+}
+
+.modern-body .dialog-playlist-backup-replace {
+  display: grid;
+  gap: 18px;
+  padding: 4px 2px;
+}
+
+.modern-body .dialog-playlist-backup-replace .buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.modern-body .dialog-backuplist .playlist-backup-gist-actions {
+  margin-top: 10px;
+}
+
+.modern-body .dialog-backuplist .playlist-backup-gist-actions button[disabled] {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+@media (max-width: 520px) {
+  .modern-body .playlist-backup-actions,
+  .modern-body .playlist-backup-gist-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .modern-body .page .settings-content .playlist-backup-merge-action,
+  .modern-body .page .settings-content .playlist-backup-replace-action,
+  .modern-body .dialog-backuplist .playlist-backup-gist-actions button {
+    width: 100%;
+    box-sizing: border-box;
+  }
+}
+
 .modern-body .shadow {
   background: var(--shadow-mask);
 }
