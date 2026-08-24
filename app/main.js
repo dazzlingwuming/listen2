@@ -7,6 +7,7 @@ const {
   Menu,
   safeStorage,
   session,
+  protocol,
   screen,
   Tray,
 } = electron;
@@ -24,10 +25,24 @@ const {
 } = require("./machineTranslation");
 const { createBilibiliFailure } = require("./bilibiliFailure");
 const { BilibiliService } = require("./bilibiliService");
+const { AudioCache, CACHE_SCHEME } = require(`${__dirname}/audioCache`);
+const { LyricCacheStore } = require(`${__dirname}/lyricCacheStore`);
 
 const store = new Store();
 const iconPath = join(__dirname, "/listen1_chrome_extension/images/logo.png");
-const MACHINE_TRANSLATION_CACHE_LIMIT = 80;
+if (protocol && typeof protocol.registerSchemesAsPrivileged === "function") {
+  protocol.registerSchemesAsPrivileged([
+    {
+      scheme: CACHE_SCHEME,
+      privileges: {
+        standard: true,
+        secure: true,
+        stream: true,
+        supportFetchAPI: true,
+      },
+    },
+  ]);
+}
 
 autoUpdater.checkForUpdatesAndNotify();
 
@@ -37,6 +52,10 @@ let floatingWindowCssKey = undefined,
   transparent = false,
   trayIconPath;
 let bilibiliService;
+let audioCache;
+let lyricCacheStore;
+let audioCacheStartupError;
+let audioCacheProtocolReady = false;
 let playerIsPlaying = false;
 /** @type {electron.BrowserWindow} */
 let mainWindow;
@@ -144,6 +163,38 @@ function getBilibiliService() {
   return bilibiliService;
 }
 
+function getAudioCache() {
+  if (!audioCache) {
+    audioCache = new AudioCache({
+      rootDir: join(app.getPath("userData"), "audio-cache-v1"),
+      session: session.defaultSession,
+      resolveBilibiliAudio: (options) =>
+        options.kind === "audio"
+          ? getBilibiliService().getLegacyAudioVariant(options)
+          : getBilibiliService().getAudioVariant(options),
+    });
+  }
+  return audioCache;
+}
+
+function ensureAudioCacheAvailable() {
+  if (audioCacheStartupError || !audioCacheProtocolReady) {
+    throw Object.assign(new Error("Audio cache protocol is unavailable."), {
+      code: "audio-cache-unavailable",
+    });
+  }
+  return getAudioCache();
+}
+
+function getLyricCacheStore() {
+  if (!lyricCacheStore) {
+    lyricCacheStore = new LyricCacheStore({
+      rootDir: join(app.getPath("userData"), "lyric-cache-v3"),
+    });
+  }
+  return lyricCacheStore;
+}
+
 async function withMachineTranslationTimeout(operation) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30000);
@@ -191,15 +242,55 @@ function saveMachineTranslationCacheEntry(cacheKey, entry) {
     ...entry,
     translatedAt: Date.now(),
   };
-  const keys = Object.keys(cache).sort(
-    (left, right) =>
-      Number(cache[left].translatedAt || 0) -
-      Number(cache[right].translatedAt || 0)
-  );
-  while (keys.length > MACHINE_TRANSLATION_CACHE_LIMIT) {
-    delete cache[keys.shift()];
-  }
   store.set("machineTranslationCache", cache);
+}
+
+function isMachineTranslationCacheKey(value) {
+  return /^[a-f0-9]{64}$/.test(String(value || ""));
+}
+
+function collectMachineTranslationCacheKeys(record) {
+  if (!record || !record.translations || typeof record.translations !== "object") {
+    return [];
+  }
+  return [
+    ...new Set(
+      Object.values(record.translations)
+        .map((translation) => translation && translation.cacheKey)
+        .filter(isMachineTranslationCacheKey)
+    ),
+  ];
+}
+
+function deleteMachineTranslationCacheEntries(cacheKeys) {
+  const keys = Array.isArray(cacheKeys)
+    ? [...new Set(cacheKeys.filter(isMachineTranslationCacheKey))]
+    : [];
+  if (!keys.length) return { ok: true, removed: 0 };
+  try {
+    const cache = store.get("machineTranslationCache");
+    if (!cache || typeof cache !== "object" || Array.isArray(cache)) {
+      return { ok: true, removed: 0 };
+    }
+    const next = { ...cache };
+    let removed = 0;
+    keys.forEach((key) => {
+      if (Object.prototype.hasOwnProperty.call(next, key)) {
+        delete next[key];
+        removed += 1;
+      }
+    });
+    if (removed) store.set("machineTranslationCache", next);
+    return { ok: true, removed };
+  } catch (error) {
+    return {
+      ok: false,
+      status:
+        (error && typeof error.code === "string" && error.code) ||
+        "translation-cache-write-failed",
+      removed: 0,
+    };
+  }
 }
 
 function machineTranslationFailure(error) {
@@ -245,6 +336,163 @@ function bilibiliFailure(error, stage = "bilibili") {
 function ensureTrustedBilibiliSender(event) {
   ensureTrustedMachineTranslationSender(event);
 }
+
+function localDataFailure(error) {
+  return {
+    ok: false,
+    status: error && typeof error.code === "string" ? error.code : "request-failed",
+  };
+}
+
+async function attachMachineTranslationToLyricCache(
+  payload,
+  lyric,
+  result,
+  cacheKey
+) {
+  if (!payload || typeof payload !== "object" || !payload.trackId) return;
+  const expectedRevision = Number(payload.expectedRevision);
+  if (
+    !Number.isSafeInteger(expectedRevision) ||
+    expectedRevision < 0 ||
+    !isMachineTranslationCacheKey(cacheKey)
+  )
+    return;
+  try {
+    await getLyricCacheStore().attachTranslation({
+      trackId: payload.trackId,
+      expectedRevision,
+      translation: {
+        lyricHash: createHash("sha256").update(String(lyric || "")).digest("hex"),
+        tlyric: result.tlyric,
+        provider: result.provider || DEEPSEEK_PROVIDER,
+        model: result.model || DEEPSEEK_MODEL,
+        promptVersion: DEEPSEEK_PROMPT_VERSION,
+        translatedAt: Date.now(),
+        cacheKey,
+      },
+    });
+  } catch (error) {
+    // A stale lyric record must not turn a successful translation into failure.
+  }
+}
+
+function safeIpcPayload(payload) {
+  return payload && typeof payload === "object" && !Array.isArray(payload)
+    ? payload
+    : {};
+}
+
+function registerLocalDataHandler(channel, handler) {
+  ipcMain.handle(channel, async (event, payload = {}) => {
+    try {
+      ensureTrustedMachineTranslationSender(event);
+      return await handler(safeIpcPayload(payload));
+    } catch (error) {
+      return localDataFailure(error);
+    }
+  });
+}
+
+registerLocalDataHandler("audio-cache:lookup", (payload) =>
+  ensureAudioCacheAvailable().lookup(payload)
+);
+registerLocalDataHandler("audio-cache:schedule-bilibili", (payload) =>
+  ensureAudioCacheAvailable().schedule(payload)
+);
+registerLocalDataHandler("audio-cache:invalidate", (payload) =>
+  ensureAudioCacheAvailable().delete(payload.cacheKey)
+);
+registerLocalDataHandler("audio-cache:delete", (payload) =>
+  ensureAudioCacheAvailable().delete(payload.cacheKey)
+);
+registerLocalDataHandler("audio-cache:configure", (payload) =>
+  ensureAudioCacheAvailable().configure(payload)
+);
+registerLocalDataHandler("audio-cache:clear", () =>
+  ensureAudioCacheAvailable().clear()
+);
+ipcMain.handle("audio-cache:status", async (event) => {
+  try {
+    ensureTrustedMachineTranslationSender(event);
+    await ensureAudioCacheAvailable().initialize();
+    return ensureAudioCacheAvailable().status();
+  } catch (error) {
+    return {
+      ...localDataFailure(error),
+      supported: false,
+      enabled: false,
+      capacityBytes: 0,
+      usedBytes: 0,
+      readyEntries: 0,
+      queuedEntries: 0,
+      lastError: (error && error.code) || "audio-cache-unavailable",
+    };
+  }
+});
+
+registerLocalDataHandler("lyric-cache:get", (payload) =>
+  getLyricCacheStore().get(payload)
+);
+registerLocalDataHandler("lyric-cache:put", (payload) =>
+  getLyricCacheStore().put(payload)
+);
+registerLocalDataHandler("lyric-cache:attach-translation", (payload) =>
+  getLyricCacheStore().attachTranslation(payload)
+);
+registerLocalDataHandler("lyric-cache:clear", (payload) =>
+  getLyricCacheStore().clear(payload)
+);
+registerLocalDataHandler("lyric-cache:migrate-legacy-bilibili-manual", (payload) =>
+  getLyricCacheStore().migrateLegacyManual(payload)
+);
+registerLocalDataHandler("local-data:delete-track", async (payload) => {
+  let lyricRecord;
+  let translations = { ok: true, removed: 0 };
+  try {
+    lyricRecord = await getLyricCacheStore().get({ trackId: payload.trackId });
+    translations = deleteMachineTranslationCacheEntries(
+      collectMachineTranslationCacheKeys(lyricRecord && lyricRecord.record)
+    );
+  } catch (error) {
+    translations = {
+      ok: false,
+      status: (error && error.code) || "translation-cache-read-failed",
+      removed: 0,
+    };
+  }
+  // Keep the V3 record when its linked legacy translation cache could not be
+  // removed. The cacheKey is the only safe, per-track retry index.
+  const lyrics = translations.ok
+    ? await getLyricCacheStore().clear({ trackId: payload.trackId })
+    : {
+        ok: false,
+        status: "retained-for-translation-cache-retry",
+        retained: true,
+      };
+  let audio;
+  try {
+    audio = await ensureAudioCacheAvailable().deleteTrack(payload.trackId);
+  } catch (error) {
+    audio = { ok: false, status: (error && error.code) || "audio-cache-unavailable" };
+  }
+  if (!lyrics.ok && translations.ok) {
+    return {
+      ok: false,
+      status: lyrics.status || "invalid-input",
+      audio,
+      lyrics,
+      translations,
+    };
+  }
+  return {
+    ok: true,
+    partial: !audio.ok || !translations.ok,
+    audio,
+    lyrics,
+    translations,
+  };
+});
 
 ipcMain.handle("machine-translation:get-config", (event) => {
   try {
@@ -332,6 +580,12 @@ ipcMain.handle(
       );
       const cached = getMachineTranslationCacheEntry(cacheKey);
       if (cached) {
+        await attachMachineTranslationToLyricCache(
+          payload,
+          lyric,
+          cached,
+          cacheKey
+        );
         return {
           ok: true,
           status: "translated",
@@ -366,6 +620,12 @@ ipcMain.handle(
         })
       );
       saveMachineTranslationCacheEntry(cacheKey, result);
+      await attachMachineTranslationToLyricCache(
+        payload,
+        lyric,
+        result,
+        cacheKey
+      );
       return {
         ok: true,
         status: "translated",
@@ -1226,7 +1486,25 @@ if (!gotTheLock) {
   });
 
   // Create myWindow, load the rest of the app, etc...
-  app.on("ready", () => {
+  app.on("ready", async () => {
+    try {
+      await getAudioCache().initialize();
+      if (
+        session.defaultSession.protocol &&
+        typeof session.defaultSession.protocol.handle === "function"
+      ) {
+        await session.defaultSession.protocol.handle(CACHE_SCHEME, (request) =>
+          getAudioCache().handleProtocolRequest(request)
+        );
+        audioCacheProtocolReady = true;
+      } else {
+        throw Object.assign(new Error("Electron protocol handler is unavailable."), {
+          code: "audio-cache-unavailable",
+        });
+      }
+    } catch (error) {
+      audioCacheStartupError = error;
+    }
     createWindow();
     remoteMain.initialize();
     remoteMain.enable(mainWindow.webContents);

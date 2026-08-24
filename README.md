@@ -52,9 +52,20 @@ Listen2 是 [Listen1](https://github.com/listen1/listen1) 的社区增强版本�
 - 所有歌词源都没有译文时，可由用户明确确认后，调用 DeepSeek 翻译整首歌词。
 - DeepSeek 翻译一次提交整首歌词，按原时间轴回填；结果行无法可靠对应时不会强行展示。
 - 成功的机器翻译会缓存，减少重复请求和 API 费用。
+- 桌面端会持久化成功的自动匹配歌词；用户手动选择后，该选择会替代自动结果并保持最高优先级。
+- DeepSeek 成功译文会随对应歌词持久化，不再按固定歌曲数量静默淘汰；只有与当前原文完整对应的译文才会显示。
 - DeepSeek API 密钥通过 Electron `safeStorage` 加密保存，不会返回给播放器页面。
 
 > Listen2 不会在播放、切歌或加载歌词时自动调用 DeepSeek。只有用户在确认面板主动同意后才发送歌名、歌手和整首歌词；请求可能产生 DeepSeek API 费用。
+
+### 桌面离线缓存
+
+- 歌曲真正开始播放后，桌面端会低优先级后台缓存完整的 Bilibili 音频；第一次播放仍直接使用在线流，不等待下载。
+- 只有完整下载并通过校验的文件才会进入离线缓存，失败下载和临时文件不会交给播放器。
+- 默认容量为 2 GB，也可选择 1 GB、5 GB、10 GB 或不限制；达到上限时仅按最近最少使用顺序清理音频。
+- 缓存命中后可在断网时播放；本地文件损坏时会删除该项，并在网络可用时回到原有 CDN 恢复流程。
+- 设置页可查看占用空间、缓存曲目和后台队列，也可清空音频缓存，或删除当前歌曲的音频、歌词、翻译与偏移数据。
+- Chrome 扩展不启用桌面音频缓存；缓存文件不会进入歌单备份或 GitHub Gist。
 
 ### 桌面歌词与播放控制
 
@@ -68,6 +79,13 @@ Listen2 是 [Listen1](https://github.com/listen1/listen1) 的社区增强版本�
 - 使用 Fisher–Yates 洗牌生成每轮随机队列。
 - 一轮内每首可播放歌曲只出现一次，新一轮避免立即重复上一首。
 - “上一首”沿真实播放历史返回，重启播放器后也会正确恢复随机模式。
+
+### 安全的歌单备份与跨设备导入
+
+- 新备份文件只包含我的歌单和收藏歌单，不导出登录凭据、本地音乐路径、主题或歌词设置。
+- 本地文件与 GitHub Gist 默认使用合并导入：保留当前设备的歌单，再追加备份中的歌单。
+- 完全相同的歌单会跳过；同名歌单可独立保留，ID 冲突但内容不同时会生成新 ID，不覆盖本机版本。
+- 兼容旧版 `listen1_backup.json`；“覆盖当前歌单”仍保留为需要应用内二次确认的高级选项。
 
 ## 下载与安装
 
@@ -85,12 +103,12 @@ Listen2 是 [Listen1](https://github.com/listen1/listen1) 的社区增强版本�
 
 核心播放器界面、Bilibili 适配、频谱和歌词逻辑由 Windows、macOS 与 Linux 共用。操作系统原生窗口行为会有少量差异。
 
-| 平台 | 状态 | 说明 |
-| --- | --- | --- |
-| Windows 10/11 x64 | 已构建并验证 | 提供 NSIS 安装包；包含现代 UI、Bilibili、MV、桌面歌词与 DeepSeek 翻译 |
-| macOS Intel / Apple Silicon | 已构建并验证 | 支持 x64、arm64 与 Universal DMG；当前未签名或公证 |
-| Windows ia32 / arm64 | 保留构建能力 | 尚未在对应设备上完成系统性回归 |
-| Linux | 保留构建能力 | 不是当前版本的主要测试平台 |
+| 平台                        | 状态         | 说明                                                                  |
+| --------------------------- | ------------ | --------------------------------------------------------------------- |
+| Windows 10/11 x64           | 已构建并验证 | 提供 NSIS 安装包；包含现代 UI、Bilibili、MV、桌面歌词与 DeepSeek 翻译 |
+| macOS Intel / Apple Silicon | 已构建并验证 | 支持 x64、arm64 与 Universal DMG；当前未签名或公证                    |
+| Windows ia32 / arm64        | 保留构建能力 | 尚未在对应设备上完成系统性回归                                        |
+| Linux                       | 保留构建能力 | 不是当前版本的主要测试平台                                            |
 
 ## 使用提示
 
@@ -145,8 +163,10 @@ npm run dist:linux
 
 ```bash
 npm run test:bilibili
+npm run test:desktop-cache
 npm run test:desktop-lyric
 npm run test:machine-translation
+npm --prefix app/listen1_chrome_extension test
 ```
 
 ## 项目结构
@@ -156,6 +176,8 @@ listen2/
 ├─ app/
 │  ├─ main.js                    # Electron 主进程、IPC 与桌面窗口
 │  ├─ bilibiliService.js        # Bilibili 登录、媒体清单与会话管理
+│  ├─ audioCache.js             # 桌面端完整音频缓存、容量与 Range 服务
+│  ├─ lyricCacheStore.js        # 自动/手选歌词及译文持久化
 │  ├─ machineTranslation.js     # DeepSeek 歌词翻译与结果校验
 │  ├─ floatingWindow.html       # 桌面歌词窗口
 │  └─ listen1_chrome_extension/ # 共用播放器前端与音乐平台适配
@@ -174,6 +196,7 @@ listen2/
 - MV 可用性受视频、地区、CDN 和设备解码能力影响；不可用时请继续使用纯音频模式。
 - 逐词高亮需要歌词源提供逐词时间戳；普通 LRC 只能可靠地逐行同步。
 - 机器翻译需要用户自行配置 DeepSeek API 密钥，翻译准确性和费用由对应服务决定。
+- 离线缓存只覆盖已成功播放并完整缓存的 Bilibili 音频；第一次播放仍需要网络。
 
 ## 贡献
 

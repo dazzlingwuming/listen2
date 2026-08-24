@@ -46,6 +46,7 @@
     <script type="text/javascript" src="js/vendor/lru-cache.min.js"></script>
 
     <script type="text/javascript" src="js/lowebutil.js"></script>
+    <script type="text/javascript" src="js/playlist_backup.js"></script>
     <script type="text/javascript" src="js/github.js"></script>
     <script type="text/javascript" src="js/lastfm.js"></script>
     <script type="text/javascript" src="js/provider/xiami.js"></script>
@@ -331,12 +332,125 @@
                           ng-repeat="backup in myBackup track by $index"
                           ng-class-odd="'odd'"
                           ng-class-even="'even'"
-                          ng-click="importMySettingsFromGist(backup.id); closeDialog();"
                         >
                           <img ng-src="images/mycover.jpg" />
                           <h2>{{ backup.id }} {{backup.description}}</h2>
+                          <div class="playlist-backup-gist-actions">
+                            <button
+                              class="btn btn-primary confirm-button"
+                              ng-disabled="gistRestoreLoading || playlistBackupImportLoading"
+                              ng-click="importMySettingsFromGist(backup.id, 'merge')"
+                            >
+                              {{_PLAYLIST_BACKUP_GIST_MERGE}}
+                            </button>
+                            <button
+                              class="btn btn-default"
+                              ng-disabled="gistRestoreLoading || playlistBackupImportLoading"
+                              ng-click="importMySettingsFromGist(backup.id, 'replace')"
+                            >
+                              {{_PLAYLIST_BACKUP_GIST_REPLACE}}
+                            </button>
+                          </div>
                         </li>
                       </ul>
+                      <div
+                        class="dialog-playlist-backup-replace"
+                        ng-show="dialog_type==14"
+                        role="dialog"
+                        aria-modal="true"
+                        data-playlist-backup-replace-confirm
+                      >
+                        <p>{{_RECOVER_OVERWRITE_WARNING}}</p>
+                        <div class="buttons">
+                          <button
+                            class="btn btn-primary confirm-button"
+                            ng-disabled="playlistBackupImportLoading"
+                            ng-click="confirmPlaylistBackupReplace()"
+                            data-playlist-backup-replace-commit
+                          >
+                            {{_RECOVER_OVERWRITE_CONFIRM}}
+                          </button>
+                          <button
+                            class="btn btn-default"
+                            ng-click="cancelPlaylistBackupReplace()"
+                            data-playlist-backup-replace-cancel
+                          >
+                            {{_CANCEL}}
+                          </button>
+                        </div>
+                      </div>
+                      <section
+                        class="dialog-audio-cache-confirm"
+                        ng-show="dialog_type==15 && !isChrome"
+                        role="alertdialog"
+                        aria-modal="true"
+                        aria-labelledby="classic-audio-cache-clear-title"
+                        aria-describedby="classic-audio-cache-clear-description"
+                        data-audio-cache-clear-confirm
+                      >
+                        <h3 id="classic-audio-cache-clear-title">
+                          {{_AUDIO_CACHE_CLEAR_CONFIRM_TITLE}}
+                        </h3>
+                        <p id="classic-audio-cache-clear-description">
+                          {{_AUDIO_CACHE_CLEAR_CONFIRM_DESCRIPTION}}
+                        </p>
+                        <div class="buttons">
+                          <button
+                            type="button"
+                            class="btn btn-warning warning-button"
+                            ng-click="confirmClearAudioCache()"
+                            ng-disabled="audioCacheActionPending"
+                            data-audio-cache-clear-commit
+                          >
+                            {{_AUDIO_CACHE_CLEAR_CONFIRM_ACTION}}
+                          </button>
+                          <button
+                            type="button"
+                            class="btn btn-default"
+                            ng-click="cancelClearAudioCache()"
+                            ng-disabled="audioCacheActionPending"
+                            data-audio-cache-clear-cancel
+                          >
+                            {{_CANCEL}}
+                          </button>
+                        </div>
+                      </section>
+                      <section
+                        class="dialog-audio-cache-confirm dialog-track-local-data-confirm"
+                        ng-show="dialog_type==16 && !isChrome"
+                        role="alertdialog"
+                        aria-modal="true"
+                        aria-labelledby="classic-track-local-data-title"
+                        aria-describedby="classic-track-local-data-description"
+                        data-track-local-data-delete-confirm
+                      >
+                        <h3 id="classic-track-local-data-title">
+                          {{_AUDIO_CACHE_DELETE_TRACK_CONFIRM_TITLE}}
+                        </h3>
+                        <p id="classic-track-local-data-description">
+                          {{_AUDIO_CACHE_DELETE_TRACK_CONFIRM_DESCRIPTION}}
+                        </p>
+                        <div class="buttons">
+                          <button
+                            type="button"
+                            class="btn btn-warning warning-button"
+                            ng-click="confirmDeleteCurrentTrackLocalData()"
+                            ng-disabled="audioCacheActionPending"
+                            data-track-local-data-delete-commit
+                          >
+                            {{_AUDIO_CACHE_DELETE_TRACK_CONFIRM_ACTION}}
+                          </button>
+                          <button
+                            type="button"
+                            class="btn btn-default"
+                            ng-click="cancelDeleteCurrentTrackLocalData()"
+                            ng-disabled="audioCacheActionPending"
+                            data-track-local-data-delete-cancel
+                          >
+                            {{_CANCEL}}
+                          </button>
+                        </div>
+                      </section>
                       <div class="dialog-open-login" ng-show="dialog_type==11">
                         <p>{{_LOGIN_DIALOG_NOTICE}}</p>
                         <div class="buttons">
@@ -1257,6 +1371,92 @@
                                   ></span
                                   >{{_SHOW_DESKTOP_LYRIC_TRANSLATION}}
                                 </div>
+                                <p
+                                  class="lyric-cache-description"
+                                  ng-if="!isChrome"
+                                  data-desktop-lyric-persistence
+                                >
+                                  {{_LYRIC_PERSISTENCE_DESCRIPTION}}
+                                </p>
+                              </div>
+                              <div
+                                class="settings-title"
+                                ng-if="!isChrome && audioCacheSettings.supported"
+                                data-desktop-audio-cache-section
+                              >
+                                <span>{{_AUDIO_CACHE_TITLE}}</span>
+                              </div>
+                              <div
+                                class="settings-content audio-cache-settings"
+                                ng-if="!isChrome && audioCacheSettings.supported"
+                                data-desktop-audio-cache-settings
+                                data-audio-cache-default-enabled="true"
+                                data-audio-cache-default-capacity="2147483648"
+                              >
+                                <p class="audio-cache-description">
+                                  {{_AUDIO_CACHE_DESCRIPTION}}
+                                </p>
+                                <label class="audio-cache-toggle" for="classic-audio-cache-enabled">
+                                  <input
+                                    id="classic-audio-cache-enabled"
+                                    type="checkbox"
+                                    ng-model="audioCacheSettings.enabled"
+                                    ng-change="updateAudioCacheEnabled()"
+                                    ng-disabled="audioCacheActionPending"
+                                  />
+                                  <span>{{_AUDIO_CACHE_ENABLED}}</span>
+                                </label>
+                                <label class="audio-cache-capacity" for="classic-audio-cache-capacity">
+                                  <span>{{_AUDIO_CACHE_CAPACITY}}</span>
+                                  <select
+                                    id="classic-audio-cache-capacity"
+                                    ng-model="audioCacheSettings.capacityBytes"
+                                    ng-options="option.value as option.label for option in audioCacheCapacityOptions"
+                                    ng-change="updateAudioCacheCapacity()"
+                                    ng-disabled="audioCacheActionPending"
+                                  ></select>
+                                </label>
+                                <dl class="audio-cache-status" aria-live="polite">
+                                  <div>
+                                    <dt>{{_AUDIO_CACHE_USAGE}}</dt>
+                                    <dd>{{formatAudioCacheBytes(audioCacheSettings.usedBytes)}} · {{audioCacheSettings.readyEntries}} {{_AUDIO_CACHE_TRACKS}}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>{{_AUDIO_CACHE_DOWNLOAD_STATUS}}</dt>
+                                    <dd ng-if="audioCacheSettings.queuedEntries > 0">{{_AUDIO_CACHE_DOWNLOAD_QUEUED}}: {{audioCacheSettings.queuedEntries}}</dd>
+                                    <dd ng-if="!audioCacheSettings.queuedEntries">{{_AUDIO_CACHE_DOWNLOAD_IDLE}}</dd>
+                                  </div>
+                                </dl>
+                                <p class="audio-cache-error" ng-if="audioCacheSettings.lastError" role="alert">
+                                  {{_AUDIO_CACHE_FAILURE_NOTICE}} {{audioCacheSettings.lastError}}
+                                </p>
+                                <div class="audio-cache-actions">
+                                  <button
+                                    type="button"
+                                    class="btn btn-primary confirm-button"
+                                    ng-click="refreshAudioCacheStatus()"
+                                    ng-disabled="audioCacheActionPending"
+                                  >
+                                    {{_AUDIO_CACHE_REFRESH}}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="btn btn-warning"
+                                    ng-click="requestClearAudioCache()"
+                                    ng-disabled="audioCacheActionPending"
+                                  >
+                                    {{_AUDIO_CACHE_CLEAR}}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="btn btn-default"
+                                    ng-if="currentPlaying && currentPlaying.id"
+                                    ng-click="requestDeleteCurrentTrackLocalData()"
+                                    ng-disabled="audioCacheActionPending"
+                                  >
+                                    {{_AUDIO_CACHE_DELETE_TRACK}}
+                                  </button>
+                                </div>
                               </div>
                               <div class="settings-title" ng-if="!isChrome">
                                 <span>{{_MACHINE_TRANSLATION_TITLE}}</span>
@@ -1354,27 +1554,42 @@
                               <div class="settings-title">
                                 <span>{{_RECOVER_PLAYLIST}}</span>
                               </div>
-                              <div class="settings-content">
+                              <div class="settings-content playlist-backup-settings">
                                 <p>{{_RECOVER_WARNING}}</p>
+                                <div class="playlist-backup-actions">
+                                  <label
+                                    class="upload-button playlist-backup-merge-action"
+                                    for="my-file-selector-classic-merge"
+                                  >
+                                    <input
+                                      id="my-file-selector-classic-merge"
+                                      type="file"
+                                      style="display: none"
+                                      data-backup-import-mode="merge"
+                                      ng-model="myuploadfiles"
+                                      custom-on-change="importMySettings"
+                                    />{{_RECOVER_FROM_LOCAL_FILE}}
+                                  </label>
+                                  <button
+                                    class="btn btn-primary confirm-button playlist-backup-merge-action"
+                                    ng-show="githubStatus == 2"
+                                    ng-click="showDialog(10)"
+                                  >
+                                    {{_RECOVER_FROM_GITHUB_GIST}}
+                                  </button>
+                                </div>
                                 <label
-                                  class="upload-button"
-                                  for="my-file-selector"
+                                  class="upload-button playlist-backup-replace-action"
+                                  for="my-file-selector-classic-replace"
                                 >
                                   <input
-                                    id="my-file-selector"
+                                    id="my-file-selector-classic-replace"
                                     type="file"
                                     style="display: none"
-                                    ng-model="myuploadfiles"
+                                    data-backup-import-mode="replace"
                                     custom-on-change="importMySettings"
-                                  />{{_RECOVER_FROM_LOCAL_FILE}}
+                                  />{{_RECOVER_OVERWRITE_ACTION}}
                                 </label>
-                                <button
-                                  class="btn btn-warning confirm-button"
-                                  ng-show="githubStatus == 2"
-                                  ng-click="showDialog(10)"
-                                >
-                                  {{_RECOVER_FROM_GITHUB_GIST}}
-                                </button>
                               </div>
 
                               <div class="settings-title">
@@ -2533,15 +2748,128 @@
                           ng-repeat="backup in myBackup track by $index"
                           ng-class-odd="'odd'"
                           ng-class-even="'even'"
-                          ng-click="importMySettingsFromGist(backup.id); closeDialog();"
                         >
                           <img
                             err-src="https://y.gtimg.cn/mediastyle/global/img/playlist_300.png"
                             ng-src="images/mycover.jpg"
                           />
                           <h2>{{ backup.id }} {{backup.description}}</h2>
+                          <div class="playlist-backup-gist-actions">
+                            <button
+                              class="btn btn-primary confirm-button"
+                              ng-disabled="gistRestoreLoading || playlistBackupImportLoading"
+                              ng-click="importMySettingsFromGist(backup.id, 'merge')"
+                            >
+                              {{_PLAYLIST_BACKUP_GIST_MERGE}}
+                            </button>
+                            <button
+                              class="btn btn-default"
+                              ng-disabled="gistRestoreLoading || playlistBackupImportLoading"
+                              ng-click="importMySettingsFromGist(backup.id, 'replace')"
+                            >
+                              {{_PLAYLIST_BACKUP_GIST_REPLACE}}
+                            </button>
+                          </div>
                         </li>
                       </ul>
+                      <div
+                        class="dialog-playlist-backup-replace"
+                        ng-show="dialog_type==14"
+                        role="dialog"
+                        aria-modal="true"
+                        data-playlist-backup-replace-confirm
+                      >
+                        <p>{{_RECOVER_OVERWRITE_WARNING}}</p>
+                        <div class="buttons">
+                          <button
+                            class="btn btn-primary confirm-button"
+                            ng-disabled="playlistBackupImportLoading"
+                            ng-click="confirmPlaylistBackupReplace()"
+                            data-playlist-backup-replace-commit
+                          >
+                            {{_RECOVER_OVERWRITE_CONFIRM}}
+                          </button>
+                          <button
+                            class="btn btn-default"
+                            ng-click="cancelPlaylistBackupReplace()"
+                            data-playlist-backup-replace-cancel
+                          >
+                            {{_CANCEL}}
+                          </button>
+                        </div>
+                      </div>
+                      <section
+                        class="dialog-audio-cache-confirm"
+                        ng-show="dialog_type==15 && !isChrome"
+                        role="alertdialog"
+                        aria-modal="true"
+                        aria-labelledby="modern-audio-cache-clear-title"
+                        aria-describedby="modern-audio-cache-clear-description"
+                        data-audio-cache-clear-confirm
+                      >
+                        <h3 id="modern-audio-cache-clear-title">
+                          {{_AUDIO_CACHE_CLEAR_CONFIRM_TITLE}}
+                        </h3>
+                        <p id="modern-audio-cache-clear-description">
+                          {{_AUDIO_CACHE_CLEAR_CONFIRM_DESCRIPTION}}
+                        </p>
+                        <div class="buttons">
+                          <button
+                            type="button"
+                            class="btn btn-warning warning-button"
+                            ng-click="confirmClearAudioCache()"
+                            ng-disabled="audioCacheActionPending"
+                            data-audio-cache-clear-commit
+                          >
+                            {{_AUDIO_CACHE_CLEAR_CONFIRM_ACTION}}
+                          </button>
+                          <button
+                            type="button"
+                            class="btn btn-default"
+                            ng-click="cancelClearAudioCache()"
+                            ng-disabled="audioCacheActionPending"
+                            data-audio-cache-clear-cancel
+                          >
+                            {{_CANCEL}}
+                          </button>
+                        </div>
+                      </section>
+                      <section
+                        class="dialog-audio-cache-confirm dialog-track-local-data-confirm"
+                        ng-show="dialog_type==16 && !isChrome"
+                        role="alertdialog"
+                        aria-modal="true"
+                        aria-labelledby="modern-track-local-data-title"
+                        aria-describedby="modern-track-local-data-description"
+                        data-track-local-data-delete-confirm
+                      >
+                        <h3 id="modern-track-local-data-title">
+                          {{_AUDIO_CACHE_DELETE_TRACK_CONFIRM_TITLE}}
+                        </h3>
+                        <p id="modern-track-local-data-description">
+                          {{_AUDIO_CACHE_DELETE_TRACK_CONFIRM_DESCRIPTION}}
+                        </p>
+                        <div class="buttons">
+                          <button
+                            type="button"
+                            class="btn btn-warning warning-button"
+                            ng-click="confirmDeleteCurrentTrackLocalData()"
+                            ng-disabled="audioCacheActionPending"
+                            data-track-local-data-delete-commit
+                          >
+                            {{_AUDIO_CACHE_DELETE_TRACK_CONFIRM_ACTION}}
+                          </button>
+                          <button
+                            type="button"
+                            class="btn btn-default"
+                            ng-click="cancelDeleteCurrentTrackLocalData()"
+                            ng-disabled="audioCacheActionPending"
+                            data-track-local-data-delete-cancel
+                          >
+                            {{_CANCEL}}
+                          </button>
+                        </div>
+                      </section>
                       <!-- modern Bilibili login dialog -->
                       <div class="dialog-open-login" ng-show="dialog_type==11">
                         <p>{{_LOGIN_DIALOG_NOTICE}}</p>
@@ -4015,6 +4343,92 @@
                                   ></span
                                   >{{_SHOW_DESKTOP_LYRIC_TRANSLATION}}
                                 </div>
+                                <p
+                                  class="lyric-cache-description"
+                                  ng-if="!isChrome"
+                                  data-desktop-lyric-persistence
+                                >
+                                  {{_LYRIC_PERSISTENCE_DESCRIPTION}}
+                                </p>
+                              </div>
+                              <div
+                                class="settings-title"
+                                ng-if="!isChrome && audioCacheSettings.supported"
+                                data-desktop-audio-cache-section
+                              >
+                                <span>{{_AUDIO_CACHE_TITLE}}</span>
+                              </div>
+                              <div
+                                class="settings-content audio-cache-settings"
+                                ng-if="!isChrome && audioCacheSettings.supported"
+                                data-desktop-audio-cache-settings
+                                data-audio-cache-default-enabled="true"
+                                data-audio-cache-default-capacity="2147483648"
+                              >
+                                <p class="audio-cache-description">
+                                  {{_AUDIO_CACHE_DESCRIPTION}}
+                                </p>
+                                <label class="audio-cache-toggle" for="modern-audio-cache-enabled">
+                                  <input
+                                    id="modern-audio-cache-enabled"
+                                    type="checkbox"
+                                    ng-model="audioCacheSettings.enabled"
+                                    ng-change="updateAudioCacheEnabled()"
+                                    ng-disabled="audioCacheActionPending"
+                                  />
+                                  <span>{{_AUDIO_CACHE_ENABLED}}</span>
+                                </label>
+                                <label class="audio-cache-capacity" for="modern-audio-cache-capacity">
+                                  <span>{{_AUDIO_CACHE_CAPACITY}}</span>
+                                  <select
+                                    id="modern-audio-cache-capacity"
+                                    ng-model="audioCacheSettings.capacityBytes"
+                                    ng-options="option.value as option.label for option in audioCacheCapacityOptions"
+                                    ng-change="updateAudioCacheCapacity()"
+                                    ng-disabled="audioCacheActionPending"
+                                  ></select>
+                                </label>
+                                <dl class="audio-cache-status" aria-live="polite">
+                                  <div>
+                                    <dt>{{_AUDIO_CACHE_USAGE}}</dt>
+                                    <dd>{{formatAudioCacheBytes(audioCacheSettings.usedBytes)}} · {{audioCacheSettings.readyEntries}} {{_AUDIO_CACHE_TRACKS}}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>{{_AUDIO_CACHE_DOWNLOAD_STATUS}}</dt>
+                                    <dd ng-if="audioCacheSettings.queuedEntries > 0">{{_AUDIO_CACHE_DOWNLOAD_QUEUED}}: {{audioCacheSettings.queuedEntries}}</dd>
+                                    <dd ng-if="!audioCacheSettings.queuedEntries">{{_AUDIO_CACHE_DOWNLOAD_IDLE}}</dd>
+                                  </div>
+                                </dl>
+                                <p class="audio-cache-error" ng-if="audioCacheSettings.lastError" role="alert">
+                                  {{_AUDIO_CACHE_FAILURE_NOTICE}} {{audioCacheSettings.lastError}}
+                                </p>
+                                <div class="audio-cache-actions">
+                                  <button
+                                    type="button"
+                                    class="btn btn-primary confirm-button"
+                                    ng-click="refreshAudioCacheStatus()"
+                                    ng-disabled="audioCacheActionPending"
+                                  >
+                                    {{_AUDIO_CACHE_REFRESH}}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="btn btn-warning"
+                                    ng-click="requestClearAudioCache()"
+                                    ng-disabled="audioCacheActionPending"
+                                  >
+                                    {{_AUDIO_CACHE_CLEAR}}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="btn btn-default"
+                                    ng-if="currentPlaying && currentPlaying.id"
+                                    ng-click="requestDeleteCurrentTrackLocalData()"
+                                    ng-disabled="audioCacheActionPending"
+                                  >
+                                    {{_AUDIO_CACHE_DELETE_TRACK}}
+                                  </button>
+                                </div>
                               </div>
                               <div class="settings-title" ng-if="!isChrome">
                                 <span>{{_MACHINE_TRANSLATION_TITLE}}</span>
@@ -4112,27 +4526,42 @@
                               <div class="settings-title">
                                 <span>{{_RECOVER_PLAYLIST}}</span>
                               </div>
-                              <div class="settings-content">
+                              <div class="settings-content playlist-backup-settings">
                                 <p>{{_RECOVER_WARNING}}</p>
+                                <div class="playlist-backup-actions">
+                                  <label
+                                    class="upload-button playlist-backup-merge-action"
+                                    for="my-file-selector-modern-merge"
+                                  >
+                                    <input
+                                      id="my-file-selector-modern-merge"
+                                      type="file"
+                                      style="display: none"
+                                      data-backup-import-mode="merge"
+                                      ng-model="myuploadfiles"
+                                      custom-on-change="importMySettings"
+                                    />{{_RECOVER_FROM_LOCAL_FILE}}
+                                  </label>
+                                  <button
+                                    class="btn btn-primary confirm-button playlist-backup-merge-action"
+                                    ng-show="githubStatus == 2"
+                                    ng-click="showDialog(10)"
+                                  >
+                                    {{_RECOVER_FROM_GITHUB_GIST}}
+                                  </button>
+                                </div>
                                 <label
-                                  class="upload-button"
-                                  for="my-file-selector"
+                                  class="upload-button playlist-backup-replace-action"
+                                  for="my-file-selector-modern-replace"
                                 >
                                   <input
-                                    id="my-file-selector"
+                                    id="my-file-selector-modern-replace"
                                     type="file"
                                     style="display: none"
-                                    ng-model="myuploadfiles"
+                                    data-backup-import-mode="replace"
                                     custom-on-change="importMySettings"
-                                  />{{_RECOVER_FROM_LOCAL_FILE}}
+                                  />{{_RECOVER_OVERWRITE_ACTION}}
                                 </label>
-                                <button
-                                  class="btn btn-warning confirm-button"
-                                  ng-show="githubStatus == 2"
-                                  ng-click="showDialog(10)"
-                                >
-                                  {{_RECOVER_FROM_GITHUB_GIST}}
-                                </button>
                               </div>
 
                               <div class="settings-title">

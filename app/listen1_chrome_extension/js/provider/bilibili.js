@@ -2276,6 +2276,7 @@ class bilibili {
 
   static bootstrap_track(track, success, failure, options = {}) {
     const trackId = String((track && track.id) || '');
+    const videoIdParts = this.get_video_id_parts(trackId);
     if (trackId.startsWith('bitrack_v_')) {
       if (
         typeof isElectron === 'function' &&
@@ -2310,6 +2311,14 @@ class bilibili {
               urlCandidates: [...new Set(urlCandidates)],
               bitrate: audio.label || '',
               platform: 'bilibili',
+              audioCacheDescriptor: {
+                kind: 'video',
+                bvid: videoIdParts.bvid,
+                cid: Number(manifest.cid || videoIdParts.cid || 0),
+                audioId: Number(audio.id || 0),
+                codecs: String(audio.codecs || ''),
+                mimeType: String(audio.mimeType || ''),
+              },
             });
           })
           .catch((error) => failure(this.create_media_failure(error)));
@@ -2341,6 +2350,10 @@ class bilibili {
           }
           [sound.url] = cdns;
           sound.platform = 'bilibili';
+          sound.audioCacheDescriptor = {
+            kind: 'audio',
+            sid: song_id,
+          };
           success(sound);
           return;
         }

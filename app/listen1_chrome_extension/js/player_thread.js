@@ -30,6 +30,7 @@
       this._loop_mode = 0;
       this._media_uri_list = {};
       this._media_retry_state = {};
+      this._audio_cache_scheduled = {};
       this._media_url_retry_timers = {};
       this._media_url_request_epoch = 0;
       this._media_url_request_tokens = {};
@@ -1082,6 +1083,9 @@
         candidateIndex: 0,
         canForceRefresh: options.canForceRefresh === true,
         forceRefreshAttempted: options.forceRefreshAttempted === true,
+        audioCacheKey: options.audioCacheKey || '',
+        fromAudioCache: options.fromAudioCache === true,
+        localBypassAttempted: options.localBypassAttempted === true,
       };
     }
 
@@ -1209,6 +1213,30 @@
       const retryState = this._media_retry_state[data.id];
       if (
         retryState &&
+        retryState.fromAudioCache &&
+        !retryState.localBypassAttempted
+      ) {
+        retryState.localBypassAttempted = true;
+        if (
+          retryState.audioCacheKey &&
+          MediaService &&
+          typeof MediaService.invalidateAudioCache === 'function'
+        ) {
+          MediaService.invalidateAudioCache(retryState.audioCacheKey).catch(
+            () => {}
+          );
+        }
+        this.unloadTrackHowl(data);
+        delete this._media_uri_list[data.id];
+        this.clearMediaRetryState(data.id);
+        this.retrieveMediaUrl(index, playNow, {
+          bypassAudioCache: true,
+          localBypassAttempted: true,
+        });
+        return;
+      }
+      if (
+        retryState &&
         retryState.candidateIndex + 1 < retryState.candidates.length
       ) {
         retryState.candidateIndex += 1;
@@ -1258,61 +1286,119 @@
         },
       };
 
-      MediaService.bootstrapTrack(
-        msg.data,
-        (bootinfo) => {
-          if (
-            !this.isCurrentMediaUrlRequest(index, track, playNow, requestToken)
-          ) {
-            return;
-          }
-          msg.type = 'BG_PLAYER:RETRIEVE_URL_SUCCESS';
+      const retrieveRemoteMediaUrl = () => {
+        MediaService.bootstrapTrack(
+          msg.data,
+          (bootinfo) => {
+            if (
+              !this.isCurrentMediaUrlRequest(
+                index,
+                track,
+                playNow,
+                requestToken
+              )
+            ) {
+              return;
+            }
+            msg.type = 'BG_PLAYER:RETRIEVE_URL_SUCCESS';
 
-          msg.data = { ...msg.data, ...bootinfo };
+            msg.data = { ...msg.data, ...bootinfo };
 
-          this.playlist[index].bitrate = bootinfo.bitrate;
-          this.playlist[index].platform = bootinfo.platform;
+            this.playlist[index].bitrate = bootinfo.bitrate;
+            this.playlist[index].platform = bootinfo.platform;
+            this.playlist[index]._audio_cache_descriptor =
+              bootinfo.audioCacheDescriptor || null;
 
-          const urlCandidates = Player.getMediaUrlCandidates(bootinfo);
-          if (!urlCandidates.length) {
+            const urlCandidates = Player.getMediaUrlCandidates(bootinfo);
+            if (!urlCandidates.length) {
+              this.retryMediaUrl(
+                index,
+                playNow,
+                Number(options.retryAttempt || 0),
+                'empty media URL response',
+                requestToken
+              );
+              return;
+            }
+            this.clearMediaUrlRetryTimer(track.id);
+            this.setMediaRetryState(msg.data, urlCandidates, {
+              canForceRefresh:
+                bootinfo.platform === 'bilibili' &&
+                String(msg.data.id || '').startsWith('bitrack_v_'),
+              forceRefreshAttempted: options.forceRefresh === true,
+              localBypassAttempted: options.localBypassAttempted === true,
+            });
+            this.setMediaURI(urlCandidates[0], msg.data.id);
+            this.setAudioDisabled(false, msg.data.index);
+            this.finishLoad(msg.data.index, playNow);
+            playerSendMessage(this.mode, msg);
+            this.invalidateMediaUrlRequest(track.id);
+          },
+          (error) => {
+            if (
+              !this.isCurrentMediaUrlRequest(
+                index,
+                track,
+                playNow,
+                requestToken
+              )
+            ) {
+              return;
+            }
             this.retryMediaUrl(
               index,
               playNow,
               Number(options.retryAttempt || 0),
-              'empty media URL response',
+              error,
               requestToken
             );
-            return;
-          }
-          this.clearMediaUrlRetryTimer(track.id);
-          this.setMediaRetryState(msg.data, urlCandidates, {
-            canForceRefresh:
-              bootinfo.platform === 'bilibili' &&
-              String(msg.data.id || '').startsWith('bitrack_v_'),
-            forceRefreshAttempted: options.forceRefresh === true,
-          });
-          this.setMediaURI(urlCandidates[0], msg.data.id);
-          this.setAudioDisabled(false, msg.data.index);
-          this.finishLoad(msg.data.index, playNow);
-          playerSendMessage(this.mode, msg);
-          this.invalidateMediaUrlRequest(track.id);
-        },
-        (error) => {
+          },
+          { forceRefresh: options.forceRefresh === true }
+        );
+      };
+
+      if (
+        options.bypassAudioCache === true ||
+        !MediaService ||
+        typeof MediaService.getAudioCacheLookup !== 'function'
+      ) {
+        retrieveRemoteMediaUrl();
+        return;
+      }
+      MediaService.getAudioCacheLookup(track)
+        .then((cacheResponse) => {
           if (
             !this.isCurrentMediaUrlRequest(index, track, playNow, requestToken)
           ) {
             return;
           }
-          this.retryMediaUrl(
-            index,
-            playNow,
-            Number(options.retryAttempt || 0),
-            error,
-            requestToken
-          );
-        },
-        { forceRefresh: options.forceRefresh === true }
-      );
+          const entry = cacheResponse && cacheResponse.entry;
+          if (
+            !cacheResponse ||
+            cacheResponse.ok !== true ||
+            cacheResponse.hit !== true ||
+            !entry ||
+            !entry.url
+          ) {
+            retrieveRemoteMediaUrl();
+            return;
+          }
+          this.setMediaRetryState(msg.data, [entry.url], {
+            fromAudioCache: true,
+            audioCacheKey: entry.cacheKey,
+            localBypassAttempted: options.localBypassAttempted === true,
+          });
+          this.setMediaURI(entry.url, msg.data.id);
+          this.setAudioDisabled(false, msg.data.index);
+          this.finishLoad(msg.data.index, playNow);
+          playerSendMessage(this.mode, {
+            ...msg,
+            type: 'BG_PLAYER:RETRIEVE_URL_SUCCESS',
+            data: { ...msg.data, bitrate: entry.bitrate || '' },
+          });
+          this.invalidateMediaUrlRequest(track.id);
+        })
+        .catch(() => retrieveRemoteMediaUrl());
     }
 
     /**
@@ -1388,6 +1474,45 @@
               });
             }
             self.currentAudio.disabled = false;
+            const audioCacheDescriptor = data._audio_cache_descriptor;
+            const cacheScheduleKey = audioCacheDescriptor
+              ? [
+                  data.id,
+                  audioCacheDescriptor.bvid,
+                  audioCacheDescriptor.cid,
+                  audioCacheDescriptor.audioId,
+                  audioCacheDescriptor.codecs,
+                ].join(':')
+              : '';
+            if (
+              cacheScheduleKey &&
+              !self._audio_cache_scheduled[cacheScheduleKey] &&
+              MediaService &&
+              typeof MediaService.scheduleBilibiliAudioCache === 'function'
+            ) {
+              self._audio_cache_scheduled[cacheScheduleKey] = true;
+              MediaService.scheduleBilibiliAudioCache(
+                data,
+                audioCacheDescriptor
+              )
+                .then((response) => {
+                  const retainedStatuses = [
+                    'queued',
+                    'downloading',
+                    'already-ready',
+                  ];
+                  if (
+                    !response ||
+                    response.ok !== true ||
+                    !retainedStatuses.includes(response.status)
+                  ) {
+                    delete self._audio_cache_scheduled[cacheScheduleKey];
+                  }
+                })
+                .catch(() => {
+                  delete self._audio_cache_scheduled[cacheScheduleKey];
+                });
+            }
             // Date.now() returns a millisecond timestamp that needs to be converted to a second timestamp
             self.playedFrom = Math.round(Date.now() / 1000);
             self.sendPlayingEvent('Playing');

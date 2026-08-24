@@ -1,4 +1,4 @@
-/* global isElectron require */
+/* global isElectron require playlistBackup */
 /* eslint-disable global-require */
 function github() {
   const OAUTH_URL = 'https://github.com/login/oauth';
@@ -22,6 +22,29 @@ function github() {
     status: 0,
     username: '',
   };
+
+  function gistError(code, message, cause) {
+    const error = new Error(message);
+    error.code = code;
+    if (cause) {
+      error.cause = cause;
+    }
+    return error;
+  }
+
+  function parseGistBackupContent(content) {
+    if (typeof content === 'string') {
+      try {
+        return JSON.parse(content);
+      } catch (error) {
+        throw gistError('BACKUP_JSON_INVALID', '备份文件 JSON 格式错误', error);
+      }
+    }
+    if (content && typeof content === 'object') {
+      return content;
+    }
+    throw gistError('BACKUP_JSON_INVALID', '备份文件内容为空或格式错误');
+  }
 
   window.GithubClient = {
     github: {
@@ -51,7 +74,7 @@ function github() {
         const url = `${OAUTH_URL}/authorize?client_id=${client_id}&scope=gist`;
         if (isElectron()) {
           // normal window for link
-          const { BrowserWindow } = require('@electron/remote'); // eslint-disable-line import/no-unresolved
+          const { BrowserWindow } = require('@electron/remote'); // eslint-disable-line import/no-unresolved, import/no-extraneous-dependencies
           let win = new BrowserWindow({
             width: 1000,
             height: 670,
@@ -108,26 +131,43 @@ function github() {
           content: JSON.stringify(jsonObject),
         };
         // const markdown = '# My Listen1 Playlists\n';
-        const playlistIds = jsonObject.playerlists;
-        const songsCount = playlistIds.reduce((count, playlistId) => {
-          const playlist = jsonObject[playlistId];
-          const cover = `<img src="${playlist.info.cover_img_url}" width="140" height="140"><br/>`;
-          const { title } = playlist.info;
+        const backupSummary =
+          typeof playlistBackup !== 'undefined' &&
+          typeof playlistBackup.getGistSummaryData === 'function'
+            ? playlistBackup.getGistSummaryData(jsonObject)
+            : { playlists: [], songsCount: 0 };
+        const playlists = Array.isArray(backupSummary.playlists)
+          ? backupSummary.playlists
+          : [];
+        const songsCount = playlists.reduce((count, playlist, index) => {
+          const info = playlist && playlist.info ? playlist.info : {};
+          const tracks = Array.isArray(playlist && playlist.tracks)
+            ? playlist.tracks
+            : [];
+          const cover = `<img src="${
+            info.cover_img_url || ''
+          }" width="140" height="140"><br/>`;
+          const { title = '未命名歌单' } = info;
           let tableHeader = '\n| 音乐标题 | 歌手 | 专辑 |\n';
           tableHeader += '| --- | --- | --- |\n';
-          const tableBody = playlist.tracks.reduce(
+          const tableBody = tracks.reduce(
             (r, track) =>
-              `${r} | ${track.title} | ${track.artist} | ${track.album} | \n`,
+              `${r} | ${(track && track.title) || ''} | ${
+                (track && track.artist) || ''
+              } | ${(track && track.album) || ''} | \n`,
             ''
           );
           const content = `<details>\n  <summary>${cover}   ${title}</summary><p>\n${tableHeader}${tableBody}</p></details>`;
+          const playlistId =
+            (info && typeof info.id === 'string' && info.id) ||
+            `playlist_${index + 1}`;
           const filename = `listen1_${playlistId}.md`;
           result[filename] = {
             content,
           };
-          return count + playlist.tracks.length;
+          return count + tracks.length;
         }, 0);
-        const summary = `本歌单由[Listen1](https://listen1.github.io/listen1/)创建, 歌曲数：${songsCount}，歌单数：${playlistIds.length}，点击查看更多`;
+        const summary = `本歌单由[Listen1](https://listen1.github.io/listen1/)创建, 歌曲数：${songsCount}，歌单数：${playlists.length}，点击查看更多`;
         result['listen1_aha_playlist.md'] = {
           content: summary,
         };
@@ -136,15 +176,38 @@ function github() {
       },
 
       gist2json(gistFiles, callback) {
-        if (!gistFiles['listen1_backup.json'].truncated) {
-          const jsonString = gistFiles['listen1_backup.json'].content;
-          return callback(JSON.parse(jsonString));
+        const backupFile = gistFiles && gistFiles['listen1_backup.json'];
+        let promise;
+        if (!backupFile) {
+          promise = Promise.reject(
+            gistError('BACKUP_FILE_MISSING', '未找到 listen1_backup.json')
+          );
+        } else if (!backupFile.truncated) {
+          promise = Promise.resolve().then(() =>
+            parseGistBackupContent(backupFile.content)
+          );
+        } else if (!backupFile.raw_url) {
+          promise = Promise.reject(
+            gistError('BACKUP_FILE_MISSING', '备份文件缺少下载地址')
+          );
+        } else {
+          promise = GithubAPI.get(backupFile.raw_url)
+            .then((res) => parseGistBackupContent(res && res.data))
+            .catch((error) => {
+              if (error && error.code === 'BACKUP_JSON_INVALID') {
+                throw error;
+              }
+              throw gistError(
+                'BACKUP_GIST_REQUEST_FAILED',
+                '下载备份文件失败',
+                error
+              );
+            });
         }
-
-        const url = gistFiles['listen1_backup.json'].raw_url;
-        // const { size } = gistFiles['listen1_backup.json'];
-        GithubAPI.get(url).then((res) => callback(res.data));
-        return null;
+        if (typeof callback === 'function') {
+          promise.then(callback).catch(() => {});
+        }
+        return promise;
       },
 
       listExistBackup() {
