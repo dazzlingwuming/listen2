@@ -1148,6 +1148,28 @@ class BilibiliService {
     return manifest;
   }
 
+  async getAudioVariant({ bvid, cid, audioId, codecs = "", forceRefresh = false }) {
+    const requestedId = toPositiveInteger(audioId);
+    if (!requestedId) throw createBilibiliError("invalid-audio-id", "Invalid Bilibili audio id.");
+    const manifest = await this.getManifest({ bvid, cid, forceRefresh });
+    const requestedCodecs = String(codecs || "").trim();
+    const variant = manifest.audioVariants.find(
+      (item) => item.id === requestedId && (!requestedCodecs || String(item.codecs || "") === requestedCodecs)
+    );
+    if (!variant) throw createBilibiliError("audio-variant-unavailable", "The selected Bilibili audio variant is unavailable.");
+    return { ...variant, urlCandidates: [variant.url, ...(variant.backupUrls || [])].filter(Boolean) };
+  }
+
+  async getLegacyAudioVariant({ sid }) {
+    const safeSid = String(sid || "").trim();
+    if (!/^\d+$/.test(safeSid)) throw createBilibiliError("invalid-audio-id", "Invalid Bilibili audio id.");
+    const payload = await this.requestJson(`https://www.bilibili.com/audio/music-service-c/web/url?sid=${encodeURIComponent(safeSid)}`);
+    const data = isObject(payload.data) ? payload.data : {};
+    const urlCandidates = normalizeUrlList(data.cdns || []);
+    if (!urlCandidates.length) throw createBilibiliError("no-audio-stream", "No playable Bilibili audio stream is available.");
+    return { id: safeSid, label: "音频", codecs: "", mimeType: "audio/mp4", urlCandidates };
+  }
+
   clearManifest({ bvid, cid } = {}) {
     if (!bvid) {
       this.manifestCache.clear();

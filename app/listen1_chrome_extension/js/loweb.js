@@ -134,6 +134,89 @@ function getBilibiliIpcRenderer() {
   return getMachineTranslationIpcRenderer();
 }
 
+function getDesktopLocalDataIpcRenderer() {
+  return getMachineTranslationIpcRenderer();
+}
+
+function getBilibiliVideoCacheIdentity(track) {
+  const trackId = String((track && track.id) || '');
+  const match = /^bitrack_v_(BV[0-9A-Za-z]{10})(?:-(\d+))?$/.exec(trackId);
+  if (!match) {
+    const audioMatch = /^bitrack_(\d+)$/.exec(trackId);
+    return audioMatch ? { trackId, kind: 'audio', sid: audioMatch[1] } : null;
+  }
+  const sourceUrl = String(
+    (track && (track.source_url || track.sourceUrl)) || ''
+  );
+  const pageMatch = /[?&]p=(\d+)/.exec(sourceUrl);
+  if (!match[2] && pageMatch && Number(pageMatch[1]) > 1) {
+    return null;
+  }
+  return {
+    trackId,
+    kind: 'video',
+    bvid: match[1],
+    cid: Number(match[2] || 0),
+  };
+}
+
+function lyricCacheRecordToResult(record) {
+  if (!record || !record.lyric) {
+    return null;
+  }
+  const matchedTrack = record.matchedTrack || {};
+  const machineTranslation = Object.values(record.translations || {})
+    .filter((translation) => translation && translation.tlyric)
+    .sort(
+      (left, right) =>
+        Number(right.translatedAt || 0) - Number(left.translatedAt || 0)
+    )[0];
+  return {
+    lyric: record.lyric,
+    tlyric:
+      record.tlyric || (machineTranslation && machineTranslation.tlyric) || '',
+    source: record.source || '',
+    matchedTitle: matchedTrack.title || '',
+    matchedArtist: matchedTrack.artist || '',
+    matchedAlbum: matchedTrack.album || '',
+    matchedDuration: matchedTrack.duration || 0,
+    matchedProvider: matchedTrack.provider || '',
+    candidateId: matchedTrack.candidateId || '',
+    selectedProvider: matchedTrack.selectedProvider || '',
+    selectedCandidateId: matchedTrack.selectedCandidateId || '',
+    translationProvider: matchedTrack.translationProvider || '',
+    translationEnriched: matchedTrack.translationEnriched === true,
+    machineTranslated:
+      matchedTrack.machineTranslated === true || Boolean(machineTranslation),
+    machineTranslationProvider:
+      matchedTrack.machineTranslationProvider ||
+      (machineTranslation && machineTranslation.provider) ||
+      '',
+    machineTranslationTarget: matchedTrack.machineTranslationTarget || '',
+    machineTranslationDetectedSource:
+      matchedTrack.machineTranslationDetectedSource || '',
+    lyricCacheRevision: Number(record.revision || 0),
+    lyricCacheMode: record.mode || '',
+    lyricCacheExpiresAt: Number(record.expiresAt || 0),
+    lyricCacheTranslations: record.translations || {},
+  };
+}
+
+function getLyricCacheIdentity(track) {
+  const trackId = String((track && track.id) || '');
+  const provider = getProviderByItemId(trackId);
+  if (
+    provider === bilibili &&
+    typeof bilibili.get_manual_lyric_identity === 'function'
+  ) {
+    const identity = bilibili.get_manual_lyric_identity(trackId, track || {});
+    if (identity && identity.isReliable && identity.key) {
+      return { trackId: identity.key, canonicalKey: identity.key };
+    }
+  }
+  return { trackId, canonicalKey: trackId };
+}
+
 setPrototypeOfLocalStorage();
 
 // eslint-disable-next-line no-unused-vars
@@ -205,6 +288,203 @@ const MediaService = {
       source_url: trackInfo.source_url || trackInfo.sourceUrl || '',
     })}`;
     return provider.lyric(url);
+  },
+
+  getAudioCacheLookup(track) {
+    const ipcRenderer = getDesktopLocalDataIpcRenderer();
+    const identity = getBilibiliVideoCacheIdentity(track);
+    if (!ipcRenderer || !identity) {
+      return Promise.resolve({ ok: false, status: 'unsupported' });
+    }
+    return ipcRenderer.invoke(
+      'audio-cache:lookup',
+      identity.kind === 'audio'
+        ? { trackId: identity.trackId, kind: 'audio', sid: identity.sid }
+        : identity
+    );
+  },
+
+  scheduleBilibiliAudioCache(track, descriptor) {
+    const ipcRenderer = getDesktopLocalDataIpcRenderer();
+    const identity = getBilibiliVideoCacheIdentity(track);
+    if (!ipcRenderer || !identity || !descriptor) {
+      return Promise.resolve({ ok: false, status: 'unsupported' });
+    }
+    return ipcRenderer.invoke('audio-cache:schedule-bilibili', {
+      ...(descriptor.kind === 'audio'
+        ? {
+            trackId: identity.trackId,
+            kind: 'audio',
+            sid: String(descriptor.sid || identity.sid || ''),
+          }
+        : {
+            trackId: identity.trackId,
+            kind: 'video',
+            bvid: String(descriptor.bvid || identity.bvid),
+            cid: Number(descriptor.cid || 0),
+            audioId: Number(descriptor.audioId || 0),
+            codecs: String(descriptor.codecs || ''),
+            mimeType: String(descriptor.mimeType || ''),
+          }),
+    });
+  },
+
+  invalidateAudioCache(cacheKey) {
+    const ipcRenderer = getDesktopLocalDataIpcRenderer();
+    if (!ipcRenderer || !cacheKey) {
+      return Promise.resolve({ ok: false, status: 'unsupported' });
+    }
+    return ipcRenderer.invoke('audio-cache:invalidate', { cacheKey });
+  },
+
+  getAudioCacheStatus() {
+    const ipcRenderer = getDesktopLocalDataIpcRenderer();
+    if (!ipcRenderer) {
+      return Promise.resolve({ ok: false, status: 'unsupported' });
+    }
+    return ipcRenderer.invoke('audio-cache:status');
+  },
+
+  configureAudioCache(settings = {}) {
+    const ipcRenderer = getDesktopLocalDataIpcRenderer();
+    if (!ipcRenderer) {
+      return Promise.resolve({ ok: false, status: 'unsupported' });
+    }
+    return ipcRenderer.invoke('audio-cache:configure', settings);
+  },
+
+  clearAudioCache() {
+    const ipcRenderer = getDesktopLocalDataIpcRenderer();
+    if (!ipcRenderer) {
+      return Promise.resolve({ ok: false, status: 'unsupported' });
+    }
+    return ipcRenderer.invoke('audio-cache:clear');
+  },
+
+  deleteTrackLocalData(track) {
+    const ipcRenderer = getDesktopLocalDataIpcRenderer();
+    const identity = getBilibiliVideoCacheIdentity(track) || {};
+    if (!ipcRenderer || !track || !track.id) {
+      return Promise.resolve({ ok: false, status: 'unsupported' });
+    }
+    const lyricIdentity = getLyricCacheIdentity(track);
+    return ipcRenderer.invoke('local-data:delete-track', {
+      trackId: lyricIdentity.trackId,
+      kind: identity.kind || '',
+      sid: identity.sid || '',
+      bvid: identity.bvid || '',
+      cid: identity.cid || 0,
+    });
+  },
+
+  getPersistentLyric(track) {
+    const ipcRenderer = getDesktopLocalDataIpcRenderer();
+    if (!ipcRenderer || !track || !track.id) {
+      return Promise.resolve({
+        ok: false,
+        status: 'unsupported',
+        record: null,
+      });
+    }
+    const identity = getLyricCacheIdentity(track);
+    return ipcRenderer.invoke('lyric-cache:get', identity).then((response) => ({
+      ...(response || {}),
+      result: lyricCacheRecordToResult(response && response.record),
+    }));
+  },
+
+  putPersistentLyric(track, result, mode, expectedRevision = 0) {
+    const ipcRenderer = getDesktopLocalDataIpcRenderer();
+    if (!ipcRenderer || !track || !track.id || !result || !result.lyric) {
+      return Promise.resolve({ ok: false, status: 'unsupported' });
+    }
+    const identity = getLyricCacheIdentity(track);
+    const matchedTrack = {
+      title: result.matchedTitle || '',
+      artist: result.matchedArtist || '',
+      album: result.matchedAlbum || '',
+      duration: result.matchedDuration || 0,
+      provider: result.matchedProvider || '',
+      candidateId: result.candidateId || '',
+      selectedProvider: result.selectedProvider || '',
+      selectedCandidateId: result.selectedCandidateId || '',
+      translationProvider: result.translationProvider || '',
+      translationEnriched: result.translationEnriched === true,
+      machineTranslated: result.machineTranslated === true,
+      machineTranslationProvider: result.machineTranslationProvider || '',
+      machineTranslationTarget: result.machineTranslationTarget || '',
+      machineTranslationDetectedSource:
+        result.machineTranslationDetectedSource || '',
+    };
+    return ipcRenderer.invoke('lyric-cache:put', {
+      trackId: identity.trackId,
+      canonicalKey: identity.canonicalKey,
+      expectedRevision: Number(expectedRevision || 0),
+      mode,
+      record: {
+        lyric: result.lyric,
+        tlyric: result.tlyric || '',
+        source: result.source || track.source || '',
+        matchedTrack,
+        expiresAt:
+          mode === 'auto' ? Date.now() + 30 * 24 * 60 * 60 * 1000 : undefined,
+      },
+    });
+  },
+
+  clearPersistentLyric(track, expectedRevision) {
+    const ipcRenderer = getDesktopLocalDataIpcRenderer();
+    if (!ipcRenderer || !track || !track.id) {
+      return Promise.resolve({ ok: false, status: 'unsupported' });
+    }
+    const identity = getLyricCacheIdentity(track);
+    const payload = { trackId: identity.trackId };
+    if (typeof expectedRevision === 'number') {
+      payload.expectedRevision = expectedRevision;
+    }
+    return ipcRenderer.invoke('lyric-cache:clear', payload);
+  },
+
+  migrateLegacyBilibiliManualLyrics() {
+    const ipcRenderer = getDesktopLocalDataIpcRenderer();
+    if (!ipcRenderer || !bilibili || !bilibili.get_manual_lyric_selections) {
+      return Promise.resolve({ ok: false, status: 'unsupported' });
+    }
+    const records = bilibili.get_manual_lyric_selections();
+    const payload = Object.keys(records || {}).map((trackId) => ({
+      trackId,
+      record: {
+        ...records[trackId],
+        mode: 'manual',
+        canonicalKey: trackId,
+        manualLocked: true,
+      },
+    }));
+    const batchSize = 200;
+    const batches = [];
+    for (let index = 0; index < payload.length; index += batchSize) {
+      batches.push(payload.slice(index, index + batchSize));
+    }
+    return batches.reduce(
+      (chain, recordsBatch) =>
+        chain.then((summary) =>
+          ipcRenderer
+            .invoke('lyric-cache:migrate-legacy-bilibili-manual', {
+              records: recordsBatch,
+            })
+            .then((response) => ({
+              ok: summary.ok && response && response.ok === true,
+              migrated:
+                Number(summary.migrated || 0) +
+                Number((response && response.migrated) || 0),
+              skipped:
+                Number(summary.skipped || 0) +
+                Number((response && response.skipped) || 0),
+              status: response && response.status,
+            }))
+        ),
+      Promise.resolve({ ok: true, migrated: 0, skipped: 0 })
+    );
   },
 
   searchLyricCandidates(trackInfo, query) {
@@ -309,6 +589,7 @@ const MediaService = {
         machineTranslationStatus: ipcRenderer ? 'empty-lyric' : 'unsupported',
       });
     }
+    const lyricIdentity = getLyricCacheIdentity(trackInfo || {});
     return ipcRenderer
       .invoke('machine-translation:translate-lyrics', {
         lyric: candidate.lyric,
@@ -316,6 +597,8 @@ const MediaService = {
         artist: candidate.artist || trackInfo.artist || '',
         targetLanguage,
         allowNetwork: options && options.allowNetwork === true,
+        trackId: lyricIdentity.trackId,
+        expectedRevision: Number(candidate.lyricCacheRevision || 0),
       })
       .then((response) => {
         if (

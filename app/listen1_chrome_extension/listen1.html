@@ -379,6 +379,78 @@
                           </button>
                         </div>
                       </div>
+                      <section
+                        class="dialog-audio-cache-confirm"
+                        ng-show="dialog_type==15 && !isChrome"
+                        role="alertdialog"
+                        aria-modal="true"
+                        aria-labelledby="classic-audio-cache-clear-title"
+                        aria-describedby="classic-audio-cache-clear-description"
+                        data-audio-cache-clear-confirm
+                      >
+                        <h3 id="classic-audio-cache-clear-title">
+                          {{_AUDIO_CACHE_CLEAR_CONFIRM_TITLE}}
+                        </h3>
+                        <p id="classic-audio-cache-clear-description">
+                          {{_AUDIO_CACHE_CLEAR_CONFIRM_DESCRIPTION}}
+                        </p>
+                        <div class="buttons">
+                          <button
+                            type="button"
+                            class="btn btn-warning warning-button"
+                            ng-click="confirmClearAudioCache()"
+                            ng-disabled="audioCacheActionPending"
+                            data-audio-cache-clear-commit
+                          >
+                            {{_AUDIO_CACHE_CLEAR_CONFIRM_ACTION}}
+                          </button>
+                          <button
+                            type="button"
+                            class="btn btn-default"
+                            ng-click="cancelClearAudioCache()"
+                            ng-disabled="audioCacheActionPending"
+                            data-audio-cache-clear-cancel
+                          >
+                            {{_CANCEL}}
+                          </button>
+                        </div>
+                      </section>
+                      <section
+                        class="dialog-audio-cache-confirm dialog-track-local-data-confirm"
+                        ng-show="dialog_type==16 && !isChrome"
+                        role="alertdialog"
+                        aria-modal="true"
+                        aria-labelledby="classic-track-local-data-title"
+                        aria-describedby="classic-track-local-data-description"
+                        data-track-local-data-delete-confirm
+                      >
+                        <h3 id="classic-track-local-data-title">
+                          {{_AUDIO_CACHE_DELETE_TRACK_CONFIRM_TITLE}}
+                        </h3>
+                        <p id="classic-track-local-data-description">
+                          {{_AUDIO_CACHE_DELETE_TRACK_CONFIRM_DESCRIPTION}}
+                        </p>
+                        <div class="buttons">
+                          <button
+                            type="button"
+                            class="btn btn-warning warning-button"
+                            ng-click="confirmDeleteCurrentTrackLocalData()"
+                            ng-disabled="audioCacheActionPending"
+                            data-track-local-data-delete-commit
+                          >
+                            {{_AUDIO_CACHE_DELETE_TRACK_CONFIRM_ACTION}}
+                          </button>
+                          <button
+                            type="button"
+                            class="btn btn-default"
+                            ng-click="cancelDeleteCurrentTrackLocalData()"
+                            ng-disabled="audioCacheActionPending"
+                            data-track-local-data-delete-cancel
+                          >
+                            {{_CANCEL}}
+                          </button>
+                        </div>
+                      </section>
                       <div class="dialog-open-login" ng-show="dialog_type==11">
                         <p>{{_LOGIN_DIALOG_NOTICE}}</p>
                         <div class="buttons">
@@ -1298,6 +1370,92 @@
                                     ng-show="enableLyricFloatingWindowTranslation"
                                   ></span
                                   >{{_SHOW_DESKTOP_LYRIC_TRANSLATION}}
+                                </div>
+                                <p
+                                  class="lyric-cache-description"
+                                  ng-if="!isChrome"
+                                  data-desktop-lyric-persistence
+                                >
+                                  {{_LYRIC_PERSISTENCE_DESCRIPTION}}
+                                </p>
+                              </div>
+                              <div
+                                class="settings-title"
+                                ng-if="!isChrome && audioCacheSettings.supported"
+                                data-desktop-audio-cache-section
+                              >
+                                <span>{{_AUDIO_CACHE_TITLE}}</span>
+                              </div>
+                              <div
+                                class="settings-content audio-cache-settings"
+                                ng-if="!isChrome && audioCacheSettings.supported"
+                                data-desktop-audio-cache-settings
+                                data-audio-cache-default-enabled="true"
+                                data-audio-cache-default-capacity="2147483648"
+                              >
+                                <p class="audio-cache-description">
+                                  {{_AUDIO_CACHE_DESCRIPTION}}
+                                </p>
+                                <label class="audio-cache-toggle" for="classic-audio-cache-enabled">
+                                  <input
+                                    id="classic-audio-cache-enabled"
+                                    type="checkbox"
+                                    ng-model="audioCacheSettings.enabled"
+                                    ng-change="updateAudioCacheEnabled()"
+                                    ng-disabled="audioCacheActionPending"
+                                  />
+                                  <span>{{_AUDIO_CACHE_ENABLED}}</span>
+                                </label>
+                                <label class="audio-cache-capacity" for="classic-audio-cache-capacity">
+                                  <span>{{_AUDIO_CACHE_CAPACITY}}</span>
+                                  <select
+                                    id="classic-audio-cache-capacity"
+                                    ng-model="audioCacheSettings.capacityBytes"
+                                    ng-options="option.value as option.label for option in audioCacheCapacityOptions"
+                                    ng-change="updateAudioCacheCapacity()"
+                                    ng-disabled="audioCacheActionPending"
+                                  ></select>
+                                </label>
+                                <dl class="audio-cache-status" aria-live="polite">
+                                  <div>
+                                    <dt>{{_AUDIO_CACHE_USAGE}}</dt>
+                                    <dd>{{formatAudioCacheBytes(audioCacheSettings.usedBytes)}} · {{audioCacheSettings.readyEntries}} {{_AUDIO_CACHE_TRACKS}}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>{{_AUDIO_CACHE_DOWNLOAD_STATUS}}</dt>
+                                    <dd ng-if="audioCacheSettings.queuedEntries > 0">{{_AUDIO_CACHE_DOWNLOAD_QUEUED}}: {{audioCacheSettings.queuedEntries}}</dd>
+                                    <dd ng-if="!audioCacheSettings.queuedEntries">{{_AUDIO_CACHE_DOWNLOAD_IDLE}}</dd>
+                                  </div>
+                                </dl>
+                                <p class="audio-cache-error" ng-if="audioCacheSettings.lastError" role="alert">
+                                  {{_AUDIO_CACHE_FAILURE_NOTICE}} {{audioCacheSettings.lastError}}
+                                </p>
+                                <div class="audio-cache-actions">
+                                  <button
+                                    type="button"
+                                    class="btn btn-primary confirm-button"
+                                    ng-click="refreshAudioCacheStatus()"
+                                    ng-disabled="audioCacheActionPending"
+                                  >
+                                    {{_AUDIO_CACHE_REFRESH}}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="btn btn-warning"
+                                    ng-click="requestClearAudioCache()"
+                                    ng-disabled="audioCacheActionPending"
+                                  >
+                                    {{_AUDIO_CACHE_CLEAR}}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="btn btn-default"
+                                    ng-if="currentPlaying && currentPlaying.id"
+                                    ng-click="requestDeleteCurrentTrackLocalData()"
+                                    ng-disabled="audioCacheActionPending"
+                                  >
+                                    {{_AUDIO_CACHE_DELETE_TRACK}}
+                                  </button>
                                 </div>
                               </div>
                               <div class="settings-title" ng-if="!isChrome">
@@ -2640,6 +2798,78 @@
                           </button>
                         </div>
                       </div>
+                      <section
+                        class="dialog-audio-cache-confirm"
+                        ng-show="dialog_type==15 && !isChrome"
+                        role="alertdialog"
+                        aria-modal="true"
+                        aria-labelledby="modern-audio-cache-clear-title"
+                        aria-describedby="modern-audio-cache-clear-description"
+                        data-audio-cache-clear-confirm
+                      >
+                        <h3 id="modern-audio-cache-clear-title">
+                          {{_AUDIO_CACHE_CLEAR_CONFIRM_TITLE}}
+                        </h3>
+                        <p id="modern-audio-cache-clear-description">
+                          {{_AUDIO_CACHE_CLEAR_CONFIRM_DESCRIPTION}}
+                        </p>
+                        <div class="buttons">
+                          <button
+                            type="button"
+                            class="btn btn-warning warning-button"
+                            ng-click="confirmClearAudioCache()"
+                            ng-disabled="audioCacheActionPending"
+                            data-audio-cache-clear-commit
+                          >
+                            {{_AUDIO_CACHE_CLEAR_CONFIRM_ACTION}}
+                          </button>
+                          <button
+                            type="button"
+                            class="btn btn-default"
+                            ng-click="cancelClearAudioCache()"
+                            ng-disabled="audioCacheActionPending"
+                            data-audio-cache-clear-cancel
+                          >
+                            {{_CANCEL}}
+                          </button>
+                        </div>
+                      </section>
+                      <section
+                        class="dialog-audio-cache-confirm dialog-track-local-data-confirm"
+                        ng-show="dialog_type==16 && !isChrome"
+                        role="alertdialog"
+                        aria-modal="true"
+                        aria-labelledby="modern-track-local-data-title"
+                        aria-describedby="modern-track-local-data-description"
+                        data-track-local-data-delete-confirm
+                      >
+                        <h3 id="modern-track-local-data-title">
+                          {{_AUDIO_CACHE_DELETE_TRACK_CONFIRM_TITLE}}
+                        </h3>
+                        <p id="modern-track-local-data-description">
+                          {{_AUDIO_CACHE_DELETE_TRACK_CONFIRM_DESCRIPTION}}
+                        </p>
+                        <div class="buttons">
+                          <button
+                            type="button"
+                            class="btn btn-warning warning-button"
+                            ng-click="confirmDeleteCurrentTrackLocalData()"
+                            ng-disabled="audioCacheActionPending"
+                            data-track-local-data-delete-commit
+                          >
+                            {{_AUDIO_CACHE_DELETE_TRACK_CONFIRM_ACTION}}
+                          </button>
+                          <button
+                            type="button"
+                            class="btn btn-default"
+                            ng-click="cancelDeleteCurrentTrackLocalData()"
+                            ng-disabled="audioCacheActionPending"
+                            data-track-local-data-delete-cancel
+                          >
+                            {{_CANCEL}}
+                          </button>
+                        </div>
+                      </section>
                       <!-- modern Bilibili login dialog -->
                       <div class="dialog-open-login" ng-show="dialog_type==11">
                         <p>{{_LOGIN_DIALOG_NOTICE}}</p>
@@ -4112,6 +4342,92 @@
                                     ng-show="enableLyricFloatingWindowTranslation"
                                   ></span
                                   >{{_SHOW_DESKTOP_LYRIC_TRANSLATION}}
+                                </div>
+                                <p
+                                  class="lyric-cache-description"
+                                  ng-if="!isChrome"
+                                  data-desktop-lyric-persistence
+                                >
+                                  {{_LYRIC_PERSISTENCE_DESCRIPTION}}
+                                </p>
+                              </div>
+                              <div
+                                class="settings-title"
+                                ng-if="!isChrome && audioCacheSettings.supported"
+                                data-desktop-audio-cache-section
+                              >
+                                <span>{{_AUDIO_CACHE_TITLE}}</span>
+                              </div>
+                              <div
+                                class="settings-content audio-cache-settings"
+                                ng-if="!isChrome && audioCacheSettings.supported"
+                                data-desktop-audio-cache-settings
+                                data-audio-cache-default-enabled="true"
+                                data-audio-cache-default-capacity="2147483648"
+                              >
+                                <p class="audio-cache-description">
+                                  {{_AUDIO_CACHE_DESCRIPTION}}
+                                </p>
+                                <label class="audio-cache-toggle" for="modern-audio-cache-enabled">
+                                  <input
+                                    id="modern-audio-cache-enabled"
+                                    type="checkbox"
+                                    ng-model="audioCacheSettings.enabled"
+                                    ng-change="updateAudioCacheEnabled()"
+                                    ng-disabled="audioCacheActionPending"
+                                  />
+                                  <span>{{_AUDIO_CACHE_ENABLED}}</span>
+                                </label>
+                                <label class="audio-cache-capacity" for="modern-audio-cache-capacity">
+                                  <span>{{_AUDIO_CACHE_CAPACITY}}</span>
+                                  <select
+                                    id="modern-audio-cache-capacity"
+                                    ng-model="audioCacheSettings.capacityBytes"
+                                    ng-options="option.value as option.label for option in audioCacheCapacityOptions"
+                                    ng-change="updateAudioCacheCapacity()"
+                                    ng-disabled="audioCacheActionPending"
+                                  ></select>
+                                </label>
+                                <dl class="audio-cache-status" aria-live="polite">
+                                  <div>
+                                    <dt>{{_AUDIO_CACHE_USAGE}}</dt>
+                                    <dd>{{formatAudioCacheBytes(audioCacheSettings.usedBytes)}} · {{audioCacheSettings.readyEntries}} {{_AUDIO_CACHE_TRACKS}}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>{{_AUDIO_CACHE_DOWNLOAD_STATUS}}</dt>
+                                    <dd ng-if="audioCacheSettings.queuedEntries > 0">{{_AUDIO_CACHE_DOWNLOAD_QUEUED}}: {{audioCacheSettings.queuedEntries}}</dd>
+                                    <dd ng-if="!audioCacheSettings.queuedEntries">{{_AUDIO_CACHE_DOWNLOAD_IDLE}}</dd>
+                                  </div>
+                                </dl>
+                                <p class="audio-cache-error" ng-if="audioCacheSettings.lastError" role="alert">
+                                  {{_AUDIO_CACHE_FAILURE_NOTICE}} {{audioCacheSettings.lastError}}
+                                </p>
+                                <div class="audio-cache-actions">
+                                  <button
+                                    type="button"
+                                    class="btn btn-primary confirm-button"
+                                    ng-click="refreshAudioCacheStatus()"
+                                    ng-disabled="audioCacheActionPending"
+                                  >
+                                    {{_AUDIO_CACHE_REFRESH}}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="btn btn-warning"
+                                    ng-click="requestClearAudioCache()"
+                                    ng-disabled="audioCacheActionPending"
+                                  >
+                                    {{_AUDIO_CACHE_CLEAR}}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="btn btn-default"
+                                    ng-if="currentPlaying && currentPlaying.id"
+                                    ng-click="requestDeleteCurrentTrackLocalData()"
+                                    ng-disabled="audioCacheActionPending"
+                                  >
+                                    {{_AUDIO_CACHE_DELETE_TRACK}}
+                                  </button>
                                 </div>
                               </div>
                               <div class="settings-title" ng-if="!isChrome">
