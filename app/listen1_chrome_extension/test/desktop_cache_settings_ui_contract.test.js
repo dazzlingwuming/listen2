@@ -141,6 +141,21 @@ assert.match(
   /loudnessReadyEntries[\s\S]*?loudnessPendingEntries[\s\S]*?loudnessFailedEntries/,
   'the status summary must bind all core loudness counters'
 );
+assert.match(
+  playController,
+  /AUDIO_CACHE_STATUS_POLL_MS\s*=\s*2000/,
+  'loudness progress must refresh every two seconds while work remains'
+);
+assert.match(
+  playController,
+  /scheduleAudioCacheStatusPoll[\s\S]*?loudnessPendingEntries[\s\S]*?\$timeout/,
+  'automatic refresh must be driven by the pending analysis count'
+);
+assert.match(
+  playController,
+  /\$scope\.\$on\('\$destroy'[\s\S]*?cancelAudioCacheStatusPoll\(\)/,
+  'automatic refresh must be cancelled when the controller is destroyed'
+);
 assert.match(css, /@media \(max-width: 520px\)/);
 assert.match(
   playController,

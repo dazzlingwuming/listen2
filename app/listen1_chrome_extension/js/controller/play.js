@@ -175,6 +175,9 @@ angular.module('listenone').controller('PlayController', [
     let lyricTranslationRequestToken = 0;
     let bilibiliMvPlayer = null;
     let lastMvPosition = 0;
+    const AUDIO_CACHE_STATUS_POLL_MS = 2000;
+    let audioCacheStatusPollTimer = null;
+    let playControllerDestroyed = false;
     const inheritedCloseDialog = $scope.closeDialog;
     if (typeof inheritedCloseDialog === 'function') {
       $scope.closeDialog = () => {
@@ -186,6 +189,35 @@ angular.module('listenone').controller('PlayController', [
       ? MediaService.migrateLegacyBilibiliManualLyrics().catch(() => null)
       : Promise.resolve(null);
 
+    function cancelAudioCacheStatusPoll() {
+      if (!audioCacheStatusPollTimer) return;
+      $timeout.cancel(audioCacheStatusPollTimer);
+      audioCacheStatusPollTimer = null;
+    }
+
+    function scheduleAudioCacheStatusPoll(status) {
+      const shouldPoll =
+        !playControllerDestroyed &&
+        isElectron() &&
+        status &&
+        status.supported !== false &&
+        status.loudnessNormalizationEnabled !== false &&
+        Number(status.loudnessPendingEntries) > 0;
+      if (!shouldPoll) {
+        cancelAudioCacheStatusPoll();
+        return;
+      }
+      if (audioCacheStatusPollTimer) return;
+      audioCacheStatusPollTimer = $timeout(
+        () => {
+          audioCacheStatusPollTimer = null;
+          if (!playControllerDestroyed) $scope.refreshAudioCacheStatus();
+        },
+        AUDIO_CACHE_STATUS_POLL_MS,
+        false
+      );
+    }
+
     function applyAudioCacheStatus(response) {
       if (!response || response.ok !== true) {
         $scope.audioCacheSettings = {
@@ -193,6 +225,7 @@ angular.module('listenone').controller('PlayController', [
           supported: false,
           lastError: (response && response.status) || '',
         };
+        cancelAudioCacheStatusPoll();
         return false;
       }
       $scope.audioCacheSettings = {
@@ -211,6 +244,7 @@ angular.module('listenone').controller('PlayController', [
           );
         }
       }
+      scheduleAudioCacheStatusPoll($scope.audioCacheSettings);
       return true;
     }
 
@@ -226,7 +260,11 @@ angular.module('listenone').controller('PlayController', [
     };
 
     $scope.refreshAudioCacheStatus = () => {
-      if (!isElectron() || $scope.audioCacheActionPending) {
+      if (!isElectron()) {
+        return Promise.resolve(null);
+      }
+      if ($scope.audioCacheActionPending) {
+        scheduleAudioCacheStatusPoll($scope.audioCacheSettings);
         return Promise.resolve(null);
       }
       return MediaService.getAudioCacheStatus()
@@ -235,6 +273,7 @@ angular.module('listenone').controller('PlayController', [
           return response;
         })
         .catch(() => {
+          cancelAudioCacheStatusPoll();
           $scope.$evalAsync(() => {
             $scope.audioCacheSettings.lastError = 'request-failed';
           });
@@ -2493,6 +2532,8 @@ angular.module('listenone').controller('PlayController', [
     }
 
     $scope.$on('$destroy', () => {
+      playControllerDestroyed = true;
+      cancelAudioCacheStatusPoll();
       if (bilibiliMvPlayer) {
         bilibiliMvPlayer.destroy();
         bilibiliMvPlayer = null;
