@@ -20,6 +20,9 @@ const expectedI18nKeys = [
   '_AUDIO_CACHE_TITLE',
   '_AUDIO_CACHE_DESCRIPTION',
   '_AUDIO_CACHE_ENABLED',
+  '_LOUDNESS_NORMALIZATION_ENABLED',
+  '_LOUDNESS_NORMALIZATION_DESCRIPTION',
+  '_LOUDNESS_NORMALIZATION_STATUS',
   '_AUDIO_CACHE_CAPACITY',
   '_AUDIO_CACHE_USAGE',
   '_AUDIO_CACHE_TRACKS',
@@ -75,6 +78,19 @@ assert.strictEqual(
 assert.match(html, /ng-show="dialog_type==15 && !isChrome"/);
 assert.match(html, /ng-show="dialog_type==16 && !isChrome"/);
 assert.match(html, /ng-model="audioCacheSettings\.enabled"/);
+assert.strictEqual(
+  occurrences(
+    html,
+    /ng-model="audioCacheSettings\.loudnessNormalizationEnabled"/g
+  ),
+  2,
+  'classic and modern settings layouts must both expose normalization controls'
+);
+assert.strictEqual(
+  occurrences(html, /data-audio-cache-default-loudness-normalization="true"/g),
+  2,
+  'both layouts must declare normalization enabled by default'
+);
 assert.match(html, /ng-model="audioCacheSettings\.capacityBytes"/);
 assert.match(
   html,
@@ -83,6 +99,20 @@ assert.match(
 assert.match(html, /ng-click="refreshAudioCacheStatus\(\)"/);
 assert.match(html, /ng-change="updateAudioCacheEnabled\(\)"/);
 assert.match(html, /ng-change="updateAudioCacheCapacity\(\)"/);
+assert.match(html, /ng-change="updateLoudnessNormalizationEnabled\(\)"/);
+assert.strictEqual(
+  occurrences(html, /\{\{loudnessNormalizationStatus\(\)\}\}/g),
+  2,
+  'both settings layouts must show loudness analysis status while enabled'
+);
+assert.strictEqual(
+  occurrences(
+    html,
+    /ng-if="audioCacheSettings\.loudnessNormalizationEnabled !== false"/g
+  ),
+  2,
+  'loudness analysis status must not be shown while normalization is disabled'
+);
 assert.match(html, /ng-click="requestClearAudioCache\(\)"/);
 assert.match(html, /ng-click="confirmClearAudioCache\(\)"/);
 assert.match(html, /ng-click="cancelClearAudioCache\(\)"/);
@@ -105,6 +135,12 @@ assert.strictEqual(
   'new audio cache and local-data dialog IDs must be unique across duplicate layouts'
 );
 assert.match(css, /\.audio-cache-settings/);
+assert.match(css, /\.loudness-normalization-description/);
+assert.match(
+  playController,
+  /loudnessReadyEntries[\s\S]*?loudnessPendingEntries[\s\S]*?loudnessFailedEntries/,
+  'the status summary must bind all core loudness counters'
+);
 assert.match(css, /@media \(max-width: 520px\)/);
 assert.match(
   playController,

@@ -26,6 +26,7 @@ const {
 const { createBilibiliFailure } = require("./bilibiliFailure");
 const { BilibiliService } = require("./bilibiliService");
 const { AudioCache, CACHE_SCHEME } = require(`${__dirname}/audioCache`);
+const { LoudnessAnalyzer } = require(`${__dirname}/loudnessAnalyzer`);
 const { LyricCacheStore } = require(`${__dirname}/lyricCacheStore`);
 
 const store = new Store();
@@ -53,6 +54,7 @@ let floatingWindowCssKey = undefined,
   trayIconPath;
 let bilibiliService;
 let audioCache;
+let loudnessAnalyzer;
 let lyricCacheStore;
 let audioCacheStartupError;
 let audioCacheProtocolReady = false;
@@ -165,6 +167,9 @@ function getBilibiliService() {
 
 function getAudioCache() {
   if (!audioCache) {
+    if (!loudnessAnalyzer) {
+      loudnessAnalyzer = new LoudnessAnalyzer({ BrowserWindow, ipcMain });
+    }
     audioCache = new AudioCache({
       rootDir: join(app.getPath("userData"), "audio-cache-v1"),
       session: session.defaultSession,
@@ -172,6 +177,7 @@ function getAudioCache() {
         options.kind === "audio"
           ? getBilibiliService().getLegacyAudioVariant(options)
           : getBilibiliService().getAudioVariant(options),
+      loudnessAnalyzer,
     });
   }
   return audioCache;
@@ -426,6 +432,10 @@ ipcMain.handle("audio-cache:status", async (event) => {
       usedBytes: 0,
       readyEntries: 0,
       queuedEntries: 0,
+      loudnessNormalizationEnabled: false,
+      loudnessPendingEntries: 0,
+      loudnessReadyEntries: 0,
+      loudnessFailedEntries: 0,
       lastError: (error && error.code) || "audio-cache-unavailable",
     };
   }
@@ -1526,7 +1536,12 @@ app.on("activate", () => mainWindow.show());
 /* 'before-quit' is emitted when Electron receives
  * the signal to exit and wants to start closing windows */
 app.on("before-quit", () => {
-  if (mainWindow.webContents.isDevToolsOpened()) {
+  if (audioCache) audioCache.shutdown();
+  if (
+    mainWindow &&
+    !mainWindow.isDestroyed() &&
+    mainWindow.webContents.isDevToolsOpened()
+  ) {
     mainWindow.webContents.closeDevTools();
   }
   if (floatingWindow) {

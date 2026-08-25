@@ -45,6 +45,27 @@ function createHarness(options = {}) {
     getByteTimeDomainData() {}
   }
 
+  class MockGain extends MockSource {
+    constructor() {
+      super();
+      this.gain = {
+        value: 1,
+        calls: [],
+        cancelScheduledValues(time) {
+          this.calls.push(['cancel', time]);
+        },
+        setValueAtTime(value, time) {
+          this.value = value;
+          this.calls.push(['set', value, time]);
+        },
+        linearRampToValueAtTime(value, time) {
+          this.value = value;
+          this.calls.push(['ramp', value, time]);
+        },
+      };
+    }
+  }
+
   class MockAudioContext {
     constructor() {
       this.state = options.initialState || 'suspended';
@@ -54,6 +75,11 @@ function createHarness(options = {}) {
       this.sampleRate = 48000;
       this.resumeCalls = 0;
       this.listeners = new Map();
+      this.sources = [];
+      this.gains = [];
+      if (options.disableGain) {
+        this.createGain = undefined;
+      }
       audioContext = this;
       audioContexts.push(this);
     }
@@ -73,7 +99,15 @@ function createHarness(options = {}) {
     }
 
     createMediaElementSource() {
-      return new MockSource();
+      const mediaSource = new MockSource();
+      this.sources.push(mediaSource);
+      return mediaSource;
+    }
+
+    createGain() {
+      const gain = new MockGain();
+      this.gains.push(gain);
+      return gain;
     }
 
     resume() {
@@ -151,6 +185,9 @@ function createHarness(options = {}) {
     ensureOutput() {
       return window.Listen1AudioAnalysis.ensureOutput(howl);
     },
+    setTrackGain(value) {
+      howl._listen1TrackGain = value;
+    },
     runNextTimer() {
       const entry = timers.entries().next().value;
       if (!entry) {
@@ -176,6 +213,47 @@ async function run() {
     assert.strictEqual(harness.debug().output.status, 'running');
     assert.strictEqual(harness.debug().output.attempts, 0);
     assert.strictEqual(harness.debug().source, 'https://cdn.example/audio.m4s');
+    assert.strictEqual(harness.context().sources.length, 1);
+    assert.strictEqual(harness.context().gains.length, 1);
+    assert.strictEqual(
+      harness.context().sources[0].connections[0],
+      harness.context().gains[0],
+      'the media source must feed the per-track gain node'
+    );
+    assert.strictEqual(
+      harness
+        .context()
+        .gains[0].connections.filter(
+          (target) => target === harness.context().destination
+        ).length,
+      1,
+      'the audible output must be connected once'
+    );
+    harness.setTrackGain(10 ** (6 / 20));
+    harness.ensureOutput();
+    assert.ok(
+      harness
+        .context()
+        .gains[0].gain.calls.some((call) => call[0] === 'ramp' && call[1] > 1),
+      'positive per-track gain must use a short AudioParam ramp'
+    );
+    harness.setTrackGain(10 ** (-6 / 20));
+    harness.ensureOutput();
+    assert.ok(
+      harness
+        .context()
+        .gains[0].gain.calls.some((call) => call[0] === 'ramp' && call[1] < 1),
+      'negative per-track gain must use the same output node'
+    );
+    assert.strictEqual(
+      harness
+        .context()
+        .gains[0].connections.filter(
+          (target) => target !== harness.context().destination
+        ).length,
+      1,
+      'repeated output preparation must not duplicate the analyser branch'
+    );
   }
 
   {
@@ -243,6 +321,21 @@ async function run() {
       false
     );
     assert.strictEqual(harness.debug().output.hint, 'recreate-media-element');
+  }
+
+  {
+    const harness = createHarness({ disableGain: true });
+    assert.strictEqual(harness.ensureOutput(), false);
+    assert.strictEqual(
+      harness.debug().output.hint,
+      'recreate-media-element',
+      'a missing GainNode implementation must use the existing rebuild path'
+    );
+    assert.strictEqual(
+      harness.context().sources.length,
+      0,
+      'the native media route must remain untouched when GainNode is unavailable'
+    );
   }
 
   {

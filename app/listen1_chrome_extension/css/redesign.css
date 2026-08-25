@@ -3131,6 +3131,14 @@
   opacity: 0.74;
 }
 
+.page .loudness-normalization-description {
+  margin: -5px 0 0 28px;
+  color: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  opacity: 0.74;
+}
+
 .page .audio-cache-settings {
   display: grid;
   gap: 12px;

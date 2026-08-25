@@ -349,6 +349,47 @@
       return true;
     };
 
+    const requestedTrackGain = (howl) => {
+      const gain = Number(howl && howl._listen1TrackGain);
+      return Number.isFinite(gain) && gain > 0 ? gain : 1;
+    };
+
+    const applyTrackGain = (record, howl) => {
+      if (!record || !record.gain || !record.gain.gain) {
+        return false;
+      }
+      const gainParam = record.gain.gain;
+      const target = requestedTrackGain(howl);
+      const contextTime = Number.isFinite(record.context.currentTime)
+        ? record.context.currentTime
+        : 0;
+      try {
+        if (typeof gainParam.cancelScheduledValues === 'function') {
+          gainParam.cancelScheduledValues(contextTime);
+        }
+        if (typeof gainParam.setValueAtTime === 'function') {
+          gainParam.setValueAtTime(
+            Number.isFinite(gainParam.value) ? gainParam.value : 1,
+            contextTime
+          );
+        }
+        if (typeof gainParam.linearRampToValueAtTime === 'function') {
+          gainParam.linearRampToValueAtTime(target, contextTime + 0.018);
+        } else {
+          gainParam.value = target;
+        }
+        return true;
+      } catch (error) {
+        // A failed optional normalization must never leave the track muted.
+        try {
+          gainParam.value = 1;
+        } catch (fallbackError) {
+          // The existing output recovery path will recreate an unusable node.
+        }
+        return false;
+      }
+    };
+
     const connectHtml5Element = (howl, node) => {
       const context = ensureOwnedContext();
       const nextAnalyser = ensureAnalyser(context);
@@ -361,6 +402,7 @@
         currentTap &&
         analyserContext === context
       ) {
+        applyTrackGain(mediaSourceRecords.get(node), howl);
         requestOwnedContextResume('existing-html5-output');
         return true;
       }
@@ -369,11 +411,24 @@
       try {
         let record = mediaSourceRecords.get(node);
         if (!record) {
+          if (typeof context.createGain !== 'function') {
+            recordOutputFailure(
+              'create-track-gain',
+              new Error('AudioContext.createGain is unavailable'),
+              'recreate-media-element'
+            );
+            return false;
+          }
           const source = context.createMediaElementSource(node);
+          let gain;
           // MediaElementAudioSourceNode replaces the element's native output,
-          // so preserve normal playback while adding a passive analysis branch.
+          // so preserve normal playback with a per-track gain before adding a
+          // passive analysis branch. Do not connect this source twice.
           try {
-            source.connect(context.destination);
+            gain = context.createGain();
+            gain.gain.value = 1;
+            source.connect(gain);
+            gain.connect(context.destination);
           } catch (error) {
             // At this point the element has already been claimed by this
             // AudioContext, so native output cannot be restored in place.
@@ -388,7 +443,7 @@
             );
             return false;
           }
-          record = { context, source, outputConnected: true };
+          record = { context, source, gain, outputConnected: true };
           mediaSourceRecords.set(node, record);
         }
         if (record.context !== context || !record.outputConnected) {
@@ -399,13 +454,9 @@
           );
           return false;
         }
-        record.source.connect(nextAnalyser);
-        const connected = markConnected(
-          howl,
-          node,
-          record.source,
-          'html5-media'
-        );
+        applyTrackGain(record, howl);
+        record.gain.connect(nextAnalyser);
+        const connected = markConnected(howl, node, record.gain, 'html5-media');
         if (outputRecoveryNode !== node) {
           outputRecoveryNode = node;
           outputRecoveryAttempts = 0;

@@ -1391,6 +1391,7 @@
                                 ng-if="!isChrome && audioCacheSettings.supported"
                                 data-desktop-audio-cache-settings
                                 data-audio-cache-default-enabled="true"
+                                data-audio-cache-default-loudness-normalization="true"
                                 data-audio-cache-default-capacity="2147483648"
                               >
                                 <p class="audio-cache-description">
@@ -1406,6 +1407,22 @@
                                   />
                                   <span>{{_AUDIO_CACHE_ENABLED}}</span>
                                 </label>
+                                <label class="audio-cache-toggle loudness-normalization-toggle" for="classic-loudness-normalization-enabled">
+                                  <input
+                                    id="classic-loudness-normalization-enabled"
+                                    type="checkbox"
+                                    ng-model="audioCacheSettings.loudnessNormalizationEnabled"
+                                    ng-change="updateLoudnessNormalizationEnabled()"
+                                    ng-disabled="audioCacheActionPending"
+                                  />
+                                  <span>{{_LOUDNESS_NORMALIZATION_ENABLED}}</span>
+                                </label>
+                                <p class="loudness-normalization-description">
+                                  {{_LOUDNESS_NORMALIZATION_DESCRIPTION}}
+                                </p>
+                                <p class="loudness-normalization-description" ng-if="audioCacheSettings.loudnessNormalizationEnabled !== false">
+                                  {{loudnessNormalizationStatus()}}
+                                </p>
                                 <label class="audio-cache-capacity" for="classic-audio-cache-capacity">
                                   <span>{{_AUDIO_CACHE_CAPACITY}}</span>
                                   <select
@@ -4363,6 +4380,7 @@
                                 ng-if="!isChrome && audioCacheSettings.supported"
                                 data-desktop-audio-cache-settings
                                 data-audio-cache-default-enabled="true"
+                                data-audio-cache-default-loudness-normalization="true"
                                 data-audio-cache-default-capacity="2147483648"
                               >
                                 <p class="audio-cache-description">
@@ -4378,6 +4396,22 @@
                                   />
                                   <span>{{_AUDIO_CACHE_ENABLED}}</span>
                                 </label>
+                                <label class="audio-cache-toggle loudness-normalization-toggle" for="modern-loudness-normalization-enabled">
+                                  <input
+                                    id="modern-loudness-normalization-enabled"
+                                    type="checkbox"
+                                    ng-model="audioCacheSettings.loudnessNormalizationEnabled"
+                                    ng-change="updateLoudnessNormalizationEnabled()"
+                                    ng-disabled="audioCacheActionPending"
+                                  />
+                                  <span>{{_LOUDNESS_NORMALIZATION_ENABLED}}</span>
+                                </label>
+                                <p class="loudness-normalization-description">
+                                  {{_LOUDNESS_NORMALIZATION_DESCRIPTION}}
+                                </p>
+                                <p class="loudness-normalization-description" ng-if="audioCacheSettings.loudnessNormalizationEnabled !== false">
+                                  {{loudnessNormalizationStatus()}}
+                                </p>
                                 <label class="audio-cache-capacity" for="modern-audio-cache-capacity">
                                   <span>{{_AUDIO_CACHE_CAPACITY}}</span>
                                   <select

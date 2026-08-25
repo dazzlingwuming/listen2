@@ -12,6 +12,12 @@ const MAX_ENTRY_BYTES = 128 * 1024 * 1024;
 const MAX_TRACK_ID_LENGTH = 256;
 const CACHE_SCHEME = "listen2-cache";
 const INDEX_VERSION = 1;
+const MAX_ANALYZER_VERSION_LENGTH = 96;
+const MAX_LOUDNESS_ERROR_LENGTH = 80;
+const NORMALIZATION_TARGET_LUFS = -14;
+const TRUE_PEAK_CEILING_DBTP = -1;
+const MIN_NORMALIZATION_GAIN_DB = -24;
+const MAX_NORMALIZATION_GAIN_DB = 12;
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -90,11 +96,106 @@ function parseSingleRange(value, size) {
   return { start, end: Math.min(end, size - 1) };
 }
 
+function finiteNumber(value, minimum, maximum) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= minimum && number <= maximum
+    ? number
+    : null;
+}
+
+function sanitizeLoudness(value, cacheKey, contentSha256) {
+  if (!isPlainObject(value)) return null;
+  const analyzerVersion = safeString(
+    value.analyzerVersion,
+    MAX_ANALYZER_VERSION_LENGTH
+  );
+  if (
+    value.cacheKey !== cacheKey ||
+    value.contentSha256 !== contentSha256 ||
+    !analyzerVersion
+  ) {
+    return null;
+  }
+  const analyzedAt = Number(value.analyzedAt);
+  if (!Number.isFinite(analyzedAt) || analyzedAt <= 0) return null;
+  if (value.status === "failed") {
+    const errorCode = safeString(value.errorCode, MAX_LOUDNESS_ERROR_LENGTH);
+    if (!errorCode) return null;
+    return {
+      status: "failed",
+      cacheKey,
+      contentSha256,
+      analyzerVersion,
+      errorCode,
+      analyzedAt,
+    };
+  }
+  if (value.status !== "ready") return null;
+  const integratedLufs = finiteNumber(value.integratedLufs, -100, 24);
+  const truePeakDbtp = finiteNumber(value.truePeakDbtp, -200, 24);
+  const targetLufs = finiteNumber(value.targetLufs, -40, 0);
+  const truePeakCeilingDbtp = finiteNumber(value.truePeakCeilingDbtp, -20, 0);
+  const gainDb = finiteNumber(
+    value.gainDb,
+    MIN_NORMALIZATION_GAIN_DB,
+    MAX_NORMALIZATION_GAIN_DB
+  );
+  const sampleRate = positiveInteger(value.sampleRate);
+  const channelCount = positiveInteger(value.channelCount);
+  const durationSeconds = finiteNumber(value.durationSeconds, 0, 24 * 60 * 60);
+  if (
+    integratedLufs === null ||
+    truePeakDbtp === null ||
+    targetLufs === null ||
+    truePeakCeilingDbtp === null ||
+    gainDb === null ||
+    !sampleRate ||
+    !channelCount ||
+    durationSeconds === null
+  ) {
+    return null;
+  }
+  const expectedGainDb =
+    Math.round(
+      Math.max(
+        MIN_NORMALIZATION_GAIN_DB,
+        Math.min(
+          MAX_NORMALIZATION_GAIN_DB,
+          NORMALIZATION_TARGET_LUFS - integratedLufs,
+          TRUE_PEAK_CEILING_DBTP - truePeakDbtp
+        )
+      ) * 100
+    ) / 100;
+  if (
+    targetLufs !== NORMALIZATION_TARGET_LUFS ||
+    truePeakCeilingDbtp !== TRUE_PEAK_CEILING_DBTP ||
+    Math.abs(gainDb - expectedGainDb) > 0.011
+  ) {
+    return null;
+  }
+  return {
+    status: "ready",
+    cacheKey,
+    contentSha256,
+    analyzerVersion,
+    integratedLufs,
+    truePeakDbtp,
+    targetLufs,
+    truePeakCeilingDbtp,
+    gainDb,
+    sampleRate,
+    channelCount,
+    durationSeconds,
+    analyzedAt,
+  };
+}
+
 class AudioCache {
   constructor({
     rootDir,
     session,
     resolveBilibiliAudio,
+    loudnessAnalyzer = null,
     now = () => Date.now(),
   }) {
     this.rootDir = rootDir;
@@ -102,9 +203,11 @@ class AudioCache {
     this.indexPath = path.join(rootDir, "index-v1.json");
     this.session = session;
     this.resolveBilibiliAudio = resolveBilibiliAudio;
+    this.loudnessAnalyzer = loudnessAnalyzer;
     this.now = now;
     this.index = this.emptyIndex();
     this.jobs = new Map();
+    this.loudnessJobs = new Map();
     this.readers = new Map();
     this.writeChain = Promise.resolve();
     this.lastError = "";
@@ -114,7 +217,11 @@ class AudioCache {
   emptyIndex() {
     return {
       version: INDEX_VERSION,
-      settings: { enabled: true, capacityBytes: DEFAULT_CAPACITY_BYTES },
+      settings: {
+        enabled: true,
+        capacityBytes: DEFAULT_CAPACITY_BYTES,
+        loudnessNormalizationEnabled: true,
+      },
       entries: Object.create(null),
     };
   }
@@ -125,6 +232,7 @@ class AudioCache {
     this.index = await this.readIndex();
     await this.cleanupDisk();
     this.initialized = true;
+    this.scheduleMissingLoudness();
   }
 
   async readIndex() {
@@ -136,6 +244,8 @@ class AudioCache {
       const result = this.emptyIndex();
       if (isPlainObject(parsed.settings)) {
         result.settings.enabled = parsed.settings.enabled !== false;
+        result.settings.loudnessNormalizationEnabled =
+          parsed.settings.loudnessNormalizationEnabled !== false;
         result.settings.capacityBytes = this.validCapacity(
           parsed.settings.capacityBytes
         )
@@ -185,7 +295,7 @@ class AudioCache {
           ),
         ].slice(0, 20)
       : [];
-    return {
+    const result = {
       stableKey,
       kind: legacy ? "audio" : "video",
       bvid,
@@ -204,6 +314,9 @@ class AudioCache {
       lastAccessedAt: Number(value.lastAccessedAt) || this.now(),
       trackIds,
     };
+    const loudness = sanitizeLoudness(value.loudness, cacheKey, fileHash);
+    if (loudness) result.loudness = loudness;
+    return result;
   }
 
   validCapacity(value) {
@@ -266,6 +379,13 @@ class AudioCache {
 
   status() {
     const entries = Object.values(this.index.entries);
+    let loudnessReadyEntries = 0;
+    let loudnessFailedEntries = 0;
+    for (const entry of entries) {
+      if (!this.loudnessIsCurrent(entry)) continue;
+      if (entry.loudness.status === "ready") loudnessReadyEntries += 1;
+      if (entry.loudness.status === "failed") loudnessFailedEntries += 1;
+    }
     return {
       ok: true,
       supported: true,
@@ -274,11 +394,20 @@ class AudioCache {
       usedBytes: entries.reduce((total, entry) => total + entry.byteLength, 0),
       readyEntries: entries.length,
       queuedEntries: this.jobs.size,
+      loudnessNormalizationEnabled:
+        this.index.settings.loudnessNormalizationEnabled,
+      loudnessPendingEntries: this.loudnessJobs.size,
+      loudnessReadyEntries,
+      loudnessFailedEntries,
       lastError: this.lastError || "",
     };
   }
 
-  async configure({ enabled, capacityBytes } = {}) {
+  async configure({
+    enabled,
+    capacityBytes,
+    loudnessNormalizationEnabled,
+  } = {}) {
     await this.initialize();
     if (typeof enabled !== "undefined" && typeof enabled !== "boolean") {
       return { ok: false, status: "invalid-input" };
@@ -289,15 +418,36 @@ class AudioCache {
     ) {
       return { ok: false, status: "invalid-capacity" };
     }
+    if (
+      typeof loudnessNormalizationEnabled !== "undefined" &&
+      typeof loudnessNormalizationEnabled !== "boolean"
+    ) {
+      return { ok: false, status: "invalid-input" };
+    }
     if (enabled === false) this.jobs.forEach((job) => job.controller.abort());
-    return this.serialize(async () => {
+    if (
+      loudnessNormalizationEnabled === false &&
+      this.loudnessAnalyzer &&
+      typeof this.loudnessAnalyzer.cancelAll === "function"
+    ) {
+      this.loudnessAnalyzer.cancelAll();
+    }
+    await this.serialize(async () => {
       if (typeof enabled === "boolean") this.index.settings.enabled = enabled;
       if (typeof capacityBytes !== "undefined")
         this.index.settings.capacityBytes = capacityBytes;
+      if (typeof loudnessNormalizationEnabled === "boolean") {
+        this.index.settings.loudnessNormalizationEnabled =
+          loudnessNormalizationEnabled;
+      }
       await this.evictToCapacity(0);
       await this.persist();
-      return this.status();
     });
+    if (loudnessNormalizationEnabled === false && this.loudnessJobs.size) {
+      await Promise.allSettled([...this.loudnessJobs.values()]);
+    }
+    if (loudnessNormalizationEnabled === true) this.scheduleMissingLoudness();
+    return this.status();
   }
 
   entryResponse(cacheKey, entry) {
@@ -307,7 +457,125 @@ class AudioCache {
       bitrate: entry.bitrate,
       mimeType: entry.mimeType,
       audioId: entry.audioId,
+      loudness:
+        this.index.settings.loudnessNormalizationEnabled &&
+        this.loudnessIsCurrent(entry)
+          ? entry.loudness
+          : null,
     };
+  }
+
+  loudnessIsCurrent(entry) {
+    return Boolean(
+      entry &&
+        entry.loudness &&
+        this.loudnessAnalyzer &&
+        entry.loudness.cacheKey === sha256(entry.stableKey) &&
+        entry.loudness.contentSha256 === entry.sha256 &&
+        entry.loudness.analyzerVersion === this.loudnessAnalyzer.version
+    );
+  }
+
+  scheduleMissingLoudness() {
+    if (
+      !this.initialized ||
+      !this.index.settings.loudnessNormalizationEnabled ||
+      !this.loudnessAnalyzer ||
+      typeof this.loudnessAnalyzer.analyze !== "function"
+    ) {
+      return;
+    }
+    for (const cacheKey of Object.keys(this.index.entries)) {
+      this.queueLoudnessAnalysis(cacheKey);
+    }
+  }
+
+  queueLoudnessAnalysis(cacheKey) {
+    const key = safeCacheKey(cacheKey);
+    const entry = this.index.entries[key];
+    if (
+      !key ||
+      !entry ||
+      this.loudnessJobs.has(key) ||
+      this.loudnessIsCurrent(entry) ||
+      !this.index.settings.loudnessNormalizationEnabled ||
+      !this.loudnessAnalyzer ||
+      typeof this.loudnessAnalyzer.analyze !== "function"
+    ) {
+      return;
+    }
+    const contentSha256 = entry.sha256;
+    const promise = Promise.resolve()
+      .then(() =>
+        this.loudnessAnalyzer.analyze({
+          cacheKey: key,
+          contentSha256,
+          filePath: this.filePath(key),
+        })
+      )
+      .then((result) =>
+        this.storeLoudnessResult(key, contentSha256, {
+          ...result,
+          status: "ready",
+          cacheKey: key,
+          contentSha256,
+          analyzerVersion: this.loudnessAnalyzer.version,
+          analyzedAt: this.now(),
+        })
+      )
+      .catch((error) => {
+        const code = safeString(
+          error && error.code ? error.code : "analysis-failed",
+          MAX_LOUDNESS_ERROR_LENGTH
+        );
+        if (
+          code === "analysis-cancelled" ||
+          code === "analyzer-shutdown" ||
+          !this.index.settings.loudnessNormalizationEnabled
+        ) {
+          return;
+        }
+        return this.storeLoudnessResult(key, contentSha256, {
+          status: "failed",
+          cacheKey: key,
+          contentSha256,
+          analyzerVersion: this.loudnessAnalyzer.version,
+          errorCode: code || "analysis-failed",
+          analyzedAt: this.now(),
+        });
+      })
+      .finally(() => {
+        this.loudnessJobs.delete(key);
+      });
+    this.loudnessJobs.set(key, promise);
+  }
+
+  async storeLoudnessResult(cacheKey, contentSha256, value) {
+    return this.serialize(async () => {
+      const entry = this.index.entries[cacheKey];
+      if (
+        !entry ||
+        entry.sha256 !== contentSha256 ||
+        !this.index.settings.loudnessNormalizationEnabled
+      ) {
+        return;
+      }
+      const loudness = sanitizeLoudness(value, cacheKey, contentSha256);
+      if (!loudness) {
+        throw Object.assign(new Error("Invalid loudness result."), {
+          code: "invalid-analysis-result",
+        });
+      }
+      entry.loudness = loudness;
+      await this.persist();
+    });
+  }
+
+  async waitForLoudnessIdle() {
+    while (this.loudnessJobs.size) {
+      await Promise.allSettled([...this.loudnessJobs.values()]);
+    }
+    await this.writeChain;
   }
 
   async lookup({ trackId, bvid, cid, preferredAudioId, kind, sid } = {}) {
@@ -545,6 +813,7 @@ class AudioCache {
         trackIds: [job.trackId],
       };
       await this.persist();
+      this.queueLoudnessAnalysis(job.cacheKey);
     } catch (error) {
       output.destroy();
       await fsp.unlink(partPath).catch(() => {});
@@ -557,6 +826,12 @@ class AudioCache {
     const key = safeCacheKey(cacheKey);
     const activeJob = this.jobs.get(key);
     if (activeJob) activeJob.controller.abort();
+    if (
+      this.loudnessAnalyzer &&
+      typeof this.loudnessAnalyzer.cancel === "function"
+    ) {
+      this.loudnessAnalyzer.cancel(key);
+    }
     if (!key || !this.index.entries[key]) return { ok: true, removed: false };
     return this.serialize(async () => {
       const entry = this.index.entries[key];
@@ -571,6 +846,12 @@ class AudioCache {
   async clear() {
     await this.initialize();
     this.jobs.forEach((job) => job.controller.abort());
+    if (
+      this.loudnessAnalyzer &&
+      typeof this.loudnessAnalyzer.cancelAll === "function"
+    ) {
+      this.loudnessAnalyzer.cancelAll();
+    }
     return this.serialize(async () => {
       const entries = Object.entries(this.index.entries);
       let removedBytes = 0;
@@ -662,6 +943,16 @@ class AudioCache {
       return new Response("Not found", { status: 404 });
     }
   }
+
+  shutdown() {
+    this.jobs.forEach((job) => job.controller.abort());
+    if (
+      this.loudnessAnalyzer &&
+      typeof this.loudnessAnalyzer.shutdown === "function"
+    ) {
+      this.loudnessAnalyzer.shutdown();
+    }
+  }
 }
 
 module.exports = {
@@ -672,4 +963,5 @@ module.exports = {
   MAX_ENTRY_BYTES,
   parseSingleRange,
   stableAudioKey,
+  sanitizeLoudness,
 };

@@ -39,6 +39,9 @@
       this._playback_diagnostics = [];
       this._playback_session = 0;
       this._audio_output_rebuild_session_by_track = {};
+      // This is intentionally separate from Howler's global volume. It is a
+      // per-track gain consumed only by the desktop Web Audio output branch.
+      this._loudness_normalization_enabled = true;
       this.playedFrom = 0;
       this.mode = 'background';
       this.skipTime = 15;
@@ -144,6 +147,57 @@
 
     static get OUTPUT_ONLY_RECOVERY_INTERVAL_MS() {
       return 5000;
+    }
+
+    static getValidatedLoudnessGain(loudness, enabled = true) {
+      if (!enabled || !loudness || typeof loudness !== 'object') {
+        return 1;
+      }
+      const requiredNumbers = [
+        loudness.integratedLufs,
+        loudness.truePeakDbtp,
+        loudness.gainDb,
+        loudness.targetLufs,
+      ];
+      if (
+        !requiredNumbers.every((value) => Number.isFinite(value)) ||
+        loudness.integratedLufs < -100 ||
+        loudness.integratedLufs > 24 ||
+        loudness.truePeakDbtp < -200 ||
+        loudness.truePeakDbtp > 24 ||
+        loudness.targetLufs !== -14 ||
+        loudness.gainDb < -24 ||
+        loudness.gainDb > 12 ||
+        typeof loudness.analyzerVersion !== 'string' ||
+        !loudness.analyzerVersion.trim() ||
+        !(
+          (Number.isFinite(loudness.analyzedAt) && loudness.analyzedAt > 0) ||
+          (typeof loudness.analyzedAt === 'string' &&
+            loudness.analyzedAt.trim() &&
+            Number.isFinite(Date.parse(loudness.analyzedAt)))
+        )
+      ) {
+        return 1;
+      }
+      const linearGain = 10 ** (loudness.gainDb / 20);
+      return Number.isFinite(linearGain) && linearGain > 0 ? linearGain : 1;
+    }
+
+    setLoudnessNormalizationEnabled(enabled) {
+      this._loudness_normalization_enabled = enabled !== false;
+      this.playlist.forEach((playlistTrack) => {
+        const track = playlistTrack;
+        track._listen1_loudness_gain = Player.getValidatedLoudnessGain(
+          track._listen1_loudness,
+          this._loudness_normalization_enabled
+        );
+        if (track.howl) {
+          track.howl._listen1TrackGain = track._listen1_loudness_gain;
+        }
+      });
+      if (this.currentHowl) {
+        prepareAudioAnalysis(this.currentHowl);
+      }
     }
 
     getPlaybackPosition(howl = this.currentHowl) {
@@ -1308,6 +1362,10 @@
             this.playlist[index].platform = bootinfo.platform;
             this.playlist[index]._audio_cache_descriptor =
               bootinfo.audioCacheDescriptor || null;
+            // A remote fallback is not an analyzed cache entry. Never carry a
+            // stale local-track gain into a rebuilt Howl.
+            this.playlist[index]._listen1_loudness = null;
+            this.playlist[index]._listen1_loudness_gain = 1;
 
             const urlCandidates = Player.getMediaUrlCandidates(bootinfo);
             if (!urlCandidates.length) {
@@ -1388,6 +1446,12 @@
             audioCacheKey: entry.cacheKey,
             localBypassAttempted: options.localBypassAttempted === true,
           });
+          this.playlist[index]._listen1_loudness = entry.loudness || null;
+          this.playlist[index]._listen1_loudness_gain =
+            Player.getValidatedLoudnessGain(
+              entry.loudness,
+              this._loudness_normalization_enabled
+            );
           this.setMediaURI(entry.url, msg.data.id);
           this.setAudioDisabled(false, msg.data.index);
           this.finishLoad(msg.data.index, playNow);
@@ -1581,6 +1645,14 @@
             self.handleMediaLoadError(index, data, playNow, err, createdHowl);
           },
         });
+        // Howler's `volume` stays at 1 so its global volume/mute semantics
+        // remain untouched. The desktop visualizer/output hub reads this
+        // verified linear multiplier and ramps its per-track GainNode.
+        createdHowl._listen1TrackGain = Number.isFinite(
+          data._listen1_loudness_gain
+        )
+          ? data._listen1_loudness_gain
+          : 1;
         data.howl = createdHowl;
       }
 

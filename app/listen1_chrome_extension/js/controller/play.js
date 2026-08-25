@@ -144,6 +144,10 @@ angular.module('listenone').controller('PlayController', [
       readyEntries: 0,
       queuedEntries: 0,
       lastError: '',
+      loudnessNormalizationEnabled: true,
+      loudnessReadyEntries: 0,
+      loudnessPendingEntries: 0,
+      loudnessFailedEntries: 0,
     };
     $scope.audioCacheCapacityOptions = [
       { value: 1024 * 1024 * 1024, label: '1 GB' },
@@ -196,6 +200,17 @@ angular.module('listenone').controller('PlayController', [
         ...response,
         supported: response.supported !== false,
       };
+      if (isElectron()) {
+        const player = getPlayer(getPlayerMode());
+        if (
+          player &&
+          typeof player.setLoudnessNormalizationEnabled === 'function'
+        ) {
+          player.setLoudnessNormalizationEnabled(
+            $scope.audioCacheSettings.loudnessNormalizationEnabled !== false
+          );
+        }
+      }
       return true;
     }
 
@@ -255,6 +270,17 @@ angular.module('listenone').controller('PlayController', [
     $scope.updateAudioCacheCapacity = () =>
       updateAudioCacheSettings({
         capacityBytes: $scope.audioCacheSettings.capacityBytes,
+      });
+    $scope.updateLoudnessNormalizationEnabled = () =>
+      updateAudioCacheSettings({
+        loudnessNormalizationEnabled:
+          $scope.audioCacheSettings.loudnessNormalizationEnabled,
+      });
+    $scope.loudnessNormalizationStatus = () =>
+      i18next.t('_LOUDNESS_NORMALIZATION_STATUS', {
+        ready: $scope.audioCacheSettings.loudnessReadyEntries || 0,
+        pending: $scope.audioCacheSettings.loudnessPendingEntries || 0,
+        failed: $scope.audioCacheSettings.loudnessFailedEntries || 0,
       });
 
     $scope.requestClearAudioCache = () => {
