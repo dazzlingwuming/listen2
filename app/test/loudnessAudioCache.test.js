@@ -229,6 +229,37 @@ test("analysis failure is persisted but never removes cache READY", async () => 
   }
 });
 
+test("analyzer version upgrade automatically retries a persisted failure", async () => {
+  const analyzer = new DeferredAnalyzer();
+  const { cache, rootDir } = await createCache(analyzer);
+  try {
+    await cache.schedule(scheduleInput());
+    await cache.writeChain;
+    await nextTurn();
+    analyzer.rejectNext("unsupported-sample-rate");
+    await cache.waitForLoudnessIdle();
+    assert.strictEqual((await lookup(cache)).entry.loudness.status, "failed");
+    assert.strictEqual(analyzer.calls.length, 1);
+
+    analyzer.version = `${ANALYZER_VERSION}-next`;
+    cache.scheduleMissingLoudness();
+    await nextTurn();
+    assert.strictEqual(analyzer.calls.length, 2);
+    analyzer.resolveNext();
+    await cache.waitForLoudnessIdle();
+
+    const retried = await lookup(cache);
+    assert.strictEqual(retried.entry.loudness.status, "ready");
+    assert.strictEqual(
+      retried.entry.loudness.analyzerVersion,
+      `${ANALYZER_VERSION}-next`
+    );
+  } finally {
+    analyzer.cancelAll();
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
 test("delete and clear remove the entry-bound loudness result", async () => {
   const analyzer = new DeferredAnalyzer();
   const { cache, rootDir } = await createCache(analyzer);

@@ -5,7 +5,7 @@
 })(typeof globalThis === "object" ? globalThis : this, function createCore() {
   "use strict";
 
-  const ANALYZER_VERSION = "bs1770-5-r128-itu-fir48-v1";
+  const ANALYZER_VERSION = "bs1770-5-r128-webaudio-resample48-v2";
   const TARGET_LUFS = -14;
   const TRUE_PEAK_CEILING_DBTP = -1;
   const MIN_GAIN_DB = -24;
@@ -364,10 +364,13 @@
           "Cached audio input is unavailable."
         );
       }
-      if (input.sourceSampleRate !== TRUE_PEAK_SAMPLE_RATE) {
+      if (
+        !Number.isSafeInteger(input.sourceSampleRate) ||
+        input.sourceSampleRate <= 0
+      ) {
         throw analysisError(
-          "unsupported-sample-rate",
-          "This analyzer version supports 48 kHz source audio only."
+          "invalid-source-sample-rate",
+          "The source audio sample rate is invalid."
         );
       }
       const bytes = input.bytes;
@@ -384,6 +387,10 @@
           "Web Audio decoding is unavailable."
         );
       }
+      // decodeAudioData is required by Web Audio to resample decoded PCM to
+      // the BaseAudioContext rate. Keeping the analysis domain fixed at 48 kHz
+      // lets every decoder-supported source rate share the same verified
+      // BS.1770 K-weighting and Annex 2 true-peak implementation.
       context = new AudioContextClass({ sampleRate: TRUE_PEAK_SAMPLE_RATE });
       const decoded = await context.decodeAudioData(encoded);
       const channels = [];

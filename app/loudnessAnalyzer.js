@@ -8,6 +8,7 @@ const {
   MAX_CHANNELS,
   MAX_DECODED_SAMPLE_VALUES,
   MAX_DURATION_SECONDS,
+  TRUE_PEAK_SAMPLE_RATE,
 } = require("./loudnessAnalyzerRenderer");
 
 const READ_CHANNEL = "loudness-analyzer:read-input";
@@ -356,14 +357,14 @@ class LoudnessAnalyzer {
       );
     }
     const sourceSampleRate = Number(format && format.sampleRate);
-    if (sourceSampleRate !== 48000) {
+    if (!Number.isSafeInteger(sourceSampleRate) || sourceSampleRate <= 0) {
       throw analyzerError(
-        "unsupported-sample-rate",
-        "This analyzer version supports 48 kHz source audio only."
+        "invalid-source-sample-rate",
+        "Cached audio has an invalid source sample rate."
       );
     }
     if (
-      durationSeconds * sourceSampleRate * channelCount >
+      durationSeconds * TRUE_PEAK_SAMPLE_RATE * channelCount >
       MAX_DECODED_SAMPLE_VALUES
     ) {
       throw analyzerError(

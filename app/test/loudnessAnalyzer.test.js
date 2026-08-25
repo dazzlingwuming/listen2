@@ -150,7 +150,7 @@ test("gain is static, bounded, and limited by the true-peak ceiling", () => {
   assert.strictEqual(calculateGainDb(10, 3), -24);
 });
 
-test("sample rates outside the Annex 2 48 kHz reference fail safely", () => {
+test("the verified analysis core accepts only its normalized 48 kHz domain", () => {
   assert.throws(
     () =>
       analyzeChannels(
@@ -251,13 +251,36 @@ test("analyzer reads only the approved bytes and verifies their content hash", a
       { ok: false, errorCode: "analysis-content-mismatch" }
     );
     await writeFile(filePath, original);
-    analyzer.parseAudioMetadata = async () => ({
-      format: { sampleRate: 44100, duration: 60, numberOfChannels: 2 },
-    });
-    assert.deepStrictEqual(
-      await analyzer.handleReadInput({ sender: webContents }, "token"),
-      { ok: false, errorCode: "unsupported-sample-rate" }
-    );
+    for (const sourceSampleRate of [
+      8000, 22050, 32000, 44100, 48000, 88200, 96000, 192000,
+    ]) {
+      analyzer.parseAudioMetadata = async () => ({
+        format: {
+          sampleRate: sourceSampleRate,
+          duration: 60,
+          numberOfChannels: 2,
+        },
+      });
+      const resampledInput = await analyzer.handleReadInput(
+        { sender: webContents },
+        "token"
+      );
+      assert.strictEqual(resampledInput.ok, true);
+      assert.strictEqual(resampledInput.sourceSampleRate, sourceSampleRate);
+    }
+    for (const invalidSampleRate of [undefined, NaN, 0, -1, 44100.5]) {
+      analyzer.parseAudioMetadata = async () => ({
+        format: {
+          sampleRate: invalidSampleRate,
+          duration: 60,
+          numberOfChannels: 2,
+        },
+      });
+      assert.deepStrictEqual(
+        await analyzer.handleReadInput({ sender: webContents }, "token"),
+        { ok: false, errorCode: "invalid-source-sample-rate" }
+      );
+    }
   } finally {
     analyzer.current = null;
     analyzer.shutdown();
