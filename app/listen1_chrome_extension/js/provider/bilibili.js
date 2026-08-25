@@ -21,7 +21,7 @@ const BILIBILI_MANUAL_LYRIC_STORAGE_KEY = 'bilibili-manual-lyrics';
 const BILIBILI_MANUAL_LYRIC_STORAGE_VERSION = 2;
 const BILIBILI_AUTO_LYRIC_MATCH_THRESHOLD = 0.88;
 const LRCLIB_CLIENT_ID =
-  'Listen1 v2.33.0 (https://github.com/listen1/listen1_chrome_extension)';
+  'Listen1 v2.34.0 (https://github.com/listen1/listen1_chrome_extension)';
 /* global getParameterByName kuwo MediaService isElectron */
 // eslint-disable-next-line no-unused-vars
 /* global cookieSet cookieGet */

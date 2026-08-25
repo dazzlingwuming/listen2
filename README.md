@@ -5,6 +5,7 @@
 ### 把 Bilibili 与多平台音乐内容，整理成更好用的桌面播放器
 
 [![License](https://img.shields.io/badge/license-MIT-7c5cff.svg)](./LICENSE.md)
+[![Version](https://img.shields.io/badge/version-2.34.0-8b5cf6.svg)](https://github.com/dazzlingwuming/listen2/releases/tag/v2.34.0)
 [![Electron](https://img.shields.io/badge/Electron-32-38bdf8.svg)](https://www.electronjs.org/)
 [![Windows](https://img.shields.io/badge/Windows-x64-2563eb.svg)](https://github.com/dazzlingwuming/listen2/releases/latest)
 [![macOS](https://img.shields.io/badge/macOS-Universal-111827.svg)](#平台支持)
@@ -17,6 +18,15 @@
 Listen2 是 [Listen1](https://github.com/listen1/listen1) 的社区增强版本。它保留多平台聚合搜索、播放和歌单能力，并重点改善 Bilibili 音乐播放、同步歌词、歌词翻译、桌面歌词、MV 和现代化桌面体验。
 
 > Listen2 只整理和播放用户本来就有权访问的内容，不解锁会员、付费、DRM、地区限制或其他受限资源。
+
+## v2.34.0 更新
+
+- 新增桌面端 Bilibili 完整音频缓存：首次播放后在后台校验并保存，缓存命中时支持离线播放，并提供容量、清理与单曲数据管理。
+- 新增曲目响度标准化：按 `-14 LUFS` 与 `-1 dBTP` 测量整曲并应用固定增益，兼容解码器支持的不同来源采样率，不修改原始音频。
+- 响度分析进度会在有任务时每 2 秒自动更新，任务完成后停止轮询；无法安全分析的歌曲继续保持原音量。
+- 自动匹配歌词、手动选择歌词和对应翻译均可持久化；手动选择始终覆盖旧的自动结果。
+- 新增用户确认后才调用的 DeepSeek 整曲歌词翻译，并对逐行对应关系、缓存和密钥存储进行严格校验。
+- 歌单备份默认采用合并导入，保留目标设备已有歌单；同时改进 Bilibili CDN 恢复、随机播放、桌面歌词控制和现代黑/白界面。
 
 ## 界面预览
 

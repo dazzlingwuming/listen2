@@ -1,6 +1,6 @@
 {
   "name": "listen1",
-  "version": "2.33.0",
+  "version": "2.34.0",
   "description": "A modern Listen1 desktop experience with enhanced Bilibili, lyrics, and visualizations",
   "main": "main.js",
   "scripts": {
