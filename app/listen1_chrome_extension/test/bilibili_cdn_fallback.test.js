@@ -76,6 +76,7 @@ function createBilibiliProvider(
           manifestResponse || {
             ok: true,
             manifest: {
+              duration: 217,
               audioVariants: [
                 {
                   url: 'https://primary.example/audio.m4s',
@@ -171,6 +172,42 @@ function createMediaServiceHarness() {
 
 async function run() {
   {
+    const requests = [];
+    const provider = createBilibiliProvider([], undefined, {
+      get(url) {
+        requests.push(url);
+        const bvid = new URL(url).searchParams.get('bvid');
+        return Promise.resolve({
+          data: {
+            data: {
+              bvid,
+              duration: bvid === 'BV_FIRST' ? 228 : 196,
+              pages: [
+                {
+                  cid: bvid === 'BV_FIRST' ? 101 : 202,
+                  duration: bvid === 'BV_FIRST' ? 228 : 196,
+                },
+              ],
+            },
+          },
+        });
+      },
+    });
+    const tracks = [
+      { id: 'bitrack_v_BV_FIRST-101', source: 'bilibili' },
+      { id: 'bitrack_v_BV_SECOND-202', source: 'bilibili', duration: 0 },
+      { id: 'bitrack_legacy', source: 'bilibili' },
+    ];
+    const hydrated = await provider.hydrate_track_durations(tracks);
+    assert.strictEqual(hydrated, tracks);
+    assert.deepStrictEqual(
+      tracks.map((track) => track.duration || 0),
+      [228, 196, 0]
+    );
+    assert.strictEqual(requests.length, 2);
+  }
+
+  {
     const manifestCalls = [];
     const provider = createBilibiliProvider(manifestCalls);
     const result = await new Promise((resolve, reject) => {
@@ -194,6 +231,7 @@ async function run() {
       'https://backup-one.example/audio.m4s',
       'https://backup-two.example/audio.m4s',
     ]);
+    assert.strictEqual(result.duration, 217);
   }
 
   {
@@ -397,6 +435,7 @@ async function run() {
             'https://backup-two.example/audio.m4s',
           ],
           bitrate: '192kbps',
+          duration: 217,
           platform: 'bilibili',
         });
       },
@@ -422,6 +461,14 @@ async function run() {
     assert.strictEqual(
       player._media_uri_list[track.id],
       'https://primary.example/audio.m4s'
+    );
+    assert.strictEqual(track.duration, 217);
+    howls[0].duration = () => 219;
+    howls[0].options.onload();
+    assert.strictEqual(
+      track.duration,
+      219,
+      'the decoded media duration should correct provider metadata'
     );
 
     howls[0].options.onloaderror(1, 'primary-failed');

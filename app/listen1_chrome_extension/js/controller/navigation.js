@@ -1,4 +1,5 @@
 /* eslint-disable import/no-unresolved */
+/* eslint-disable import/no-extraneous-dependencies */
 /* eslint-disable global-require */
 /* eslint-disable no-shadow */
 /* eslint-disable no-unused-vars */
@@ -94,6 +95,23 @@ angular.module('listenone').controller('NavigationController', [
       }, 0);
     };
 
+    const hydrateVisibleTrackDurations = (listId, tracks) => {
+      if (
+        !MediaService ||
+        typeof MediaService.hydrateTrackDurations !== 'function'
+      ) {
+        return;
+      }
+      MediaService.hydrateTrackDurations(listId, tracks)
+        .then((hydratedTracks) => {
+          if ($scope.list_id !== listId) return;
+          $scope.$evalAsync(() => {
+            $scope.songs = hydratedTracks;
+          });
+        })
+        .catch(() => {});
+    };
+
     $scope.closeWindow = (offset) => {
       if (offset === undefined) {
         offset = 0;
@@ -118,6 +136,7 @@ angular.module('listenone').controller('NavigationController', [
         $scope.playlist_source_url = data.info.source_url;
         $scope.is_mine = data.info.id.slice(0, 2) === 'my';
         $scope.is_local = data.info.id.slice(0, 2) === 'lm';
+        hydrateVisibleTrackDurations(data.info.id, data.tracks);
         $timeout(() => {
           document.getElementsByClassName('browser')[0].scrollTop = offset;
         }, 0);
@@ -211,6 +230,7 @@ angular.module('listenone').controller('NavigationController', [
         $scope.list_id = data.info.id;
         $scope.is_mine = data.info.id.slice(0, 2) === 'my';
         $scope.is_local = data.info.id.slice(0, 2) === 'lm';
+        hydrateVisibleTrackDurations(data.info.id, data.tracks);
 
         MediaService.queryPlaylist(data.info.id, 'favorite').success((res) => {
           // success 函数可能在异步回调中执行，需要手动触发脏检查
@@ -226,7 +246,9 @@ angular.module('listenone').controller('NavigationController', [
     $scope.directplaylist = (list_id) => {
       MediaService.getPlaylist(list_id).success((data) => {
         $scope.songs = data.tracks;
+        $scope.list_id = data.info.id;
         $scope.current_list_id = list_id;
+        hydrateVisibleTrackDurations(data.info.id, data.tracks);
         l1Player.setNewPlaylist($scope.songs);
         l1Player.play();
       });
@@ -890,6 +912,7 @@ angular.module('listenone').controller('NavigationController', [
                   source_url: '',
                   img_url: '',
                   lyrics: md.common.lyrics,
+                  duration: Number(md.format && md.format.duration) || 0,
                   // url: "lmtrack_"+fp,
                   sound_url: `file://${fp}`,
                 };

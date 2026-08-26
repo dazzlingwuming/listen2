@@ -3,6 +3,7 @@ const bilibiliLyricCache = new Map();
 const bilibiliLyricSearchCache = new Map();
 const bilibiliQQLyricSearchCache = new Map();
 const bilibiliNeteaseLyricSearchCache = new Map();
+const bilibiliTrackDurationCache = new Map();
 const BILIBILI_LYRIC_REQUEST_TIMEOUT = 8000;
 const QQ_LYRIC_REQUEST_TIMEOUT = 8000;
 const NETEASE_LYRIC_REQUEST_TIMEOUT = 8000;
@@ -683,6 +684,56 @@ class bilibili {
         cid: idParts.cid,
         duration: 0,
       }));
+  }
+
+  static get_track_duration(track) {
+    const trackId = String((track && track.id) || '');
+    const existingDuration = this.parse_duration(track && track.duration);
+    if (existingDuration > 0) {
+      return Promise.resolve(existingDuration);
+    }
+    if (!this.get_video_id_parts(trackId)) {
+      return Promise.resolve(0);
+    }
+    const cached = bilibiliTrackDurationCache.get(trackId);
+    if (cached) {
+      return cached;
+    }
+    const request = this.get_video_context(trackId).then((context) => {
+      const duration = this.parse_duration(context && context.duration);
+      if (duration <= 0) {
+        bilibiliTrackDurationCache.delete(trackId);
+      }
+      return duration;
+    });
+    bilibiliTrackDurationCache.set(trackId, request);
+    return request;
+  }
+
+  static async hydrate_track_durations(tracks) {
+    const safeTracks = Array.isArray(tracks) ? tracks : [];
+    const pending = safeTracks.filter(
+      (track) =>
+        this.parse_duration(track && track.duration) <= 0 &&
+        this.get_video_id_parts(track && track.id)
+    );
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < pending.length) {
+        const track = pending[cursor];
+        cursor += 1;
+        // Keep failed metadata requests isolated: one unavailable Bilibili
+        // video must not prevent the rest of the playlist from being filled.
+        // eslint-disable-next-line no-await-in-loop
+        const duration = await this.get_track_duration(track).catch(() => 0);
+        if (duration > 0) {
+          track.duration = duration; // eslint-disable-line no-param-reassign
+        }
+      }
+    };
+    const concurrency = Math.min(4, pending.length);
+    await Promise.all(Array.from({ length: concurrency }, () => worker()));
+    return safeTracks;
   }
 
   static get_player_music_metadata(playerResponse) {
@@ -2310,6 +2361,7 @@ class bilibili {
               url: urlCandidates[0],
               urlCandidates: [...new Set(urlCandidates)],
               bitrate: audio.label || '',
+              duration: this.parse_duration(manifest.duration),
               platform: 'bilibili',
               audioCacheDescriptor: {
                 kind: 'video',

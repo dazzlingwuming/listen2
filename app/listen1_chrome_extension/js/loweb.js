@@ -724,6 +724,38 @@ const MediaService = {
     };
   },
 
+  hydrateTrackDurations(listId, tracks) {
+    const safeTracks = Array.isArray(tracks) ? tracks : [];
+    const providerGroups = new Map();
+    safeTracks.forEach((track) => {
+      if (!track || Number(track.duration) > 0) return;
+      const provider =
+        getProviderByName(track.source) || getProviderByItemId(track.id);
+      if (!provider || typeof provider.hydrate_track_durations !== 'function') {
+        return;
+      }
+      if (!providerGroups.has(provider)) {
+        providerGroups.set(provider, []);
+      }
+      providerGroups.get(provider).push(track);
+    });
+    const requests = Array.from(providerGroups.entries()).map(
+      ([provider, providerTracks]) =>
+        provider
+          .hydrate_track_durations(providerTracks)
+          .catch(() => providerTracks)
+    );
+    return Promise.all(requests).then(() => {
+      if (
+        String(listId || '').startsWith('myplaylist_') &&
+        typeof myplaylist.update_track_durations === 'function'
+      ) {
+        myplaylist.update_track_durations(listId, safeTracks);
+      }
+      return safeTracks;
+    });
+  },
+
   clonePlaylist(id, type) {
     const provider = getProviderByItemId(id);
     const url = `/playlist?list_id=${id}`;

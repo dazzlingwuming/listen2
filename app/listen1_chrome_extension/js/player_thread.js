@@ -1638,6 +1638,12 @@
 
             this.playlist[index].bitrate = bootinfo.bitrate;
             this.playlist[index].platform = bootinfo.platform;
+            const resolvedDuration = Number(bootinfo.duration);
+            if (Number.isFinite(resolvedDuration) && resolvedDuration > 0) {
+              this.playlist[index].duration = resolvedDuration;
+              msg.data.duration = resolvedDuration;
+              this.sendPlaylistEvent();
+            }
             this.playlist[index]._audio_cache_descriptor =
               bootinfo.audioCacheDescriptor || null;
             // A remote fallback is not an analyzed cache entry. Never carry a
@@ -1866,6 +1872,19 @@
               return;
             }
             self.currentAudio.disabled = false;
+            const loadedDuration = Number(
+              typeof createdHowl.duration === 'function'
+                ? createdHowl.duration()
+                : 0
+            );
+            if (
+              Number.isFinite(loadedDuration) &&
+              loadedDuration > 0 &&
+              Number(data.duration) !== loadedDuration
+            ) {
+              data.duration = loadedDuration;
+              self.sendPlaylistEvent();
+            }
             self.sendPlayingEvent('Loaded');
           },
           onend() {

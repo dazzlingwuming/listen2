@@ -173,6 +173,32 @@ const myplaylistFactory = () => {
     return playlist;
   }
 
+  function update_track_durations(playlist_id, tracks) {
+    const playlist = localStorage.getObject(playlist_id);
+    if (!playlist || !Array.isArray(playlist.tracks)) {
+      return null;
+    }
+    const durationById = new Map();
+    (Array.isArray(tracks) ? tracks : []).forEach((track) => {
+      const duration = Number(track && track.duration);
+      if (track && track.id && Number.isFinite(duration) && duration > 0) {
+        durationById.set(track.id, duration);
+      }
+    });
+    let changed = false;
+    playlist.tracks.forEach((track) => {
+      const duration = durationById.get(track.id);
+      if (duration && Number(track.duration) !== duration) {
+        track.duration = duration; // eslint-disable-line no-param-reassign
+        changed = true;
+      }
+    });
+    if (changed) {
+      localStorage.setObject(playlist_id, playlist);
+    }
+    return playlist;
+  }
+
   function insert_track_to_myplaylist(playlist_id, track, to_track, direction) {
     const playlist = localStorage.getObject(playlist_id);
     if (playlist == null) {
@@ -250,6 +276,7 @@ const myplaylistFactory = () => {
     get_playlist: get_myplaylist,
     remove_myplaylist,
     add_track_to_myplaylist,
+    update_track_durations,
     remove_track_from_myplaylist,
     create_myplaylist,
     edit_myplaylist,

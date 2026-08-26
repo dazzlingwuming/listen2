@@ -4,7 +4,7 @@
   "description": "The embedded Listen2 player frontend with enhanced Bilibili and lyric support",
   "main": "index.js",
   "scripts": {
-    "test": "node test/player_shuffle.test.js && node test/player_play_next_queue.test.js && node test/player_recovery.test.js && node test/audio_visualizer_output_recovery.test.js && node test/media_bootstrap_error.test.js && node test/bilibili_lyric_translation.test.js && node test/bilibili_cdn_fallback.test.js && node test/deepseek_lyric_translation_ui_contract.test.js && node test/playlist_backup_merge.test.js && node test/playlist_backup_ui_contract.test.js && node test/desktop_cache_settings_ui_contract.test.js && node test/desktop_cache_renderer_contract.test.js && node test/desktop_cache_player_behavior.test.js"
+    "test": "node test/player_shuffle.test.js && node test/player_play_next_queue.test.js && node test/player_recovery.test.js && node test/audio_visualizer_output_recovery.test.js && node test/media_bootstrap_error.test.js && node test/bilibili_lyric_translation.test.js && node test/bilibili_cdn_fallback.test.js && node test/track_duration_persistence.test.js && node test/deepseek_lyric_translation_ui_contract.test.js && node test/playlist_backup_merge.test.js && node test/playlist_backup_ui_contract.test.js && node test/desktop_cache_settings_ui_contract.test.js && node test/desktop_cache_renderer_contract.test.js && node test/desktop_cache_player_behavior.test.js"
   },
   "repository": {
     "type": "git",
