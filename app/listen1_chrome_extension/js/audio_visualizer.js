@@ -1,4 +1,4 @@
-/* eslint-disable no-bitwise, no-underscore-dangle */
+/* eslint-disable no-bitwise, no-underscore-dangle, no-param-reassign, prefer-destructuring */
 /* global angular process */
 
 /*
@@ -14,6 +14,52 @@
   const BAR_COUNT = 64;
   const FFT_SIZE = 2048;
   const MIN_ACTIVE_LEVEL = 0.004;
+  const EFFECT_PRESETS = {
+    original: { preampDb: 0, filters: [] },
+    'clear-vocals': {
+      preampDb: -2,
+      filters: [
+        ['highpass', 90, 0, 0.7],
+        ['peaking', 2600, 2.4, 1],
+      ],
+    },
+    'deep-bass': {
+      preampDb: -5,
+      filters: [
+        ['lowshelf', 85, 3.5, 0.7],
+        ['peaking', 180, 1.4, 1],
+      ],
+    },
+    airy: { preampDb: -3, filters: [['highshelf', 9000, 2.2, 0.7]] },
+    warm: { preampDb: -3, filters: [['lowshelf', 180, 1.7, 0.7]] },
+    'hifi-live': {
+      preampDb: -4,
+      filters: [
+        ['lowshelf', 90, 1.4, 0.7],
+        ['peaking', 3200, 1.3, 1],
+        ['highshelf', 10000, 1.2, 0.7],
+      ],
+    },
+    'immersive-3d': {
+      preampDb: -6,
+      filters: [['peaking', 2400, 1.2, 0.8]],
+      requiresSpatialization: true,
+    },
+    night: {
+      preampDb: -5,
+      filters: [['highshelf', 8000, -1.2, 0.7]],
+      compressor: true,
+    },
+  };
+  const SOFT_LIMITER_CURVE = Float32Array.from({ length: 2049 }, (_, index) => {
+    const input = (index / 2048) * 2 - 1;
+    const magnitude = Math.abs(input);
+    const threshold = 0.9;
+    if (magnitude <= threshold) return input;
+    const excess = magnitude - threshold;
+    const limited = magnitude - 2 * excess * excess;
+    return Math.sign(input) * limited;
+  });
 
   const clamp = (value, min = 0, max = 1) =>
     Math.max(min, Math.min(max, value));
@@ -53,6 +99,15 @@
     let outputRecoveryNode = null;
     let outputFailure = null;
     let outputRecoveryHint = '';
+    let effectPreset = 'original';
+    let effectState = {
+      ok: true,
+      preset: 'original',
+      requestedPreset: 'original',
+      supported: false,
+      degraded: false,
+      error: null,
+    };
     let beatCount = 0;
     let publishedRoot = null;
     let publishedSignal = '';
@@ -390,6 +445,232 @@
       }
     };
 
+    const effectParam = (param, value, context) => {
+      if (!param) return;
+      const time = Number.isFinite(context.currentTime)
+        ? context.currentTime
+        : 0;
+      if (typeof param.cancelScheduledValues === 'function') {
+        param.cancelScheduledValues(time);
+      }
+      if (typeof param.setValueAtTime === 'function') {
+        // These nodes are built off-line and connected only after the graph is
+        // complete. Starting from Web Audio defaults (for example Gain=+1)
+        // and ramping to a negative crossfeed would create a loud transient.
+        param.setValueAtTime(value, time);
+      } else {
+        param.value = value;
+      }
+    };
+
+    const disconnectEffectNodes = (record) => {
+      [record.effectOutput, ...(record.effectNodes || [])].forEach((node) => {
+        if (node && typeof node.disconnect === 'function') {
+          try {
+            node.disconnect();
+          } catch (error) {
+            // Recycling a media node can make explicit cleanup reject.
+          }
+        }
+      });
+      record.effectOutput = null;
+      record.effectNodes = [];
+    };
+
+    const buildEffectChain = (record, requestedPreset) => {
+      const context = record.context;
+      const preset = EFFECT_PRESETS[requestedPreset];
+      if (!preset || !record.effectInput || !context) {
+        return { ok: false, error: 'invalid-preset' };
+      }
+      if (typeof record.effectInput.disconnect === 'function') {
+        try {
+          record.effectInput.disconnect();
+        } catch (error) {
+          // A closed/recycled node may already be disconnected.
+        }
+      }
+      disconnectEffectNodes(record);
+      try {
+        let cursor = record.effectInput;
+        const nodes = [];
+        const useProcessing = requestedPreset !== 'original';
+        if (useProcessing && typeof context.createBiquadFilter !== 'function') {
+          throw new Error('BiquadFilterNode is unavailable');
+        }
+        if (useProcessing) {
+          const preamp = context.createGain();
+          effectParam(preamp.gain, 10 ** (preset.preampDb / 20), context);
+          cursor.connect(preamp);
+          cursor = preamp;
+          nodes.push(preamp);
+        }
+        preset.filters.forEach(([type, frequency, gain, q]) => {
+          const filter = context.createBiquadFilter();
+          filter.type = type;
+          effectParam(filter.frequency, frequency, context);
+          effectParam(filter.gain, gain, context);
+          effectParam(filter.Q, q, context);
+          cursor.connect(filter);
+          cursor = filter;
+          nodes.push(filter);
+        });
+        if (preset.requiresSpatialization) {
+          const requiredSpatialNodes = [
+            'createChannelSplitter',
+            'createChannelMerger',
+            'createDelay',
+            'createBiquadFilter',
+          ];
+          if (
+            !requiredSpatialNodes.every(
+              (method) => typeof context[method] === 'function'
+            )
+          ) {
+            throw new Error('Symmetric spatialization is unavailable');
+          }
+          const stereoInput = context.createGain();
+          stereoInput.channelCount = 2;
+          stereoInput.channelCountMode = 'explicit';
+          stereoInput.channelInterpretation = 'speakers';
+          const splitter = context.createChannelSplitter(2);
+          const merger = context.createChannelMerger(2);
+          const leftDirect = context.createGain();
+          const rightDirect = context.createGain();
+          const leftDelay = context.createDelay(0.05);
+          const rightDelay = context.createDelay(0.05);
+          const leftFilter = context.createBiquadFilter();
+          const rightFilter = context.createBiquadFilter();
+          const leftCrossfeed = context.createGain();
+          const rightCrossfeed = context.createGain();
+          effectParam(leftDelay.delayTime, 0.01, context);
+          effectParam(rightDelay.delayTime, 0.01, context);
+          [leftFilter, rightFilter].forEach((filter) => {
+            filter.type = 'lowpass';
+            effectParam(filter.frequency, 6500, context);
+            effectParam(filter.Q, 0.7, context);
+          });
+          // Equal, low-amplitude inverted crossfeed adds a headphone room cue
+          // without pushing the image toward either speaker.
+          effectParam(leftCrossfeed.gain, -0.08, context);
+          effectParam(rightCrossfeed.gain, -0.08, context);
+          // ChannelSplitter uses discrete channel interpretation, so feeding a
+          // mono source directly would leave its second output silent. Force a
+          // standards-defined mono-to-stereo speaker up-mix before splitting.
+          cursor.connect(stereoInput);
+          stereoInput.connect(splitter);
+          splitter.connect(leftDirect, 0);
+          splitter.connect(rightDirect, 1);
+          leftDirect.connect(merger, 0, 0);
+          rightDirect.connect(merger, 0, 1);
+          splitter.connect(leftDelay, 0);
+          splitter.connect(rightDelay, 1);
+          leftDelay.connect(leftFilter);
+          rightDelay.connect(rightFilter);
+          leftFilter.connect(leftCrossfeed);
+          rightFilter.connect(rightCrossfeed);
+          leftCrossfeed.connect(merger, 0, 1);
+          rightCrossfeed.connect(merger, 0, 0);
+          cursor = merger;
+          nodes.push(
+            stereoInput,
+            splitter,
+            merger,
+            leftDirect,
+            rightDirect,
+            leftDelay,
+            rightDelay,
+            leftFilter,
+            rightFilter,
+            leftCrossfeed,
+            rightCrossfeed
+          );
+        }
+        if (preset.compressor) {
+          if (typeof context.createDynamicsCompressor !== 'function') {
+            throw new Error('DynamicsCompressorNode is unavailable');
+          }
+          const compressor = context.createDynamicsCompressor();
+          effectParam(compressor.threshold, -20, context);
+          effectParam(compressor.knee, 12, context);
+          effectParam(compressor.ratio, 2, context);
+          effectParam(compressor.attack, 0.02, context);
+          effectParam(compressor.release, 0.25, context);
+          cursor.connect(compressor);
+          cursor = compressor;
+          nodes.push(compressor);
+        }
+        if (useProcessing && typeof context.createWaveShaper === 'function') {
+          const limiter = context.createWaveShaper();
+          limiter.oversample = '2x';
+          limiter.curve = SOFT_LIMITER_CURVE;
+          cursor.connect(limiter);
+          cursor = limiter;
+          nodes.push(limiter);
+        }
+        cursor.connect(context.destination);
+        record.effectNodes = nodes;
+        record.effectOutput = cursor;
+        return { ok: true, preset: requestedPreset };
+      } catch (error) {
+        disconnectEffectNodes(record);
+        try {
+          record.effectInput.connect(context.destination);
+          record.effectOutput = record.effectInput;
+        } catch (fallbackError) {
+          return { ok: false, error: 'effect-unavailable' };
+        }
+        return { ok: false, error: 'effect-unavailable', fallback: 'original' };
+      }
+    };
+
+    const setEffectPreset = (requestedPreset) => {
+      const requested = String(requestedPreset || 'original');
+      if (!Object.prototype.hasOwnProperty.call(EFFECT_PRESETS, requested)) {
+        return {
+          ok: false,
+          preset: effectPreset,
+          requestedPreset: requested,
+          supported: isElectronRuntime(),
+          degraded: false,
+          error: 'invalid-preset',
+        };
+      }
+      effectPreset = requested;
+      if (!isElectronRuntime()) {
+        effectState = {
+          ok: false,
+          preset: 'original',
+          requestedPreset: requested,
+          supported: false,
+          degraded: true,
+          error: 'unsupported',
+        };
+        return { ...effectState };
+      }
+      const record = currentNode && mediaSourceRecords.get(currentNode);
+      const built = record ? buildEffectChain(record, requested) : { ok: true };
+      effectState = {
+        ok: built.ok,
+        preset: built.ok ? requested : 'original',
+        requestedPreset: requested,
+        supported: true,
+        degraded: built.ok !== true,
+        error: built.error || null,
+      };
+      if (record && record.effectOutput) {
+        disconnectAnalyserTap();
+        record.effectOutput.connect(analyser);
+        markConnected(
+          currentHowl,
+          currentNode,
+          record.effectOutput,
+          'html5-media'
+        );
+      }
+      return { ...effectState };
+    };
+
     const connectHtml5Element = (howl, node) => {
       const context = ensureOwnedContext();
       const nextAnalyser = ensureAnalyser(context);
@@ -428,7 +709,29 @@
             gain = context.createGain();
             gain.gain.value = 1;
             source.connect(gain);
-            gain.connect(context.destination);
+            const effectInput = context.createGain();
+            gain.connect(effectInput);
+            record = {
+              context,
+              source,
+              gain,
+              effectInput,
+              effectNodes: [],
+              effectOutput: null,
+              outputConnected: true,
+            };
+            const built = buildEffectChain(record, effectPreset);
+            effectState = {
+              ok: built.ok,
+              preset: built.ok ? effectPreset : 'original',
+              requestedPreset: effectPreset,
+              supported: true,
+              degraded: built.ok !== true,
+              error: built.error || null,
+            };
+            if (!record.effectOutput) {
+              throw new Error('Effect output is unavailable');
+            }
           } catch (error) {
             // At this point the element has already been claimed by this
             // AudioContext, so native output cannot be restored in place.
@@ -443,7 +746,6 @@
             );
             return false;
           }
-          record = { context, source, gain, outputConnected: true };
           mediaSourceRecords.set(node, record);
         }
         if (record.context !== context || !record.outputConnected) {
@@ -455,8 +757,13 @@
           return false;
         }
         applyTrackGain(record, howl);
-        record.gain.connect(nextAnalyser);
-        const connected = markConnected(howl, node, record.gain, 'html5-media');
+        record.effectOutput.connect(nextAnalyser);
+        const connected = markConnected(
+          howl,
+          node,
+          record.effectOutput,
+          'html5-media'
+        );
         if (outputRecoveryNode !== node) {
           outputRecoveryNode = node;
           outputRecoveryAttempts = 0;
@@ -895,6 +1202,7 @@
         failure: outputFailure,
         ownsMediaElementOutput: Boolean(outputRecoveryNode),
       },
+      effects: { ...effectState },
       peak: Math.max(...bars),
       beatCount,
       ...metrics,
@@ -904,8 +1212,10 @@
       barCount: BAR_COUNT,
       debug,
       ensureOutput,
+      getEffectState: () => ({ ...effectState }),
       prepareHowl,
       sample,
+      setEffectPreset,
     };
   };
 

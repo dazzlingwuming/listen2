@@ -3,7 +3,7 @@
 /* eslint-disable import/no-extraneous-dependencies */
 /* eslint-disable import/no-unresolved */
 /* eslint-disable global-require */
-/* global angular notyf i18next MediaService l1Player hotkeys GithubClient isElectron require getLocalStorageValue getPlayer getPlayerAsync getPlayerMode canUseBackgroundPlayer addPlayerListener smoothScrollTo lastfm BilibiliMvPlayer */
+/* global angular notyf i18next MediaService l1Player hotkeys GithubClient isElectron require getLocalStorageValue getPlayer getPlayerAsync getPlayerMode canUseBackgroundPlayer addPlayerListener smoothScrollTo lastfm BilibiliMvPlayer Listen1AudioAnalysis */
 
 function getCSSStringFromSetting(setting) {
   let { backgroundAlpha } = setting;
@@ -175,6 +175,59 @@ angular.module('listenone').controller('PlayController', [
       { value: null, label: '∞' },
     ];
     $scope.audioCacheActionPending = false;
+    $scope.audioEffects = {
+      open: false,
+      selectedPreset: 'original',
+      activePreset: 'original',
+      lastActivePreset: 'original',
+      supported: null,
+      degraded: false,
+      error: '',
+      pending: false,
+    };
+    $scope.audioEffectPresets = [
+      {
+        id: 'original',
+        labelKey: '_AUDIO_EFFECT_PRESET_ORIGINAL',
+        descriptionKey: '_AUDIO_EFFECT_PRESET_ORIGINAL_DESCRIPTION',
+      },
+      {
+        id: 'clear-vocals',
+        labelKey: '_AUDIO_EFFECT_PRESET_CLEAR_VOCALS',
+        descriptionKey: '_AUDIO_EFFECT_PRESET_CLEAR_VOCALS_DESCRIPTION',
+      },
+      {
+        id: 'deep-bass',
+        labelKey: '_AUDIO_EFFECT_PRESET_DEEP_BASS',
+        descriptionKey: '_AUDIO_EFFECT_PRESET_DEEP_BASS_DESCRIPTION',
+      },
+      {
+        id: 'airy',
+        labelKey: '_AUDIO_EFFECT_PRESET_AIRY',
+        descriptionKey: '_AUDIO_EFFECT_PRESET_AIRY_DESCRIPTION',
+      },
+      {
+        id: 'warm',
+        labelKey: '_AUDIO_EFFECT_PRESET_WARM',
+        descriptionKey: '_AUDIO_EFFECT_PRESET_WARM_DESCRIPTION',
+      },
+      {
+        id: 'hifi-live',
+        labelKey: '_AUDIO_EFFECT_PRESET_HIFI_LIVE',
+        descriptionKey: '_AUDIO_EFFECT_PRESET_HIFI_LIVE_DESCRIPTION',
+      },
+      {
+        id: 'immersive-3d',
+        labelKey: '_AUDIO_EFFECT_PRESET_IMMERSIVE_3D',
+        descriptionKey: '_AUDIO_EFFECT_PRESET_IMMERSIVE_3D_DESCRIPTION',
+        headphoneOnly: true,
+      },
+      {
+        id: 'night',
+        labelKey: '_AUDIO_EFFECT_PRESET_NIGHT',
+        descriptionKey: '_AUDIO_EFFECT_PRESET_NIGHT_DESCRIPTION',
+      },
+    ];
     $scope.annualListening = {
       loading: false,
       enabled: true,
@@ -399,6 +452,244 @@ angular.module('listenone').controller('PlayController', [
         pending: $scope.audioCacheSettings.loudnessPendingEntries || 0,
         failed: $scope.audioCacheSettings.loudnessFailedEntries || 0,
       });
+
+    const AUDIO_EFFECT_STORAGE_KEY = 'listen2-audio-effect-settings';
+    const AUDIO_EFFECT_PRESET_IDS = $scope.audioEffectPresets.map(
+      (preset) => preset.id
+    );
+
+    function hasAudioEffectPreset(presetId) {
+      return AUDIO_EFFECT_PRESET_IDS.includes(presetId);
+    }
+
+    function getAudioEffectsApi() {
+      if (typeof Listen1AudioAnalysis === 'undefined') return null;
+      if (
+        typeof Listen1AudioAnalysis.setEffectPreset !== 'function' ||
+        typeof Listen1AudioAnalysis.getEffectState !== 'function'
+      ) {
+        return null;
+      }
+      return Listen1AudioAnalysis;
+    }
+
+    function setAudioEffectsState(response, requestedPreset) {
+      const safeRequestedPreset = hasAudioEffectPreset(requestedPreset)
+        ? requestedPreset
+        : $scope.audioEffects.selectedPreset;
+      const safeActivePreset = hasAudioEffectPreset(response && response.preset)
+        ? response.preset
+        : 'original';
+      const supported = response && response.supported !== false;
+      $scope.audioEffects = {
+        ...$scope.audioEffects,
+        selectedPreset: safeRequestedPreset,
+        activePreset: safeActivePreset,
+        lastActivePreset:
+          safeActivePreset === 'original'
+            ? $scope.audioEffects.lastActivePreset
+            : safeActivePreset,
+        supported,
+        degraded: Boolean(response && response.degraded),
+        error: (response && response.error) || '',
+        pending: false,
+      };
+    }
+
+    function persistAudioEffectPreset(presetId) {
+      try {
+        localStorage.setObject(AUDIO_EFFECT_STORAGE_KEY, { preset: presetId });
+        return true;
+      } catch (error) {
+        return false;
+      }
+    }
+
+    function getStoredAudioEffectPreset() {
+      try {
+        const stored = localStorage.getObject(AUDIO_EFFECT_STORAGE_KEY);
+        return stored && hasAudioEffectPreset(stored.preset)
+          ? stored.preset
+          : 'original';
+      } catch (error) {
+        return 'original';
+      }
+    }
+
+    function getAudioEffectFailureMessage(error) {
+      if (error === 'unsupported')
+        return i18next.t('_AUDIO_EFFECT_UNSUPPORTED');
+      if (error === 'invalid-preset') {
+        return i18next.t('_AUDIO_EFFECT_INVALID_PRESET');
+      }
+      return i18next.t('_AUDIO_EFFECT_UNAVAILABLE');
+    }
+
+    function syncAudioEffectState() {
+      const api = getAudioEffectsApi();
+      if (!isElectron() || !api) {
+        setAudioEffectsState(
+          {
+            ok: false,
+            preset: 'original',
+            supported: false,
+            degraded: true,
+            error: 'unsupported',
+          },
+          $scope.audioEffects.selectedPreset
+        );
+        return null;
+      }
+      try {
+        const response = api.getEffectState();
+        setAudioEffectsState(response, $scope.audioEffects.selectedPreset);
+        return response;
+      } catch (error) {
+        setAudioEffectsState(
+          {
+            ok: false,
+            preset: 'original',
+            supported: false,
+            degraded: true,
+            error: 'effect-unavailable',
+          },
+          $scope.audioEffects.selectedPreset
+        );
+        return null;
+      }
+    }
+
+    $scope.audioEffectPresetLabel = (presetId) => {
+      const preset = $scope.audioEffectPresets.find(
+        (item) => item.id === presetId
+      );
+      return i18next.t(
+        (preset && preset.labelKey) || '_AUDIO_EFFECT_PRESET_ORIGINAL'
+      );
+    };
+
+    $scope.audioEffectPresetDescription = (presetId) => {
+      const preset = $scope.audioEffectPresets.find(
+        (item) => item.id === presetId
+      );
+      return i18next.t(
+        (preset && preset.descriptionKey) ||
+          '_AUDIO_EFFECT_PRESET_ORIGINAL_DESCRIPTION'
+      );
+    };
+
+    $scope.audioEffectStatus = () => {
+      const state = $scope.audioEffects;
+      if (state.supported === false)
+        return getAudioEffectFailureMessage(state.error);
+      if (state.degraded) return i18next.t('_AUDIO_EFFECT_DEGRADED');
+      if (state.activePreset === 'original') {
+        return i18next.t('_AUDIO_EFFECT_ORIGINAL_STATUS');
+      }
+      return i18next.t('_AUDIO_EFFECT_ACTIVE_STATUS', {
+        effect: $scope.audioEffectPresetLabel(state.activePreset),
+      });
+    };
+
+    $scope.toggleAudioEffectsPanel = () => {
+      $scope.audioEffects.open = !$scope.audioEffects.open;
+      if ($scope.audioEffects.open) syncAudioEffectState();
+    };
+
+    $scope.selectAudioEffectPreset = (presetId, options = {}) => {
+      if (!hasAudioEffectPreset(presetId) || $scope.audioEffects.pending)
+        return;
+      const shouldNotify = options.silent !== true;
+      $scope.audioEffects = {
+        ...$scope.audioEffects,
+        selectedPreset: presetId,
+        pending: true,
+      };
+      if (
+        options.persist !== false &&
+        !persistAudioEffectPreset(presetId) &&
+        shouldNotify
+      ) {
+        notyf.warning(i18next.t('_AUDIO_EFFECT_SAVE_FAILED'));
+      }
+
+      const api = getAudioEffectsApi();
+      if (!isElectron() || !api) {
+        setAudioEffectsState(
+          {
+            ok: false,
+            preset: 'original',
+            supported: false,
+            degraded: true,
+            error: 'unsupported',
+          },
+          presetId
+        );
+        if (shouldNotify)
+          notyf.warning(getAudioEffectFailureMessage('unsupported'));
+        return;
+      }
+      try {
+        const response = api.setEffectPreset(presetId);
+        setAudioEffectsState(response, presetId);
+        if (!response || response.ok !== true) {
+          if (shouldNotify) {
+            notyf.warning(
+              response && response.degraded
+                ? i18next.t('_AUDIO_EFFECT_DEGRADED')
+                : getAudioEffectFailureMessage(response && response.error)
+            );
+          }
+          return;
+        }
+        if (shouldNotify && presetId !== 'original') {
+          notyf.success(
+            i18next.t('_AUDIO_EFFECT_ACTIVE_STATUS', {
+              effect: $scope.audioEffectPresetLabel(response.preset),
+            })
+          );
+        }
+      } catch (error) {
+        setAudioEffectsState(
+          {
+            ok: false,
+            preset: 'original',
+            supported: false,
+            degraded: true,
+            error: 'effect-unavailable',
+          },
+          presetId
+        );
+        if (shouldNotify) notyf.warning(getAudioEffectFailureMessage());
+      }
+    };
+
+    $scope.compareAudioEffectWithOriginal = () => {
+      const { activePreset, lastActivePreset, selectedPreset } =
+        $scope.audioEffects;
+      const restorePreset =
+        lastActivePreset && lastActivePreset !== 'original'
+          ? lastActivePreset
+          : selectedPreset;
+      $scope.selectAudioEffectPreset(
+        activePreset === 'original' ? restorePreset : 'original',
+        { persist: false }
+      );
+    };
+
+    $scope.audioEffectComparisonLabel = () =>
+      $scope.audioEffects.activePreset === 'original'
+        ? i18next.t('_AUDIO_EFFECT_RESTORE')
+        : i18next.t('_AUDIO_EFFECT_COMPARE_ORIGINAL');
+
+    $scope.restoreStoredAudioEffect = () => {
+      const presetId = getStoredAudioEffectPreset();
+      $scope.audioEffects.selectedPreset = presetId;
+      $scope.selectAudioEffectPreset(presetId, {
+        silent: true,
+        persist: false,
+      });
+    };
 
     $scope.requestClearAudioCache = () => {
       if ($scope.audioCacheActionPending || !isElectron()) return;
@@ -844,6 +1135,7 @@ angular.module('listenone').controller('PlayController', [
       $scope.applyGlobalShortcut();
       $scope.openLyricFloatingWindow();
       loadMachineTranslationConfig();
+      $scope.restoreStoredAudioEffect();
     };
 
     // electron global shortcuts
@@ -2339,6 +2631,10 @@ angular.module('listenone').controller('PlayController', [
             }
             requestTrackLyric(track);
             $scope.lastTrackId = msg.data.currentPlaying.id;
+            // The audio graph belongs to the currently loaded media element.
+            // Reapply the persisted preference after every track handoff so a
+            // graph rebuilt by the player never silently loses the effect.
+            $scope.restoreStoredAudioEffect();
             if (isElectron()) {
               const { ipcRenderer } = require('electron');
               ipcRenderer.send('currentLyric', track.title);

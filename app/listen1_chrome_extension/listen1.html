@@ -1545,6 +1545,51 @@
                                 </div>
                               </div>
                               <div class="settings-title" ng-if="!isChrome">
+                                <span>{{_AUDIO_EFFECT_TITLE}}</span>
+                              </div>
+                              <div
+                                class="settings-content audio-effects-settings"
+                                ng-if="!isChrome"
+                                data-audio-effects-settings
+                              >
+                                <div class="audio-effects-summary" aria-live="polite">
+                                  <div>
+                                    <strong>{{audioEffectPresetLabel(audioEffects.activePreset)}}</strong>
+                                    <p>{{audioEffectStatus()}}</p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    class="btn btn-default audio-effects-ab"
+                                    ng-click="compareAudioEffectWithOriginal()"
+                                    ng-disabled="audioEffects.pending || audioEffects.supported === false"
+                                  >
+                                    {{audioEffectComparisonLabel()}}
+                                  </button>
+                                </div>
+                                <p class="audio-effects-description">
+                                  {{_AUDIO_EFFECT_DESCRIPTION}}
+                                </p>
+                                <div class="audio-effects-preset-grid" role="radiogroup" aria-label="{{_AUDIO_EFFECT_PRESET_LABEL}}">
+                                  <button
+                                    type="button"
+                                    class="audio-effect-preset"
+                                    ng-repeat="preset in audioEffectPresets track by preset.id"
+                                    ng-class="{selected: audioEffects.activePreset === preset.id, degraded: audioEffects.selectedPreset === preset.id && audioEffects.degraded}"
+                                    ng-click="selectAudioEffectPreset(preset.id)"
+                                    ng-disabled="audioEffects.pending || audioEffects.supported === false"
+                                    role="radio"
+                                    ng-attr-aria-checked="{{audioEffects.activePreset === preset.id}}"
+                                  >
+                                    <span class="audio-effect-preset-name">{{audioEffectPresetLabel(preset.id)}}</span>
+                                    <span class="audio-effect-preset-description">{{audioEffectPresetDescription(preset.id)}}</span>
+                                    <span class="audio-effect-headphone" ng-if="preset.headphoneOnly">{{_AUDIO_EFFECT_HEADPHONE_HINT}}</span>
+                                  </button>
+                                </div>
+                                <p class="audio-effects-warning" ng-if="audioEffects.degraded || audioEffects.supported === false">
+                                  {{audioEffectStatus()}}
+                                </p>
+                              </div>
+                              <div class="settings-title" ng-if="!isChrome">
                                 <span>{{_MACHINE_TRANSLATION_TITLE}}</span>
                               </div>
                               <div
@@ -2459,6 +2504,19 @@
                           </div>
                         </div>
                       </div>
+                      <div ng-if="!isChrome" class="audio-effects-toggle">
+                        <button
+                          type="button"
+                          ng-click="toggleAudioEffectsPanel()"
+                          ng-class="{selected: audioEffects.activePreset !== 'original'}"
+                          title="{{_AUDIO_EFFECT_TITLE}}"
+                          aria-label="{{_AUDIO_EFFECT_TITLE}}"
+                          ng-attr-aria-expanded="{{audioEffects.open}}"
+                        >
+                          <span>FX</span>
+                        </button>
+                        <span class="audio-effects-toggle-state" ng-if="audioEffects.activePreset !== 'original'"></span>
+                      </div>
                       <div ng-if="!isChrome" class="lyric-toggle">
                         <div
                           ng-click="openLyricFloatingWindow(true)"
@@ -2469,6 +2527,43 @@
                         </div>
                       </div>
                     </div>
+                    <section
+                      class="audio-effects-popover"
+                      ng-if="!isChrome && audioEffects.open"
+                      data-audio-effects-popover
+                      aria-label="{{_AUDIO_EFFECT_TITLE}}"
+                    >
+                      <header>
+                        <div>
+                          <strong>{{_AUDIO_EFFECT_TITLE}}</strong>
+                          <small>{{audioEffectStatus()}}</small>
+                        </div>
+                        <button type="button" ng-click="toggleAudioEffectsPanel()" aria-label="{{_CLOSE}}">×</button>
+                      </header>
+                      <div class="audio-effects-popover-grid" role="radiogroup" aria-label="{{_AUDIO_EFFECT_PRESET_LABEL}}">
+                        <button
+                          type="button"
+                          ng-repeat="preset in audioEffectPresets track by preset.id"
+                          ng-class="{selected: audioEffects.activePreset === preset.id, degraded: audioEffects.selectedPreset === preset.id && audioEffects.degraded}"
+                          ng-click="selectAudioEffectPreset(preset.id)"
+                          ng-disabled="audioEffects.pending || audioEffects.supported === false"
+                          role="radio"
+                          ng-attr-aria-checked="{{audioEffects.activePreset === preset.id}}"
+                        >
+                          <strong>{{audioEffectPresetLabel(preset.id)}}</strong>
+                          <small>{{audioEffectPresetDescription(preset.id)}}</small>
+                          <em ng-if="preset.headphoneOnly">{{_AUDIO_EFFECT_HEADPHONE_HINT}}</em>
+                        </button>
+                      </div>
+                      <footer>
+                        <button
+                          type="button"
+                          class="audio-effects-ab"
+                          ng-click="compareAudioEffectWithOriginal()"
+                          ng-disabled="audioEffects.pending || audioEffects.supported === false"
+                        >{{audioEffectComparisonLabel()}}</button>
+                      </footer>
+                    </section>
                     <div
                       class="menu-modal"
                       ng-class="{slideup: !menuHidden}"
@@ -4581,6 +4676,51 @@
                                 </div>
                               </div>
                               <div class="settings-title" ng-if="!isChrome">
+                                <span>{{_AUDIO_EFFECT_TITLE}}</span>
+                              </div>
+                              <div
+                                class="settings-content audio-effects-settings"
+                                ng-if="!isChrome"
+                                data-audio-effects-settings
+                              >
+                                <div class="audio-effects-summary" aria-live="polite">
+                                  <div>
+                                    <strong>{{audioEffectPresetLabel(audioEffects.activePreset)}}</strong>
+                                    <p>{{audioEffectStatus()}}</p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    class="btn btn-default audio-effects-ab"
+                                    ng-click="compareAudioEffectWithOriginal()"
+                                    ng-disabled="audioEffects.pending || audioEffects.supported === false"
+                                  >
+                                    {{audioEffectComparisonLabel()}}
+                                  </button>
+                                </div>
+                                <p class="audio-effects-description">
+                                  {{_AUDIO_EFFECT_DESCRIPTION}}
+                                </p>
+                                <div class="audio-effects-preset-grid" role="radiogroup" aria-label="{{_AUDIO_EFFECT_PRESET_LABEL}}">
+                                  <button
+                                    type="button"
+                                    class="audio-effect-preset"
+                                    ng-repeat="preset in audioEffectPresets track by preset.id"
+                                    ng-class="{selected: audioEffects.activePreset === preset.id, degraded: audioEffects.selectedPreset === preset.id && audioEffects.degraded}"
+                                    ng-click="selectAudioEffectPreset(preset.id)"
+                                    ng-disabled="audioEffects.pending || audioEffects.supported === false"
+                                    role="radio"
+                                    ng-attr-aria-checked="{{audioEffects.activePreset === preset.id}}"
+                                  >
+                                    <span class="audio-effect-preset-name">{{audioEffectPresetLabel(preset.id)}}</span>
+                                    <span class="audio-effect-preset-description">{{audioEffectPresetDescription(preset.id)}}</span>
+                                    <span class="audio-effect-headphone" ng-if="preset.headphoneOnly">{{_AUDIO_EFFECT_HEADPHONE_HINT}}</span>
+                                  </button>
+                                </div>
+                                <p class="audio-effects-warning" ng-if="audioEffects.degraded || audioEffects.supported === false">
+                                  {{audioEffectStatus()}}
+                                </p>
+                              </div>
+                              <div class="settings-title" ng-if="!isChrome">
                                 <span>{{_MACHINE_TRANSLATION_TITLE}}</span>
                               </div>
                               <div
@@ -6522,6 +6662,19 @@
                               </span>
                             </a>
                           </div>
+                          <div ng-if="!isChrome" class="audio-effects-toggle">
+                            <button
+                              type="button"
+                              ng-click="toggleAudioEffectsPanel()"
+                              ng-class="{selected: audioEffects.activePreset !== 'original'}"
+                              title="{{_AUDIO_EFFECT_TITLE}}"
+                              aria-label="{{_AUDIO_EFFECT_TITLE}}"
+                              ng-attr-aria-expanded="{{audioEffects.open}}"
+                            >
+                              <span>FX</span>
+                            </button>
+                            <span class="audio-effects-toggle-state" ng-if="audioEffects.activePreset !== 'original'"></span>
+                          </div>
                           <div
                             ng-if="!isChrome"
                             class="lyric-toggle desktop-lyric-toggle"
@@ -6650,6 +6803,43 @@
                         </div>
                       </div>
                     </div>
+                    <section
+                      class="audio-effects-popover"
+                      ng-if="!isChrome && audioEffects.open"
+                      data-audio-effects-popover
+                      aria-label="{{_AUDIO_EFFECT_TITLE}}"
+                    >
+                      <header>
+                        <div>
+                          <strong>{{_AUDIO_EFFECT_TITLE}}</strong>
+                          <small>{{audioEffectStatus()}}</small>
+                        </div>
+                        <button type="button" ng-click="toggleAudioEffectsPanel()" aria-label="{{_CLOSE}}">×</button>
+                      </header>
+                      <div class="audio-effects-popover-grid" role="radiogroup" aria-label="{{_AUDIO_EFFECT_PRESET_LABEL}}">
+                        <button
+                          type="button"
+                          ng-repeat="preset in audioEffectPresets track by preset.id"
+                          ng-class="{selected: audioEffects.activePreset === preset.id, degraded: audioEffects.selectedPreset === preset.id && audioEffects.degraded}"
+                          ng-click="selectAudioEffectPreset(preset.id)"
+                          ng-disabled="audioEffects.pending || audioEffects.supported === false"
+                          role="radio"
+                          ng-attr-aria-checked="{{audioEffects.activePreset === preset.id}}"
+                        >
+                          <strong>{{audioEffectPresetLabel(preset.id)}}</strong>
+                          <small>{{audioEffectPresetDescription(preset.id)}}</small>
+                          <em ng-if="preset.headphoneOnly">{{_AUDIO_EFFECT_HEADPHONE_HINT}}</em>
+                        </button>
+                      </div>
+                      <footer>
+                        <button
+                          type="button"
+                          class="audio-effects-ab"
+                          ng-click="compareAudioEffectWithOriginal()"
+                          ng-disabled="audioEffects.pending || audioEffects.supported === false"
+                        >{{audioEffectComparisonLabel()}}</button>
+                      </footer>
+                    </section>
                     <div
                       class="menu-modal"
                       ng-class="{slideup: !menuHidden}"

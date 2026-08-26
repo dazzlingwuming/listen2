@@ -21,13 +21,15 @@ function createHarness(options = {}) {
   class MockSource {
     constructor() {
       this.connections = [];
+      this.connectionRecords = [];
     }
 
-    connect(target) {
+    connect(target, output, input) {
       if (target && target.failConnect) {
         throw target.failConnect;
       }
       this.connections.push(target);
+      this.connectionRecords.push({ target, output, input });
     }
 
     disconnect() {}
@@ -66,6 +68,34 @@ function createHarness(options = {}) {
     }
   }
 
+  class MockEffectNode extends MockSource {
+    constructor() {
+      super();
+      const parameter = () => ({
+        value: 0,
+        calls: [],
+        cancelScheduledValues() {},
+        setValueAtTime(value) {
+          this.value = value;
+          this.calls.push(value);
+        },
+        linearRampToValueAtTime(value) {
+          this.value = value;
+          this.calls.push(value);
+        },
+      });
+      this.delayTime = parameter();
+      this.frequency = parameter();
+      this.gain = parameter();
+      this.Q = parameter();
+      this.threshold = parameter();
+      this.knee = parameter();
+      this.ratio = parameter();
+      this.attack = parameter();
+      this.release = parameter();
+    }
+  }
+
   class MockAudioContext {
     constructor() {
       this.state = options.initialState || 'suspended';
@@ -77,8 +107,15 @@ function createHarness(options = {}) {
       this.listeners = new Map();
       this.sources = [];
       this.gains = [];
+      this.delays = [];
+      this.shapers = [];
+      this.splitters = [];
+      this.mergers = [];
       if (options.disableGain) {
         this.createGain = undefined;
+      }
+      if (!options.spatialNodes) {
+        this.createWaveShaper = undefined;
       }
       audioContext = this;
       audioContexts.push(this);
@@ -108,6 +145,41 @@ function createHarness(options = {}) {
       const gain = new MockGain();
       this.gains.push(gain);
       return gain;
+    }
+
+    createBiquadFilter() {
+      return new MockEffectNode();
+    }
+
+    createWaveShaper() {
+      const shaper = new MockEffectNode();
+      this.shapers.push(shaper);
+      return shaper;
+    }
+
+    createDynamicsCompressor() {
+      return new MockEffectNode();
+    }
+
+    createChannelSplitter() {
+      if (!options.spatialNodes) throw new Error('spatial nodes disabled');
+      const splitter = new MockEffectNode();
+      this.splitters.push(splitter);
+      return splitter;
+    }
+
+    createChannelMerger() {
+      if (!options.spatialNodes) throw new Error('spatial nodes disabled');
+      const merger = new MockEffectNode();
+      this.mergers.push(merger);
+      return merger;
+    }
+
+    createDelay() {
+      if (!options.spatialNodes) throw new Error('spatial nodes disabled');
+      const delay = new MockEffectNode();
+      this.delays.push(delay);
+      return delay;
     }
 
     resume() {
@@ -185,8 +257,14 @@ function createHarness(options = {}) {
     ensureOutput() {
       return window.Listen1AudioAnalysis.ensureOutput(howl);
     },
+    getEffectState() {
+      return window.Listen1AudioAnalysis.getEffectState();
+    },
     setTrackGain(value) {
       howl._listen1TrackGain = value;
+    },
+    setEffectPreset(preset) {
+      return window.Listen1AudioAnalysis.setEffectPreset(preset);
     },
     runNextTimer() {
       const entry = timers.entries().next().value;
@@ -206,6 +284,103 @@ function createHarness(options = {}) {
 
 async function run() {
   {
+    const harness = createHarness({ spatialNodes: true });
+    assert.strictEqual(harness.ensureOutput(), true);
+    assert.strictEqual(
+      harness.context().shapers.length,
+      0,
+      'original must remain a true pass-through without a limiter'
+    );
+    const state = harness.setEffectPreset('immersive-3d');
+    assert.strictEqual(state.ok, true);
+    assert.strictEqual(state.preset, 'immersive-3d');
+    assert.strictEqual(harness.context().delays.length, 2);
+    assert.strictEqual(
+      harness.context().delays[0].delayTime.value,
+      harness.context().delays[1].delayTime.value,
+      '3D crossfeed delays must remain symmetric'
+    );
+    assert.strictEqual(
+      harness.context().delays[0].delayTime.calls.length,
+      1,
+      'a newly connected delay must start at its target without ramping from zero'
+    );
+    const stereoUpmix = harness
+      .context()
+      .gains.find((gain) => gain.channelCountMode === 'explicit');
+    assert.ok(stereoUpmix, '3D must force a safe mono-to-stereo up-mix');
+    assert.strictEqual(stereoUpmix.channelCount, 2);
+    assert.strictEqual(stereoUpmix.channelInterpretation, 'speakers');
+    const crossfeedGains = harness
+      .context()
+      .gains.filter((gain) => gain.gain.value === -0.08);
+    assert.strictEqual(crossfeedGains.length, 2);
+    crossfeedGains.forEach((gain) => {
+      assert.deepStrictEqual(
+        gain.gain.calls,
+        [
+          ['cancel', 0],
+          ['set', -0.08, 0],
+        ],
+        'new crossfeed gains must never ramp from the +1 default'
+      );
+    });
+    const splitter = harness.context().splitters[0];
+    const merger = harness.context().mergers[0];
+    const routeFromSplitter = (output) =>
+      splitter.connectionRecords.filter((record) => record.output === output);
+    [0, 1].forEach((output) => {
+      const routes = routeFromSplitter(output);
+      assert.strictEqual(
+        routes.length,
+        2,
+        'each input channel needs direct and cross routes'
+      );
+      const direct = routes.find(
+        (route) => route.target.gain && !route.target.delayTime
+      );
+      const delayed = routes.find((route) => route.target.delayTime);
+      assert.ok(direct && delayed);
+      assert.deepStrictEqual(direct.target.connectionRecords[0], {
+        target: merger,
+        output: 0,
+        input: output,
+      });
+      const filter = delayed.target.connectionRecords[0].target;
+      const crossfeed = filter.connectionRecords[0].target;
+      assert.deepStrictEqual(crossfeed.connectionRecords[0], {
+        target: merger,
+        output: 0,
+        input: output === 0 ? 1 : 0,
+      });
+    });
+    assert.strictEqual(harness.context().shapers.length, 1);
+    assert.ok(
+      Math.abs(harness.context().shapers[0].curve[1536] - 0.5) < 1e-6,
+      'the safety limiter must preserve ordinary signal levels'
+    );
+    assert.ok(
+      harness.context().shapers[0].curve[2048] <= 0.981,
+      'the safety limiter must reduce full-scale peaks instead of boosting them'
+    );
+    [0.91, 0.95].forEach((input) => {
+      const index = Math.round(((input + 1) / 2) * 2048);
+      const sampledInput = (index / 2048) * 2 - 1;
+      assert.ok(
+        harness.context().shapers[0].curve[index] <= sampledInput,
+        'the soft knee must never expand near-peak samples'
+      );
+      assert.ok(
+        Math.abs(
+          harness.context().shapers[0].curve[2048 - index] +
+            harness.context().shapers[0].curve[index]
+        ) < 1e-6,
+        'the limiter curve must remain odd-symmetric'
+      );
+    });
+  }
+
+  {
     const harness = createHarness();
     assert.strictEqual(harness.ensureOutput(), true);
     await flushPromises();
@@ -214,16 +389,21 @@ async function run() {
     assert.strictEqual(harness.debug().output.attempts, 0);
     assert.strictEqual(harness.debug().source, 'https://cdn.example/audio.m4s');
     assert.strictEqual(harness.context().sources.length, 1);
-    assert.strictEqual(harness.context().gains.length, 1);
+    assert.strictEqual(harness.context().gains.length, 2);
     assert.strictEqual(
       harness.context().sources[0].connections[0],
       harness.context().gains[0],
       'the media source must feed the per-track gain node'
     );
     assert.strictEqual(
+      harness.context().gains[0].connections[0],
+      harness.context().gains[1],
+      'the loudness gain must feed the effect-chain input'
+    );
+    assert.strictEqual(
       harness
         .context()
-        .gains[0].connections.filter(
+        .gains[1].connections.filter(
           (target) => target === harness.context().destination
         ).length,
       1,
@@ -248,11 +428,19 @@ async function run() {
     assert.strictEqual(
       harness
         .context()
-        .gains[0].connections.filter(
+        .gains[1].connections.filter(
           (target) => target !== harness.context().destination
         ).length,
       1,
       'repeated output preparation must not duplicate the analyser branch'
+    );
+    const degraded3d = harness.setEffectPreset('immersive-3d');
+    assert.strictEqual(degraded3d.degraded, true);
+    assert.strictEqual(degraded3d.preset, 'original');
+    assert.strictEqual(
+      harness.getEffectState().error,
+      'effect-unavailable',
+      'missing symmetric spatial nodes must explicitly fall back to original'
     );
   }
 

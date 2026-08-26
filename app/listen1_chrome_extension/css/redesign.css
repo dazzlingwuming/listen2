@@ -7785,3 +7785,294 @@ body.modern-white .annual-recap-empty {
     animation: none;
   }
 }
+
+/* Audio effects are deliberately a real control surface rather than a visual
+ * equalizer. The renderer owns the DSP graph; this layer only reflects its
+ * reported state and keeps the choice easy to compare with the original. */
+.audio-effects-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  min-height: 34px;
+}
+
+.audio-effects-toggle button {
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: inherit;
+  background: transparent;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: color 160ms ease, background 160ms ease, border-color 160ms ease;
+}
+
+.audio-effects-toggle button:hover,
+.audio-effects-toggle button:focus-visible,
+.audio-effects-toggle button.selected {
+  border-color: rgba(var(--ui-accent-rgb), 0.35);
+  color: var(--ui-accent);
+  background: rgba(var(--ui-accent-rgb), 0.13);
+  outline: none;
+}
+
+.audio-effects-toggle-state {
+  position: absolute;
+  top: 4px;
+  right: 2px;
+  width: 6px;
+  height: 6px;
+  border: 2px solid var(--ui-surface, #12141d);
+  border-radius: 50%;
+  background: #47e5dc;
+  box-shadow: 0 0 9px rgba(71, 229, 220, 0.9);
+}
+
+.audio-effects-popover {
+  position: fixed;
+  z-index: 910;
+  right: 30px;
+  bottom: 104px;
+  width: min(576px, calc(100vw - 32px));
+  box-sizing: border-box;
+  padding: 15px;
+  border: 1px solid rgba(159, 132, 255, 0.32);
+  border-radius: 18px;
+  color: var(--ui-text, #f4f5ff);
+  background: radial-gradient(
+      circle at 92% 0%,
+      rgba(59, 214, 255, 0.18),
+      transparent 37%
+    ),
+    rgba(15, 17, 29, 0.96);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.46);
+  backdrop-filter: blur(22px);
+}
+
+.audio-effects-popover header,
+.audio-effects-summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.audio-effects-popover header strong,
+.audio-effects-summary strong {
+  display: block;
+  font-size: 15px;
+  font-weight: 780;
+}
+
+.audio-effects-popover header small,
+.audio-effects-summary p {
+  display: block;
+  margin: 3px 0 0;
+  color: var(--ui-muted, rgba(241, 243, 255, 0.62));
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.audio-effects-popover header > button {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 9px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.07);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.audio-effects-popover-grid,
+.audio-effects-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.audio-effects-popover-grid {
+  margin-top: 13px;
+}
+
+.audio-effects-popover-grid > button,
+.audio-effect-preset {
+  display: grid;
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  color: inherit;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.045);
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease,
+    transform 160ms ease;
+}
+
+.audio-effects-popover-grid > button:hover,
+.audio-effect-preset:hover,
+.audio-effects-popover-grid > button:focus-visible,
+.audio-effect-preset:focus-visible {
+  border-color: rgba(112, 209, 255, 0.52);
+  background: rgba(81, 190, 255, 0.11);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.audio-effects-popover-grid > button.selected,
+.audio-effect-preset.selected {
+  border-color: rgba(143, 111, 255, 0.82);
+  background: linear-gradient(
+    135deg,
+    rgba(130, 91, 255, 0.28),
+    rgba(47, 211, 255, 0.14)
+  );
+  box-shadow: inset 0 0 0 1px rgba(172, 152, 255, 0.15),
+    0 8px 20px rgba(68, 36, 158, 0.13);
+}
+
+.audio-effects-popover-grid > button.degraded,
+.audio-effect-preset.degraded {
+  border-color: rgba(255, 190, 101, 0.6);
+}
+
+.audio-effects-popover-grid strong,
+.audio-effect-preset-name {
+  overflow: hidden;
+  color: inherit;
+  font-size: 13px;
+  font-weight: 720;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audio-effects-popover-grid small,
+.audio-effect-preset-description {
+  display: block;
+  margin-top: 4px;
+  color: var(--ui-muted, rgba(241, 243, 255, 0.62));
+  font-size: 11px;
+  line-height: 1.38;
+}
+
+.audio-effect-headphone,
+.audio-effects-popover-grid em {
+  margin-top: 6px;
+  color: #69ddff;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.audio-effects-popover footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.audio-effects-ab {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid rgba(161, 137, 255, 0.38);
+  border-radius: 999px;
+  color: #eeeaff;
+  background: rgba(122, 91, 255, 0.16);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.audio-effects-ab:hover,
+.audio-effects-ab:focus-visible {
+  border-color: rgba(106, 221, 255, 0.7);
+  background: rgba(83, 209, 255, 0.16);
+  outline: none;
+}
+
+.audio-effects-ab:disabled,
+.audio-effect-preset:disabled,
+.audio-effects-popover-grid > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  transform: none;
+}
+
+.page .audio-effects-settings {
+  display: grid;
+  gap: 12px;
+}
+
+.page .audio-effects-description,
+.page .audio-effects-warning {
+  margin: 0;
+  color: inherit;
+  font-size: 12px;
+  line-height: 1.55;
+  opacity: 0.74;
+}
+
+.page .audio-effects-warning {
+  color: #d89842;
+  opacity: 1;
+}
+
+.page .audio-effects-summary .audio-effects-ab {
+  flex: 0 0 auto;
+}
+
+.page .audio-effect-preset {
+  min-height: 82px;
+}
+
+body.modern-white .audio-effects-popover {
+  color: #171827;
+  background: radial-gradient(
+      circle at 92% 0%,
+      rgba(59, 214, 255, 0.2),
+      transparent 37%
+    ),
+    rgba(252, 253, 255, 0.96);
+  box-shadow: 0 24px 70px rgba(46, 43, 79, 0.2);
+}
+
+body.modern-white .audio-effects-popover-grid > button,
+body.modern-white .audio-effect-preset {
+  border-color: rgba(36, 37, 63, 0.1);
+  background: rgba(68, 72, 120, 0.045);
+}
+
+body.modern-white .audio-effects-popover-grid small,
+body.modern-white .audio-effect-preset-description,
+body.modern-white .audio-effects-popover header small,
+body.modern-white .audio-effects-summary p {
+  color: rgba(35, 37, 59, 0.62);
+}
+
+@media (max-width: 620px) {
+  .audio-effects-popover {
+    right: 16px;
+    bottom: 84px;
+    padding: 12px;
+  }
+
+  .audio-effects-popover-grid,
+  .audio-effects-preset-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .audio-effects-toggle {
+    min-width: 30px;
+  }
+
+  .audio-effects-toggle button {
+    width: 30px;
+    height: 30px;
+  }
+}
