@@ -49,7 +49,18 @@ function getSafeIndex(index, length) {
 }
 
 function formatSecond(posSec) {
-  return `${Math.floor(posSec / 60)}:${`0${posSec % 60}`.slice(-2)}`;
+  if (typeof posSec === 'string' && /^\d{1,3}:\d{2}(?::\d{2})?$/.test(posSec)) {
+    return posSec;
+  }
+  const seconds = Number(posSec);
+  if (!Number.isFinite(seconds) || seconds < 0) return '--:--';
+  const whole = Math.floor(seconds);
+  const hours = Math.floor(whole / 3600);
+  const minutes = Math.floor((whole % 3600) / 60);
+  const tail = String(whole % 60).padStart(2, '0');
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, '0')}:${tail}`
+    : `${minutes}:${tail}`;
 }
 
 function hasMeaningfulLyricText(value) {
@@ -105,6 +116,13 @@ angular.module('listenone').controller('PlayController', [
     $scope.lyricLineNumberTrans = -1;
     $scope.hasLyricTranslation = false;
     $scope.lastTrackId = null;
+    $scope.playNextQueue = l1Player.status.playNextQueue || [];
+    $scope.formatTrackDuration = formatSecond;
+    $scope.removePlayNextQueueEntry = (queueId) =>
+      l1Player.removePlayNextQueueEntry(queueId);
+    $scope.clearPlayNextQueue = () => l1Player.clearPlayNextQueue();
+    $scope.movePlayNextQueueEntry = (queueId, index) =>
+      l1Player.movePlayNextQueueEntry(queueId, index);
 
     $scope.enableGloablShortcut = false;
     $scope.isChrome = !isElectron();
@@ -157,6 +175,66 @@ angular.module('listenone').controller('PlayController', [
       { value: null, label: '∞' },
     ];
     $scope.audioCacheActionPending = false;
+    $scope.annualListening = {
+      loading: false,
+      enabled: true,
+      year: new Date().getFullYear(),
+      recordingSince: 0,
+      summary: null,
+    };
+    $scope.formatListeningTime = (seconds) => {
+      const totalMinutes = Math.floor(Math.max(0, Number(seconds) || 0) / 60);
+      if (totalMinutes < 60) return `${totalMinutes} ${i18next.t('_MINUTES')}`;
+      const hours = Math.floor(totalMinutes / 60);
+      const minutes = totalMinutes % 60;
+      return `${hours}h ${minutes}m`;
+    };
+    $scope.refreshAnnualListeningSummary = () => {
+      if (!isElectron()) return;
+      $scope.annualListening.loading = true;
+      Promise.all([
+        MediaService.getListeningHistoryStatus(),
+        MediaService.getAnnualListeningSummary($scope.annualListening.year),
+      ])
+        .then(([status, summary]) => {
+          $scope.$evalAsync(() => {
+            $scope.annualListening.enabled = status.enabled !== false;
+            $scope.annualListening.recordingSince = status.recordingSince || 0;
+            $scope.annualListening.summary =
+              summary && summary.ok ? summary : null;
+          });
+        })
+        .finally(() => {
+          $scope.$evalAsync(() => {
+            $scope.annualListening.loading = false;
+          });
+        });
+    };
+    $scope.updateListeningHistoryEnabled = () => {
+      MediaService.configureListeningHistory($scope.annualListening.enabled)
+        .then(() => $scope.refreshAnnualListeningSummary())
+        .catch(() => {});
+    };
+    $scope.exportListeningHistory = () => {
+      MediaService.exportListeningHistory().then((result) => {
+        if (!result || !result.ok) return;
+        const blob = new Blob([JSON.stringify(result, null, 2)], {
+          type: 'application/json',
+        });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `listen2-listening-history-${Date.now()}.json`;
+        link.click();
+        URL.revokeObjectURL(link.href);
+      });
+    };
+    $scope.clearListeningHistory = () => {
+      // eslint-disable-next-line no-alert
+      if (!window.confirm(i18next.t('_ANNUAL_RECAP_CLEAR_CONFIRM'))) return;
+      MediaService.clearListeningHistory().then(() =>
+        $scope.refreshAnnualListeningSummary()
+      );
+    };
     $scope.bilibiliMv = {
       available: false,
       active: false,
@@ -2285,6 +2363,13 @@ angular.module('listenone').controller('PlayController', [
               localStorage.setObject('current-playing', msg.data);
             });
 
+            break;
+          }
+
+          case 'PLAY_NEXT_QUEUE': {
+            $scope.$evalAsync(() => {
+              $scope.playNextQueue = msg.data || [];
+            });
             break;
           }
 

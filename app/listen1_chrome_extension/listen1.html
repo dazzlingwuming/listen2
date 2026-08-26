@@ -704,6 +704,15 @@
                           </span>
                         </div>
                         <div
+                          ng-if="!isChrome"
+                          ng-class="{ 'active': current_tag==7 }"
+                          ng-click="showTag(7); refreshAnnualListeningSummary()"
+                          class="settings annual-recap-entry"
+                          title="{{_ANNUAL_RECAP}}"
+                        >
+                          <span>年</span>
+                        </div>
+                        <div
                           ng-class="{ 'active': (current_tag==4) && (window_url_stack.length ==0)}"
                           ng-click="showTag(4)"
                           class="settings"
@@ -727,6 +736,66 @@
                         infinite-scroll="scrolling()"
                         content-selector="'#playlist-content'"
                       >
+                        <section
+                          class="annual-recap-page"
+                          ng-if="!isChrome"
+                          ng-show="current_tag==7 && is_window_hidden==1"
+                        >
+                          <div class="annual-recap-aurora"></div>
+                          <header class="annual-recap-hero">
+                            <div>
+                              <span class="annual-recap-kicker">LISTEN2 · {{annualListening.year}}</span>
+                              <h1>{{_ANNUAL_RECAP}}</h1>
+                              <p>{{_ANNUAL_RECAP_SUBTITLE}}</p>
+                            </div>
+                            <div class="annual-recap-actions">
+                              <label>
+                                <input type="checkbox" ng-model="annualListening.enabled" ng-change="updateListeningHistoryEnabled()" />
+                                {{_LISTENING_HISTORY_ENABLED}}
+                              </label>
+                              <button type="button" ng-click="exportListeningHistory()">{{_EXPORT_LISTENING_HISTORY}}</button>
+                              <button type="button" class="danger" ng-click="clearListeningHistory()">{{_CLEAR_LISTENING_HISTORY}}</button>
+                            </div>
+                          </header>
+                          <div class="annual-recap-loading" ng-if="annualListening.loading">{{_LOADING}}</div>
+                          <div class="annual-recap-empty" ng-if="!annualListening.loading && (!annualListening.summary || !annualListening.summary.totalPlayedSeconds)">
+                            <h2>{{_ANNUAL_RECAP_EMPTY_TITLE}}</h2>
+                            <p>{{_ANNUAL_RECAP_EMPTY_DESCRIPTION}}</p>
+                          </div>
+                          <div class="annual-recap-content" ng-if="annualListening.summary.totalPlayedSeconds">
+                            <div class="annual-recap-metrics">
+                              <article><strong>{{formatListeningTime(annualListening.summary.totalPlayedSeconds)}}</strong><span>{{_TOTAL_LISTENING_TIME}}</span></article>
+                              <article><strong>{{annualListening.summary.playCount}}</strong><span>{{_QUALIFIED_PLAYS}}</span></article>
+                              <article><strong>{{annualListening.summary.uniqueTracks}}</strong><span>{{_UNIQUE_TRACKS}}</span></article>
+                              <article><strong>{{annualListening.summary.uniqueArtists}}</strong><span>{{_UNIQUE_ARTISTS}}</span></article>
+                            </div>
+                            <div class="annual-recap-grid">
+                              <section class="annual-recap-card top-tracks">
+                                <h2>{{_TOP_TRACKS}}</h2>
+                                <ol>
+                                  <li ng-repeat="track in annualListening.summary.topTracks track by (track.source + ':' + track.id)">
+                                    <span class="rank">{{$index + 1}}</span><img ng-src="{{track.imgUrl}}" />
+                                    <span class="song"><strong>{{track.title}}</strong><small>{{track.artist}}</small></span>
+                                    <span class="plays">{{track.playCount}} × · {{formatListeningTime(track.playedSeconds)}}</span>
+                                  </li>
+                                </ol>
+                              </section>
+                              <section class="annual-recap-card">
+                                <h2>{{_MONTHLY_LISTENING}}</h2>
+                                <div class="annual-month-bars">
+                                  <div ng-repeat="month in annualListening.summary.months track by month.month" title="{{month.month}} · {{formatListeningTime(month.playedSeconds)}}">
+                                    <i ng-style="{height: ((month.playedSeconds / (annualListening.summary.totalPlayedSeconds || 1)) * 600 + 4) + 'px'}"></i>
+                                    <span>{{month.month.slice(5)}}</span>
+                                  </div>
+                                </div>
+                              </section>
+                              <section class="annual-recap-card">
+                                <h2>{{_TOP_ARTISTS}}</h2>
+                                <ol class="artist-list"><li ng-repeat="artist in annualListening.summary.topArtists track by artist.artist"><span class="rank">{{$index + 1}}</span><strong>{{artist.artist}}</strong><span>{{artist.playCount}} ×</span></li></ol>
+                              </section>
+                            </div>
+                          </div>
+                        </section>
                         <!-- hot playlist window-->
                         <div
                           class="page page-hot-playlist"
@@ -2431,6 +2500,43 @@
                           </svg>
                         </a>
                       </div>
+                      <section
+                        class="play-next-queue"
+                        ng-if="playNextQueue.length"
+                      >
+                        <header>
+                          <strong>{{_PLAY_NEXT_QUEUE}}</strong>
+                          <button type="button" ng-click="clearPlayNextQueue()">
+                            {{_CLEAR_ALL}}
+                          </button>
+                        </header>
+                        <ol>
+                          <li
+                            ng-repeat="entry in playNextQueue track by entry.queueId"
+                          >
+                            <span class="queue-order">{{$index + 1}}</span>
+                            <span class="queue-song">
+                              <strong>{{entry.track.title}}</strong>
+                              <small>{{entry.track.artist}}</small>
+                            </span>
+                            <time>{{formatTrackDuration(entry.track.duration)}}</time>
+                            <button
+                              type="button"
+                              ng-disabled="$first"
+                              ng-click="movePlayNextQueueEntry(entry.queueId, $index - 1)"
+                            >↑</button>
+                            <button
+                              type="button"
+                              ng-disabled="$last"
+                              ng-click="movePlayNextQueueEntry(entry.queueId, $index + 1)"
+                            >↓</button>
+                            <button
+                              type="button"
+                              ng-click="removePlayNextQueueEntry(entry.queueId)"
+                            >×</button>
+                          </li>
+                        </ol>
+                      </section>
                       <ul class="menu-list">
                         <li
                           id="song{{ song.id }}"
@@ -3378,6 +3484,15 @@
                           </span>
                         </div>
                         <div
+                          ng-if="!isChrome"
+                          ng-class="{ 'active': current_tag==7 }"
+                          ng-click="showTag(7); refreshAnnualListeningSummary()"
+                          class="settings annual-recap-entry"
+                          title="{{_ANNUAL_RECAP}}"
+                        >
+                          <span>年</span>
+                        </div>
+                        <div
                           ng-class="{ 'active': (current_tag==4) && (window_url_stack.length ==0)}"
                           ng-click="showTag(4)"
                           class="settings is-setting"
@@ -3418,6 +3533,7 @@
                         content-selector="'#playlist-content'"
                       >
                         <div class="topbar-spacer"></div>
+                        <div ng-include="'annual_recap.html'"></div>
                         <!-- hot playlist window-->
                         <div
                           class="page page-hot-playlist editorial-discovery-page"
@@ -5466,7 +5582,7 @@
                                     </svg>
                                   </a>
                                 </div>
-                                <div class="time">{{song.duration}}</div>
+                                <div class="time">{{formatTrackDuration(song.duration)}}</div>
                               </li>
                             </ul>
                           </div>
@@ -6614,6 +6730,43 @@
                           </svg>
                         </a>
                       </div>
+                      <section
+                        class="play-next-queue"
+                        ng-if="playNextQueue.length"
+                      >
+                        <header>
+                          <strong>{{_PLAY_NEXT_QUEUE}}</strong>
+                          <button type="button" ng-click="clearPlayNextQueue()">
+                            {{_CLEAR_ALL}}
+                          </button>
+                        </header>
+                        <ol>
+                          <li
+                            ng-repeat="entry in playNextQueue track by entry.queueId"
+                          >
+                            <span class="queue-order">{{$index + 1}}</span>
+                            <span class="queue-song">
+                              <strong>{{entry.track.title}}</strong>
+                              <small>{{entry.track.artist}}</small>
+                            </span>
+                            <time>{{formatTrackDuration(entry.track.duration)}}</time>
+                            <button
+                              type="button"
+                              ng-disabled="$first"
+                              ng-click="movePlayNextQueueEntry(entry.queueId, $index - 1)"
+                            >↑</button>
+                            <button
+                              type="button"
+                              ng-disabled="$last"
+                              ng-click="movePlayNextQueueEntry(entry.queueId, $index + 1)"
+                            >↓</button>
+                            <button
+                              type="button"
+                              ng-click="removePlayNextQueueEntry(entry.queueId)"
+                            >×</button>
+                          </li>
+                        </ol>
+                      </section>
                       <ul class="menu-list">
                         <li
                           id="song{{ song.id }}"

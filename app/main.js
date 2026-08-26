@@ -28,6 +28,7 @@ const { BilibiliService } = require("./bilibiliService");
 const { AudioCache, CACHE_SCHEME } = require(`${__dirname}/audioCache`);
 const { LoudnessAnalyzer } = require(`${__dirname}/loudnessAnalyzer`);
 const { LyricCacheStore } = require(`${__dirname}/lyricCacheStore`);
+const { ListeningHistoryStore } = require(`${__dirname}/listeningHistoryStore`);
 
 const store = new Store();
 const iconPath = join(__dirname, "/listen1_chrome_extension/images/logo.png");
@@ -56,6 +57,7 @@ let bilibiliService;
 let audioCache;
 let loudnessAnalyzer;
 let lyricCacheStore;
+let listeningHistoryStore;
 let audioCacheStartupError;
 let audioCacheProtocolReady = false;
 let playerIsPlaying = false;
@@ -199,6 +201,13 @@ function getLyricCacheStore() {
     });
   }
   return lyricCacheStore;
+}
+
+function getListeningHistoryStore() {
+  if (!listeningHistoryStore) {
+    listeningHistoryStore = new ListeningHistoryStore({ store });
+  }
+  return listeningHistoryStore;
 }
 
 async function withMachineTranslationTimeout(operation) {
@@ -455,6 +464,24 @@ registerLocalDataHandler("lyric-cache:clear", (payload) =>
 );
 registerLocalDataHandler("lyric-cache:migrate-legacy-bilibili-manual", (payload) =>
   getLyricCacheStore().migrateLegacyManual(payload)
+);
+registerLocalDataHandler("listening-history:ingest", (payload) =>
+  getListeningHistoryStore().ingest(payload)
+);
+registerLocalDataHandler("listening-history:status", () =>
+  getListeningHistoryStore().status()
+);
+registerLocalDataHandler("listening-history:configure", (payload) =>
+  getListeningHistoryStore().setEnabled(payload.enabled)
+);
+registerLocalDataHandler("listening-history:annual-summary", (payload) =>
+  getListeningHistoryStore().annualSummary(payload.year)
+);
+registerLocalDataHandler("listening-history:export", () =>
+  getListeningHistoryStore().export()
+);
+registerLocalDataHandler("listening-history:clear", () =>
+  getListeningHistoryStore().clear()
 );
 registerLocalDataHandler("local-data:delete-track", async (payload) => {
   let lyricRecord;

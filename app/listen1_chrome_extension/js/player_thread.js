@@ -39,6 +39,12 @@
       this._playback_diagnostics = [];
       this._playback_session = 0;
       this._audio_output_rebuild_session_by_track = {};
+      this._listening_history_session = null;
+      this._play_next_queue = [];
+      this._play_next_resume_track_id = '';
+      this._play_next_history = [];
+      this._play_next_active = false;
+      this._play_next_resume_direct = false;
       // This is intentionally separate from Howler's global volume. It is a
       // per-track gain consumed only by the desktop Web Audio output branch.
       this._loudness_normalization_enabled = true;
@@ -57,6 +63,7 @@
         if (this.playing) {
           this.sendFrameUpdate();
           this.monitorPlaybackProgress();
+          this.sampleListeningHistory();
         }
       }, 1000 / rate);
     }
@@ -131,6 +138,105 @@
 
     get playing() {
       return this.currentHowl ? this.currentHowl.playing() : false;
+    }
+
+    static listeningClock() {
+      return typeof performance !== 'undefined' &&
+        typeof performance.now === 'function'
+        ? performance.now()
+        : Date.now();
+    }
+
+    beginListeningHistory(track) {
+      if (!track || !track.id) return;
+      const current = this._listening_history_session;
+      if (current && current.track && current.track.id === track.id) {
+        current.lastClock = Player.listeningClock();
+        current.lastPosition = this.getPlaybackPosition();
+        return;
+      }
+      this.finishListeningHistory();
+      this._listening_history_session = {
+        sessionId: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        track: {
+          id: String(track.id),
+          source: String(track.source || track.platform || ''),
+          title: String(track.title || ''),
+          artist: String(track.artist || ''),
+          album: String(track.album || ''),
+          img_url: String(track.img_url || ''),
+          duration: Number(track.duration || 0),
+        },
+        cumulativePlayedSeconds: 0,
+        lastSubmittedSeconds: 0,
+        lastClock: Player.listeningClock(),
+        lastPosition: this.getPlaybackPosition(),
+      };
+    }
+
+    sampleListeningHistory(allowSubmit = true) {
+      const session = this._listening_history_session;
+      if (!session || !this.currentHowl || !this.currentHowl.playing()) return;
+      const clock = Player.listeningClock();
+      const position = this.getPlaybackPosition();
+      const wallSeconds = Math.max(0, (clock - session.lastClock) / 1000);
+      const forwardSeconds = Math.max(0, position - session.lastPosition);
+      // Count only forward media progress and cap it by elapsed wall time. This
+      // rejects seek jumps and also avoids counting time while the stream stalls.
+      session.cumulativePlayedSeconds += Math.min(
+        forwardSeconds,
+        wallSeconds * 1.5
+      );
+      session.lastClock = clock;
+      session.lastPosition = position;
+      if (
+        allowSubmit &&
+        session.cumulativePlayedSeconds - session.lastSubmittedSeconds >= 15
+      ) {
+        this.submitListeningHistory(false);
+      }
+    }
+
+    resetListeningHistorySample() {
+      const session = this._listening_history_session;
+      if (!session) return;
+      session.lastClock = Player.listeningClock();
+      session.lastPosition = this.getPlaybackPosition();
+    }
+
+    submitListeningHistory(finalize) {
+      const session = this._listening_history_session;
+      if (!session) return;
+      this.sampleListeningHistory(false);
+      const { cumulativePlayedSeconds } = session;
+      if (
+        MediaService &&
+        typeof MediaService.ingestListeningHistory === 'function' &&
+        (cumulativePlayedSeconds > session.lastSubmittedSeconds || finalize)
+      ) {
+        MediaService.ingestListeningHistory({
+          sessionId: session.sessionId,
+          track: session.track,
+          duration:
+            Number(this.currentHowl && this.currentHowl.duration()) ||
+            session.track.duration,
+          cumulativePlayedSeconds,
+          occurredAt: Date.now(),
+          finalize: finalize === true,
+        }).catch(() => {});
+        session.lastSubmittedSeconds = cumulativePlayedSeconds;
+      }
+    }
+
+    pauseListeningHistory() {
+      this.submitListeningHistory(false);
+      this.resetListeningHistorySample();
+    }
+
+    finishListeningHistory() {
+      if (!this._listening_history_session) return;
+      this.submitListeningHistory(true);
+      this._listening_history_session = null;
     }
 
     static get PLAYBACK_STALL_TIMEOUT_MS() {
@@ -883,6 +989,160 @@
       return this.isPlayableIndex(currentIndex) ? currentIndex : -1;
     }
 
+    static sanitizeQueueTrack(track) {
+      if (!track || !track.id) return null;
+      const copy = { ...track, howl: undefined, disabled: false };
+      delete copy._listen1_loudness;
+      delete copy._listen1_loudness_gain;
+      delete copy._audio_cache_descriptor;
+      return copy;
+    }
+
+    enqueueNext(track) {
+      const queueTrack = Player.sanitizeQueueTrack(track);
+      if (!queueTrack) return;
+      if (!this._play_next_resume_track_id && this.currentAudio) {
+        this._play_next_resume_track_id = this.currentAudio.id;
+      }
+      this._play_next_queue.push({
+        queueId: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        track: queueTrack,
+      });
+      this.sendPlayNextQueueEvent();
+    }
+
+    setPlayNextQueue(entries) {
+      this._play_next_queue = (Array.isArray(entries) ? entries : [])
+        .slice(0, 500)
+        .map((entry) => ({
+          queueId:
+            entry && entry.queueId
+              ? String(entry.queueId)
+              : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          track: Player.sanitizeQueueTrack(entry && entry.track),
+        }))
+        .filter((entry) => entry.track);
+      this._play_next_resume_track_id = this.currentAudio
+        ? this.currentAudio.id
+        : '';
+      this._play_next_active = false;
+      this._play_next_resume_direct = false;
+      this.sendPlayNextQueueEvent();
+    }
+
+    removePlayNextQueueEntry(queueId) {
+      this._play_next_queue = this._play_next_queue.filter(
+        (entry) => entry.queueId !== queueId
+      );
+      if (!this._play_next_queue.length && !this._play_next_active) {
+        this._play_next_resume_track_id = '';
+      }
+      this.sendPlayNextQueueEvent();
+    }
+
+    movePlayNextQueueEntry(queueId, targetIndex) {
+      const sourceIndex = this._play_next_queue.findIndex(
+        (entry) => entry.queueId === queueId
+      );
+      const destination = Math.max(
+        0,
+        Math.min(Number(targetIndex) || 0, this._play_next_queue.length - 1)
+      );
+      if (sourceIndex < 0 || sourceIndex === destination) return;
+      const [entry] = this._play_next_queue.splice(sourceIndex, 1);
+      this._play_next_queue.splice(destination, 0, entry);
+      this.sendPlayNextQueueEvent();
+    }
+
+    clearPlayNextQueue() {
+      this._play_next_queue = [];
+      if (!this._play_next_active) {
+        this._play_next_resume_track_id = '';
+      }
+      this.sendPlayNextQueueEvent();
+    }
+
+    ensureQueuedTrack(track) {
+      let index = this.playlist.findIndex((item) => item.id === track.id);
+      if (index >= 0) return index;
+      this.playlist.push({
+        ...track,
+        disabled: false,
+        howl: null,
+        _play_next_ephemeral: true,
+      });
+      index = this.playlist.length - 1;
+      this.sendPlaylistEvent();
+      return index;
+    }
+
+    playNextQueuedTrack() {
+      while (this._play_next_queue.length) {
+        const entry = this._play_next_queue.shift();
+        const index = this.ensureQueuedTrack(entry.track);
+        if (index >= 0 && this.isPlayableIndex(index)) {
+          if (this.currentAudio) {
+            if (!this._play_next_resume_track_id) {
+              this._play_next_resume_track_id = this.currentAudio.id;
+            }
+            this._play_next_history.push(
+              Player.sanitizeQueueTrack(this.currentAudio)
+            );
+            if (this._play_next_history.length > 100) {
+              this._play_next_history.shift();
+            }
+          }
+          this._play_next_active = true;
+          this.sendPlayNextQueueEvent();
+          this.play(index);
+          return true;
+        }
+      }
+      this.sendPlayNextQueueEvent();
+      return false;
+    }
+
+    cleanupEphemeralQueueTracks() {
+      this.playlist = this.playlist.filter(
+        (track) => track._play_next_ephemeral !== true
+      );
+    }
+
+    resumeAfterPlayNextQueue(direction) {
+      const resumeTrackId = this._play_next_resume_track_id;
+      if (!resumeTrackId) {
+        if (this._play_next_active) {
+          this._play_next_active = false;
+          this._play_next_resume_direct = false;
+          this.cleanupEphemeralQueueTracks();
+          this.sendPlaylistEvent();
+        }
+        return false;
+      }
+      if (this.currentAudio) {
+        this._play_next_history.push(
+          Player.sanitizeQueueTrack(this.currentAudio)
+        );
+      }
+      this._play_next_resume_track_id = '';
+      this._play_next_active = false;
+      const resumeDirect = this._play_next_resume_direct;
+      this._play_next_resume_direct = false;
+      this.cleanupEphemeralQueueTracks();
+      this.sendPlaylistEvent();
+      const resumeIndex = this.playlist.findIndex(
+        (track) => track.id === resumeTrackId
+      );
+      if (resumeIndex < 0) return false;
+      if (resumeDirect || this._loop_mode === 1) {
+        this.play(resumeIndex);
+        return true;
+      }
+      this.index = resumeIndex;
+      this.skip(direction, true);
+      return true;
+    }
+
     insertAudio(audio, idx) {
       if (this.playlist.find((i) => audio.id === i.id)) return;
 
@@ -996,6 +1256,11 @@
       this._media_resume_positions = {};
       this._audio_output_rebuild_session_by_track = {};
       this._media_url_request_tokens = {};
+      this.clearPlayNextQueue();
+      this._play_next_history = [];
+      this._play_next_active = false;
+      this._play_next_resume_track_id = '';
+      this._play_next_resume_direct = false;
       Object.values(this._media_url_retry_timers).forEach((timer) => {
         clearTimeout(timer);
       });
@@ -1026,6 +1291,11 @@
         this._media_resume_positions = {};
         this._audio_output_rebuild_session_by_track = {};
         this._media_url_request_tokens = {};
+        this.clearPlayNextQueue();
+        this._play_next_history = [];
+        this._play_next_active = false;
+        this._play_next_resume_track_id = '';
+        this._play_next_resume_direct = false;
         Object.values(this._media_url_retry_timers).forEach((timer) => {
           clearTimeout(timer);
         });
@@ -1045,10 +1315,18 @@
     }
 
     playById(id) {
+      if (this._play_next_active) {
+        this._play_next_active = false;
+        this.cleanupEphemeralQueueTracks();
+        this.sendPlaylistEvent();
+      }
       const idx = this.playlist.findIndex((audio) => audio.id === id);
       if (idx < 0) return;
       if (this._loop_mode === 2 && idx !== this.index) {
         this.resetShuffleState(idx);
+      }
+      if (this._play_next_queue.length) {
+        this._play_next_resume_track_id = id;
       }
       this.play(idx);
     }
@@ -1479,6 +1757,7 @@
       const previousTrack = this.currentAudio;
       // stop when load new track to avoid multiple songs play in same time
       if (index !== this.index) {
+        this.finishListeningHistory();
         this.clearPlaybackWatch();
         if (previousTrack) {
           this.clearMediaUrlRetryTimer(previousTrack.id);
@@ -1519,6 +1798,7 @@
               delete self._media_resume_positions[data.id];
             }
             self.beginPlaybackWatch(data.howl, data);
+            self.beginListeningHistory(data);
             prepareAudioAnalysis(self.currentHowl);
             if ('mediaSession' in navigator) {
               const { mediaSession } = navigator;
@@ -1593,7 +1873,16 @@
               return;
             }
             self.clearPlaybackWatch();
+            self.finishListeningHistory();
             delete self._media_resume_positions[data.id];
+            if (self.playNextQueuedTrack()) {
+              self.sendPlayingEvent('Ended');
+              return;
+            }
+            if (self.resumeAfterPlayNextQueue('next')) {
+              self.sendPlayingEvent('Ended');
+              return;
+            }
             switch (self.loop_mode) {
               case 2:
                 self.skip('random');
@@ -1615,6 +1904,7 @@
               return;
             }
             self.clearPlaybackWatch();
+            self.pauseListeningHistory();
             navigator.mediaSession.playbackState = 'paused';
             self.sendPlayingEvent('Paused');
           },
@@ -1623,6 +1913,7 @@
               return;
             }
             self.clearPlaybackWatch();
+            self.finishListeningHistory();
             self.sendPlayingEvent('Stopped');
           },
           onseek() {
@@ -1630,6 +1921,7 @@
               return;
             }
             self.resetPlaybackWatchProgress();
+            self.resetListeningHistorySample();
           },
           onvolume() {},
           onloaderror(id, err) {
@@ -1685,8 +1977,9 @@
      * Skip to the next or previous track.
      * @param  {String} direction 'next' or 'prev'.
      */
-    skip(direction) {
+    skip(direction, bypassPlayNextQueue = false) {
       const previousTrack = this.currentAudio;
+      this.finishListeningHistory();
       this.clearPlaybackWatch();
       if (previousTrack) {
         this.clearMediaUrlRetryTimer(previousTrack.id);
@@ -1694,6 +1987,28 @@
       }
       Howler.unload();
       if (this.playlist.length === 0) return;
+
+      if (!bypassPlayNextQueue && direction !== 'prev') {
+        if (this.playNextQueuedTrack()) return;
+        if (this.resumeAfterPlayNextQueue(direction)) return;
+      }
+      if (
+        !bypassPlayNextQueue &&
+        direction === 'prev' &&
+        this._play_next_history.length
+      ) {
+        const previousQueueTrack = this._play_next_history.pop();
+        if (previousQueueTrack) {
+          this._play_next_resume_track_id = previousTrack
+            ? previousTrack.id
+            : '';
+          this._play_next_resume_direct = true;
+          const previousIndex = this.ensureQueuedTrack(previousQueueTrack);
+          this._play_next_active = true;
+          this.play(previousIndex);
+          return;
+        }
+      }
 
       const shuffleMode = this._loop_mode === 2 || direction === 'random';
       if (shuffleMode) {
@@ -1903,6 +2218,16 @@
       playerSendMessage(this.mode, {
         type: 'BG_PLAYER:PLAYLIST',
         data: this.playlist.map((audio) => ({ ...audio, howl: undefined })),
+      });
+    }
+
+    async sendPlayNextQueueEvent() {
+      playerSendMessage(this.mode, {
+        type: 'BG_PLAYER:PLAY_NEXT_QUEUE',
+        data: this._play_next_queue.map((entry) => ({
+          queueId: entry.queueId,
+          track: { ...entry.track, howl: undefined },
+        })),
       });
     }
   }

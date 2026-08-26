@@ -19,7 +19,8 @@
     "test:desktop-cache": "node --test app/test/audioCache.test.js app/test/lyricCacheStore.test.js app/test/mainLocalDataCache.test.js",
     "test:loudness": "node --test app/test/loudnessAnalyzer.test.js app/test/loudnessAudioCache.test.js",
     "test:desktop-lyric": "node --test app/test/floatingWindowControls.test.js",
-    "test:machine-translation": "node app/test/machineTranslationDeepSeek.test.js"
+    "test:machine-translation": "node app/test/machineTranslationDeepSeek.test.js",
+    "test:listening-history": "node app/test/listeningHistoryStore.test.js"
   },
   "repository": {
     "type": "git",

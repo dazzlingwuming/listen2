@@ -10,6 +10,7 @@
       volume: myPlayer.volume * 100,
       loop_mode: myPlayer.loop_mode,
       playing: myPlayer.playing,
+      playNextQueue: [],
     },
     play() {
       getPlayerAsync(mode, (player) => {
@@ -98,6 +99,26 @@
         player.insertAudio(track);
       });
     },
+    enqueueNext(track) {
+      getPlayerAsync(mode, (player) => {
+        player.enqueueNext(track);
+      });
+    },
+    removePlayNextQueueEntry(queueId) {
+      getPlayerAsync(mode, (player) => {
+        player.removePlayNextQueueEntry(queueId);
+      });
+    },
+    movePlayNextQueueEntry(queueId, targetIndex) {
+      getPlayerAsync(mode, (player) => {
+        player.movePlayNextQueueEntry(queueId, targetIndex);
+      });
+    },
+    clearPlayNextQueue() {
+      getPlayerAsync(mode, (player) => {
+        player.clearPlayNextQueue();
+      });
+    },
     insertTrack(track, to_track, direction) {
       getPlayerAsync(mode, (player) => {
         player.insertAudioByDirection(track, to_track, direction);
@@ -158,9 +179,20 @@
           if (localPlayerSettings !== null && player.loop_mode !== 2) {
             player.loadById(localPlayerSettings.nowplaying_track_id);
           }
+
+          const savedPlayNextQueue = localStorage.getObject('play-next-queue');
+          if (
+            Array.isArray(savedPlayNextQueue) &&
+            typeof player.setPlayNextQueue === 'function'
+          ) {
+            player.setPlayNextQueue(savedPlayNextQueue);
+          }
         }
 
         player.sendPlaylistEvent();
+        if (typeof player.sendPlayNextQueueEvent === 'function') {
+          player.sendPlayNextQueueEvent();
+        }
         player.sendPlayingEvent();
         player.sendLoadEvent();
       });
@@ -237,6 +269,9 @@
       };
     } else if (msg.type === 'BG_PLAYER:PLAYLIST') {
       l1Player.status.playlist = msg.data || [];
+    } else if (msg.type === 'BG_PLAYER:PLAY_NEXT_QUEUE') {
+      l1Player.status.playNextQueue = msg.data || [];
+      localStorage.setObject('play-next-queue', msg.data || []);
     }
     if (res !== undefined) {
       res();

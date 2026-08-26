@@ -6,6 +6,7 @@
 /* eslint-disable no-unused-vars */
 /* eslint-disable no-param-reassign */
 /* eslint-disable import/no-unresolved */
+/* eslint-disable import/no-extraneous-dependencies */
 
 const sourceList = [
   {
@@ -199,7 +200,7 @@ const main = () => {
       },
       link(scope, element, attrs) {
         element.bind('click', (event) => {
-          l1Player.addTrack(scope.song);
+          l1Player.enqueueNext(scope.song);
           notyf.success(i18next.t('_ADD_TO_QUEUE_SUCCESS'));
         });
       },

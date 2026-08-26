@@ -361,6 +361,54 @@ const MediaService = {
     return ipcRenderer.invoke('audio-cache:clear');
   },
 
+  ingestListeningHistory(payload) {
+    const ipcRenderer = getDesktopLocalDataIpcRenderer();
+    if (!ipcRenderer) {
+      return Promise.resolve({ ok: false, status: 'unsupported' });
+    }
+    return ipcRenderer.invoke('listening-history:ingest', payload);
+  },
+
+  getListeningHistoryStatus() {
+    const ipcRenderer = getDesktopLocalDataIpcRenderer();
+    if (!ipcRenderer) {
+      return Promise.resolve({ ok: false, status: 'unsupported' });
+    }
+    return ipcRenderer.invoke('listening-history:status');
+  },
+
+  configureListeningHistory(enabled) {
+    const ipcRenderer = getDesktopLocalDataIpcRenderer();
+    if (!ipcRenderer) {
+      return Promise.resolve({ ok: false, status: 'unsupported' });
+    }
+    return ipcRenderer.invoke('listening-history:configure', { enabled });
+  },
+
+  getAnnualListeningSummary(year) {
+    const ipcRenderer = getDesktopLocalDataIpcRenderer();
+    if (!ipcRenderer) {
+      return Promise.resolve({ ok: false, status: 'unsupported' });
+    }
+    return ipcRenderer.invoke('listening-history:annual-summary', { year });
+  },
+
+  exportListeningHistory() {
+    const ipcRenderer = getDesktopLocalDataIpcRenderer();
+    if (!ipcRenderer) {
+      return Promise.resolve({ ok: false, status: 'unsupported' });
+    }
+    return ipcRenderer.invoke('listening-history:export');
+  },
+
+  clearListeningHistory() {
+    const ipcRenderer = getDesktopLocalDataIpcRenderer();
+    if (!ipcRenderer) {
+      return Promise.resolve({ ok: false, status: 'unsupported' });
+    }
+    return ipcRenderer.invoke('listening-history:clear');
+  },
+
   deleteTrackLocalData(track) {
     const ipcRenderer = getDesktopLocalDataIpcRenderer();
     const identity = getBilibiliVideoCacheIdentity(track) || {};
