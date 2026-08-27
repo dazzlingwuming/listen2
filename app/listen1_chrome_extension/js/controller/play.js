@@ -404,6 +404,15 @@ angular.module('listenone').controller('PlayController', [
     const legacyBilibiliLyricMigration = isElectron()
       ? MediaService.migrateLegacyBilibiliManualLyrics().catch(() => null)
       : Promise.resolve(null);
+    if (isElectron()) {
+      MediaService.syncAudioCachePlaylistMembership().catch(() => null);
+      $scope.$on('myplaylist:update', () => {
+        MediaService.syncAudioCachePlaylistMembership().catch(() => null);
+        if ($scope.audioCacheManager.open) {
+          $scope.refreshAudioCacheInventory();
+        }
+      });
+    }
 
     function cancelAudioCacheStatusPoll() {
       if (!audioCacheStatusPollTimer) return;
@@ -888,7 +897,7 @@ angular.module('listenone').controller('PlayController', [
       const entries = $scope.audioCacheManager.entries.filter((entry) => {
         if (
           $scope.audioCacheManager.onlyOutsidePlaylists &&
-          entry.inMyPlaylists
+          entry.retention !== 'temporary'
         ) {
           return false;
         }
@@ -934,6 +943,34 @@ angular.module('listenone').controller('PlayController', [
       $scope
         .audioCacheSelectedEntries()
         .reduce((total, entry) => total + Number(entry.byteLength || 0), 0);
+
+    $scope.setAudioCacheDownloaded = (entry, downloaded) => {
+      if (!entry || !entry.cacheKey || $scope.audioCacheManager.deleting) {
+        return;
+      }
+      let retention = 'temporary';
+      if (downloaded) retention = 'download';
+      else if (entry.inMyPlaylists) retention = 'playlist';
+      $scope.audioCacheManager.deleting = true;
+      MediaService.setAudioCacheRetention(entry.cacheKey, retention)
+        .then((response) => {
+          $scope.$evalAsync(() => {
+            $scope.audioCacheManager.deleting = false;
+            if (!response || response.ok !== true) {
+              notyf.error(i18next.t('_AUDIO_CACHE_FAILURE_NOTICE'));
+              return;
+            }
+            entry.retention = retention;
+            entry.downloaded = retention === 'download';
+          });
+        })
+        .catch(() => {
+          $scope.$evalAsync(() => {
+            $scope.audioCacheManager.deleting = false;
+            notyf.error(i18next.t('_AUDIO_CACHE_FAILURE_NOTICE'));
+          });
+        });
+    };
 
     $scope.selectVisibleAudioCacheEntries = () => {
       $scope.visibleAudioCacheEntries().forEach((entry) => {

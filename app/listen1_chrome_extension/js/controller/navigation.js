@@ -410,6 +410,7 @@ angular.module('listenone').controller('NavigationController', [
               $scope.songs = playlist.tracks;
             });
           }
+          $rootScope.$broadcast('myplaylist:update');
         });
       }
     };
@@ -440,6 +441,23 @@ angular.module('listenone').controller('NavigationController', [
         if (option_id === $scope.list_id) {
           $scope.songs = playlist.tracks;
         }
+        $rootScope.$broadcast('myplaylist:update');
+      });
+    };
+
+    $scope.downloadTrackForOffline = (song) => {
+      if (!isElectron() || !song || song.source !== 'bilibili') return;
+      notyf.info(i18next.t('_AUDIO_CACHE_DOWNLOAD_STARTING'));
+      MediaService.downloadBilibiliTrack(song).then((response) => {
+        if (
+          response &&
+          response.ok === true &&
+          ['queued', 'downloading', 'already-ready'].includes(response.status)
+        ) {
+          notyf.success(i18next.t('_AUDIO_CACHE_DOWNLOAD_ADDED'));
+          return;
+        }
+        notyf.error(i18next.t('_AUDIO_CACHE_FAILURE_NOTICE'));
       });
     };
 
@@ -483,6 +501,7 @@ angular.module('listenone').controller('NavigationController', [
     $scope.mergePlaylist = (target_list_id) => {
       notyf.info(i18next.t('_IMPORTING_PLAYLIST'));
       MediaService.mergePlaylist($scope.list_id, target_list_id).success(() => {
+        $rootScope.$broadcast('myplaylist:update');
         notyf.success(i18next.t('_IMPORTING_PLAYLIST_SUCCESS'));
         $scope.closeDialog();
         $scope.popWindow();
@@ -503,6 +522,9 @@ angular.module('listenone').controller('NavigationController', [
         const index = $scope.songs.indexOf(song);
         if (index > -1) {
           $scope.songs.splice(index, 1);
+        }
+        if (list_id.slice(0, 2) === 'my') {
+          $rootScope.$broadcast('myplaylist:update');
         }
         notyf.success(i18next.t('_REMOVE_SONG_FROM_PLAYLIST_SUCCESS'));
       });

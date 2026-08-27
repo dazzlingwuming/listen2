@@ -69,6 +69,8 @@ let lyricCacheStore;
 let listeningHistoryStore;
 let audioCacheStartupError;
 let audioCacheProtocolReady = false;
+let audioCacheQuitCleanupStarted = false;
+let audioCacheQuitCleanupComplete = false;
 let playerIsPlaying = false;
 /** @type {electron.BrowserWindow} */
 let mainWindow;
@@ -481,6 +483,12 @@ registerLocalDataHandler("audio-cache:list", async () => {
   await ensureAudioCacheAvailable().initialize();
   return ensureAudioCacheAvailable().list(metadataByTrackId);
 });
+registerLocalDataHandler("audio-cache:sync-playlists", (payload) =>
+  ensureAudioCacheAvailable().syncPlaylistTrackIds(payload.trackIds)
+);
+registerLocalDataHandler("audio-cache:set-retention", (payload) =>
+  ensureAudioCacheAvailable().setRetention(payload.cacheKey, payload.retention)
+);
 registerLocalDataHandler("audio-cache:configure", (payload) =>
   ensureAudioCacheAvailable().configure(payload)
 );
@@ -1634,8 +1642,8 @@ app.on("activate", () => mainWindow.show());
 
 /* 'before-quit' is emitted when Electron receives
  * the signal to exit and wants to start closing windows */
-app.on("before-quit", () => {
-  if (audioCache) audioCache.shutdown();
+app.on("before-quit", (event) => {
+  willQuitApp = true;
   if (
     mainWindow &&
     !mainWindow.isDestroyed() &&
@@ -1648,8 +1656,23 @@ app.on("before-quit", () => {
   }
   store.set("windowState", windowState);
   store.set("proxyConfig", proxyConfig);
-
-  willQuitApp = true;
+  if (audioCache && !audioCacheQuitCleanupComplete) {
+    event.preventDefault();
+    if (!audioCacheQuitCleanupStarted) {
+      audioCacheQuitCleanupStarted = true;
+      audioCache
+        .prepareForQuit()
+        .catch((error) => {
+          console.warn("Failed to clean temporary audio cache", error);
+        })
+        .finally(() => {
+          audioCacheQuitCleanupComplete = true;
+          app.quit();
+        });
+    }
+    return;
+  }
+  if (audioCache) audioCache.shutdown();
 });
 
 app.on("will-quit", () => {

@@ -1158,6 +1158,13 @@
                                         ><span class="icon li-songlist"></span
                                       ></a>
                                       <a
+                                        title="{{_AUDIO_CACHE_DOWNLOAD_TRACK}}"
+                                        class="source-button offline-download-button"
+                                        ng-show="options && !isChrome && song.source === 'bilibili'"
+                                        ng-click="downloadTrackForOffline(song)"
+                                        ><span aria-hidden="true">⇩</span></a
+                                      >
+                                      <a
                                         title="{{_REMOVE_FROM_PLAYLIST}}"
                                         class="detail-delete-button"
                                         ng-click="removeSongFromPlaylist(song, list_id)"
@@ -1670,7 +1677,8 @@
                                         <small>{{formatAudioCacheBytes(entry.byteLength)}} · {{_AUDIO_CACHE_LAST_PLAYED}} {{formatAudioCacheDate(entry.lastAccessedAt)}}</small>
                                       </div>
                                       <div class="audio-cache-entry-actions">
-                                        <em ng-class="{'is-temporary': !entry.inMyPlaylists}">{{entry.inMyPlaylists ? _AUDIO_CACHE_IN_PLAYLIST : _AUDIO_CACHE_TEMPORARY}}</em>
+                                        <em ng-class="{'is-temporary': !entry.inMyPlaylists && !entry.downloaded, 'is-downloaded': entry.downloaded}">{{entry.downloaded ? _AUDIO_CACHE_DOWNLOADED : (entry.inMyPlaylists ? _AUDIO_CACHE_IN_PLAYLIST : _AUDIO_CACHE_TEMPORARY)}}</em>
+                                        <button type="button" class="btn btn-default" ng-click="setAudioCacheDownloaded(entry, !entry.downloaded)" ng-disabled="audioCacheManager.deleting">{{entry.downloaded ? _AUDIO_CACHE_CANCEL_DOWNLOAD : _AUDIO_CACHE_KEEP_OFFLINE}}</button>
                                         <button type="button" class="btn btn-default" ng-click="requestDeleteAudioCacheEntries([entry])" ng-disabled="audioCacheManager.deleting">{{_AUDIO_CACHE_DELETE_ENTRY}}</button>
                                       </div>
                                     </article>
@@ -2412,6 +2420,13 @@
                                     ng-click="showDialog(0, song)"
                                     ><span class="icon li-songlist"></span
                                   ></a>
+                                  <a
+                                    title="{{_AUDIO_CACHE_DOWNLOAD_TRACK}}"
+                                    class="source-button offline-download-button"
+                                    ng-show="options && !isChrome && song.source === 'bilibili'"
+                                    ng-click="downloadTrackForOffline(song)"
+                                    ><span aria-hidden="true">⇩</span></a
+                                  >
                                   <a
                                     title="{{_REMOVE_FROM_PLAYLIST}}"
                                     class="detail-delete-button"
@@ -4423,6 +4438,13 @@
                                           ></path></svg
                                       ></a>
                                       <a
+                                        title="{{_AUDIO_CACHE_DOWNLOAD_TRACK}}"
+                                        class="source-button offline-download-button"
+                                        ng-show="options && !isChrome && song.source === 'bilibili'"
+                                        ng-click="downloadTrackForOffline(song)"
+                                        ><span aria-hidden="true">⇩</span></a
+                                      >
+                                      <a
                                         title="{{_REMOVE_FROM_PLAYLIST}}"
                                         class="detail-delete-button"
                                         ng-click="removeSongFromPlaylist(song, list_id)"
@@ -5010,7 +5032,8 @@
                                         <small>{{formatAudioCacheBytes(entry.byteLength)}} · {{_AUDIO_CACHE_LAST_PLAYED}} {{formatAudioCacheDate(entry.lastAccessedAt)}}</small>
                                       </div>
                                       <div class="audio-cache-entry-actions">
-                                        <em ng-class="{'is-temporary': !entry.inMyPlaylists}">{{entry.inMyPlaylists ? _AUDIO_CACHE_IN_PLAYLIST : _AUDIO_CACHE_TEMPORARY}}</em>
+                                        <em ng-class="{'is-temporary': !entry.inMyPlaylists && !entry.downloaded, 'is-downloaded': entry.downloaded}">{{entry.downloaded ? _AUDIO_CACHE_DOWNLOADED : (entry.inMyPlaylists ? _AUDIO_CACHE_IN_PLAYLIST : _AUDIO_CACHE_TEMPORARY)}}</em>
+                                        <button type="button" class="btn btn-default" ng-click="setAudioCacheDownloaded(entry, !entry.downloaded)" ng-disabled="audioCacheManager.deleting">{{entry.downloaded ? _AUDIO_CACHE_CANCEL_DOWNLOAD : _AUDIO_CACHE_KEEP_OFFLINE}}</button>
                                         <button type="button" class="btn btn-default" ng-click="requestDeleteAudioCacheEntries([entry])" ng-disabled="audioCacheManager.deleting">{{_AUDIO_CACHE_DELETE_ENTRY}}</button>
                                       </div>
                                     </article>
@@ -6073,6 +6096,13 @@
                                       ></path>
                                     </svg>
                                   </a>
+                                  <a
+                                    title="{{_AUDIO_CACHE_DOWNLOAD_TRACK}}"
+                                    class="source-button offline-download-button"
+                                    ng-show="options && !isChrome && song.source === 'bilibili'"
+                                    ng-click="downloadTrackForOffline(song)"
+                                    ><span aria-hidden="true">⇩</span></a
+                                  >
                                   <a
                                     title="{{_REMOVE_FROM_PLAYLIST}}"
                                     class="detail-delete-button"

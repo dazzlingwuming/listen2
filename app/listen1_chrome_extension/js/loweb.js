@@ -160,6 +160,20 @@ function getBilibiliVideoCacheIdentity(track) {
   };
 }
 
+function getMyPlaylistTrackIds() {
+  const result = new Set();
+  const playlistIds = localStorage.getObject('playerlists');
+  (Array.isArray(playlistIds) ? playlistIds : []).forEach((playlistId) => {
+    const playlist = localStorage.getObject(playlistId);
+    (playlist && Array.isArray(playlist.tracks) ? playlist.tracks : []).forEach(
+      (track) => {
+        if (track && track.id) result.add(String(track.id));
+      }
+    );
+  });
+  return result;
+}
+
 function lyricCacheRecordToResult(record, currentPromptFingerprint = '') {
   if (!record || !record.lyric) {
     return null;
@@ -326,11 +340,16 @@ const MediaService = {
     );
   },
 
-  scheduleBilibiliAudioCache(track, descriptor) {
+  scheduleBilibiliAudioCache(track, descriptor, options = {}) {
     const ipcRenderer = getDesktopLocalDataIpcRenderer();
     const identity = getBilibiliVideoCacheIdentity(track);
     if (!ipcRenderer || !identity || !descriptor) {
       return Promise.resolve({ ok: false, status: 'unsupported' });
+    }
+    let retention = 'temporary';
+    if (options.retention === 'download') retention = 'download';
+    else if (getMyPlaylistTrackIds().has(identity.trackId)) {
+      retention = 'playlist';
     }
     return ipcRenderer.invoke('audio-cache:schedule-bilibili', {
       ...(descriptor.kind === 'audio'
@@ -352,6 +371,35 @@ const MediaService = {
       artist: String(track.artist || ''),
       coverUrl: String(track.img_url || track.imgUrl || ''),
       duration: Number(track.duration || 0),
+      retention,
+    });
+  },
+
+  downloadBilibiliTrack(track) {
+    if (
+      !getDesktopLocalDataIpcRenderer() ||
+      !getBilibiliVideoCacheIdentity(track)
+    ) {
+      return Promise.resolve({ ok: false, status: 'unsupported' });
+    }
+    return new Promise((resolve) => {
+      MediaService.bootstrapTrack(
+        track,
+        (bootinfo) => {
+          if (!bootinfo || !bootinfo.audioCacheDescriptor) {
+            resolve({ ok: false, status: 'unsupported' });
+            return;
+          }
+          MediaService.scheduleBilibiliAudioCache(
+            track,
+            bootinfo.audioCacheDescriptor,
+            { retention: 'download' }
+          ).then(resolve, () =>
+            resolve({ ok: false, status: 'download-failed' })
+          );
+        },
+        () => resolve({ ok: false, status: 'download-failed' })
+      );
     });
   },
 
@@ -401,6 +449,31 @@ const MediaService = {
       return Promise.resolve({ ok: false, status: 'invalid-input' });
     }
     return ipcRenderer.invoke('audio-cache:delete', { cacheKey });
+  },
+
+  syncAudioCachePlaylistMembership() {
+    const ipcRenderer = getDesktopLocalDataIpcRenderer();
+    if (!ipcRenderer) {
+      return Promise.resolve({ ok: false, status: 'unsupported' });
+    }
+    return ipcRenderer.invoke('audio-cache:sync-playlists', {
+      trackIds: [...getMyPlaylistTrackIds()],
+    });
+  },
+
+  setAudioCacheRetention(cacheKey, retention) {
+    const ipcRenderer = getDesktopLocalDataIpcRenderer();
+    if (
+      !ipcRenderer ||
+      !/^[a-f0-9]{64}$/.test(String(cacheKey || '')) ||
+      !['temporary', 'playlist', 'download'].includes(retention)
+    ) {
+      return Promise.resolve({ ok: false, status: 'invalid-input' });
+    }
+    return ipcRenderer.invoke('audio-cache:set-retention', {
+      cacheKey,
+      retention,
+    });
   },
 
   ingestListeningHistory(payload) {

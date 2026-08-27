@@ -132,6 +132,182 @@ test("cache inventory exposes safe metadata, backfills history, and deletes by c
   }
 });
 
+test("temporary audio is removed at exit while playlist and downloaded audio remain", async () => {
+  const { cache, rootDir } = await createCache(
+    async () =>
+      new Response(Buffer.from("abcdef"), {
+        status: 200,
+        headers: { "content-type": "audio/mp4", "content-length": "6" },
+      })
+  );
+  try {
+    const inputs = [
+      { cid: 1, trackId: `bitrack_v_${BVID}-1`, retention: "temporary" },
+      { cid: 2, trackId: `bitrack_v_${BVID}-2`, retention: "playlist" },
+      { cid: 3, trackId: `bitrack_v_${BVID}-3`, retention: "download" },
+    ];
+    for (const input of inputs) {
+      await cache.schedule({
+        ...input,
+        bvid: BVID,
+        audioId: 30280,
+      });
+      await cache.writeChain;
+    }
+    assert.strictEqual(cache.list().entries.length, 3);
+    const cleanup = await cache.prepareForQuit();
+    assert.strictEqual(cleanup.removedEntries, 1);
+    assert.deepStrictEqual(
+      cache
+        .list()
+        .entries.map((entry) => entry.retention)
+        .sort(),
+      ["download", "playlist"]
+    );
+    await cache.syncPlaylistTrackIds([]);
+    assert.strictEqual(
+      cache.list().entries.find((entry) => entry.downloaded).retention,
+      "download"
+    );
+    assert.strictEqual(
+      cache.list().entries.find((entry) => !entry.downloaded).retention,
+      "temporary"
+    );
+  } finally {
+    await rm(rootDir, { recursive: true, force: true, maxRetries: 3 });
+  }
+});
+
+test("automatic cleanup preserves a verified loudness profile for identical bytes", async () => {
+  const { cache, rootDir } = await createCache(
+    async () =>
+      new Response(Buffer.from("abcdef"), {
+        status: 200,
+        headers: { "content-type": "audio/mp4", "content-length": "6" },
+      })
+  );
+  try {
+    cache.loudnessAnalyzer = {
+      version: "test-analyzer-v1",
+      cancel() {},
+      shutdown() {},
+    };
+    const input = {
+      trackId: `bitrack_v_${BVID}-1`,
+      bvid: BVID,
+      cid: 1,
+      audioId: 30280,
+      retention: "temporary",
+    };
+    await cache.schedule(input);
+    await cache.writeChain;
+    const [entry] = Object.values(cache.index.entries);
+    const [cacheKey] = Object.keys(cache.index.entries);
+    entry.loudness = {
+      status: "ready",
+      cacheKey,
+      contentSha256: entry.sha256,
+      analyzerVersion: "test-analyzer-v1",
+      integratedLufs: -20,
+      truePeakDbtp: -10,
+      targetLufs: -14,
+      truePeakCeilingDbtp: -1,
+      gainDb: 6,
+      sampleRate: 48000,
+      channelCount: 2,
+      durationSeconds: 120,
+      analyzedAt: 1,
+    };
+    await cache.cleanupTemporary();
+    assert.strictEqual(cache.status().readyEntries, 0);
+    assert.ok(cache.index.loudnessArchive[cacheKey]);
+    await cache.schedule(input);
+    await cache.writeChain;
+    assert.strictEqual(
+      cache.index.entries[cacheKey].loudness.gainDb,
+      6,
+      "the profile must be restored only after the downloaded bytes hash matches"
+    );
+    assert.strictEqual(cache.index.loudnessArchive[cacheKey], undefined);
+  } finally {
+    await rm(rootDir, { recursive: true, force: true, maxRetries: 3 });
+  }
+});
+
+test("explicit downloads work when automatic caching is disabled", async () => {
+  const { cache, rootDir } = await createCache(
+    async () =>
+      new Response(Buffer.from("abcdef"), {
+        status: 200,
+        headers: { "content-type": "audio/mp4", "content-length": "6" },
+      })
+  );
+  try {
+    await cache.configure({ enabled: false });
+    const base = {
+      bvid: BVID,
+      audioId: 30280,
+    };
+    assert.deepStrictEqual(
+      await cache.schedule({
+        ...base,
+        trackId: `bitrack_v_${BVID}-1`,
+        cid: 1,
+        retention: "temporary",
+      }),
+      { ok: true, status: "disabled" }
+    );
+    assert.strictEqual(
+      (
+        await cache.schedule({
+          ...base,
+          trackId: `bitrack_v_${BVID}-2`,
+          cid: 2,
+          retention: "download",
+        })
+      ).status,
+      "queued"
+    );
+    await cache.writeChain;
+    assert.strictEqual(cache.list().entries[0].retention, "download");
+  } finally {
+    await rm(rootDir, { recursive: true, force: true, maxRetries: 3 });
+  }
+});
+
+test("capacity eviction never removes explicit downloads", async () => {
+  const { cache, rootDir } = await createCache(
+    async () =>
+      new Response(Buffer.from("abcdef"), {
+        status: 200,
+        headers: { "content-type": "audio/mp4", "content-length": "6" },
+      })
+  );
+  try {
+    for (const input of [
+      { cid: 1, trackId: `bitrack_v_${BVID}-1`, retention: "playlist" },
+      { cid: 2, trackId: `bitrack_v_${BVID}-2`, retention: "download" },
+    ]) {
+      await cache.schedule({ ...input, bvid: BVID, audioId: 30280 });
+      await cache.writeChain;
+    }
+    const [playlistEntry] = Object.entries(cache.index.entries).find(
+      ([, entry]) => entry.retention === "playlist"
+    );
+    const [downloadEntry] = Object.entries(cache.index.entries).find(
+      ([, entry]) => entry.retention === "download"
+    );
+    cache.index.entries[playlistEntry].byteLength = 700 * 1024 * 1024;
+    cache.index.entries[downloadEntry].byteLength = 700 * 1024 * 1024;
+    cache.index.settings.capacityBytes = 1024 * 1024 * 1024;
+    await cache.evictToCapacity(128 * 1024 * 1024);
+    assert.strictEqual(cache.index.entries[playlistEntry], undefined);
+    assert.ok(cache.index.entries[downloadEntry]);
+  } finally {
+    await rm(rootDir, { recursive: true, force: true, maxRetries: 3 });
+  }
+});
+
 test("audio cache rejects incomplete content and never exposes it as ready", async () => {
   const { cache, rootDir } = await createCache(
     async () =>

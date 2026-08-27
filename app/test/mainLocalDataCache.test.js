@@ -5,6 +5,16 @@ const path = require("path");
 const vm = require("vm");
 const { mkdtemp, rm } = require("fs/promises");
 const test = require("node:test");
+const mainSource = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+
+test("desktop quit waits for temporary audio cleanup before quitting", () => {
+  assert.match(
+    mainSource,
+    /app\.on\("before-quit", \(event\) => \{[\s\S]*?event\.preventDefault\(\)[\s\S]*?audioCache[\s\S]*?\.prepareForQuit\(\)[\s\S]*?audioCacheQuitCleanupComplete = true;[\s\S]*?app\.quit\(\)/
+  );
+  assert.match(mainSource, /audio-cache:sync-playlists/);
+  assert.match(mainSource, /audio-cache:set-retention/);
+});
 
 class Store {
   constructor() {

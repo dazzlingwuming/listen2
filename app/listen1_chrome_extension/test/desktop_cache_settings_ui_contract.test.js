@@ -14,6 +14,10 @@ const playController = fs.readFileSync(
   path.join(extensionRoot, 'js', 'controller', 'play.js'),
   'utf8'
 );
+const navigationController = fs.readFileSync(
+  path.join(extensionRoot, 'js', 'controller', 'navigation.js'),
+  'utf8'
+);
 
 const expectedI18nKeys = [
   '_LYRIC_PERSISTENCE_DESCRIPTION',
@@ -63,6 +67,12 @@ const expectedI18nKeys = [
   '_AUDIO_CACHE_INVENTORY_EMPTY',
   '_AUDIO_CACHE_UNKNOWN_ARTIST',
   '_AUDIO_CACHE_DELETE_ENTRY',
+  '_AUDIO_CACHE_DOWNLOAD_TRACK',
+  '_AUDIO_CACHE_DOWNLOAD_STARTING',
+  '_AUDIO_CACHE_DOWNLOAD_ADDED',
+  '_AUDIO_CACHE_KEEP_OFFLINE',
+  '_AUDIO_CACHE_CANCEL_DOWNLOAD',
+  '_AUDIO_CACHE_DOWNLOADED',
 ];
 
 function occurrences(value, pattern) {
@@ -93,6 +103,16 @@ assert.strictEqual(
   occurrences(html, /data-audio-cache-manager/g),
   2,
   'classic and modern settings layouts must both expose the cache inventory manager'
+);
+assert.strictEqual(
+  occurrences(html, /class="source-button offline-download-button"/g),
+  4,
+  'all classic and modern song-list layouts must expose Bilibili offline download'
+);
+assert.strictEqual(
+  occurrences(html, /setAudioCacheDownloaded\(entry, !entry\.downloaded\)/g),
+  2,
+  'both cache managers must let users pin or unpin cached audio'
 );
 assert.strictEqual(
   occurrences(html, /ng-model="audioCacheManager\.query"/g),
@@ -194,6 +214,16 @@ assert.match(
 );
 assert.match(playController, /MediaService\.listAudioCache\(\)/);
 assert.match(playController, /MediaService\.deleteAudioCacheEntry/);
+assert.match(playController, /MediaService\.setAudioCacheRetention/);
+assert.match(playController, /MediaService\.syncAudioCachePlaylistMembership/);
+assert.match(
+  navigationController,
+  /downloadTrackForOffline[\s\S]*?MediaService\.downloadBilibiliTrack/
+);
+assert.match(
+  navigationController,
+  /removeSongFromPlaylist[\s\S]*?\$rootScope\.\$broadcast\('myplaylist:update'\)/
+);
 assert.match(playController, /localStorage\.getObject\('playerlists'\)/);
 assert.match(
   playController,

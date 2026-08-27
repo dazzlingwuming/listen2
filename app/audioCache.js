@@ -17,6 +17,7 @@ const CACHE_SCHEME = "listen2-cache";
 const INDEX_VERSION = 1;
 const MAX_ANALYZER_VERSION_LENGTH = 96;
 const MAX_LOUDNESS_ERROR_LENGTH = 80;
+const CACHE_RETENTIONS = new Set(["temporary", "playlist", "download"]);
 const NORMALIZATION_TARGET_LUFS = -14;
 const TRUE_PEAK_CEILING_DBTP = -1;
 const MIN_NORMALIZATION_GAIN_DB = -24;
@@ -38,6 +39,10 @@ function positiveInteger(value) {
 
 function safeCacheKey(value) {
   return /^[a-f0-9]{64}$/.test(String(value || "")) ? String(value) : "";
+}
+
+function safeRetention(value, fallback = "playlist") {
+  return CACHE_RETENTIONS.has(value) ? value : fallback;
 }
 
 function safeRemoteUrl(value) {
@@ -248,6 +253,7 @@ class AudioCache {
         loudnessNormalizationEnabled: true,
       },
       entries: Object.create(null),
+      loudnessArchive: Object.create(null),
     };
   }
 
@@ -257,6 +263,7 @@ class AudioCache {
     this.index = await this.readIndex();
     await this.cleanupDisk();
     this.initialized = true;
+    await this.cleanupTemporary();
     this.scheduleMissingLoudness();
   }
 
@@ -283,6 +290,15 @@ class AudioCache {
           continue;
         const entry = this.sanitizeEntry(parsed.entries[key], key);
         if (entry) result.entries[key] = entry;
+      }
+      if (isPlainObject(parsed.loudnessArchive)) {
+        for (const key of Object.keys(parsed.loudnessArchive)) {
+          const archive = this.sanitizeLoudnessArchive(
+            parsed.loudnessArchive[key],
+            key
+          );
+          if (archive) result.loudnessArchive[key] = archive;
+        }
       }
       return result;
     } catch (error) {
@@ -338,11 +354,42 @@ class AudioCache {
       cachedAt: Number(value.cachedAt) || this.now(),
       lastAccessedAt: Number(value.lastAccessedAt) || this.now(),
       trackIds,
+      retention: safeRetention(value.retention),
       ...displayMetadata(value),
     };
     const loudness = sanitizeLoudness(value.loudness, cacheKey, fileHash);
     if (loudness) result.loudness = loudness;
     return result;
+  }
+
+  sanitizeLoudnessArchive(value, key) {
+    if (!isPlainObject(value)) return null;
+    const cacheKey = safeCacheKey(key);
+    const stableKey = safeString(value.stableKey, 512);
+    const contentSha256 = safeCacheKey(value.contentSha256);
+    const loudness = sanitizeLoudness(
+      value.loudness,
+      cacheKey,
+      contentSha256
+    );
+    if (!cacheKey || sha256(stableKey) !== cacheKey || !loudness) return null;
+    const trackIds = Array.isArray(value.trackIds)
+      ? value.trackIds
+          .map((trackId) => safeString(trackId, MAX_TRACK_ID_LENGTH))
+          .filter(Boolean)
+          .slice(0, 20)
+      : [];
+    return { stableKey, contentSha256, loudness, trackIds };
+  }
+
+  archiveLoudness(cacheKey, entry) {
+    if (!entry || !this.loudnessIsCurrent(entry)) return;
+    this.index.loudnessArchive[cacheKey] = {
+      stableKey: entry.stableKey,
+      contentSha256: entry.sha256,
+      loudness: entry.loudness,
+      trackIds: [...entry.trackIds],
+    };
   }
 
   validCapacity(value) {
@@ -412,6 +459,17 @@ class AudioCache {
       if (entry.loudness.status === "ready") loudnessReadyEntries += 1;
       if (entry.loudness.status === "failed") loudnessFailedEntries += 1;
     }
+    for (const archive of Object.values(this.index.loudnessArchive)) {
+      if (
+        !archive.loudness ||
+        !this.loudnessAnalyzer ||
+        archive.loudness.analyzerVersion !== this.loudnessAnalyzer.version
+      ) {
+        continue;
+      }
+      if (archive.loudness.status === "ready") loudnessReadyEntries += 1;
+      if (archive.loudness.status === "failed") loudnessFailedEntries += 1;
+    }
     return {
       ok: true,
       supported: true,
@@ -471,6 +529,8 @@ class AudioCache {
           lastAccessedAt: entry.lastAccessedAt,
           bitrate: entry.bitrate,
           loudnessStatus: entry.loudness ? entry.loudness.status : "pending",
+          retention: entry.retention,
+          downloaded: entry.retention === "download",
         };
       })
       .sort((left, right) => right.lastAccessedAt - left.lastAccessedAt);
@@ -505,7 +565,23 @@ class AudioCache {
     ) {
       return { ok: false, status: "invalid-input" };
     }
-    if (enabled === false) this.jobs.forEach((job) => job.controller.abort());
+    if (typeof capacityBytes === "number") {
+      const downloadedBytes = Object.values(this.index.entries)
+        .filter((entry) => entry.retention === "download")
+        .reduce((total, entry) => total + entry.byteLength, 0);
+      if (downloadedBytes > capacityBytes) {
+        return {
+          ok: false,
+          status: "downloaded-items-exceed-capacity",
+          minimumCapacityBytes: downloadedBytes,
+        };
+      }
+    }
+    if (enabled === false) {
+      this.jobs.forEach((job) => {
+        if (job.retention !== "download") job.controller.abort();
+      });
+    }
     if (
       loudnessNormalizationEnabled === false &&
       this.loudnessAnalyzer &&
@@ -714,7 +790,13 @@ class AudioCache {
     const trackId = safeString(input.trackId, MAX_TRACK_ID_LENGTH);
     const stableKey = stableAudioKey(input);
     if (!trackId || !stableKey) return { ok: false, status: "invalid-input" };
-    if (!this.index.settings.enabled) return { ok: true, status: "disabled" };
+    const requestedRetention = safeRetention(input.retention, "playlist");
+    if (
+      !this.index.settings.enabled &&
+      requestedRetention !== "download"
+    ) {
+      return { ok: true, status: "disabled" };
+    }
     const cacheKey = sha256(stableKey);
     const existing = this.index.entries[cacheKey];
     if (existing) {
@@ -730,6 +812,14 @@ class AudioCache {
           changed = true;
         }
       }
+      if (
+        requestedRetention === "download" ||
+        (requestedRetention === "playlist" &&
+          existing.retention === "temporary")
+      ) {
+        existing.retention = requestedRetention;
+        changed = true;
+      }
       if (changed) this.serialize(() => this.persist()).catch(() => {});
       return { ok: true, status: "already-ready" };
     }
@@ -740,6 +830,7 @@ class AudioCache {
       stableKey,
       cacheKey,
       controller: new AbortController(),
+      retention: requestedRetention,
     };
     this.jobs.set(cacheKey, job);
     this.serialize(() => this.runJob(job)).catch((error) => {
@@ -752,7 +843,7 @@ class AudioCache {
     try {
       if (
         job.controller.signal.aborted ||
-        !this.index.settings.enabled ||
+        (!this.index.settings.enabled && job.retention !== "download") ||
         this.index.entries[job.cacheKey]
       )
         return;
@@ -778,12 +869,18 @@ class AudioCache {
     if (capacity === null) return;
     let used = this.status().usedBytes;
     const candidates = Object.entries(this.index.entries)
-      .filter(([key]) => !this.readers.has(key) && !this.jobs.has(key))
+      .filter(
+        ([key, entry]) =>
+          entry.retention !== "download" &&
+          !this.readers.has(key) &&
+          !this.jobs.has(key)
+      )
       .sort(
         ([, left], [, right]) => left.lastAccessedAt - right.lastAccessedAt
       );
     for (const [key, entry] of candidates) {
       if (used + requiredBytes <= capacity) break;
+      this.archiveLoudness(key, entry);
       await fsp.unlink(this.filePath(key)).catch(() => {});
       delete this.index.entries[key];
       used -= entry.byteLength;
@@ -901,8 +998,18 @@ class AudioCache {
         cachedAt: this.now(),
         lastAccessedAt: this.now(),
         trackIds: [job.trackId],
+        retention: job.retention,
         ...displayMetadata(job),
       };
+      const archived = this.index.loudnessArchive[job.cacheKey];
+      if (
+        archived &&
+        archived.stableKey === job.stableKey &&
+        archived.contentSha256 === this.index.entries[job.cacheKey].sha256
+      ) {
+        this.index.entries[job.cacheKey].loudness = archived.loudness;
+        delete this.index.loudnessArchive[job.cacheKey];
+      }
       await this.persist();
       this.queueLoudnessAnalysis(job.cacheKey);
     } catch (error) {
@@ -912,7 +1019,7 @@ class AudioCache {
     }
   }
 
-  async delete(cacheKey) {
+  async delete(cacheKey, { preserveLoudness = false } = {}) {
     await this.initialize();
     const key = safeCacheKey(cacheKey);
     const activeJob = this.jobs.get(key);
@@ -926,7 +1033,15 @@ class AudioCache {
     if (!key || !this.index.entries[key]) return { ok: true, removed: false };
     return this.serialize(async () => {
       const entry = this.index.entries[key];
-      if (!entry) return { ok: true, removed: false };
+      if (!entry) {
+        if (!preserveLoudness && this.index.loudnessArchive[key]) {
+          delete this.index.loudnessArchive[key];
+          await this.persist();
+        }
+        return { ok: true, removed: false };
+      }
+      if (preserveLoudness) this.archiveLoudness(key, entry);
+      else delete this.index.loudnessArchive[key];
       delete this.index.entries[key];
       await fsp.unlink(this.filePath(key)).catch(() => {});
       await this.persist();
@@ -951,6 +1066,7 @@ class AudioCache {
         await fsp.unlink(this.filePath(key)).catch(() => {});
       }
       this.index.entries = Object.create(null);
+      this.index.loudnessArchive = Object.create(null);
       await this.persist();
       return { ok: true, removedEntries: entries.length, removedBytes };
     });
@@ -967,6 +1083,74 @@ class AudioCache {
     let removedBytes = 0;
     for (const key of keys) {
       const result = await this.delete(key);
+      if (result.removed) {
+        removedEntries += 1;
+        removedBytes += result.removedBytes || 0;
+      }
+    }
+    let removedLoudnessProfiles = 0;
+    for (const [key, archive] of Object.entries(
+      this.index.loudnessArchive
+    )) {
+      if (archive.trackIds.includes(safeTrackId)) {
+        delete this.index.loudnessArchive[key];
+        removedLoudnessProfiles += 1;
+      }
+    }
+    if (removedLoudnessProfiles) await this.serialize(() => this.persist());
+    return { ok: true, removedEntries, removedBytes, removedLoudnessProfiles };
+  }
+
+  async syncPlaylistTrackIds(trackIds = []) {
+    await this.initialize();
+    const retained = new Set(
+      (Array.isArray(trackIds) ? trackIds : [])
+        .map((trackId) => safeString(trackId, MAX_TRACK_ID_LENGTH))
+        .filter(Boolean)
+        .slice(0, 50000)
+    );
+    return this.serialize(async () => {
+      let changedEntries = 0;
+      for (const entry of Object.values(this.index.entries)) {
+        if (entry.retention === "download") continue;
+        const nextRetention = entry.trackIds.some((trackId) =>
+          retained.has(trackId)
+        )
+          ? "playlist"
+          : "temporary";
+        if (entry.retention !== nextRetention) {
+          entry.retention = nextRetention;
+          changedEntries += 1;
+        }
+      }
+      if (changedEntries) await this.persist();
+      return { ok: true, changedEntries };
+    });
+  }
+
+  async setRetention(cacheKey, retention) {
+    await this.initialize();
+    const key = safeCacheKey(cacheKey);
+    const nextRetention = safeRetention(retention, "");
+    if (!key || !nextRetention || !this.index.entries[key]) {
+      return { ok: false, status: "invalid-input" };
+    }
+    return this.serialize(async () => {
+      this.index.entries[key].retention = nextRetention;
+      await this.persist();
+      return { ok: true, retention: nextRetention };
+    });
+  }
+
+  async cleanupTemporary() {
+    await this.initialize();
+    const keys = Object.entries(this.index.entries)
+      .filter(([, entry]) => entry.retention === "temporary")
+      .map(([key]) => key);
+    let removedEntries = 0;
+    let removedBytes = 0;
+    for (const key of keys) {
+      const result = await this.delete(key, { preserveLoudness: true });
       if (result.removed) {
         removedEntries += 1;
         removedBytes += result.removedBytes || 0;
@@ -1043,6 +1227,14 @@ class AudioCache {
     ) {
       this.loudnessAnalyzer.shutdown();
     }
+  }
+
+  async prepareForQuit() {
+    this.jobs.forEach((job) => job.controller.abort());
+    await this.writeChain;
+    const result = await this.cleanupTemporary();
+    this.shutdown();
+    return result;
   }
 }
 
