@@ -3192,6 +3192,10 @@
   line-height: 1.45;
 }
 
+.machine-translation-settings .machine-translation-style-actions {
+  margin: -4px 0 12px;
+}
+
 .modern-body
   .page
   .machine-translation-settings

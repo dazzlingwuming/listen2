@@ -272,6 +272,8 @@
   "_MACHINE_TRANSLATION_STYLE_HINT": "번역 스타일 선호(선택 사항)",
   "_MACHINE_TRANSLATION_STYLE_HINT_PLACEHOLDER": "예: 절제되고 자연스럽게, 이미지와 리듬 유지",
   "_MACHINE_TRANSLATION_STYLE_HINT_HELP": "비워 두면 기본 스타일을 사용합니다. 최대 1200자이며 고정 프롬프트와 모델은 편집할 수 없습니다.",
+  "_MACHINE_TRANSLATION_SAVE_STYLE": "번역 스타일 저장",
+  "_MACHINE_TRANSLATION_STYLE_SAVED": "번역 스타일을 저장했습니다.",
   "_MACHINE_TRANSLATION_STYLE_DEFAULT": "현대적이고 자연스러우며 정확한 간체 중국어; 절제된 시적 톤으로 이미지와 감정을 보존합니다.",
   "_MACHINE_TRANSLATION_RESTORE_DEFAULT_STYLE": "기본 스타일 복원",
   "_MACHINE_TRANSLATION_RESTORE_SOURCE": "원본 번역 표시",

@@ -1701,6 +1701,24 @@
                                   ></textarea>
                                   <small>{{_MACHINE_TRANSLATION_STYLE_HINT_HELP}}</small>
                                 </label>
+                                <div class="machine-translation-actions machine-translation-style-actions">
+                                  <button
+                                    type="button"
+                                    class="btn btn-primary confirm-button"
+                                    ng-disabled="machineTranslationConfigPending"
+                                    ng-click="saveMachineTranslationStyle()"
+                                  >
+                                    {{_MACHINE_TRANSLATION_SAVE_STYLE}}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="btn btn-default"
+                                    ng-disabled="machineTranslationConfigPending"
+                                    ng-click="restoreDefaultMachineTranslationStyle()"
+                                  >
+                                    {{_MACHINE_TRANSLATION_RESTORE_DEFAULT_STYLE}}
+                                  </button>
+                                </div>
                                 <p
                                   class="machine-translation-error"
                                   ng-if="!machineTranslationConfig.secureStorageAvailable"
@@ -1733,8 +1751,8 @@
                                   <button
                                     type="button"
                                     class="btn btn-primary confirm-button"
-                                    ng-disabled="machineTranslationConfigPending"
-                                    ng-click="saveMachineTranslationConfig()"
+                                    ng-disabled="machineTranslationConfigPending || !machineTranslationConfig.apiKeyInput"
+                                    ng-click="saveMachineTranslationApiKey()"
                                   >
                                     {{_MACHINE_TRANSLATION_SAVE}}
                                   </button>
@@ -1745,14 +1763,6 @@
                                     ng-click="testMachineTranslationConfig()"
                                   >
                                     {{_MACHINE_TRANSLATION_TEST}}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    class="btn btn-default"
-                                    ng-disabled="machineTranslationConfigPending"
-                                    ng-click="restoreDefaultMachineTranslationStyle()"
-                                  >
-                                    {{_MACHINE_TRANSLATION_RESTORE_DEFAULT_STYLE}}
                                   </button>
                                   <button
                                     type="button"
@@ -4959,6 +4969,24 @@
                                   ></textarea>
                                   <small>{{_MACHINE_TRANSLATION_STYLE_HINT_HELP}}</small>
                                 </label>
+                                <div class="machine-translation-actions machine-translation-style-actions">
+                                  <button
+                                    type="button"
+                                    class="btn btn-primary confirm-button"
+                                    ng-disabled="machineTranslationConfigPending"
+                                    ng-click="saveMachineTranslationStyle()"
+                                  >
+                                    {{_MACHINE_TRANSLATION_SAVE_STYLE}}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="btn btn-default"
+                                    ng-disabled="machineTranslationConfigPending"
+                                    ng-click="restoreDefaultMachineTranslationStyle()"
+                                  >
+                                    {{_MACHINE_TRANSLATION_RESTORE_DEFAULT_STYLE}}
+                                  </button>
+                                </div>
                                 <p
                                   class="machine-translation-error"
                                   ng-if="!machineTranslationConfig.secureStorageAvailable"
@@ -4991,8 +5019,8 @@
                                   <button
                                     type="button"
                                     class="btn btn-primary confirm-button"
-                                    ng-disabled="machineTranslationConfigPending"
-                                    ng-click="saveMachineTranslationConfig()"
+                                    ng-disabled="machineTranslationConfigPending || !machineTranslationConfig.apiKeyInput"
+                                    ng-click="saveMachineTranslationApiKey()"
                                   >
                                     {{_MACHINE_TRANSLATION_SAVE}}
                                   </button>
@@ -5003,14 +5031,6 @@
                                     ng-click="testMachineTranslationConfig()"
                                   >
                                     {{_MACHINE_TRANSLATION_TEST}}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    class="btn btn-default"
-                                    ng-disabled="machineTranslationConfigPending"
-                                    ng-click="restoreDefaultMachineTranslationStyle()"
-                                  >
-                                    {{_MACHINE_TRANSLATION_RESTORE_DEFAULT_STYLE}}
                                   </button>
                                   <button
                                     type="button"

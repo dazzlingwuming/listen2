@@ -272,6 +272,8 @@
  "_MACHINE_TRANSLATION_STYLE_HINT": "Préférence de style de traduction (facultatif)",
  "_MACHINE_TRANSLATION_STYLE_HINT_PLACEHOLDER": "Ex. : sobre et naturel ; préserver les images et le rythme",
  "_MACHINE_TRANSLATION_STYLE_HINT_HELP": "Laissez vide pour le style par défaut. 1200 caractères au maximum ; le prompt fixe et le modèle ne sont pas modifiables.",
+ "_MACHINE_TRANSLATION_SAVE_STYLE": "Enregistrer le style de traduction",
+ "_MACHINE_TRANSLATION_STYLE_SAVED": "Style de traduction enregistré.",
  "_MACHINE_TRANSLATION_STYLE_DEFAULT": "Chinois simplifié moderne, naturel et précis, avec une poésie mesurée ; préserver images, émotion et résonance.",
  "_MACHINE_TRANSLATION_RESTORE_DEFAULT_STYLE": "Rétablir le style par défaut",
  "_MACHINE_TRANSLATION_RESTORE_SOURCE": "Afficher la traduction source",

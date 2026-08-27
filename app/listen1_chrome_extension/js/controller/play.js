@@ -1021,18 +1021,26 @@ angular.module('listenone').controller('PlayController', [
         .catch(() => false);
     }
 
-    function saveMachineTranslationConfig(showNotice) {
+    function saveMachineTranslationConfig(
+      showNotice,
+      { includeApiKey = true, includeStyleHint = true, noticeKey } = {}
+    ) {
       if (!isElectron()) {
         return Promise.resolve(false);
       }
       $scope.machineTranslationConfigPending = true;
       const payload = {};
-      if (String($scope.machineTranslationConfig.apiKeyInput || '').trim()) {
+      if (
+        includeApiKey &&
+        String($scope.machineTranslationConfig.apiKeyInput || '').trim()
+      ) {
         payload.apiKey = $scope.machineTranslationConfig.apiKeyInput.trim();
       }
-      payload.styleHint = String(
-        $scope.machineTranslationConfig.styleHint || ''
-      );
+      if (includeStyleHint) {
+        payload.styleHint = String(
+          $scope.machineTranslationConfig.styleHint || ''
+        );
+      }
       return MediaService.setMachineTranslationConfig(payload)
         .then((response) => {
           $scope.$evalAsync(() => {
@@ -1047,9 +1055,13 @@ angular.module('listenone').controller('PlayController', [
               }
               return;
             }
-            $scope.machineTranslationConfig.apiKeyInput = '';
+            if (payload.apiKey) {
+              $scope.machineTranslationConfig.apiKeyInput = '';
+            }
             if (showNotice) {
-              notyf.success(i18next.t('_MACHINE_TRANSLATION_SETTINGS_SAVED'));
+              notyf.success(
+                i18next.t(noticeKey || '_MACHINE_TRANSLATION_SETTINGS_SAVED')
+              );
             }
           });
           return (
@@ -1073,15 +1085,29 @@ angular.module('listenone').controller('PlayController', [
         });
     }
 
-    $scope.saveMachineTranslationConfig = () =>
-      saveMachineTranslationConfig(true);
+    $scope.saveMachineTranslationApiKey = () =>
+      saveMachineTranslationConfig(true, {
+        includeApiKey: true,
+        includeStyleHint: false,
+      });
+
+    $scope.saveMachineTranslationStyle = () =>
+      saveMachineTranslationConfig(true, {
+        includeApiKey: false,
+        includeStyleHint: true,
+        noticeKey: '_MACHINE_TRANSLATION_STYLE_SAVED',
+      });
 
     $scope.restoreDefaultMachineTranslationStyle = () => {
       if ($scope.machineTranslationConfigPending) {
         return;
       }
       $scope.machineTranslationConfig.styleHint = '';
-      saveMachineTranslationConfig(true);
+      saveMachineTranslationConfig(true, {
+        includeApiKey: false,
+        includeStyleHint: true,
+        noticeKey: '_MACHINE_TRANSLATION_STYLE_SAVED',
+      });
     };
 
     $scope.openDeepSeekApiPage = () => {

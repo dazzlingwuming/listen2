@@ -272,6 +272,8 @@
  "_MACHINE_TRANSLATION_STYLE_HINT": "Translation style preference (optional)",
  "_MACHINE_TRANSLATION_STYLE_HINT_PLACEHOLDER": "For example: restrained and natural; preserve the imagery and rhythm",
  "_MACHINE_TRANSLATION_STYLE_HINT_HELP": "Leave blank for the default style. Up to 1200 characters; fixed rules and model cannot be edited.",
+ "_MACHINE_TRANSLATION_SAVE_STYLE": "Save translation style",
+ "_MACHINE_TRANSLATION_STYLE_SAVED": "Translation style saved.",
  "_MACHINE_TRANSLATION_STYLE_DEFAULT": "Modern, natural, accurate Simplified Chinese with restrained poetic tone; preserve imagery, emotion, and resonance.",
  "_MACHINE_TRANSLATION_RESTORE_DEFAULT_STYLE": "Restore default style",
  "_MACHINE_TRANSLATION_RESTORE_SOURCE": "Show source translation",

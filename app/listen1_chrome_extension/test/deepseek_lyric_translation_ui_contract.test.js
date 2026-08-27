@@ -125,6 +125,31 @@ assert.strictEqual(
   2,
   'classic and modern settings must expose the same style editor'
 );
+assert.strictEqual(
+  (htmlSource.match(/ng-click="saveMachineTranslationStyle\(\)"/g) || [])
+    .length,
+  2,
+  'classic and modern settings need a save action next to the style editor'
+);
+assert.strictEqual(
+  (htmlSource.match(/ng-click="saveMachineTranslationApiKey\(\)"/g) || [])
+    .length,
+  2,
+  'API key save must remain a separate action in both settings layouts'
+);
+assert.doesNotMatch(htmlSource, /ng-click="saveMachineTranslationConfig\(\)"/);
+const styleSaveHandler = playSource.slice(
+  playSource.indexOf('$scope.saveMachineTranslationStyle = () =>'),
+  playSource.indexOf('$scope.restoreDefaultMachineTranslationStyle = () =>')
+);
+const apiKeySaveHandler = playSource.slice(
+  playSource.indexOf('$scope.saveMachineTranslationApiKey = () =>'),
+  playSource.indexOf('$scope.saveMachineTranslationStyle = () =>')
+);
+assert.match(styleSaveHandler, /includeApiKey:\s*false/);
+assert.match(styleSaveHandler, /includeStyleHint:\s*true/);
+assert.match(apiKeySaveHandler, /includeApiKey:\s*true/);
+assert.match(apiKeySaveHandler, /includeStyleHint:\s*false/);
 const modernModalIndex = htmlSource.lastIndexOf(
   'data-lyric-translation-confirm'
 );
@@ -216,6 +241,8 @@ fs.readdirSync(path.join(extensionRoot, 'i18n'))
       '_MACHINE_TRANSLATION_RETRANSLATE_CONFIRM_TITLE',
       '_MACHINE_TRANSLATION_RETRANSLATE_CONFIRM_ACTION',
       '_MACHINE_TRANSLATION_STYLE_HINT',
+      '_MACHINE_TRANSLATION_SAVE_STYLE',
+      '_MACHINE_TRANSLATION_STYLE_SAVED',
       '_MACHINE_TRANSLATION_RESTORE_DEFAULT_STYLE',
       '_MACHINE_TRANSLATION_FIXED_RULES',
       '_MACHINE_TRANSLATION_IMMUTABLE_PROMPT',
