@@ -122,3 +122,118 @@ test("lyrics reject wrong translation hashes, clear stale translations, and migr
     await rm(rootDir, { recursive: true, force: true });
   }
 });
+
+test("DeepSeek v2 translation fingerprints are validated and persisted", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "listen2-lyric-cache-"));
+  const trackId = "bitrack_v_BV1ab411c7mD-2";
+  const lyric = "source lyric";
+  const promptFingerprint = "a".repeat(64);
+  const cacheKey = "b".repeat(64);
+  try {
+    const store = new LyricCacheStore({ rootDir, now: () => 2000 });
+    const first = await store.put({
+      trackId,
+      expectedRevision: 0,
+      mode: "auto",
+      record: {
+        lyric,
+        tlyric: "source translation",
+        source: "remote",
+        matchedTrack: {
+          title: "source title",
+          translationProvider: "netease",
+          translationEnriched: true,
+          machineTranslated: false,
+        },
+      },
+    });
+
+    const missingFingerprint = await store.attachTranslation({
+      trackId,
+      expectedRevision: first.revision,
+      translation: {
+        lyricHash: hash(lyric),
+        tlyric: "machine translation",
+        provider: "deepseek",
+        promptVersion: "deepseek-lyrics-v2",
+      },
+    });
+    assert.strictEqual(missingFingerprint.status, "invalid-input");
+
+    const missingFingerprintWithMixedCaseProvider =
+      await store.attachTranslation({
+        trackId,
+        expectedRevision: first.revision,
+        translation: {
+          lyricHash: hash(lyric),
+          tlyric: "machine translation",
+          provider: "DeepSeek",
+          promptVersion: "deepseek-lyrics-v2",
+        },
+      });
+    assert.strictEqual(
+      missingFingerprintWithMixedCaseProvider.status,
+      "invalid-input"
+    );
+
+    const malformedFingerprint = await store.attachTranslation({
+      trackId,
+      expectedRevision: first.revision,
+      translation: {
+        lyricHash: hash(lyric),
+        tlyric: "machine translation",
+        provider: "deepseek",
+        promptVersion: "deepseek-lyrics-v2",
+        promptFingerprint: "A".repeat(64),
+      },
+    });
+    assert.strictEqual(malformedFingerprint.status, "invalid-input");
+
+    const attached = await store.attachTranslation({
+      trackId,
+      expectedRevision: first.revision,
+      translation: {
+        lyricHash: hash(lyric),
+        tlyric: "machine translation",
+        provider: "deepseek",
+        promptVersion: "deepseek-lyrics-v2",
+        promptFingerprint,
+        cacheKey,
+      },
+    });
+    assert.strictEqual(attached.ok, true);
+    assert.strictEqual(
+      attached.record.translations[hash(lyric)].promptFingerprint,
+      promptFingerprint
+    );
+    assert.strictEqual(
+      attached.record.translations[hash(lyric)].cacheKey,
+      cacheKey
+    );
+
+    const reopened = new LyricCacheStore({ rootDir });
+    const persisted = await reopened.get({ trackId });
+    assert.strictEqual(persisted.ok, true);
+    assert.strictEqual(
+      persisted.record.translations[hash(lyric)].promptFingerprint,
+      promptFingerprint
+    );
+    assert.strictEqual(
+      persisted.record.translations[hash(lyric)].cacheKey,
+      cacheKey,
+      "adding the prompt fingerprint must not discard the local-data cache key"
+    );
+    assert.strictEqual(
+      persisted.record.matchedTrack.translationProvider,
+      "netease"
+    );
+    assert.strictEqual(
+      persisted.record.matchedTrack.translationEnriched,
+      true,
+      "source translation metadata must survive an application restart"
+    );
+    assert.strictEqual(persisted.record.matchedTrack.machineTranslated, false);
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});

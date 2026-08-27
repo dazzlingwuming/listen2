@@ -103,6 +103,68 @@
           ng-controller="PlayController as playCtrl"
           ng-init="loadLocalSettings()"
         >
+          <div
+            class="lyric-translation-confirm-backdrop"
+            data-lyric-translation-confirm
+            ng-if="lyricTranslationConfirmOpen"
+            ng-click="closeLyricTranslationConfirmation()"
+          >
+            <section
+              class="lyric-translation-confirm"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="lyric-translation-confirm-title"
+              aria-describedby="lyric-translation-confirm-description"
+              ng-attr-aria-busy="{{lyricTranslationConfirmPending}}"
+              tabindex="-1"
+              ng-click="$event.stopPropagation()"
+              ng-keydown="handleLyricTranslationConfirmationKeydown($event)"
+            >
+              <span class="lyric-translation-confirm-kicker">DeepSeek</span>
+              <h3 id="lyric-translation-confirm-title">
+                {{lyricTranslationConfirmationTitle()}}
+              </h3>
+              <p id="lyric-translation-confirm-description">
+                {{lyricTranslationConfirmationDescription()}}
+              </p>
+              <p class="lyric-translation-confirm-style" aria-live="polite">
+                <strong>{{_MACHINE_TRANSLATION_CONFIRM_STYLE}}</strong>
+                {{machineTranslationStyleSummary()}}
+              </p>
+              <p class="lyric-translation-confirm-privacy">
+                {{_MACHINE_TRANSLATION_PRIVACY_NOTICE}}
+              </p>
+              <p
+                class="lyric-translation-confirm-error"
+                ng-if="lyricTranslationConfirmError"
+                role="alert"
+              >
+                {{lyricTranslationConfirmError}}
+              </p>
+              <div class="lyric-translation-confirm-actions">
+                <button
+                  type="button"
+                  class="lyric-translation-confirm-action"
+                  ng-disabled="lyricTranslationConfirmPending"
+                  ng-click="confirmCurrentLyricTranslation()"
+                >
+                  <span
+                    class="lyric-picker-spinner"
+                    ng-if="lyricTranslationConfirmPending"
+                  ></span>
+                  {{lyricTranslationConfirmationAction()}}
+                </button>
+                <button
+                  type="button"
+                  class="lyric-translation-confirm-cancel"
+                  ng-disabled="lyricTranslationConfirmPending"
+                  ng-click="closeLyricTranslationConfirmation()"
+                >
+                  {{_MACHINE_TRANSLATION_CANCEL}}
+                </button>
+              </div>
+            </section>
+          </div>
           <div ng-controller="AuthController" ng-init="refreshAuthStatus()">
             <div>
               <div ng-controller="NavigationController">
@@ -1602,6 +1664,43 @@
                                 <p class="machine-translation-description">
                                   {{_MACHINE_TRANSLATION_SECURE_STORAGE_NOTICE}}
                                 </p>
+                                <p class="machine-translation-description machine-translation-privacy">
+                                  {{_MACHINE_TRANSLATION_PRIVACY_NOTICE}}
+                                </p>
+                                <div class="machine-translation-rules">
+                                  <button
+                                    type="button"
+                                    class="btn btn-default"
+                                    ng-click="toggleMachineTranslationRules()"
+                                    ng-attr-aria-expanded="{{machineTranslationRulesOpen}}"
+                                  >
+                                    {{machineTranslationRulesOpen ? _MACHINE_TRANSLATION_HIDE_PROMPT : _MACHINE_TRANSLATION_VIEW_PROMPT}}
+                                  </button>
+                                  <div ng-if="machineTranslationRulesOpen">
+                                    <strong>{{_MACHINE_TRANSLATION_FIXED_RULES}}</strong>
+                                    <p class="machine-translation-prompt-unavailable" ng-if="!machineTranslationConfig.immutableSystemPrompt || !machineTranslationConfig.promptTemplatePreview">
+                                      {{_MACHINE_TRANSLATION_PROMPT_PREVIEW_UNAVAILABLE}}
+                                    </p>
+                                    <label ng-if="machineTranslationConfig.immutableSystemPrompt">
+                                      <span>{{_MACHINE_TRANSLATION_IMMUTABLE_PROMPT}}</span>
+                                      <pre>{{machineTranslationConfig.immutableSystemPrompt}}</pre>
+                                    </label>
+                                    <label ng-if="machineTranslationConfig.promptTemplatePreview">
+                                      <span>{{_MACHINE_TRANSLATION_PROMPT_TEMPLATE}}</span>
+                                      <pre>{{machineTranslationConfig.promptTemplatePreview}}</pre>
+                                    </label>
+                                  </div>
+                                </div>
+                                <label class="machine-translation-key-label machine-translation-style-label">
+                                  <span>{{_MACHINE_TRANSLATION_STYLE_HINT}}</span>
+                                  <textarea
+                                    rows="3"
+                                    maxlength="{{machineTranslationConfig.maxStyleHintChars || 1200}}"
+                                    ng-model="machineTranslationConfig.styleHint"
+                                    placeholder="{{_MACHINE_TRANSLATION_STYLE_HINT_PLACEHOLDER}}"
+                                  ></textarea>
+                                  <small>{{_MACHINE_TRANSLATION_STYLE_HINT_HELP}}</small>
+                                </label>
                                 <p
                                   class="machine-translation-error"
                                   ng-if="!machineTranslationConfig.secureStorageAvailable"
@@ -1646,6 +1745,14 @@
                                     ng-click="testMachineTranslationConfig()"
                                   >
                                     {{_MACHINE_TRANSLATION_TEST}}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="btn btn-default"
+                                    ng-disabled="machineTranslationConfigPending"
+                                    ng-click="restoreDefaultMachineTranslationStyle()"
+                                  >
+                                    {{_MACHINE_TRANSLATION_RESTORE_DEFAULT_STYLE}}
                                   </button>
                                   <button
                                     type="button"
@@ -2259,6 +2366,26 @@
                             >
                               译
                             </div>
+                            <button
+                              type="button"
+                              class="translate-switch lyric-ai-retranslate-classic"
+                              ng-if="!isChrome && currentPlaying.source === 'bilibili' && currentLyricResult && currentLyricResult.lyric"
+                              ng-click="requestAiLyricRetranslation()"
+                              title="{{_MACHINE_TRANSLATION_RETRANSLATE}}"
+                              aria-label="{{_MACHINE_TRANSLATION_RETRANSLATE}}"
+                            >
+                              AI
+                            </button>
+                            <button
+                              type="button"
+                              class="translate-switch lyric-source-restore-classic"
+                              ng-if="(lyricTranslationSourceSnapshot || currentLyricResult.sourceTlyric) && lyricTranslationSource === 'machine'"
+                              ng-click="restoreSourceLyricTranslation()"
+                              title="{{_MACHINE_TRANSLATION_RESTORE_SOURCE_SESSION}}"
+                              aria-label="{{_MACHINE_TRANSLATION_RESTORE_SOURCE}}"
+                            >
+                              ↶
+                            </button>
                             <div
                               class="bilibili-mv-switch"
                               ng-show="canPlayBilibiliMv()"
@@ -2728,6 +2855,68 @@
             'has-track': playlist && playlist.length > 0
           }"
         >
+          <div
+            class="lyric-translation-confirm-backdrop"
+            data-lyric-translation-confirm
+            ng-if="lyricTranslationConfirmOpen"
+            ng-click="closeLyricTranslationConfirmation()"
+          >
+            <section
+              class="lyric-translation-confirm"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="lyric-translation-confirm-title"
+              aria-describedby="lyric-translation-confirm-description"
+              ng-attr-aria-busy="{{lyricTranslationConfirmPending}}"
+              tabindex="-1"
+              ng-click="$event.stopPropagation()"
+              ng-keydown="handleLyricTranslationConfirmationKeydown($event)"
+            >
+              <span class="lyric-translation-confirm-kicker">DeepSeek</span>
+              <h3 id="lyric-translation-confirm-title">
+                {{lyricTranslationConfirmationTitle()}}
+              </h3>
+              <p id="lyric-translation-confirm-description">
+                {{lyricTranslationConfirmationDescription()}}
+              </p>
+              <p class="lyric-translation-confirm-style" aria-live="polite">
+                <strong>{{_MACHINE_TRANSLATION_CONFIRM_STYLE}}</strong>
+                {{machineTranslationStyleSummary()}}
+              </p>
+              <p class="lyric-translation-confirm-privacy">
+                {{_MACHINE_TRANSLATION_PRIVACY_NOTICE}}
+              </p>
+              <p
+                class="lyric-translation-confirm-error"
+                ng-if="lyricTranslationConfirmError"
+                role="alert"
+              >
+                {{lyricTranslationConfirmError}}
+              </p>
+              <div class="lyric-translation-confirm-actions">
+                <button
+                  type="button"
+                  class="lyric-translation-confirm-action"
+                  ng-disabled="lyricTranslationConfirmPending"
+                  ng-click="confirmCurrentLyricTranslation()"
+                >
+                  <span
+                    class="lyric-picker-spinner"
+                    ng-if="lyricTranslationConfirmPending"
+                  ></span>
+                  {{lyricTranslationConfirmationAction()}}
+                </button>
+                <button
+                  type="button"
+                  class="lyric-translation-confirm-cancel"
+                  ng-disabled="lyricTranslationConfirmPending"
+                  ng-click="closeLyricTranslationConfirmation()"
+                >
+                  {{_MACHINE_TRANSLATION_CANCEL}}
+                </button>
+              </div>
+            </section>
+          </div>
           <div ng-controller="AuthController" ng-init="refreshAuthStatus()">
             <div>
               <div ng-controller="NavigationController">
@@ -4733,6 +4922,43 @@
                                 <p class="machine-translation-description">
                                   {{_MACHINE_TRANSLATION_SECURE_STORAGE_NOTICE}}
                                 </p>
+                                <p class="machine-translation-description machine-translation-privacy">
+                                  {{_MACHINE_TRANSLATION_PRIVACY_NOTICE}}
+                                </p>
+                                <div class="machine-translation-rules">
+                                  <button
+                                    type="button"
+                                    class="btn btn-default"
+                                    ng-click="toggleMachineTranslationRules()"
+                                    ng-attr-aria-expanded="{{machineTranslationRulesOpen}}"
+                                  >
+                                    {{machineTranslationRulesOpen ? _MACHINE_TRANSLATION_HIDE_PROMPT : _MACHINE_TRANSLATION_VIEW_PROMPT}}
+                                  </button>
+                                  <div ng-if="machineTranslationRulesOpen">
+                                    <strong>{{_MACHINE_TRANSLATION_FIXED_RULES}}</strong>
+                                    <p class="machine-translation-prompt-unavailable" ng-if="!machineTranslationConfig.immutableSystemPrompt || !machineTranslationConfig.promptTemplatePreview">
+                                      {{_MACHINE_TRANSLATION_PROMPT_PREVIEW_UNAVAILABLE}}
+                                    </p>
+                                    <label ng-if="machineTranslationConfig.immutableSystemPrompt">
+                                      <span>{{_MACHINE_TRANSLATION_IMMUTABLE_PROMPT}}</span>
+                                      <pre>{{machineTranslationConfig.immutableSystemPrompt}}</pre>
+                                    </label>
+                                    <label ng-if="machineTranslationConfig.promptTemplatePreview">
+                                      <span>{{_MACHINE_TRANSLATION_PROMPT_TEMPLATE}}</span>
+                                      <pre>{{machineTranslationConfig.promptTemplatePreview}}</pre>
+                                    </label>
+                                  </div>
+                                </div>
+                                <label class="machine-translation-key-label machine-translation-style-label">
+                                  <span>{{_MACHINE_TRANSLATION_STYLE_HINT}}</span>
+                                  <textarea
+                                    rows="3"
+                                    maxlength="{{machineTranslationConfig.maxStyleHintChars || 1200}}"
+                                    ng-model="machineTranslationConfig.styleHint"
+                                    placeholder="{{_MACHINE_TRANSLATION_STYLE_HINT_PLACEHOLDER}}"
+                                  ></textarea>
+                                  <small>{{_MACHINE_TRANSLATION_STYLE_HINT_HELP}}</small>
+                                </label>
                                 <p
                                   class="machine-translation-error"
                                   ng-if="!machineTranslationConfig.secureStorageAvailable"
@@ -4777,6 +5003,14 @@
                                     ng-click="testMachineTranslationConfig()"
                                   >
                                     {{_MACHINE_TRANSLATION_TEST}}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="btn btn-default"
+                                    ng-disabled="machineTranslationConfigPending"
+                                    ng-click="restoreDefaultMachineTranslationStyle()"
+                                  >
+                                    {{_MACHINE_TRANSLATION_RESTORE_DEFAULT_STYLE}}
                                   </button>
                                   <button
                                     type="button"
@@ -5909,7 +6143,8 @@
                                     <b
                                       class="is-machine"
                                       ng-if="lyricTranslationSource === 'machine'"
-                                      >{{_LYRIC_MACHINE_TRANSLATED}}</b
+                                      title="{{lyricMachineTranslationLabel()}}"
+                                      >{{lyricMachineTranslationLabel()}}</b
                                     >
                                   </span>
                                 </div>
@@ -5971,8 +6206,8 @@
                                 <span
                                   class="now-playing-lyrics-source is-machine"
                                   ng-if="lyricTranslationSource === 'machine'"
-                                  title="{{lyricMachineTranslationProvider}}"
-                                  >{{_LYRIC_MACHINE_TRANSLATED}}</span
+                                  title="{{lyricMachineTranslationLabel()}}"
+                                  >{{lyricMachineTranslationLabel()}}</span
                                 >
                               </div>
                               <div class="now-playing-lyrics-actions">
@@ -5995,6 +6230,26 @@
                                     <path d="m16 16 4 4"></path>
                                   </svg>
                                   <span>{{_LYRIC_SEARCH}}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  class="lyric-ai-retranslate-trigger"
+                                  ng-if="!isChrome && currentPlaying.source === 'bilibili' && currentLyricResult && currentLyricResult.lyric"
+                                  ng-click="requestAiLyricRetranslation()"
+                                  title="{{_MACHINE_TRANSLATION_RETRANSLATE}}"
+                                  aria-label="{{_MACHINE_TRANSLATION_RETRANSLATE}}"
+                                >
+                                  <span aria-hidden="true">AI</span>
+                                  <span>{{_MACHINE_TRANSLATION_RETRANSLATE}}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  class="lyric-source-restore-trigger"
+                                  ng-if="(lyricTranslationSourceSnapshot || currentLyricResult.sourceTlyric) && lyricTranslationSource === 'machine'"
+                                  ng-click="restoreSourceLyricTranslation()"
+                                  title="{{_MACHINE_TRANSLATION_RESTORE_SOURCE_SESSION}}"
+                                >
+                                  {{_MACHINE_TRANSLATION_RESTORE_SOURCE}}
                                 </button>
                                 <div
                                   class="lyric-sync-controls"
@@ -6146,61 +6401,6 @@
                               >
                                 {{_LYRIC_RESTORE_AUTO}}
                               </button>
-                            </div>
-                            <div
-                              class="lyric-translation-confirm-backdrop"
-                              ng-if="lyricTranslationConfirmOpen"
-                              ng-click="closeLyricTranslationConfirmation()"
-                            >
-                              <section
-                                class="lyric-translation-confirm"
-                                role="dialog"
-                                aria-modal="true"
-                                aria-labelledby="lyric-translation-confirm-title"
-                                aria-describedby="lyric-translation-confirm-description"
-                                ng-attr-aria-busy="{{lyricTranslationConfirmPending}}"
-                                tabindex="-1"
-                                ng-click="$event.stopPropagation()"
-                                ng-keydown="handleLyricTranslationConfirmationKeydown($event)"
-                              >
-                                <span class="lyric-translation-confirm-kicker"
-                                  >DeepSeek</span
-                                >
-                                <h3 id="lyric-translation-confirm-title">
-                                  {{_MACHINE_TRANSLATION_CONFIRM_TITLE}}
-                                </h3>
-                                <p id="lyric-translation-confirm-description">
-                                  {{_MACHINE_TRANSLATION_CONFIRM_DESCRIPTION}}
-                                </p>
-                                <p
-                                  class="lyric-translation-confirm-error"
-                                  ng-if="lyricTranslationConfirmError"
-                                  role="alert"
-                                >
-                                  {{lyricTranslationConfirmError}}
-                                </p>
-                                <div class="lyric-translation-confirm-actions">
-                                  <button
-                                    type="button"
-                                    class="lyric-translation-confirm-action"
-                                    ng-disabled="lyricTranslationConfirmPending"
-                                    ng-click="confirmCurrentLyricTranslation()"
-                                  >
-                                    <span
-                                      class="lyric-picker-spinner"
-                                      ng-if="lyricTranslationConfirmPending"
-                                    ></span>
-                                    {{_MACHINE_TRANSLATION_CONFIRM_ACTION}}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    class="lyric-translation-confirm-cancel"
-                                    ng-click="closeLyricTranslationConfirmation()"
-                                  >
-                                    {{_MACHINE_TRANSLATION_CANCEL}}
-                                  </button>
-                                </div>
-                              </section>
                             </div>
                             <div
                               class="lyric"

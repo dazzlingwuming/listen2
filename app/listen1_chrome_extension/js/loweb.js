@@ -160,21 +160,31 @@ function getBilibiliVideoCacheIdentity(track) {
   };
 }
 
-function lyricCacheRecordToResult(record) {
+function lyricCacheRecordToResult(record, currentPromptFingerprint = '') {
   if (!record || !record.lyric) {
     return null;
   }
   const matchedTrack = record.matchedTrack || {};
   const machineTranslation = Object.values(record.translations || {})
-    .filter((translation) => translation && translation.tlyric)
+    .filter(
+      (translation) =>
+        translation &&
+        translation.tlyric &&
+        translation.provider === 'deepseek' &&
+        translation.promptVersion === 'deepseek-lyrics-v2' &&
+        currentPromptFingerprint &&
+        translation.promptFingerprint === currentPromptFingerprint
+    )
     .sort(
       (left, right) =>
         Number(right.translatedAt || 0) - Number(left.translatedAt || 0)
     )[0];
+  const sourceTlyric = record.tlyric || '';
+  const usingMachineTranslation = Boolean(machineTranslation);
   return {
     lyric: record.lyric,
-    tlyric:
-      record.tlyric || (machineTranslation && machineTranslation.tlyric) || '',
+    tlyric: usingMachineTranslation ? machineTranslation.tlyric : sourceTlyric,
+    sourceTlyric,
     source: record.source || '',
     matchedTitle: matchedTrack.title || '',
     matchedArtist: matchedTrack.artist || '',
@@ -184,16 +194,28 @@ function lyricCacheRecordToResult(record) {
     candidateId: matchedTrack.candidateId || '',
     selectedProvider: matchedTrack.selectedProvider || '',
     selectedCandidateId: matchedTrack.selectedCandidateId || '',
-    translationProvider: matchedTrack.translationProvider || '',
-    translationEnriched: matchedTrack.translationEnriched === true,
-    machineTranslated:
-      matchedTrack.machineTranslated === true || Boolean(machineTranslation),
-    machineTranslationProvider:
-      matchedTrack.machineTranslationProvider ||
-      (machineTranslation && machineTranslation.provider) ||
-      '',
-    machineTranslationTarget: matchedTrack.machineTranslationTarget || '',
-    machineTranslationDetectedSource:
+    translationProvider: usingMachineTranslation
+      ? machineTranslation.provider || 'deepseek'
+      : matchedTrack.translationProvider || '',
+    translationEnriched: usingMachineTranslation
+      ? false
+      : matchedTrack.translationEnriched === true,
+    machineTranslated: usingMachineTranslation,
+    machineTranslationProvider: usingMachineTranslation
+      ? machineTranslation.provider || 'deepseek'
+      : '',
+    machineTranslationTarget: usingMachineTranslation ? 'zh-CN' : '',
+    machineTranslationDetectedSource: '',
+    machineTranslationPromptFingerprint: usingMachineTranslation
+      ? machineTranslation.promptFingerprint
+      : '',
+    sourceTranslationProvider: matchedTrack.translationProvider || '',
+    sourceTranslationEnriched: matchedTrack.translationEnriched === true,
+    sourceMachineTranslated: matchedTrack.machineTranslated === true,
+    sourceMachineTranslationProvider:
+      matchedTrack.machineTranslationProvider || '',
+    sourceMachineTranslationTarget: matchedTrack.machineTranslationTarget || '',
+    sourceMachineTranslationDetectedSource:
       matchedTrack.machineTranslationDetectedSource || '',
     lyricCacheRevision: Number(record.revision || 0),
     lyricCacheMode: record.mode || '',
@@ -435,10 +457,33 @@ const MediaService = {
       });
     }
     const identity = getLyricCacheIdentity(track);
-    return ipcRenderer.invoke('lyric-cache:get', identity).then((response) => ({
-      ...(response || {}),
-      result: lyricCacheRecordToResult(response && response.record),
-    }));
+    const recordRequest = ipcRenderer.invoke('lyric-cache:get', identity);
+    const configRequest = ipcRenderer
+      .invoke('machine-translation:get-config')
+      .catch(() => null);
+    return Promise.all([recordRequest, configRequest]).then(
+      ([response, configResponse]) => {
+        const configuredPromptFingerprint = String(
+          (configResponse &&
+            configResponse.ok === true &&
+            configResponse.config &&
+            configResponse.config.promptFingerprint) ||
+            ''
+        );
+        const promptFingerprint = /^[a-f0-9]{64}$/.test(
+          configuredPromptFingerprint
+        )
+          ? configuredPromptFingerprint
+          : '';
+        return {
+          ...(response || {}),
+          result: lyricCacheRecordToResult(
+            response && response.record,
+            promptFingerprint
+          ),
+        };
+      }
+    );
   },
 
   putPersistentLyric(track, result, mode, expectedRevision = 0) {
@@ -643,8 +688,11 @@ const MediaService = {
         lyric: candidate.lyric,
         title: candidate.title || trackInfo.title || '',
         artist: candidate.artist || trackInfo.artist || '',
-        targetLanguage,
+        targetLanguage: targetLanguage || 'zh-CN',
         allowNetwork: options && options.allowNetwork === true,
+        // This is deliberately opt-in: callers use it only after the user has
+        // explicitly confirmed a retranslation, never for normal cache lookup.
+        forceRefresh: options && options.forceRefresh === true,
         trackId: lyricIdentity.trackId,
         expectedRevision: Number(candidate.lyricCacheRevision || 0),
       })
@@ -672,6 +720,7 @@ const MediaService = {
             response.detectedSourceLanguage || '',
           machineTranslationCached: response.cached === true,
           machineTranslationLineCount: Number(response.lineCount || 0),
+          machineTranslationPromptFingerprint: response.promptFingerprint || '',
           machineTranslationStatus: 'translated',
         };
       })

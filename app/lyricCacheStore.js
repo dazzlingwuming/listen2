@@ -45,6 +45,23 @@ function sanitizeMatchedTrack(value) {
     album: safeString(value.album || "", 300),
     provider: safeString(value.provider || "", 80),
     candidateId: safeString(value.candidateId || value.id || "", 256),
+    selectedProvider: safeString(value.selectedProvider || "", 80),
+    selectedCandidateId: safeString(value.selectedCandidateId || "", 256),
+    translationProvider: safeString(value.translationProvider || "", 80),
+    translationEnriched: value.translationEnriched === true,
+    machineTranslated: value.machineTranslated === true,
+    machineTranslationProvider: safeString(
+      value.machineTranslationProvider || "",
+      80
+    ),
+    machineTranslationTarget: safeString(
+      value.machineTranslationTarget || "",
+      32
+    ),
+    machineTranslationDetectedSource: safeString(
+      value.machineTranslationDetectedSource || "",
+      32
+    ),
   };
   if (Number.isFinite(duration) && duration >= 0 && duration <= 86400) {
     result.duration = duration;
@@ -108,13 +125,27 @@ class LyricCacheStore {
     const lyricHash = safeString(value.lyricHash, 128);
     const tlyric = safeString(value.tlyric, MAX_LYRIC_LENGTH);
     const provider = safeString(value.provider, 80);
+    const promptVersion = safeString(value.promptVersion || "", 120);
     const hasCacheKey = Object.prototype.hasOwnProperty.call(value, "cacheKey");
     const cacheKey = hasCacheKey ? safeString(value.cacheKey, 64) : "";
+    const hasPromptFingerprint = Object.prototype.hasOwnProperty.call(
+      value,
+      "promptFingerprint"
+    );
+    const promptFingerprint = hasPromptFingerprint
+      ? safeString(value.promptFingerprint, 64)
+      : "";
+    const requiresPromptFingerprint =
+      provider.toLowerCase() === "deepseek" &&
+      promptVersion === "deepseek-lyrics-v2";
     if (
       !lyricHash ||
       !tlyric ||
       !provider ||
-      (hasCacheKey && !/^[a-f0-9]{64}$/.test(cacheKey))
+      (hasCacheKey && !/^[a-f0-9]{64}$/.test(cacheKey)) ||
+      (hasPromptFingerprint &&
+        !/^[a-f0-9]{64}$/.test(promptFingerprint)) ||
+      (requiresPromptFingerprint && !promptFingerprint)
     )
       return null;
     const translation = {
@@ -122,10 +153,13 @@ class LyricCacheStore {
       tlyric,
       provider,
       model: safeString(value.model || "", 120),
-      promptVersion: safeString(value.promptVersion || "", 120),
+      promptVersion,
       translatedAt: Number(value.translatedAt) || this.now(),
     };
     if (cacheKey) translation.cacheKey = cacheKey;
+    if (promptFingerprint) {
+      translation.promptFingerprint = promptFingerprint;
+    }
     return translation;
   }
 

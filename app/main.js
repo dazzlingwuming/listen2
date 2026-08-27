@@ -20,6 +20,15 @@ const {
   DEEPSEEK_MODEL,
   DEEPSEEK_PROMPT_VERSION,
   DEEPSEEK_PROVIDER,
+  DEEPSEEK_TARGET_LANGUAGE,
+  DEFAULT_STYLE_HINT,
+  MAX_STYLE_HINT_CHARS,
+  IMMUTABLE_SYSTEM_PROMPT,
+  buildDeepSeekPromptTemplatePreview,
+  getDeepSeekPromptFingerprint,
+  getEffectiveStyleHint,
+  normalizeDeepSeekTranslationInput,
+  normalizeStyleHint,
   testDeepSeekApiKey,
   translateWholeLyricWithDeepSeek,
 } = require("./machineTranslation");
@@ -101,6 +110,12 @@ let proxyConfig = store.get("proxyConfig") || {
 function getStoredMachineTranslationConfig() {
   const config = store.get("machineTranslation") || {};
   const isDeepSeekConfig = config.provider === DEEPSEEK_PROVIDER;
+  let styleHint = "";
+  try {
+    styleHint = normalizeStyleHint(isDeepSeekConfig ? config.styleHint : "");
+  } catch (error) {
+    // A malformed legacy preference must not prevent opening settings.
+  }
   return {
     provider: DEEPSEEK_PROVIDER,
     model: DEEPSEEK_MODEL,
@@ -108,6 +123,7 @@ function getStoredMachineTranslationConfig() {
       isDeepSeekConfig && typeof config.encryptedApiKey === "string"
         ? config.encryptedApiKey
         : "",
+    styleHint,
   };
 }
 
@@ -118,6 +134,20 @@ function getPublicMachineTranslationConfig() {
     model: config.model,
     hasApiKey: Boolean(config.encryptedApiKey),
     secureStorageAvailable: safeStorage.isEncryptionAvailable(),
+    targetLanguage: DEEPSEEK_TARGET_LANGUAGE,
+    promptVersion: DEEPSEEK_PROMPT_VERSION,
+    promptFingerprint: getDeepSeekPromptFingerprint({
+      targetLanguage: DEEPSEEK_TARGET_LANGUAGE,
+      styleHint: config.styleHint,
+    }),
+    defaultStyleHint: DEFAULT_STYLE_HINT,
+    effectiveStyleHint: getEffectiveStyleHint(config.styleHint),
+    styleHint: config.styleHint,
+    maxStyleHintChars: MAX_STYLE_HINT_CHARS,
+    immutableSystemPrompt: IMMUTABLE_SYSTEM_PROMPT,
+    promptTemplatePreview: buildDeepSeekPromptTemplatePreview({
+      styleHint: config.styleHint,
+    }),
   };
 }
 
@@ -227,15 +257,21 @@ async function withMachineTranslationTimeout(operation) {
   }
 }
 
-function getMachineTranslationCacheKey(lyric, title, artist) {
+function getMachineTranslationCacheKey({
+  lyric,
+  title,
+  artist,
+  targetLanguage,
+  promptFingerprint,
+}) {
   return createHash("sha256")
     .update(DEEPSEEK_PROVIDER)
     .update("\0")
     .update(DEEPSEEK_MODEL)
     .update("\0")
-    .update(DEEPSEEK_PROMPT_VERSION)
+    .update(String(promptFingerprint || ""))
     .update("\0")
-    .update("zh-CN")
+    .update(String(targetLanguage || ""))
     .update("\0")
     .update(String(lyric || ""))
     .update("\0")
@@ -245,10 +281,22 @@ function getMachineTranslationCacheKey(lyric, title, artist) {
     .digest("hex");
 }
 
-function getMachineTranslationCacheEntry(cacheKey) {
+function getMachineTranslationCacheEntry(cacheKey, promptFingerprint) {
   const cache = store.get("machineTranslationCache") || {};
   const entry = cache[cacheKey];
-  return entry && typeof entry === "object" ? entry : null;
+  if (
+    !entry ||
+    typeof entry !== "object" ||
+    !String(entry.tlyric || "").trim() ||
+    entry.provider !== DEEPSEEK_PROVIDER ||
+    entry.model !== DEEPSEEK_MODEL ||
+    entry.promptVersion !== DEEPSEEK_PROMPT_VERSION ||
+    entry.promptFingerprint !== promptFingerprint ||
+    entry.targetLanguage !== DEEPSEEK_TARGET_LANGUAGE
+  ) {
+    return null;
+  }
+  return entry;
 }
 
 function saveMachineTranslationCacheEntry(cacheKey, entry) {
@@ -383,6 +431,7 @@ async function attachMachineTranslationToLyricCache(
         provider: result.provider || DEEPSEEK_PROVIDER,
         model: result.model || DEEPSEEK_MODEL,
         promptVersion: DEEPSEEK_PROMPT_VERSION,
+        promptFingerprint: result.promptFingerprint || "",
         translatedAt: Date.now(),
         cacheKey,
       },
@@ -549,15 +598,20 @@ ipcMain.handle("machine-translation:set-config", (event, payload = {}) => {
     payload = payload && typeof payload === "object" ? payload : {};
     const current = getStoredMachineTranslationConfig();
     let { encryptedApiKey } = current;
+    let { styleHint } = current;
     if (payload.clearApiKey === true) {
       encryptedApiKey = "";
     } else if (String(payload.apiKey || "").trim()) {
       encryptedApiKey = encryptMachineTranslationApiKey(payload.apiKey);
     }
+    if (Object.prototype.hasOwnProperty.call(payload, "styleHint")) {
+      styleHint = normalizeStyleHint(payload.styleHint);
+    }
     store.set("machineTranslation", {
       provider: DEEPSEEK_PROVIDER,
       model: DEEPSEEK_MODEL,
       encryptedApiKey,
+      styleHint,
     });
     return {
       ok: true,
@@ -605,21 +659,26 @@ ipcMain.handle(
     try {
       ensureTrustedMachineTranslationSender(event);
       payload = payload && typeof payload === "object" ? payload : {};
-      const lyric = String(payload.lyric || "");
-      if (!lyric) {
-        return { ok: false, status: "empty-lyric" };
+      const config = getStoredMachineTranslationConfig();
+      const input = normalizeDeepSeekTranslationInput({
+        lyric: payload.lyric,
+        title: payload.title,
+        artist: payload.artist,
+        targetLanguage: payload.targetLanguage || DEEPSEEK_TARGET_LANGUAGE,
+        styleHint: config.styleHint,
+      });
+      const forceRefresh = payload.forceRefresh === true;
+      if (forceRefresh && payload.allowNetwork !== true) {
+        return { ok: false, status: "force-refresh-requires-network" };
       }
-      const targetLanguage = "zh-CN";
-      const cacheKey = getMachineTranslationCacheKey(
-        lyric,
-        payload.title,
-        payload.artist
-      );
-      const cached = getMachineTranslationCacheEntry(cacheKey);
+      const cacheKey = getMachineTranslationCacheKey(input);
+      const cached = forceRefresh
+        ? null
+        : getMachineTranslationCacheEntry(cacheKey, input.promptFingerprint);
       if (cached) {
         await attachMachineTranslationToLyricCache(
           payload,
-          lyric,
+          input.lyric,
           cached,
           cacheKey
         );
@@ -630,6 +689,7 @@ ipcMain.handle(
           provider: cached.provider,
           model: cached.model,
           targetLanguage: cached.targetLanguage,
+          promptFingerprint: cached.promptFingerprint,
           lineCount: cached.lineCount,
           cached: true,
         };
@@ -637,7 +697,6 @@ ipcMain.handle(
       if (payload.allowNetwork !== true) {
         return { ok: false, status: "not-cached" };
       }
-      const config = getStoredMachineTranslationConfig();
       const apiKey = decryptMachineTranslationApiKey(
         config.encryptedApiKey
       );
@@ -649,17 +708,18 @@ ipcMain.handle(
         translateWholeLyricWithDeepSeek({
           fetchImpl: getMachineTranslationFetch(),
           apiKey,
-          lyric,
-          targetLanguage,
-          title: payload.title,
-          artist: payload.artist,
+          lyric: input.lyric,
+          targetLanguage: input.targetLanguage,
+          title: input.title,
+          artist: input.artist,
+          styleHint: input.styleHint,
           signal,
         })
       );
       saveMachineTranslationCacheEntry(cacheKey, result);
       await attachMachineTranslationToLyricCache(
         payload,
-        lyric,
+        input.lyric,
         result,
         cacheKey
       );
@@ -670,6 +730,7 @@ ipcMain.handle(
         provider: result.provider,
         model: result.model,
         targetLanguage: result.targetLanguage,
+        promptFingerprint: result.promptFingerprint,
         lineCount: result.lineCount,
         cached: false,
       };

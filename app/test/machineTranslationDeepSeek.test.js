@@ -9,6 +9,8 @@ const {
   DEEPSEEK_MODEL,
   DEEPSEEK_PROMPT_VERSION,
   DEEPSEEK_PROVIDER,
+  DEEPSEEK_TARGET_LANGUAGE,
+  getDeepSeekPromptFingerprint,
 } = require('../machineTranslation');
 
 class Store {
@@ -100,15 +102,19 @@ function trustedEvent() {
   };
 }
 
-function cacheKey(lyric, title, artist) {
+function cacheKey(lyric, title, artist, styleHint = '') {
+  const promptFingerprint = getDeepSeekPromptFingerprint({
+    targetLanguage: DEEPSEEK_TARGET_LANGUAGE,
+    styleHint,
+  });
   return createHash('sha256')
     .update(DEEPSEEK_PROVIDER)
     .update('\0')
     .update(DEEPSEEK_MODEL)
     .update('\0')
-    .update(DEEPSEEK_PROMPT_VERSION)
+    .update(promptFingerprint)
     .update('\0')
-    .update('zh-CN')
+    .update(DEEPSEEK_TARGET_LANGUAGE)
     .update('\0')
     .update(lyric)
     .update('\0')
@@ -127,6 +133,7 @@ async function run() {
   };
   const { handlers, getFetchCount } = loadTranslationHandlers();
   const getConfig = handlers.get('machine-translation:get-config');
+  const setConfig = handlers.get('machine-translation:set-config');
   const translate = handlers.get('machine-translation:translate-lyrics');
   const event = trustedEvent();
 
@@ -136,6 +143,19 @@ async function run() {
   assert.strictEqual(config.config.model, DEEPSEEK_MODEL);
   assert.strictEqual(config.config.hasApiKey, false);
   assert.strictEqual(config.config.secureStorageAvailable, true);
+  assert.strictEqual(config.config.targetLanguage, 'zh-CN');
+  assert.strictEqual(config.config.maxStyleHintChars, 1200);
+  assert.ok(config.config.defaultStyleHint);
+  assert.ok(config.config.immutableSystemPrompt.includes('untrusted data'));
+  assert.ok(
+    config.config.promptTemplatePreview.includes('<placeholder lyric line>') &&
+      config.config.promptTemplatePreview.includes('"E0001"'),
+    'the preview must use placeholder song data and the same fixed few-shot contract'
+  );
+  assert.ok(
+    !config.config.promptTemplatePreview.includes('legacy-deepl-key-must-not-be-used'),
+    'a public prompt preview must never expose a stored credential'
+  );
 
   const lyric = '[00:01.00]First line';
   const uncached = await translate(event, { lyric });
@@ -158,17 +178,79 @@ async function run() {
       model: DEEPSEEK_MODEL,
       targetLanguage: 'zh-CN',
       lineCount: 1,
+      promptVersion: DEEPSEEK_PROMPT_VERSION,
+      promptFingerprint: getDeepSeekPromptFingerprint({
+        targetLanguage: 'zh-CN',
+      }),
     },
   };
   const cached = await translate(event, {
     lyric,
-    targetLanguage: 'en-US',
   });
   assert.strictEqual(cached.ok, true);
   assert.strictEqual(cached.cached, true);
   assert.strictEqual(cached.tlyric, '[00:01.00]第一行');
   assert.strictEqual(cached.targetLanguage, 'zh-CN');
   assert.strictEqual(getFetchCount(), 0);
+
+  const unsupportedTarget = await translate(event, {
+    lyric,
+    targetLanguage: 'en-US',
+  });
+  assert.strictEqual(unsupportedTarget.ok, false);
+  assert.strictEqual(unsupportedTarget.status, 'unsupported-target-language');
+
+  const forceWithoutNetwork = await translate(event, {
+    lyric,
+    forceRefresh: true,
+  });
+  assert.strictEqual(forceWithoutNetwork.ok, false);
+  assert.strictEqual(
+    forceWithoutNetwork.status,
+    'force-refresh-requires-network'
+  );
+
+  const configuredForForce = await setConfig(event, { apiKey: 'test-key' });
+  assert.strictEqual(configuredForForce.ok, true);
+  const forcedCacheBypass = await translate(event, {
+    lyric,
+    allowNetwork: true,
+    forceRefresh: true,
+  });
+  assert.strictEqual(forcedCacheBypass.ok, false);
+  assert.strictEqual(forcedCacheBypass.status, 'request-failed');
+  assert.strictEqual(
+    getFetchCount(),
+    1,
+    'an explicit network-confirmed force refresh must bypass an otherwise valid cache entry'
+  );
+
+  const changedStyle = await setConfig(event, { styleHint: '更口语化一些' });
+  assert.strictEqual(changedStyle.ok, true);
+  assert.strictEqual(changedStyle.config.styleHint, '更口语化一些');
+  assert.ok(
+    changedStyle.config.promptTemplatePreview.includes('更口语化一些') &&
+      changedStyle.config.promptTemplatePreview.includes(
+        changedStyle.config.immutableSystemPrompt
+      ) &&
+      !changedStyle.config.promptTemplatePreview.includes('test-key'),
+    'the preview uses the effective persisted style and never leaks an API key'
+  );
+  assert.notStrictEqual(
+    changedStyle.config.promptFingerprint,
+    config.config.promptFingerprint,
+    'a style preference must isolate translation cache entries'
+  );
+  const styleCacheMiss = await translate(event, { lyric });
+  assert.strictEqual(styleCacheMiss.ok, false);
+  assert.strictEqual(styleCacheMiss.status, 'not-cached');
+  assert.strictEqual(getFetchCount(), 1);
+
+  const invalidStyle = await setConfig(event, {
+    styleHint: 'x'.repeat(1201),
+  });
+  assert.strictEqual(invalidStyle.ok, false);
+  assert.strictEqual(invalidStyle.status, 'invalid-style-hint');
 
   // eslint-disable-next-line no-console
   console.log('DeepSeek machine translation IPC tests passed');
