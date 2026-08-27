@@ -470,6 +470,17 @@ registerLocalDataHandler("audio-cache:invalidate", (payload) =>
 registerLocalDataHandler("audio-cache:delete", (payload) =>
   ensureAudioCacheAvailable().delete(payload.cacheKey)
 );
+registerLocalDataHandler("audio-cache:list", async () => {
+  const history = getListeningHistoryStore().read();
+  const metadataByTrackId = Object.create(null);
+  Object.values(history.tracks || {}).forEach((track) => {
+    if (track && typeof track.id === "string" && track.id) {
+      metadataByTrackId[track.id] = track;
+    }
+  });
+  await ensureAudioCacheAvailable().initialize();
+  return ensureAudioCacheAvailable().list(metadataByTrackId);
+});
 registerLocalDataHandler("audio-cache:configure", (payload) =>
   ensureAudioCacheAvailable().configure(payload)
 );

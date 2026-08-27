@@ -240,6 +240,26 @@ angular.module('listenone').controller('PlayController', [
       { value: null, label: '∞' },
     ];
     $scope.audioCacheActionPending = false;
+    $scope.audioCacheManager = {
+      open: false,
+      loading: false,
+      deleting: false,
+      query: '',
+      sort: 'recent',
+      onlyOutsidePlaylists: false,
+      entries: [],
+      selected: {},
+      deleteConfirmationOpen: false,
+      pendingDeleteEntries: [],
+      error: '',
+    };
+    $scope.audioCacheSortOptions = [
+      { value: 'recent', label: i18next.t('_AUDIO_CACHE_SORT_RECENT') },
+      { value: 'oldest', label: i18next.t('_AUDIO_CACHE_SORT_OLDEST') },
+      { value: 'largest', label: i18next.t('_AUDIO_CACHE_SORT_LARGEST') },
+      { value: 'cached', label: i18next.t('_AUDIO_CACHE_SORT_CACHED') },
+      { value: 'title', label: i18next.t('_AUDIO_CACHE_SORT_TITLE') },
+    ];
     $scope.audioEffects = {
       open: false,
       selectedPreset: 'original',
@@ -776,11 +796,214 @@ angular.module('listenone').controller('PlayController', [
               return;
             }
             $scope.refreshAudioCacheStatus();
+            if ($scope.audioCacheManager.open) {
+              $scope.refreshAudioCacheInventory();
+            }
           });
         })
         .catch(() => {
           $scope.$evalAsync(() => {
             $scope.audioCacheActionPending = false;
+            notyf.error(i18next.t('_AUDIO_CACHE_FAILURE_NOTICE'));
+          });
+        });
+    };
+
+    function getMyPlaylistTrackIds() {
+      const result = new Set();
+      const playlistIds = localStorage.getObject('playerlists');
+      (Array.isArray(playlistIds) ? playlistIds : []).forEach((playlistId) => {
+        const playlist = localStorage.getObject(playlistId);
+        (playlist && Array.isArray(playlist.tracks)
+          ? playlist.tracks
+          : []
+        ).forEach((track) => {
+          if (track && track.id) result.add(String(track.id));
+        });
+      });
+      return result;
+    }
+
+    function decorateAudioCacheEntries(entries) {
+      const playlistTrackIds = getMyPlaylistTrackIds();
+      return (Array.isArray(entries) ? entries : []).map((entry) => ({
+        ...entry,
+        inMyPlaylists: (entry.trackIds || []).some((trackId) =>
+          playlistTrackIds.has(String(trackId))
+        ),
+      }));
+    }
+
+    $scope.refreshAudioCacheInventory = () => {
+      if (!isElectron() || $scope.audioCacheManager.loading) {
+        return Promise.resolve(null);
+      }
+      $scope.audioCacheManager.loading = true;
+      $scope.audioCacheManager.error = '';
+      return MediaService.listAudioCache()
+        .then((response) => {
+          $scope.$evalAsync(() => {
+            $scope.audioCacheManager.loading = false;
+            if (!response || response.ok !== true) {
+              $scope.audioCacheManager.error =
+                (response && response.status) || 'request-failed';
+              return;
+            }
+            $scope.audioCacheManager.entries = decorateAudioCacheEntries(
+              response.entries
+            );
+            const available = new Set(
+              $scope.audioCacheManager.entries.map((entry) => entry.cacheKey)
+            );
+            Object.keys($scope.audioCacheManager.selected).forEach(
+              (cacheKey) => {
+                if (!available.has(cacheKey)) {
+                  delete $scope.audioCacheManager.selected[cacheKey];
+                }
+              }
+            );
+          });
+          return response;
+        })
+        .catch(() => {
+          $scope.$evalAsync(() => {
+            $scope.audioCacheManager.loading = false;
+            $scope.audioCacheManager.error = 'request-failed';
+          });
+          return null;
+        });
+    };
+
+    $scope.toggleAudioCacheManager = () => {
+      $scope.audioCacheManager.open = !$scope.audioCacheManager.open;
+      if ($scope.audioCacheManager.open) {
+        $scope.refreshAudioCacheInventory();
+      }
+    };
+
+    $scope.visibleAudioCacheEntries = () => {
+      const query = String($scope.audioCacheManager.query || '')
+        .trim()
+        .toLocaleLowerCase();
+      const entries = $scope.audioCacheManager.entries.filter((entry) => {
+        if (
+          $scope.audioCacheManager.onlyOutsidePlaylists &&
+          entry.inMyPlaylists
+        ) {
+          return false;
+        }
+        if (!query) return true;
+        return [entry.title, entry.artist, ...(entry.trackIds || [])]
+          .join(' ')
+          .toLocaleLowerCase()
+          .includes(query);
+      });
+      const { sort } = $scope.audioCacheManager;
+      return [...entries].sort((left, right) => {
+        if (sort === 'oldest') {
+          return left.lastAccessedAt - right.lastAccessedAt;
+        }
+        if (sort === 'largest') return right.byteLength - left.byteLength;
+        if (sort === 'cached') return right.cachedAt - left.cachedAt;
+        if (sort === 'title') {
+          return String(left.title || '').localeCompare(
+            String(right.title || '')
+          );
+        }
+        return right.lastAccessedAt - left.lastAccessedAt;
+      });
+    };
+
+    $scope.formatAudioCacheDate = (value) => {
+      const date = new Date(Number(value));
+      return Number.isFinite(date.getTime())
+        ? new Intl.DateTimeFormat(i18next.language || undefined, {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+          }).format(date)
+        : '—';
+    };
+
+    $scope.audioCacheSelectedEntries = () =>
+      $scope.audioCacheManager.entries.filter(
+        (entry) => $scope.audioCacheManager.selected[entry.cacheKey]
+      );
+
+    $scope.audioCacheSelectedBytes = () =>
+      $scope
+        .audioCacheSelectedEntries()
+        .reduce((total, entry) => total + Number(entry.byteLength || 0), 0);
+
+    $scope.selectVisibleAudioCacheEntries = () => {
+      $scope.visibleAudioCacheEntries().forEach((entry) => {
+        $scope.audioCacheManager.selected[entry.cacheKey] = true;
+      });
+    };
+
+    $scope.clearAudioCacheSelection = () => {
+      $scope.audioCacheManager.selected = {};
+    };
+
+    $scope.requestDeleteAudioCacheEntries = (entries) => {
+      const requested = (Array.isArray(entries) ? entries : []).filter(
+        (entry) => entry && entry.cacheKey
+      );
+      if (!requested.length || $scope.audioCacheManager.deleting) return;
+      $scope.audioCacheManager.pendingDeleteEntries = requested;
+      $scope.audioCacheManager.deleteConfirmationOpen = true;
+    };
+
+    $scope.requestDeleteSelectedAudioCacheEntries = () => {
+      $scope.requestDeleteAudioCacheEntries($scope.audioCacheSelectedEntries());
+    };
+
+    $scope.cancelDeleteAudioCacheEntries = () => {
+      $scope.audioCacheManager.deleteConfirmationOpen = false;
+      $scope.audioCacheManager.pendingDeleteEntries = [];
+    };
+
+    $scope.pendingAudioCacheDeleteBytes = () =>
+      $scope.audioCacheManager.pendingDeleteEntries.reduce(
+        (total, entry) => total + Number(entry.byteLength || 0),
+        0
+      );
+
+    $scope.confirmDeleteAudioCacheEntries = () => {
+      const entries = [...$scope.audioCacheManager.pendingDeleteEntries];
+      if (!entries.length || $scope.audioCacheManager.deleting) return;
+      $scope.audioCacheManager.deleting = true;
+      $scope.audioCacheActionPending = true;
+      entries
+        .reduce(
+          (promise, entry) =>
+            promise.then((results) =>
+              MediaService.deleteAudioCacheEntry(entry.cacheKey).then(
+                (response) => [...results, response]
+              )
+            ),
+          Promise.resolve([])
+        )
+        .then((responses) => {
+          $scope.$evalAsync(() => {
+            $scope.audioCacheManager.deleting = false;
+            $scope.audioCacheActionPending = false;
+            $scope.refreshAudioCacheInventory();
+            $scope.refreshAudioCacheStatus();
+            if (responses.some((response) => !response || !response.ok)) {
+              notyf.error(i18next.t('_AUDIO_CACHE_FAILURE_NOTICE'));
+              return;
+            }
+            $scope.cancelDeleteAudioCacheEntries();
+            $scope.clearAudioCacheSelection();
+          });
+        })
+        .catch(() => {
+          $scope.$evalAsync(() => {
+            $scope.audioCacheManager.deleting = false;
+            $scope.audioCacheActionPending = false;
+            $scope.refreshAudioCacheInventory();
+            $scope.refreshAudioCacheStatus();
             notyf.error(i18next.t('_AUDIO_CACHE_FAILURE_NOTICE'));
           });
         });

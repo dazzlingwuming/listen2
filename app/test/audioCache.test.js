@@ -69,6 +69,69 @@ test("audio cache writes only complete files and serves a single byte range", as
   }
 });
 
+test("cache inventory exposes safe metadata, backfills history, and deletes by cache key", async () => {
+  const { cache, rootDir } = await createCache(
+    async () =>
+      new Response(Buffer.from("abcdef"), {
+        status: 200,
+        headers: { "content-type": "audio/mp4", "content-length": "6" },
+      })
+  );
+  try {
+    await cache.schedule({
+      trackId: "bitrack_v_BV1ab411c7mD-1",
+      bvid: BVID,
+      cid: 1,
+      audioId: 30280,
+      title: "Cached title",
+      artist: "Cached artist",
+      coverUrl: "https://images.example.test/cover.jpg",
+      duration: 201,
+    });
+    await cache.writeChain;
+    await cache.schedule({
+      trackId: "bitrack_v_BV1ab411c7mD-2",
+      bvid: BVID,
+      cid: 2,
+      audioId: 30280,
+      coverUrl: "file:///private/cover.jpg",
+    });
+    await cache.writeChain;
+
+    const inventory = cache.list({
+      "bitrack_v_BV1ab411c7mD-2": {
+        title: "History title",
+        artist: "History artist",
+        imgUrl: "https://images.example.test/history.jpg",
+        duration: 180,
+      },
+    });
+    assert.strictEqual(inventory.ok, true);
+    assert.strictEqual(inventory.entries.length, 2);
+    const cached = inventory.entries.find(
+      (entry) => entry.title === "Cached title"
+    );
+    assert.strictEqual(cached.artist, "Cached artist");
+    assert.strictEqual(cached.duration, 201);
+    assert.strictEqual(
+      Object.prototype.hasOwnProperty.call(cached, "stableKey"),
+      false
+    );
+    const backfilled = inventory.entries.find(
+      (entry) => entry.title === "History title"
+    );
+    assert.strictEqual(backfilled.artist, "History artist");
+    assert.strictEqual(
+      backfilled.coverUrl,
+      "https://images.example.test/history.jpg"
+    );
+    assert.strictEqual((await cache.delete(backfilled.cacheKey)).removed, true);
+    assert.strictEqual(cache.list().entries.length, 1);
+  } finally {
+    await rm(rootDir, { recursive: true, force: true, maxRetries: 3 });
+  }
+});
+
 test("audio cache rejects incomplete content and never exposes it as ready", async () => {
   const { cache, rootDir } = await createCache(
     async () =>

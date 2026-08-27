@@ -10,6 +10,9 @@ const DEFAULT_CAPACITY_BYTES = 2 * GIB;
 const ALLOWED_CAPACITIES = new Set([GIB, 2 * GIB, 5 * GIB, 10 * GIB]);
 const MAX_ENTRY_BYTES = 128 * 1024 * 1024;
 const MAX_TRACK_ID_LENGTH = 256;
+const MAX_TITLE_LENGTH = 500;
+const MAX_ARTIST_LENGTH = 500;
+const MAX_COVER_URL_LENGTH = 2000;
 const CACHE_SCHEME = "listen2-cache";
 const INDEX_VERSION = 1;
 const MAX_ANALYZER_VERSION_LENGTH = 96;
@@ -35,6 +38,28 @@ function positiveInteger(value) {
 
 function safeCacheKey(value) {
   return /^[a-f0-9]{64}$/.test(String(value || "")) ? String(value) : "";
+}
+
+function safeRemoteUrl(value) {
+  const text = safeString(value, MAX_COVER_URL_LENGTH);
+  if (!text) return "";
+  try {
+    const url = new URL(text);
+    return url.protocol === "https:" || url.protocol === "http:" ? text : "";
+  } catch (error) {
+    return "";
+  }
+}
+
+function displayMetadata(value = {}) {
+  return {
+    title: safeString(value.title, MAX_TITLE_LENGTH),
+    artist: safeString(value.artist, MAX_ARTIST_LENGTH),
+    coverUrl: safeRemoteUrl(
+      value.coverUrl || value.imgUrl || value.img_url || ""
+    ),
+    duration: finiteNumber(value.duration, 0, 24 * 60 * 60) || 0,
+  };
 }
 
 function stableAudioKey({ bvid, cid, audioId, codecs, kind, sid }) {
@@ -313,6 +338,7 @@ class AudioCache {
       cachedAt: Number(value.cachedAt) || this.now(),
       lastAccessedAt: Number(value.lastAccessedAt) || this.now(),
       trackIds,
+      ...displayMetadata(value),
     };
     const loudness = sanitizeLoudness(value.loudness, cacheKey, fileHash);
     if (loudness) result.loudness = loudness;
@@ -400,6 +426,61 @@ class AudioCache {
       loudnessReadyEntries,
       loudnessFailedEntries,
       lastError: this.lastError || "",
+    };
+  }
+
+  list(metadataByTrackId = {}) {
+    const safeMetadata = isPlainObject(metadataByTrackId)
+      ? metadataByTrackId
+      : {};
+    const entries = Object.entries(this.index.entries)
+      .map(([cacheKey, entry]) => {
+        const historyMetadata = entry.trackIds.reduce((found, trackId) => {
+          if (found) return found;
+          if (!Object.prototype.hasOwnProperty.call(safeMetadata, trackId)) {
+            return null;
+          }
+          return displayMetadata(safeMetadata[trackId]);
+        }, null);
+        const metadata = {
+          title: entry.title || (historyMetadata && historyMetadata.title) || "",
+          artist:
+            entry.artist || (historyMetadata && historyMetadata.artist) || "",
+          coverUrl:
+            entry.coverUrl ||
+            (historyMetadata && historyMetadata.coverUrl) ||
+            "",
+          duration:
+            entry.duration ||
+            (historyMetadata && historyMetadata.duration) ||
+            0,
+        };
+        return {
+          cacheKey,
+          trackIds: [...entry.trackIds],
+          title:
+            metadata.title ||
+            (entry.kind === "audio"
+              ? `Bilibili AU${entry.sid}`
+              : `Bilibili ${entry.bvid}`),
+          artist: metadata.artist,
+          coverUrl: metadata.coverUrl,
+          duration: metadata.duration,
+          byteLength: entry.byteLength,
+          cachedAt: entry.cachedAt,
+          lastAccessedAt: entry.lastAccessedAt,
+          bitrate: entry.bitrate,
+          loudnessStatus: entry.loudness ? entry.loudness.status : "pending",
+        };
+      })
+      .sort((left, right) => right.lastAccessedAt - left.lastAccessedAt);
+    return {
+      ok: true,
+      entries,
+      usedBytes: entries.reduce(
+        (total, entry) => total + Number(entry.byteLength || 0),
+        0
+      ),
     };
   }
 
@@ -637,10 +718,19 @@ class AudioCache {
     const cacheKey = sha256(stableKey);
     const existing = this.index.entries[cacheKey];
     if (existing) {
+      const metadata = displayMetadata(input);
+      let changed = false;
       if (!existing.trackIds.includes(trackId)) {
         existing.trackIds.push(trackId);
-        this.serialize(() => this.persist()).catch(() => {});
+        changed = true;
       }
+      for (const field of ["title", "artist", "coverUrl", "duration"]) {
+        if (!existing[field] && metadata[field]) {
+          existing[field] = metadata[field];
+          changed = true;
+        }
+      }
+      if (changed) this.serialize(() => this.persist()).catch(() => {});
       return { ok: true, status: "already-ready" };
     }
     if (this.jobs.has(cacheKey)) return { ok: true, status: "downloading" };
@@ -811,6 +901,7 @@ class AudioCache {
         cachedAt: this.now(),
         lastAccessedAt: this.now(),
         trackIds: [job.trackId],
+        ...displayMetadata(job),
       };
       await this.persist();
       this.queueLoudnessAnalysis(job.cacheKey);

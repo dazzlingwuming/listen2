@@ -23,6 +23,10 @@ const play = fs.readFileSync(
 assert.match(loweb, /audio-cache:lookup/);
 assert.match(loweb, /audio-cache:schedule-bilibili/);
 assert.match(loweb, /audio-cache:invalidate/);
+assert.match(loweb, /audio-cache:list/);
+assert.match(loweb, /audio-cache:delete/);
+assert.match(loweb, /title: String\(track\.title \|\| ''\)/);
+assert.match(loweb, /artist: String\(track\.artist \|\| ''\)/);
 assert.match(loweb, /local-data:delete-track/);
 assert.match(loweb, /lyric-cache:migrate-legacy-bilibili-manual/);
 assert.match(loweb, /const batchSize = 200/);

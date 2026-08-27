@@ -1604,7 +1604,79 @@
                                   >
                                     {{_AUDIO_CACHE_DELETE_TRACK}}
                                   </button>
+                                  <button
+                                    type="button"
+                                    class="btn btn-default"
+                                    ng-click="toggleAudioCacheManager()"
+                                    ng-disabled="audioCacheActionPending"
+                                    ng-attr-aria-expanded="{{audioCacheManager.open}}"
+                                  >
+                                    {{audioCacheManager.open ? _AUDIO_CACHE_MANAGER_CLOSE : _AUDIO_CACHE_MANAGER_OPEN}}
+                                  </button>
                                 </div>
+                                <section
+                                  class="audio-cache-manager"
+                                  ng-if="audioCacheManager.open"
+                                  data-audio-cache-manager
+                                >
+                                  <div class="audio-cache-manager-toolbar">
+                                    <input
+                                      type="search"
+                                      class="form-control"
+                                      ng-model="audioCacheManager.query"
+                                      placeholder="{{_AUDIO_CACHE_SEARCH_PLACEHOLDER}}"
+                                    />
+                                    <label>
+                                      <span>{{_AUDIO_CACHE_SORT_LABEL}}</span>
+                                      <select
+                                        ng-model="audioCacheManager.sort"
+                                        ng-options="option.value as option.label for option in audioCacheSortOptions"
+                                      ></select>
+                                    </label>
+                                    <label class="audio-cache-manager-filter">
+                                      <input type="checkbox" ng-model="audioCacheManager.onlyOutsidePlaylists" />
+                                      <span>{{_AUDIO_CACHE_ONLY_TEMPORARY}}</span>
+                                    </label>
+                                    <button type="button" class="btn btn-default" ng-click="refreshAudioCacheInventory()" ng-disabled="audioCacheManager.loading || audioCacheManager.deleting">
+                                      {{_AUDIO_CACHE_REFRESH}}
+                                    </button>
+                                  </div>
+                                  <div class="audio-cache-manager-selection">
+                                    <span>{{_AUDIO_CACHE_SELECTED}}: {{audioCacheSelectedEntries().length}} · {{formatAudioCacheBytes(audioCacheSelectedBytes())}}</span>
+                                    <div>
+                                      <button type="button" class="btn btn-default" ng-click="selectVisibleAudioCacheEntries()" ng-disabled="!visibleAudioCacheEntries().length">{{_AUDIO_CACHE_SELECT_VISIBLE}}</button>
+                                      <button type="button" class="btn btn-default" ng-click="clearAudioCacheSelection()" ng-disabled="!audioCacheSelectedEntries().length">{{_AUDIO_CACHE_CLEAR_SELECTION}}</button>
+                                      <button type="button" class="btn btn-warning" ng-click="requestDeleteSelectedAudioCacheEntries()" ng-disabled="!audioCacheSelectedEntries().length || audioCacheManager.deleting">{{_AUDIO_CACHE_DELETE_SELECTED}}</button>
+                                    </div>
+                                  </div>
+                                  <div class="audio-cache-manager-confirm" ng-if="audioCacheManager.deleteConfirmationOpen" role="alertdialog">
+                                    <p>{{_AUDIO_CACHE_DELETE_CONFIRM_PREFIX}} {{audioCacheManager.pendingDeleteEntries.length}} {{_AUDIO_CACHE_TRACKS}}（{{formatAudioCacheBytes(pendingAudioCacheDeleteBytes())}}）？</p>
+                                    <small>{{_AUDIO_CACHE_DELETE_AUDIO_ONLY}}</small>
+                                    <div>
+                                      <button type="button" class="btn btn-warning" ng-click="confirmDeleteAudioCacheEntries()" ng-disabled="audioCacheManager.deleting">{{_CONFIRM}}</button>
+                                      <button type="button" class="btn btn-default" ng-click="cancelDeleteAudioCacheEntries()" ng-disabled="audioCacheManager.deleting">{{_CANCEL}}</button>
+                                    </div>
+                                  </div>
+                                  <p ng-if="audioCacheManager.loading">{{_AUDIO_CACHE_INVENTORY_LOADING}}</p>
+                                  <p class="audio-cache-error" ng-if="audioCacheManager.error">{{_AUDIO_CACHE_FAILURE_NOTICE}} {{audioCacheManager.error}}</p>
+                                  <div class="audio-cache-inventory" ng-if="!audioCacheManager.loading">
+                                    <article class="audio-cache-entry" ng-repeat="entry in visibleAudioCacheEntries() track by entry.cacheKey">
+                                      <input type="checkbox" ng-model="audioCacheManager.selected[entry.cacheKey]" aria-label="{{_AUDIO_CACHE_SELECT_TRACK}} {{entry.title}}" />
+                                      <img ng-if="entry.coverUrl" ng-src="{{entry.coverUrl}}" alt="" />
+                                      <span class="audio-cache-entry-cover" ng-if="!entry.coverUrl">♪</span>
+                                      <div class="audio-cache-entry-main">
+                                        <strong title="{{entry.title}}">{{entry.title}}</strong>
+                                        <span>{{entry.artist || _AUDIO_CACHE_UNKNOWN_ARTIST}}</span>
+                                        <small>{{formatAudioCacheBytes(entry.byteLength)}} · {{_AUDIO_CACHE_LAST_PLAYED}} {{formatAudioCacheDate(entry.lastAccessedAt)}}</small>
+                                      </div>
+                                      <div class="audio-cache-entry-actions">
+                                        <em ng-class="{'is-temporary': !entry.inMyPlaylists}">{{entry.inMyPlaylists ? _AUDIO_CACHE_IN_PLAYLIST : _AUDIO_CACHE_TEMPORARY}}</em>
+                                        <button type="button" class="btn btn-default" ng-click="requestDeleteAudioCacheEntries([entry])" ng-disabled="audioCacheManager.deleting">{{_AUDIO_CACHE_DELETE_ENTRY}}</button>
+                                      </div>
+                                    </article>
+                                    <p class="audio-cache-inventory-empty" ng-if="!visibleAudioCacheEntries().length">{{_AUDIO_CACHE_INVENTORY_EMPTY}}</p>
+                                  </div>
+                                </section>
                               </div>
                               <div class="settings-title" ng-if="!isChrome">
                                 <span>{{_AUDIO_EFFECT_TITLE}}</span>
@@ -4872,7 +4944,79 @@
                                   >
                                     {{_AUDIO_CACHE_DELETE_TRACK}}
                                   </button>
+                                  <button
+                                    type="button"
+                                    class="btn btn-default"
+                                    ng-click="toggleAudioCacheManager()"
+                                    ng-disabled="audioCacheActionPending"
+                                    ng-attr-aria-expanded="{{audioCacheManager.open}}"
+                                  >
+                                    {{audioCacheManager.open ? _AUDIO_CACHE_MANAGER_CLOSE : _AUDIO_CACHE_MANAGER_OPEN}}
+                                  </button>
                                 </div>
+                                <section
+                                  class="audio-cache-manager"
+                                  ng-if="audioCacheManager.open"
+                                  data-audio-cache-manager
+                                >
+                                  <div class="audio-cache-manager-toolbar">
+                                    <input
+                                      type="search"
+                                      class="form-control"
+                                      ng-model="audioCacheManager.query"
+                                      placeholder="{{_AUDIO_CACHE_SEARCH_PLACEHOLDER}}"
+                                    />
+                                    <label>
+                                      <span>{{_AUDIO_CACHE_SORT_LABEL}}</span>
+                                      <select
+                                        ng-model="audioCacheManager.sort"
+                                        ng-options="option.value as option.label for option in audioCacheSortOptions"
+                                      ></select>
+                                    </label>
+                                    <label class="audio-cache-manager-filter">
+                                      <input type="checkbox" ng-model="audioCacheManager.onlyOutsidePlaylists" />
+                                      <span>{{_AUDIO_CACHE_ONLY_TEMPORARY}}</span>
+                                    </label>
+                                    <button type="button" class="btn btn-default" ng-click="refreshAudioCacheInventory()" ng-disabled="audioCacheManager.loading || audioCacheManager.deleting">
+                                      {{_AUDIO_CACHE_REFRESH}}
+                                    </button>
+                                  </div>
+                                  <div class="audio-cache-manager-selection">
+                                    <span>{{_AUDIO_CACHE_SELECTED}}: {{audioCacheSelectedEntries().length}} · {{formatAudioCacheBytes(audioCacheSelectedBytes())}}</span>
+                                    <div>
+                                      <button type="button" class="btn btn-default" ng-click="selectVisibleAudioCacheEntries()" ng-disabled="!visibleAudioCacheEntries().length">{{_AUDIO_CACHE_SELECT_VISIBLE}}</button>
+                                      <button type="button" class="btn btn-default" ng-click="clearAudioCacheSelection()" ng-disabled="!audioCacheSelectedEntries().length">{{_AUDIO_CACHE_CLEAR_SELECTION}}</button>
+                                      <button type="button" class="btn btn-warning" ng-click="requestDeleteSelectedAudioCacheEntries()" ng-disabled="!audioCacheSelectedEntries().length || audioCacheManager.deleting">{{_AUDIO_CACHE_DELETE_SELECTED}}</button>
+                                    </div>
+                                  </div>
+                                  <div class="audio-cache-manager-confirm" ng-if="audioCacheManager.deleteConfirmationOpen" role="alertdialog">
+                                    <p>{{_AUDIO_CACHE_DELETE_CONFIRM_PREFIX}} {{audioCacheManager.pendingDeleteEntries.length}} {{_AUDIO_CACHE_TRACKS}}（{{formatAudioCacheBytes(pendingAudioCacheDeleteBytes())}}）？</p>
+                                    <small>{{_AUDIO_CACHE_DELETE_AUDIO_ONLY}}</small>
+                                    <div>
+                                      <button type="button" class="btn btn-warning" ng-click="confirmDeleteAudioCacheEntries()" ng-disabled="audioCacheManager.deleting">{{_CONFIRM}}</button>
+                                      <button type="button" class="btn btn-default" ng-click="cancelDeleteAudioCacheEntries()" ng-disabled="audioCacheManager.deleting">{{_CANCEL}}</button>
+                                    </div>
+                                  </div>
+                                  <p ng-if="audioCacheManager.loading">{{_AUDIO_CACHE_INVENTORY_LOADING}}</p>
+                                  <p class="audio-cache-error" ng-if="audioCacheManager.error">{{_AUDIO_CACHE_FAILURE_NOTICE}} {{audioCacheManager.error}}</p>
+                                  <div class="audio-cache-inventory" ng-if="!audioCacheManager.loading">
+                                    <article class="audio-cache-entry" ng-repeat="entry in visibleAudioCacheEntries() track by entry.cacheKey">
+                                      <input type="checkbox" ng-model="audioCacheManager.selected[entry.cacheKey]" aria-label="{{_AUDIO_CACHE_SELECT_TRACK}} {{entry.title}}" />
+                                      <img ng-if="entry.coverUrl" ng-src="{{entry.coverUrl}}" alt="" />
+                                      <span class="audio-cache-entry-cover" ng-if="!entry.coverUrl">♪</span>
+                                      <div class="audio-cache-entry-main">
+                                        <strong title="{{entry.title}}">{{entry.title}}</strong>
+                                        <span>{{entry.artist || _AUDIO_CACHE_UNKNOWN_ARTIST}}</span>
+                                        <small>{{formatAudioCacheBytes(entry.byteLength)}} · {{_AUDIO_CACHE_LAST_PLAYED}} {{formatAudioCacheDate(entry.lastAccessedAt)}}</small>
+                                      </div>
+                                      <div class="audio-cache-entry-actions">
+                                        <em ng-class="{'is-temporary': !entry.inMyPlaylists}">{{entry.inMyPlaylists ? _AUDIO_CACHE_IN_PLAYLIST : _AUDIO_CACHE_TEMPORARY}}</em>
+                                        <button type="button" class="btn btn-default" ng-click="requestDeleteAudioCacheEntries([entry])" ng-disabled="audioCacheManager.deleting">{{_AUDIO_CACHE_DELETE_ENTRY}}</button>
+                                      </div>
+                                    </article>
+                                    <p class="audio-cache-inventory-empty" ng-if="!visibleAudioCacheEntries().length">{{_AUDIO_CACHE_INVENTORY_EMPTY}}</p>
+                                  </div>
+                                </section>
                               </div>
                               <div class="settings-title" ng-if="!isChrome">
                                 <span>{{_AUDIO_EFFECT_TITLE}}</span>

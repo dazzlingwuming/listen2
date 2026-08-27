@@ -39,6 +39,30 @@ const expectedI18nKeys = [
   '_AUDIO_CACHE_DELETE_TRACK_CONFIRM_TITLE',
   '_AUDIO_CACHE_DELETE_TRACK_CONFIRM_DESCRIPTION',
   '_AUDIO_CACHE_DELETE_TRACK_CONFIRM_ACTION',
+  '_AUDIO_CACHE_MANAGER_OPEN',
+  '_AUDIO_CACHE_MANAGER_CLOSE',
+  '_AUDIO_CACHE_SEARCH_PLACEHOLDER',
+  '_AUDIO_CACHE_SORT_LABEL',
+  '_AUDIO_CACHE_SORT_RECENT',
+  '_AUDIO_CACHE_SORT_OLDEST',
+  '_AUDIO_CACHE_SORT_LARGEST',
+  '_AUDIO_CACHE_SORT_CACHED',
+  '_AUDIO_CACHE_SORT_TITLE',
+  '_AUDIO_CACHE_ONLY_TEMPORARY',
+  '_AUDIO_CACHE_SELECTED',
+  '_AUDIO_CACHE_SELECT_VISIBLE',
+  '_AUDIO_CACHE_CLEAR_SELECTION',
+  '_AUDIO_CACHE_DELETE_SELECTED',
+  '_AUDIO_CACHE_DELETE_CONFIRM_PREFIX',
+  '_AUDIO_CACHE_DELETE_AUDIO_ONLY',
+  '_AUDIO_CACHE_INVENTORY_LOADING',
+  '_AUDIO_CACHE_SELECT_TRACK',
+  '_AUDIO_CACHE_LAST_PLAYED',
+  '_AUDIO_CACHE_IN_PLAYLIST',
+  '_AUDIO_CACHE_TEMPORARY',
+  '_AUDIO_CACHE_INVENTORY_EMPTY',
+  '_AUDIO_CACHE_UNKNOWN_ARTIST',
+  '_AUDIO_CACHE_DELETE_ENTRY',
 ];
 
 function occurrences(value, pattern) {
@@ -64,6 +88,31 @@ assert.strictEqual(
   occurrences(html, /data-audio-cache-default-enabled="true"/g),
   2,
   'both layouts must declare caching enabled by default'
+);
+assert.strictEqual(
+  occurrences(html, /data-audio-cache-manager/g),
+  2,
+  'classic and modern settings layouts must both expose the cache inventory manager'
+);
+assert.strictEqual(
+  occurrences(html, /ng-model="audioCacheManager\.query"/g),
+  2,
+  'both cache managers must support searching cached songs'
+);
+assert.strictEqual(
+  occurrences(html, /ng-model="audioCacheManager\.onlyOutsidePlaylists"/g),
+  2,
+  'both cache managers must expose the temporary-cache filter'
+);
+assert.strictEqual(
+  occurrences(html, /requestDeleteAudioCacheEntries\(\[entry\]\)/g),
+  2,
+  'both cache managers must expose per-song deletion'
+);
+assert.strictEqual(
+  occurrences(html, /requestDeleteSelectedAudioCacheEntries\(\)/g),
+  2,
+  'both cache managers must expose batch deletion'
 );
 assert.strictEqual(
   occurrences(html, /data-audio-cache-clear-confirm/g),
@@ -135,12 +184,17 @@ assert.strictEqual(
   'new audio cache and local-data dialog IDs must be unique across duplicate layouts'
 );
 assert.match(css, /\.audio-cache-settings/);
+assert.match(css, /\.audio-cache-manager/);
+assert.match(css, /\.audio-cache-inventory/);
 assert.match(css, /\.loudness-normalization-description/);
 assert.match(
   playController,
   /loudnessReadyEntries[\s\S]*?loudnessPendingEntries[\s\S]*?loudnessFailedEntries/,
   'the status summary must bind all core loudness counters'
 );
+assert.match(playController, /MediaService\.listAudioCache\(\)/);
+assert.match(playController, /MediaService\.deleteAudioCacheEntry/);
+assert.match(playController, /localStorage\.getObject\('playerlists'\)/);
 assert.match(
   playController,
   /AUDIO_CACHE_STATUS_POLL_MS\s*=\s*2000/,

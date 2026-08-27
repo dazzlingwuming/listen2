@@ -348,6 +348,10 @@ const MediaService = {
             codecs: String(descriptor.codecs || ''),
             mimeType: String(descriptor.mimeType || ''),
           }),
+      title: String(track.title || ''),
+      artist: String(track.artist || ''),
+      coverUrl: String(track.img_url || track.imgUrl || ''),
+      duration: Number(track.duration || 0),
     });
   },
 
@@ -381,6 +385,22 @@ const MediaService = {
       return Promise.resolve({ ok: false, status: 'unsupported' });
     }
     return ipcRenderer.invoke('audio-cache:clear');
+  },
+
+  listAudioCache() {
+    const ipcRenderer = getDesktopLocalDataIpcRenderer();
+    if (!ipcRenderer) {
+      return Promise.resolve({ ok: false, status: 'unsupported' });
+    }
+    return ipcRenderer.invoke('audio-cache:list');
+  },
+
+  deleteAudioCacheEntry(cacheKey) {
+    const ipcRenderer = getDesktopLocalDataIpcRenderer();
+    if (!ipcRenderer || !/^[a-f0-9]{64}$/.test(String(cacheKey || ''))) {
+      return Promise.resolve({ ok: false, status: 'invalid-input' });
+    }
+    return ipcRenderer.invoke('audio-cache:delete', { cacheKey });
   },
 
   ingestListeningHistory(payload) {
