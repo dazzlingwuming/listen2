@@ -241,12 +241,11 @@ angular.module('listenone').controller('PlayController', [
     ];
     $scope.audioCacheActionPending = false;
     $scope.audioCacheManager = {
-      open: false,
       loading: false,
       deleting: false,
       query: '',
       sort: 'recent',
-      onlyOutsidePlaylists: false,
+      filter: 'all',
       entries: [],
       selected: {},
       deleteConfirmationOpen: false,
@@ -408,9 +407,7 @@ angular.module('listenone').controller('PlayController', [
       MediaService.syncAudioCachePlaylistMembership().catch(() => null);
       $scope.$on('myplaylist:update', () => {
         MediaService.syncAudioCachePlaylistMembership().catch(() => null);
-        if ($scope.audioCacheManager.open) {
-          $scope.refreshAudioCacheInventory();
-        }
+        $scope.refreshAudioCacheInventory();
       });
     }
 
@@ -805,9 +802,7 @@ angular.module('listenone').controller('PlayController', [
               return;
             }
             $scope.refreshAudioCacheStatus();
-            if ($scope.audioCacheManager.open) {
-              $scope.refreshAudioCacheInventory();
-            }
+            $scope.refreshAudioCacheInventory();
           });
         })
         .catch(() => {
@@ -883,11 +878,8 @@ angular.module('listenone').controller('PlayController', [
         });
     };
 
-    $scope.toggleAudioCacheManager = () => {
-      $scope.audioCacheManager.open = !$scope.audioCacheManager.open;
-      if ($scope.audioCacheManager.open) {
-        $scope.refreshAudioCacheInventory();
-      }
+    $scope.openAudioCacheLibrary = () => {
+      $rootScope.$broadcast('audio-cache:open');
     };
 
     $scope.visibleAudioCacheEntries = () => {
@@ -895,10 +887,14 @@ angular.module('listenone').controller('PlayController', [
         .trim()
         .toLocaleLowerCase();
       const entries = $scope.audioCacheManager.entries.filter((entry) => {
-        if (
-          $scope.audioCacheManager.onlyOutsidePlaylists &&
-          entry.retention !== 'temporary'
-        ) {
+        const filter = $scope.audioCacheManager.filter || 'all';
+        if (filter === 'downloaded' && !entry.downloaded) {
+          return false;
+        }
+        if (filter === 'playlist' && entry.retention !== 'playlist') {
+          return false;
+        }
+        if (filter === 'temporary' && entry.retention !== 'temporary') {
           return false;
         }
         if (!query) return true;
@@ -970,6 +966,20 @@ angular.module('listenone').controller('PlayController', [
             notyf.error(i18next.t('_AUDIO_CACHE_FAILURE_NOTICE'));
           });
         });
+    };
+
+    $scope.playAudioCacheEntry = (entry) => {
+      if (!entry || entry.playable !== true) {
+        notyf.info(i18next.t('_AUDIO_CACHE_NOT_PLAYABLE'));
+        return;
+      }
+      const track = MediaService.getAudioCachePlayableTrack(entry);
+      if (!track) {
+        notyf.info(i18next.t('_AUDIO_CACHE_NOT_PLAYABLE'));
+        return;
+      }
+      l1Player.setNewPlaylist([track]);
+      l1Player.play();
     };
 
     $scope.selectVisibleAudioCacheEntries = () => {

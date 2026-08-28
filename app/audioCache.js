@@ -513,6 +513,7 @@ class AudioCache {
             (historyMetadata && historyMetadata.duration) ||
             0,
         };
+        const playableTrack = this.playableTrackForEntry(entry);
         return {
           cacheKey,
           trackIds: [...entry.trackIds],
@@ -531,6 +532,11 @@ class AudioCache {
           loudnessStatus: entry.loudness ? entry.loudness.status : "pending",
           retention: entry.retention,
           downloaded: entry.retention === "download",
+          // This is deliberately an identity only. Cache inventory consumers
+          // must rebuild display data locally and never receive cache paths,
+          // protocol URLs, signed media URLs, or account material.
+          playableTrack,
+          playable: Boolean(playableTrack),
         };
       })
       .sort((left, right) => right.lastAccessedAt - left.lastAccessedAt);
@@ -542,6 +548,19 @@ class AudioCache {
         0
       ),
     };
+  }
+
+  playableTrackForEntry(entry) {
+    if (!entry || entry.kind === "audio") {
+      const sid = safeString(entry && entry.sid, 32);
+      return /^\d+$/.test(sid)
+        ? { id: `bitrack_${sid}`, source: "bilibili" }
+        : null;
+    }
+    const bvid = safeString(entry.bvid, 64);
+    const cid = positiveInteger(entry.cid);
+    if (!/^BV[0-9A-Za-z]{10}$/.test(bvid) || !cid) return null;
+    return { id: `bitrack_v_${bvid}-${cid}`, source: "bilibili" };
   }
 
   async configure({

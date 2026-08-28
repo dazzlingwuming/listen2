@@ -43,8 +43,8 @@ const expectedI18nKeys = [
   '_AUDIO_CACHE_DELETE_TRACK_CONFIRM_TITLE',
   '_AUDIO_CACHE_DELETE_TRACK_CONFIRM_DESCRIPTION',
   '_AUDIO_CACHE_DELETE_TRACK_CONFIRM_ACTION',
-  '_AUDIO_CACHE_MANAGER_OPEN',
-  '_AUDIO_CACHE_MANAGER_CLOSE',
+  '_AUDIO_CACHE_LIBRARY',
+  '_AUDIO_CACHE_LIBRARY_OPEN',
   '_AUDIO_CACHE_SEARCH_PLACEHOLDER',
   '_AUDIO_CACHE_SORT_LABEL',
   '_AUDIO_CACHE_SORT_RECENT',
@@ -101,8 +101,13 @@ assert.strictEqual(
 );
 assert.strictEqual(
   occurrences(html, /data-audio-cache-manager/g),
+  0,
+  'the detailed cache inventory must live in the main library, not settings'
+);
+assert.strictEqual(
+  occurrences(html, /data-audio-cache-library-open/g),
   2,
-  'classic and modern settings layouts must both expose the cache inventory manager'
+  'classic and modern settings layouts must link to the cache library'
 );
 assert.strictEqual(
   occurrences(html, /class="source-button offline-download-button"/g),
@@ -112,27 +117,27 @@ assert.strictEqual(
 assert.strictEqual(
   occurrences(html, /setAudioCacheDownloaded\(entry, !entry\.downloaded\)/g),
   2,
-  'both cache managers must let users pin or unpin cached audio'
+  'both cache-library pages must let users pin or unpin cached audio'
 );
 assert.strictEqual(
   occurrences(html, /ng-model="audioCacheManager\.query"/g),
   2,
-  'both cache managers must support searching cached songs'
+  'both cache-library pages must support searching cached songs'
 );
 assert.strictEqual(
-  occurrences(html, /ng-model="audioCacheManager\.onlyOutsidePlaylists"/g),
+  occurrences(html, /data-audio-cache-filter="temporary"/g),
   2,
-  'both cache managers must expose the temporary-cache filter'
+  'both cache-library pages must expose the temporary-cache filter'
 );
 assert.strictEqual(
   occurrences(html, /requestDeleteAudioCacheEntries\(\[entry\]\)/g),
   2,
-  'both cache managers must expose per-song deletion'
+  'both cache-library pages must expose per-song deletion'
 );
 assert.strictEqual(
   occurrences(html, /requestDeleteSelectedAudioCacheEntries\(\)/g),
   2,
-  'both cache managers must expose batch deletion'
+  'both cache-library pages must expose batch deletion'
 );
 assert.strictEqual(
   occurrences(html, /data-audio-cache-clear-confirm/g),
@@ -204,8 +209,7 @@ assert.strictEqual(
   'new audio cache and local-data dialog IDs must be unique across duplicate layouts'
 );
 assert.match(css, /\.audio-cache-settings/);
-assert.match(css, /\.audio-cache-manager/);
-assert.match(css, /\.audio-cache-inventory/);
+assert.match(css, /\.audio-cache-library/);
 assert.match(css, /\.loudness-normalization-description/);
 assert.match(
   playController,

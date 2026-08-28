@@ -113,10 +113,21 @@ test("cache inventory exposes safe metadata, backfills history, and deletes by c
     );
     assert.strictEqual(cached.artist, "Cached artist");
     assert.strictEqual(cached.duration, 201);
+    assert.strictEqual(cached.playable, true);
+    assert.deepStrictEqual(cached.playableTrack, {
+      id: `bitrack_v_${BVID}-1`,
+      source: "bilibili",
+    });
     assert.strictEqual(
       Object.prototype.hasOwnProperty.call(cached, "stableKey"),
       false
     );
+    for (const unsafeField of ["path", "filePath", "url", "signedUrl"]) {
+      assert.strictEqual(
+        Object.prototype.hasOwnProperty.call(cached, unsafeField),
+        false
+      );
+    }
     const backfilled = inventory.entries.find(
       (entry) => entry.title === "History title"
     );
@@ -127,6 +138,38 @@ test("cache inventory exposes safe metadata, backfills history, and deletes by c
     );
     assert.strictEqual((await cache.delete(backfilled.cacheKey)).removed, true);
     assert.strictEqual(cache.list().entries.length, 1);
+  } finally {
+    await rm(rootDir, { recursive: true, force: true, maxRetries: 3 });
+  }
+});
+
+test("cache inventory exposes only validated Bilibili playback identities", async () => {
+  const { cache, rootDir } = await createCache(async () => new Response(""));
+  try {
+    assert.deepStrictEqual(
+      cache.playableTrackForEntry({
+        kind: "video",
+        bvid: BVID,
+        cid: 7,
+      }),
+      { id: `bitrack_v_${BVID}-7`, source: "bilibili" }
+    );
+    assert.deepStrictEqual(
+      cache.playableTrackForEntry({ kind: "audio", sid: "123456" }),
+      { id: "bitrack_123456", source: "bilibili" }
+    );
+    assert.strictEqual(
+      cache.playableTrackForEntry({
+        kind: "video",
+        bvid: "../../private/cache",
+        cid: 7,
+      }),
+      null
+    );
+    assert.strictEqual(
+      cache.playableTrackForEntry({ kind: "audio", sid: "123/path" }),
+      null
+    );
   } finally {
     await rm(rootDir, { recursive: true, force: true, maxRetries: 3 });
   }

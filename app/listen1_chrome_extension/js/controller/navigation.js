@@ -50,6 +50,10 @@ angular.module('listenone').controller('NavigationController', [
       $scope.showDialog(11, source);
     });
 
+    $scope.$on('audio-cache:open', () => {
+      $scope.showAudioCache();
+    });
+
     $scope.$on('isdoubanlogin:update', (event, data) => {
       $scope.isDoubanLogin = data;
     });
@@ -125,6 +129,13 @@ angular.module('listenone').controller('NavigationController', [
     function refreshWindow(url, offset = 0) {
       if (url === '/now_playing') {
         $scope.window_type = 'track';
+        return;
+      }
+      if (url === '/audio_cache') {
+        $scope.window_type = 'audio_cache';
+        if (typeof $scope.refreshAudioCacheInventory === 'function') {
+          $scope.refreshAudioCacheInventory();
+        }
         return;
       }
       const listId = new URL(url, window.location).searchParams.get('list_id');
@@ -241,6 +252,30 @@ angular.module('listenone').controller('NavigationController', [
 
         $scope.window_type = 'list';
       });
+    };
+
+    $scope.showAudioCache = () => {
+      if (!isElectron || !isElectron()) return;
+      const url = '/audio_cache';
+      const offset = document.getElementsByClassName('browser')[0].scrollTop;
+      if ($scope.getCurrentUrl() === url) {
+        if (typeof $scope.refreshAudioCacheInventory === 'function') {
+          $scope.refreshAudioCacheInventory();
+        }
+        return;
+      }
+      $scope.clearFilter();
+      $scope.is_window_hidden = 0;
+      $scope.resetWindow();
+      if ($scope.getCurrentUrl() === '/now_playing') {
+        $scope.window_url_stack.pop();
+      }
+      $scope.window_url_stack.push({ url, offset });
+      $scope.window_poped_url_stack = [];
+      $scope.window_type = 'audio_cache';
+      if (typeof $scope.refreshAudioCacheInventory === 'function') {
+        $scope.refreshAudioCacheInventory();
+      }
     };
 
     $scope.directplaylist = (list_id) => {

@@ -160,6 +160,35 @@ function getBilibiliVideoCacheIdentity(track) {
   };
 }
 
+function getAudioCachePlayableTrack(entry) {
+  const playableTrack = entry && entry.playableTrack;
+  const id = String((playableTrack && playableTrack.id) || '');
+  const isAudio = /^bitrack_\d+$/.test(id);
+  const videoMatch = /^bitrack_v_(BV[0-9A-Za-z]{10})-(\d+)$/.exec(id);
+  if (
+    !playableTrack ||
+    playableTrack.source !== 'bilibili' ||
+    (!isAudio && !videoMatch)
+  ) {
+    return null;
+  }
+  const duration = Number(entry.duration || 0);
+  const coverUrl = String(entry.coverUrl || '');
+  const safeCoverUrl = /^(https?:)?\/\//.test(coverUrl) ? coverUrl : '';
+  const sourceUrl = isAudio
+    ? `https://www.bilibili.com/audio/au${id.slice('bitrack_'.length)}`
+    : `https://www.bilibili.com/video/${videoMatch[1]}`;
+  return {
+    id,
+    source: 'bilibili',
+    title: String(entry.title || ''),
+    artist: String(entry.artist || ''),
+    img_url: safeCoverUrl,
+    duration: Number.isFinite(duration) && duration >= 0 ? duration : 0,
+    source_url: sourceUrl,
+  };
+}
+
 function getMyPlaylistTrackIds() {
   const result = new Set();
   const playlistIds = localStorage.getObject('playerlists');
@@ -441,6 +470,10 @@ const MediaService = {
       return Promise.resolve({ ok: false, status: 'unsupported' });
     }
     return ipcRenderer.invoke('audio-cache:list');
+  },
+
+  getAudioCachePlayableTrack(entry) {
+    return getAudioCachePlayableTrack(entry);
   },
 
   deleteAudioCacheEntry(cacheKey) {
