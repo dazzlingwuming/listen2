@@ -1806,7 +1806,7 @@
             self.beginPlaybackWatch(data.howl, data);
             self.beginListeningHistory(data);
             prepareAudioAnalysis(self.currentHowl);
-            if ('mediaSession' in navigator) {
+            if (navigator.mediaSession) {
               const { mediaSession } = navigator;
               mediaSession.playbackState = 'playing';
               mediaSession.metadata = new MediaMetadata({
@@ -1924,7 +1924,9 @@
             }
             self.clearPlaybackWatch();
             self.pauseListeningHistory();
-            navigator.mediaSession.playbackState = 'paused';
+            if (navigator.mediaSession) {
+              navigator.mediaSession.playbackState = 'paused';
+            }
             self.sendPlayingEvent('Paused');
           },
           onstop() {
@@ -2186,7 +2188,10 @@
         playedFrom: this.playedFrom,
         playing: this.playing,
       };
-      if ('setPositionState' in navigator.mediaSession) {
+      if (
+        navigator.mediaSession &&
+        typeof navigator.mediaSession.setPositionState === 'function'
+      ) {
         navigator.mediaSession.setPositionState({
           duration: this.currentHowl ? this.currentHowl.duration() : 0,
           playbackRate: this.currentHowl ? this.currentHowl.rate() : 1,
@@ -2257,7 +2262,10 @@
   threadPlayer.setRefreshRate();
   window.threadPlayer = threadPlayer;
 
-  if ('mediaSession' in navigator) {
+  if (
+    navigator.mediaSession &&
+    typeof navigator.mediaSession.setActionHandler === 'function'
+  ) {
     const { mediaSession } = navigator;
     mediaSession.setActionHandler('play', () => {
       threadPlayer.play();

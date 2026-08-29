@@ -33,3 +33,8 @@ gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
 `NavigationPolicyTest` is a JVM test for the WebView URL boundary and the two
 file-URL security flags. The repository does not currently include a Gradle
 wrapper JAR; CI provisions the pinned Gradle distribution explicitly.
+
+Debug builds use the side-by-side package ID
+`com.dazzlingwuming.listen2.debug`, so installing a test APK does not replace
+or clear data from an existing Listen2 release installation. Release builds
+keep the production package ID `com.dazzlingwuming.listen2`.

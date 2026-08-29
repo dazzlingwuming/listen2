@@ -4,11 +4,14 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Color;
+import android.graphics.Insets;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
 import android.webkit.CookieManager;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -48,6 +51,7 @@ public final class MainActivity extends Activity {
 
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.rgb(13, 16, 23));
+        applySystemBarInsets(root);
         webView = new WebView(this);
         configureWebView(webView);
         root.addView(webView, new FrameLayout.LayoutParams(
@@ -58,6 +62,18 @@ public final class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(root);
         webView.loadUrl(START_PAGE);
+    }
+
+    private void applySystemBarInsets(View root) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return;
+        }
+        root.setOnApplyWindowInsetsListener((view, windowInsets) -> {
+            Insets bars = windowInsets.getInsets(WindowInsets.Type.systemBars());
+            view.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+            return windowInsets;
+        });
+        root.requestApplyInsets();
     }
 
     @SuppressLint("SetJavaScriptEnabled")
