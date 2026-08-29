@@ -1,0 +1,14 @@
+<resources>
+    <style name="Theme.Listen2" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#7C5CFC</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:navigationBarColor">@color/listen2_background</item>
+        <item name="android:statusBarColor">@color/listen2_background</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+
+    <style name="Theme.Listen2.Launch" parent="Theme.Listen2">
+        <item name="android:windowBackground">@drawable/launch_screen</item>
+    </style>
+</resources>

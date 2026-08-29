@@ -1,5 +1,7 @@
 /* eslint-disable import/no-unresolved */
+/* eslint-disable import/no-extraneous-dependencies */
 /* eslint-disable global-require */
+/* eslint-disable no-param-reassign */
 /* global angular MediaService isElectron require notyf BilibiliQrCode */
 angular.module('listenone').controller('AuthController', [
   '$scope',
@@ -10,16 +12,41 @@ angular.module('listenone').controller('AuthController', [
     $scope.loginSourceList = MediaService.getLoginProviders().map(
       (i) => i.name
     );
+    let initialAuthRefreshPending = true;
+    const runAfterFirstPaint = (task) => {
+      const scheduleIdle = () => {
+        if (typeof window.requestIdleCallback === 'function') {
+          window.requestIdleCallback(task, { timeout: 2500 });
+          return;
+        }
+        window.setTimeout(task, 600);
+      };
+      if (typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(() =>
+          window.requestAnimationFrame(scheduleIdle)
+        );
+        return;
+      }
+      scheduleIdle();
+    };
     $scope.refreshAuthStatus = () => {
-      $scope.loginSourceList.map((source) =>
-        MediaService.getUser(source).success((data) => {
-          if (data.status === 'success') {
-            $scope.setMusicAuth(source, data.data);
-          } else {
-            $scope.setMusicAuth(source, {});
-          }
-        })
-      );
+      const refresh = () => {
+        $scope.loginSourceList.map((source) =>
+          MediaService.getUser(source).success((data) => {
+            if (data.status === 'success') {
+              $scope.setMusicAuth(source, data.data);
+            } else {
+              $scope.setMusicAuth(source, {});
+            }
+          })
+        );
+      };
+      if (initialAuthRefreshPending) {
+        initialAuthRefreshPending = false;
+        runAfterFirstPaint(refresh);
+        return;
+      }
+      refresh();
     };
 
     $scope.bilibiliQr = {
@@ -176,7 +203,7 @@ angular.module('listenone').controller('AuthController', [
     $scope.refreshBilibiliQrLogin = () => $scope.startBilibiliQrLogin();
 
     $scope.cancelBilibiliQrLogin = () => {
-      const sessionId = $scope.bilibiliQr.sessionId;
+      const { sessionId } = $scope.bilibiliQr;
       if (qrCountdownPromise) {
         $timeout.cancel(qrCountdownPromise);
         qrCountdownPromise = null;

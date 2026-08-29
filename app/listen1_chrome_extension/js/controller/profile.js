@@ -1,4 +1,5 @@
 /* eslint-disable import/no-unresolved */
+/* eslint-disable import/no-extraneous-dependencies */
 /* eslint-disable global-require */
 /* eslint-disable no-undef */
 /* eslint-disable no-param-reassign */
@@ -6,6 +7,22 @@
 angular.module('listenone').controller('ProfileController', [
   '$scope',
   ($scope) => {
+    const runAfterFirstPaint = (task) => {
+      const scheduleIdle = () => {
+        if (typeof window.requestIdleCallback === 'function') {
+          window.requestIdleCallback(task, { timeout: 2000 });
+          return;
+        }
+        window.setTimeout(task, 400);
+      };
+      if (typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(() =>
+          window.requestAnimationFrame(scheduleIdle)
+        );
+        return;
+      }
+      scheduleIdle();
+    };
     let defaultLang = 'zh-CN';
     const supportLangs = ['zh-CN', 'en-US'];
     if (supportLangs.indexOf(navigator.language) !== -1) {
@@ -66,9 +83,11 @@ angular.module('listenone').controller('ProfileController', [
     };
 
     $scope.initProfile = () => {
-      const url = `https://api.github.com/repos/listen1/listen1_chrome_extension/releases/latest`;
-      axios.get(url).then((response) => {
-        $scope.lastestVersion = response.data.tag_name;
+      runAfterFirstPaint(() => {
+        const url = `https://api.github.com/repos/listen1/listen1_chrome_extension/releases/latest`;
+        axios.get(url).then((response) => {
+          $scope.lastestVersion = response.data.tag_name;
+        });
       });
 
       $scope.getProxyConfig();
@@ -104,19 +123,19 @@ angular.module('listenone').controller('ProfileController', [
     $scope.setLang = (langKey) => {
       // You can change the language during runtime
       i18next.changeLanguage(langKey).then((t) => {
-        axios.get('i18n/zh-CN.json').then((res) => {
-          Object.keys(res.data).forEach((key) => {
-            $scope[key] = t(key);
-          });
-          sourceList.forEach((item) => {
-            item.displayText = t(item.displayId);
-          });
-          platformSourceList.forEach((item) => {
-            item.displayText = t(item.displayId);
-          });
-          $scope.proxyModes.forEach((item) => {
-            item.displayText = t(item.displayId);
-          });
+        const resources =
+          i18next.getResourceBundle(langKey, 'translation') || {};
+        Object.keys(resources).forEach((key) => {
+          $scope[key] = t(key);
+        });
+        sourceList.forEach((item) => {
+          item.displayText = t(item.displayId);
+        });
+        platformSourceList.forEach((item) => {
+          item.displayText = t(item.displayId);
+        });
+        $scope.proxyModes.forEach((item) => {
+          item.displayText = t(item.displayId);
         });
         localStorage.setObject('language', langKey);
       });
@@ -159,8 +178,10 @@ angular.module('listenone').controller('ProfileController', [
         }
         localStorage.setObject('theme', normalizedTheme);
       }
-      axios.get('images/feather-sprite.svg').then((res) => {
-        document.getElementById('feather-container').innerHTML = res.data;
+      runAfterFirstPaint(() => {
+        axios.get('images/feather-sprite.svg').then((res) => {
+          document.getElementById('feather-container').innerHTML = res.data;
+        });
       });
     };
     $scope.setTheme(defaultTheme);

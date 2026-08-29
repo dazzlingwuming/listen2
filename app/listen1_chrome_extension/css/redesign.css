@@ -8787,3 +8787,1125 @@ body.modern-white .audio-effects-summary p {
     grid-template-columns: minmax(0, 1fr) minmax(220px, 1.25fr) max-content;
   }
 }
+
+/*
+ * Mobile shell contract
+ *
+ * The modern desktop shell keeps a fixed sidebar and an absolute top bar. On
+ * a phone those two surfaces compete with the actual content, so the final
+ * mobile layer below turns the existing scope-backed views into one bounded
+ * scroll surface. It intentionally lives at the end of this file so it wins
+ * over the older tablet breakpoints above without changing desktop geometry.
+ */
+
+.modern-body .mobile-page-heading,
+.modern-body .mobile-tabbar {
+  display: none;
+}
+
+@media screen and (min-width: 761px) {
+  .modern-body .mobile-page-heading,
+  .modern-body .mobile-tabbar {
+    display: none !important;
+  }
+}
+
+@media screen and (max-width: 760px) {
+  .modern-body {
+    --dock-height: 62px;
+    --mobile-tabbar-height: calc(60px + env(safe-area-inset-bottom, 0px));
+    --mobile-dock-height: 62px;
+
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 100vh;
+    min-height: 100svh;
+    overflow-x: hidden;
+  }
+
+  .modern-body .wrap,
+  .modern-body .main,
+  .modern-body .main .content,
+  .modern-body .main .content .browser {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    overflow-x: hidden;
+  }
+
+  .modern-body .wrap {
+    height: 100vh;
+    height: 100svh;
+    min-height: 100vh;
+    min-height: 100svh;
+    overflow: hidden;
+  }
+
+  .modern-body .main {
+    min-height: 0;
+  }
+
+  .modern-body .main .sidebar {
+    display: none !important;
+    flex: 0 0 0 !important;
+    width: 0 !important;
+    min-width: 0 !important;
+    max-width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .modern-body .main .content {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 0 !important;
+  }
+
+  .modern-body .main .content .navigation {
+    position: relative;
+    inset: auto;
+    display: flex;
+    flex: 0 0 58px;
+    width: 100%;
+    max-width: 100%;
+    height: 58px;
+    min-height: 58px;
+    box-sizing: border-box;
+    gap: 10px;
+    margin: 0;
+    padding: 0 14px;
+    overflow: hidden;
+  }
+
+  .modern-body .topbar-spacer,
+  .modern-body .browser > .topbar-spacer {
+    display: none !important;
+    height: 0 !important;
+  }
+
+  .modern-body .mobile-page-heading {
+    display: flex;
+    flex: 0 0 auto;
+    min-width: 0;
+    align-items: center;
+    gap: 7px;
+    color: var(--ui-text);
+    white-space: nowrap;
+  }
+
+  .modern-body .mobile-page-heading-mark {
+    display: inline-flex;
+    width: 28px;
+    height: 28px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(var(--ui-accent-rgb), 0.28);
+    border-radius: 9px;
+    background: var(--ui-accent-soft);
+    color: var(--ui-accent);
+  }
+
+  .modern-body .mobile-page-heading-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .modern-body .mobile-page-heading-title {
+    font-size: 15px;
+    font-weight: 760;
+    letter-spacing: 0.02em;
+  }
+
+  .modern-body .navigation .backfront,
+  .modern-body .navigation .settings,
+  .modern-body .navigation .window-control {
+    display: none !important;
+  }
+
+  .modern-body .navigation .search {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    height: 40px;
+    margin: 0;
+    padding: 0 12px;
+    border-radius: 12px;
+  }
+
+  .modern-body .navigation .search-input {
+    min-width: 0;
+    height: 38px;
+    font-size: 14px;
+  }
+
+  .modern-body .main .content .browser {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto;
+    padding: 0 0
+      calc(var(--mobile-tabbar-height) + var(--mobile-dock-height) + 22px);
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+  }
+
+  .modern-body .browser > .page,
+  .modern-body .browser > .page > .site-wrapper-innerd,
+  .modern-body .browser > .page > .site-wrapper-innerd > .cover-container,
+  .modern-body .editorial-discovery-page,
+  .modern-body .page .site-wrapper-innerd,
+  .modern-body .page .cover-container {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .modern-body .editorial-home {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    padding: 18px 16px 24px;
+  }
+
+  .modern-body .editorial-hero {
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr);
+    margin-bottom: 20px;
+    padding: 20px 0 18px;
+    border-radius: 0;
+  }
+
+  .modern-body .editorial-hero-art {
+    display: none;
+  }
+
+  .modern-body .editorial-hero h1 {
+    max-width: 100%;
+    font-size: clamp(27px, 8vw, 34px);
+    line-height: 1.15;
+  }
+
+  .modern-body .editorial-intro {
+    max-width: 100%;
+    margin-top: 12px;
+    font-size: 13px;
+    line-height: 1.65;
+  }
+
+  .modern-body .editorial-facts {
+    flex-wrap: wrap;
+    gap: 7px 10px;
+    margin-top: 17px;
+    font-size: 11px;
+  }
+
+  .modern-body .discovery-sources {
+    max-width: 100%;
+    margin-right: 0;
+    margin-left: 0;
+  }
+
+  .modern-body .discovery-genres {
+    max-width: 100%;
+  }
+
+  .modern-body .discovery-section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 14px;
+  }
+
+  .modern-body .discovery-section-heading p {
+    text-align: left;
+  }
+
+  .modern-body .playlist-covers.discovery-card-grid {
+    width: 100%;
+    max-width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px 12px;
+    margin: 0;
+    padding: 0 0 20px;
+  }
+
+  .modern-body .playlist-covers.discovery-card-grid li {
+    width: auto;
+    min-width: 0;
+    margin: 0;
+  }
+
+  .modern-body .playlist-covers .u-cover,
+  .modern-body .playlist-covers .u-cover img {
+    width: 100%;
+    min-width: 0;
+    height: auto;
+    aspect-ratio: 1;
+  }
+
+  .modern-body .playlist-covers .u-cover .bottom {
+    right: 8px;
+    bottom: 8px;
+    width: 36px;
+    height: 36px;
+    opacity: 1;
+    transform: none;
+  }
+
+  .modern-body .playlist-covers .desc {
+    height: 40px;
+    padding-top: 8px;
+  }
+
+  .modern-body .playlist-covers .desc .title {
+    font-size: 13px;
+    line-height: 1.35;
+  }
+
+  /* Search and playlist rows use the same touch-sized, no-overflow rhythm. */
+
+  .modern-body .page .searchbox {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 16px;
+  }
+
+  .modern-body .page .searchbox .source-list {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    margin: 0 0 16px;
+    padding: 0 0 5px;
+    overflow-x: auto;
+  }
+
+  .modern-body .page .searchbox .source-list .buttontext {
+    margin: 2px 5px;
+    padding: 7px 8px 8px;
+    font-size: 12px !important;
+    line-height: 17px;
+  }
+
+  .modern-body .page .searchbox .source-list .source-button.active .buttontext,
+  .modern-body .page .searchbox .source-list .source-button:hover .buttontext {
+    font-size: 12px !important;
+  }
+
+  .modern-body .page .searchbox .source-list .search-type {
+    min-width: max-content;
+    margin-left: auto;
+  }
+
+  .modern-body .page .searchbox > h1 {
+    margin: 0 0 14px !important;
+    font-size: 20px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+  }
+
+  .modern-body ul.detail-songlist.isSearchOne {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0 0 20px !important;
+  }
+
+  .modern-body ul.detail-songlist.isSearchOne > li.isSearchType {
+    display: grid;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 68px;
+    box-sizing: border-box;
+    grid-template-columns: 48px minmax(0, 1fr) auto;
+    grid-template-areas: 'cover copy tools';
+    gap: 0 10px;
+    margin: 0;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--ui-border);
+    border-radius: 0;
+  }
+
+  .modern-body ul.detail-songlist.isSearchOne > li.isSearchType > img {
+    grid-area: cover;
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+    margin: 0;
+    border-radius: 10px;
+  }
+
+  .modern-body
+    ul.detail-songlist.isSearchOne
+    > li.isSearchType
+    .title-and-artist {
+    grid-area: copy;
+    min-width: 0;
+  }
+
+  .modern-body ul.detail-songlist.isSearchOne > li.isSearchType .container {
+    min-width: 0;
+  }
+
+  .modern-body ul.detail-songlist.isSearchOne > li.isSearchType .title,
+  .modern-body ul.detail-songlist.isSearchOne > li.isSearchType .artist {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .modern-body ul.detail-songlist.isSearchOne > li.isSearchType .title {
+    font-size: 14px;
+    line-height: 20px;
+  }
+
+  .modern-body ul.detail-songlist.isSearchOne > li.isSearchType .artist {
+    font-size: 12px;
+    line-height: 18px;
+  }
+
+  .modern-body ul.detail-songlist.isSearchOne > li.isSearchType > .album {
+    display: none;
+  }
+
+  .modern-body ul.detail-songlist.isSearchOne > li.isSearchType > .tools {
+    grid-area: tools;
+    display: flex !important;
+    width: auto;
+    min-width: 34px;
+    flex: 0 0 34px;
+    justify-content: flex-end;
+    opacity: 1;
+  }
+
+  .modern-body ul.detail-songlist.isSearchOne > li.isSearchType > .tools a {
+    display: flex;
+    width: 34px;
+    height: 34px;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .modern-body ul.detail-songlist.isSearch {
+    display: grid;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px 12px;
+    margin: 0;
+    padding: 0 0 20px !important;
+  }
+
+  .modern-body ul.detail-songlist.isSearch > li.playlist-result {
+    display: block;
+    width: auto;
+    min-width: 0;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+  }
+
+  .modern-body ul.detail-songlist.isSearch > li.playlist-result .u-cover,
+  .modern-body ul.detail-songlist.isSearch > li.playlist-result .u-cover img {
+    width: 100%;
+    min-width: 0;
+    height: auto;
+    aspect-ratio: 1;
+    margin: 0;
+  }
+
+  .modern-body ul.detail-songlist.isSearch > li.playlist-result .u-cover img {
+    border-radius: 12px;
+  }
+
+  .modern-body
+    ul.detail-songlist.isSearch
+    > li.playlist-result
+    .u-cover
+    .bottom {
+    right: 8px;
+    bottom: 8px;
+    width: 36px !important;
+    height: 36px !important;
+    opacity: 1;
+  }
+
+  .modern-body ul.detail-songlist.isSearch > li.playlist-result .desc {
+    width: 100%;
+    height: 42px;
+    box-sizing: border-box;
+    padding-top: 8px;
+  }
+
+  .modern-body ul.detail-songlist.isSearch > li.playlist-result .desc .title {
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+    margin: 0;
+    font-size: 13px;
+    line-height: 18px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .modern-body ul.detail-songlist.isSearch > li.playlist-result .desc .artist {
+    max-width: 100%;
+    margin-top: 1px;
+    font-size: 11px;
+    line-height: 16px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .modern-body .page .playlist-detail {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    padding-bottom: 18px;
+  }
+
+  .modern-body .page .playlist-detail .detail-head {
+    min-width: 0;
+    align-items: center;
+    margin: 16px 16px 22px;
+  }
+
+  .modern-body .page .playlist-detail .detail-head .detail-head-cover {
+    flex: 0 0 112px;
+    width: 112px;
+    height: 112px;
+    margin-left: 0;
+  }
+
+  .modern-body .page .playlist-detail .detail-head .detail-head-title {
+    min-width: 0;
+    margin: 0 0 0 16px;
+  }
+
+  .modern-body .page .playlist-detail .detail-head .detail-head-title h2 {
+    max-width: 100%;
+    margin: 0 0 10px;
+    font-size: 22px;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+  }
+
+  .modern-body .page .playlist-detail .playlist-button-list {
+    gap: 6px;
+  }
+
+  .modern-body .page .playlist-detail .playlist-button-list .playlist-button {
+    min-height: 36px;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 7px 9px;
+  }
+
+  .modern-body ul.detail-songlist.playlist-songlist {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0 16px 20px !important;
+  }
+
+  .modern-body ul.detail-songlist.playlist-songlist .playlist-search {
+    position: relative;
+    top: auto;
+    right: auto;
+    width: 100%;
+    max-width: 100%;
+    height: 38px;
+    box-sizing: border-box;
+    margin: 0 0 8px;
+    padding: 0 12px;
+    border: 1px solid var(--ui-border);
+    border-radius: 12px;
+  }
+
+  .modern-body ul.detail-songlist.playlist-songlist .playlist-search-input {
+    width: 100%;
+    min-width: 0;
+    height: 36px;
+    font-size: 13px;
+  }
+
+  .modern-body ul.detail-songlist.playlist-songlist > li.isSearchType {
+    display: grid;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 68px;
+    box-sizing: border-box;
+    grid-template-columns: 48px minmax(0, 1fr) auto;
+    grid-template-areas: 'cover copy tools';
+    gap: 0 10px;
+    margin: 0;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--ui-border);
+    border-radius: 0;
+  }
+
+  .modern-body ul.detail-songlist.playlist-songlist > li.isSearchType > img {
+    grid-area: cover;
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+    margin: 0;
+    border-radius: 10px;
+  }
+
+  .modern-body
+    ul.detail-songlist.playlist-songlist
+    > li.isSearchType
+    .title-and-artist {
+    grid-area: copy;
+    min-width: 0;
+  }
+
+  .modern-body
+    ul.detail-songlist.playlist-songlist
+    > li.isSearchType
+    .container,
+  .modern-body ul.detail-songlist.playlist-songlist > li.isSearchType .title,
+  .modern-body ul.detail-songlist.playlist-songlist > li.isSearchType .artist {
+    min-width: 0;
+  }
+
+  .modern-body ul.detail-songlist.playlist-songlist > li.isSearchType .title,
+  .modern-body ul.detail-songlist.playlist-songlist > li.isSearchType .artist {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .modern-body ul.detail-songlist.playlist-songlist > li.isSearchType .title {
+    font-size: 14px;
+    line-height: 20px;
+  }
+
+  .modern-body ul.detail-songlist.playlist-songlist > li.isSearchType .artist {
+    font-size: 12px;
+    line-height: 18px;
+  }
+
+  .modern-body ul.detail-songlist.playlist-songlist > li.isSearchType > .album {
+    display: none;
+  }
+
+  .modern-body ul.detail-songlist.playlist-songlist > li.isSearchType > .tools {
+    grid-area: tools;
+    display: flex !important;
+    width: auto;
+    min-width: 34px;
+    flex: 0 0 34px;
+    justify-content: flex-end;
+    opacity: 1;
+  }
+
+  .modern-body
+    ul.detail-songlist.playlist-songlist
+    > li.isSearchType
+    > .tools
+    a {
+    display: flex;
+    width: 34px;
+    height: 34px;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .modern-body .footer.player-dock {
+    right: 8px;
+    bottom: calc(var(--mobile-tabbar-height) + 7px);
+    left: 8px;
+    width: auto;
+    height: var(--mobile-dock-height);
+    margin: 0;
+    z-index: 150;
+  }
+
+  .modern-body .footer.player-dock.footerdef {
+    bottom: calc(var(--mobile-tabbar-height) + 7px);
+  }
+
+  .modern-body .footer .footer-main.player-dock-surface:not(.slidedown) {
+    width: 100%;
+    height: var(--mobile-dock-height);
+    min-width: 0;
+    overflow: hidden;
+    border-radius: 16px;
+  }
+
+  .modern-body
+    .footer
+    .footer-main.player-dock-surface:not(.slidedown)
+    .footerwrap {
+    width: 100%;
+    height: var(--mobile-dock-height);
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) auto;
+    overflow: hidden;
+  }
+
+  .modern-body
+    .footer.player-dock.footerdef
+    .footer-main.player-dock-surface:not(.slidedown)
+    .footerwrap {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .modern-body
+    .footer.player-dock.footerdef
+    .footer-main.player-dock-surface:not(.slidedown)
+    .left-control {
+    display: none !important;
+  }
+
+  .modern-body
+    .footer
+    .footer-main.player-dock-surface:not(.slidedown)
+    .left-control {
+    grid-column: 1;
+    display: flex;
+    width: auto;
+    min-width: 0;
+    height: var(--mobile-dock-height);
+    padding: 0 6px 0 10px;
+    border: 0;
+  }
+
+  .modern-body
+    .footer
+    .footer-main.player-dock-surface:not(.slidedown)
+    .left-control
+    .playlist-toggle,
+  .modern-body
+    .footer
+    .footer-main.player-dock-surface:not(.slidedown)
+    .left-control
+    .splitter,
+  .modern-body
+    .footer
+    .footer-main.player-dock-surface:not(.slidedown)
+    .left-control
+    .dock-audio-meter {
+    display: none !important;
+  }
+
+  .modern-body
+    .footer
+    .footer-main.player-dock-surface:not(.slidedown)
+    .left-control
+    .detail.mobile-current-track {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: none;
+    height: 100%;
+    margin: 0;
+    padding: 0 4px;
+    cursor: pointer;
+  }
+
+  .modern-body
+    .footer
+    .footer-main.player-dock-surface:not(.slidedown)
+    .left-control
+    .detail.mobile-current-track
+    .title,
+  .modern-body
+    .footer
+    .footer-main.player-dock-surface:not(.slidedown)
+    .left-control
+    .detail.mobile-current-track
+    .more-info,
+  .modern-body
+    .footer
+    .footer-main.player-dock-surface:not(.slidedown)
+    .left-control
+    .detail.mobile-current-track
+    .more-info
+    .singer {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .modern-body
+    .footer
+    .footer-main.player-dock-surface:not(.slidedown)
+    .left-control
+    .detail.mobile-current-track
+    .title {
+    margin: 0 0 3px;
+    font-size: 13px;
+    line-height: 18px;
+  }
+
+  .modern-body
+    .footer
+    .footer-main.player-dock-surface:not(.slidedown)
+    .left-control
+    .detail.mobile-current-track
+    .more-info {
+    display: block;
+    margin: 0;
+    color: var(--ui-muted);
+    font-size: 11px;
+    line-height: 16px;
+  }
+
+  .modern-body
+    .footer
+    .footer-main.player-dock-surface:not(.slidedown)
+    .main-info {
+    position: relative;
+    grid-column: 2;
+    display: flex;
+    width: 48px;
+    min-width: 48px;
+    height: var(--mobile-dock-height);
+    align-items: center;
+    justify-content: center;
+    padding: 0 5px;
+    overflow: hidden;
+  }
+
+  .modern-body
+    .footer.player-dock.footerdef
+    .footer-main.player-dock-surface:not(.slidedown)
+    .main-info {
+    grid-column: 1;
+    width: 100%;
+    min-width: 0;
+    justify-content: flex-start;
+    padding: 0 16px;
+  }
+
+  .modern-body
+    .footer.player-dock.footerdef
+    .footer-main.player-dock-surface:not(.slidedown)
+    .player-empty-state {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 10px;
+    overflow: hidden;
+    text-align: left;
+  }
+
+  .modern-body
+    .footer.player-dock.footerdef
+    .footer-main.player-dock-surface:not(.slidedown)
+    .player-empty-state
+    > div {
+    min-width: 0;
+  }
+
+  .modern-body
+    .footer.player-dock.footerdef
+    .footer-main.player-dock-surface:not(.slidedown)
+    .player-empty-state
+    strong,
+  .modern-body
+    .footer.player-dock.footerdef
+    .footer-main.player-dock-surface:not(.slidedown)
+    .player-empty-state
+    span {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .modern-body
+    .footer
+    .footer-main.player-dock-surface:not(.slidedown)
+    .main-info
+    .cover {
+    position: relative;
+    top: 0;
+    display: block;
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+    flex: 0 0 48px;
+  }
+
+  .modern-body
+    .footer
+    .footer-main.player-dock-surface:not(.slidedown)
+    .main-info
+    .cover
+    > ul.cover-list {
+    position: absolute;
+    top: 0;
+    right: auto;
+    bottom: auto;
+    left: 0;
+    display: block !important;
+    width: 48px !important;
+    height: 48px !important;
+  }
+
+  .modern-body
+    .footer
+    .footer-main.player-dock-surface:not(.slidedown)
+    .main-info
+    .cover
+    > ul.cover-list
+    > li {
+    display: none !important;
+  }
+
+  .modern-body
+    .footer
+    .footer-main.player-dock-surface:not(.slidedown)
+    .main-info
+    .cover
+    > ul.cover-list
+    > li.b {
+    display: block !important;
+    top: 0 !important;
+    right: auto !important;
+    bottom: auto !important;
+    left: 0 !important;
+    width: 48px !important;
+    height: 48px !important;
+    border-radius: 12px !important;
+    opacity: 1 !important;
+  }
+
+  .modern-body
+    .footer
+    .footer-main.player-dock-surface:not(.slidedown)
+    .main-info
+    .cover
+    > ul.cover-list
+    > li.b
+    img {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+  }
+
+  .modern-body
+    .footer
+    .footer-main.player-dock-surface:not(.slidedown)
+    .main-info
+    .cover
+    > div.cover-list {
+    position: absolute;
+    top: 0;
+    right: auto;
+    bottom: auto;
+    left: 0;
+    display: block !important;
+    width: 48px !important;
+    height: 48px !important;
+    pointer-events: none;
+  }
+
+  .modern-body
+    .footer
+    .footer-main.player-dock-surface:not(.slidedown)
+    .main-info
+    .cover
+    > div.cover-list
+    .a,
+  .modern-body
+    .footer
+    .footer-main.player-dock-surface:not(.slidedown)
+    .main-info
+    .cover
+    > div.cover-list
+    .c {
+    display: none !important;
+  }
+
+  .modern-body
+    .footer
+    .footer-main.player-dock-surface:not(.slidedown)
+    .main-info
+    .cover
+    > div.cover-list
+    .b {
+    display: flex !important;
+    top: 0 !important;
+    right: auto !important;
+    bottom: auto !important;
+    left: 0 !important;
+    width: 48px !important;
+    height: 48px !important;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 12px !important;
+    background: rgba(0, 0, 0, 0.2);
+    opacity: 1 !important;
+    pointer-events: auto;
+  }
+
+  .modern-body
+    .footer
+    .footer-main.player-dock-surface:not(.slidedown)
+    .main-info
+    .cover
+    > div.cover-list
+    .b
+    svg {
+    width: 16px !important;
+    height: 16px !important;
+  }
+
+  .modern-body
+    .footer
+    .footer-main.player-dock-surface:not(.slidedown)
+    .main-info
+    .footertime,
+  .modern-body
+    .footer
+    .footer-main.player-dock-surface:not(.slidedown)
+    .circlemark {
+    display: none !important;
+  }
+
+  .modern-body
+    .footer
+    .footer-main.player-dock-surface:not(.slidedown)
+    .right-control {
+    display: none !important;
+  }
+
+  .modern-body .mobile-tabbar {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 160;
+    display: grid;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    height: var(--mobile-tabbar-height);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    box-sizing: border-box;
+    gap: 2px;
+    padding: 5px 8px env(safe-area-inset-bottom, 0px);
+    border-top: 1px solid var(--ui-border);
+    background: var(--nav-background-color);
+    box-shadow: 0 -10px 26px rgba(4, 7, 14, 0.12);
+    -webkit-backdrop-filter: blur(16px) saturate(135%);
+    backdrop-filter: blur(16px) saturate(135%);
+  }
+
+  .modern-body .mobile-tab {
+    display: flex;
+    min-width: 0;
+    min-height: 48px;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    box-sizing: border-box;
+    padding: 4px 2px;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    background: transparent;
+    color: var(--ui-muted);
+    font-size: 11px;
+    font-weight: 650;
+    line-height: 15px;
+    -webkit-app-region: no-drag;
+  }
+
+  .modern-body .mobile-tab.active {
+    border-color: rgba(var(--ui-accent-rgb), 0.18);
+    background: var(--ui-accent-soft);
+    color: var(--ui-accent);
+  }
+
+  .modern-body .mobile-tab-icon {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 18px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .modern-body .mobile-tabbar .mobile-tab:active {
+    transform: scale(0.97);
+  }
+
+  .modern-body
+    .footer.player-dock:has(.player-dock-surface.slidedown)
+    ~ .mobile-tabbar {
+    display: none !important;
+  }
+
+  .modern-body .footer.player-dock:has(.player-dock-surface.slidedown) {
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+  }
+
+  .modern-body
+    .footer.player-dock:has(.player-dock-surface.slidedown)
+    .footer-main.player-dock-surface.slidedown {
+    width: 100%;
+    height: 100%;
+    border-radius: 0;
+  }
+
+  .modern-body
+    .footer.player-dock:has(.player-dock-surface.slidedown)
+    .footerwrap {
+    max-width: 100%;
+  }
+
+  .modern-body
+    .footer
+    .footer-main.player-dock-surface.slidedown
+    .now-playing-layout,
+  .modern-body
+    .footer
+    .footer-main.player-dock-surface.slidedown
+    .playsong-detail {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .modern-body img,
+  .modern-body video,
+  .modern-body input,
+  .modern-body select,
+  .modern-body textarea,
+  .modern-body button {
+    max-width: 100%;
+  }
+}

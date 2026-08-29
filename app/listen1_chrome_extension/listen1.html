@@ -15,12 +15,9 @@
     <link href="css/hotkeys.css" rel="stylesheet" />
     <link href="css/icon.css" rel="stylesheet" />
 
-    <link href="css/origin.css" rel="stylesheet" id="theme-css" />
-    <link href="css/common.css" rel="stylesheet" id="common-css" />
-    <link
-      href="css/redesign.css?v=audio-reactive-stage-8"
-      rel="stylesheet"
-    />
+    <link href="css/origin2.css" rel="stylesheet" id="theme-css" />
+    <link href="css/common2.css" rel="stylesheet" id="common-css" />
+    <link href="css/redesign.css?v=audio-reactive-stage-8" rel="stylesheet" />
 
     <link href="images/logo_16.png" rel="shortcut icon" />
     <link href="images/logo_16.png" rel="bookmark" />
@@ -817,54 +814,120 @@
                           <div class="annual-recap-aurora"></div>
                           <header class="annual-recap-hero">
                             <div>
-                              <span class="annual-recap-kicker">LISTEN2 · {{annualListening.year}}</span>
+                              <span class="annual-recap-kicker"
+                                >LISTEN2 · {{annualListening.year}}</span
+                              >
                               <h1>{{_ANNUAL_RECAP}}</h1>
                               <p>{{_ANNUAL_RECAP_SUBTITLE}}</p>
                             </div>
                             <div class="annual-recap-actions">
                               <label>
-                                <input type="checkbox" ng-model="annualListening.enabled" ng-change="updateListeningHistoryEnabled()" />
+                                <input
+                                  type="checkbox"
+                                  ng-model="annualListening.enabled"
+                                  ng-change="updateListeningHistoryEnabled()"
+                                />
                                 {{_LISTENING_HISTORY_ENABLED}}
                               </label>
-                              <button type="button" ng-click="exportListeningHistory()">{{_EXPORT_LISTENING_HISTORY}}</button>
-                              <button type="button" class="danger" ng-click="clearListeningHistory()">{{_CLEAR_LISTENING_HISTORY}}</button>
+                              <button
+                                type="button"
+                                ng-click="exportListeningHistory()"
+                              >
+                                {{_EXPORT_LISTENING_HISTORY}}
+                              </button>
+                              <button
+                                type="button"
+                                class="danger"
+                                ng-click="clearListeningHistory()"
+                              >
+                                {{_CLEAR_LISTENING_HISTORY}}
+                              </button>
                             </div>
                           </header>
-                          <div class="annual-recap-loading" ng-if="annualListening.loading">{{_LOADING}}</div>
-                          <div class="annual-recap-empty" ng-if="!annualListening.loading && (!annualListening.summary || !annualListening.summary.totalPlayedSeconds)">
+                          <div
+                            class="annual-recap-loading"
+                            ng-if="annualListening.loading"
+                          >
+                            {{_LOADING}}
+                          </div>
+                          <div
+                            class="annual-recap-empty"
+                            ng-if="!annualListening.loading && (!annualListening.summary || !annualListening.summary.totalPlayedSeconds)"
+                          >
                             <h2>{{_ANNUAL_RECAP_EMPTY_TITLE}}</h2>
                             <p>{{_ANNUAL_RECAP_EMPTY_DESCRIPTION}}</p>
                           </div>
-                          <div class="annual-recap-content" ng-if="annualListening.summary.totalPlayedSeconds">
+                          <div
+                            class="annual-recap-content"
+                            ng-if="annualListening.summary.totalPlayedSeconds"
+                          >
                             <div class="annual-recap-metrics">
-                              <article><strong>{{formatListeningTime(annualListening.summary.totalPlayedSeconds)}}</strong><span>{{_TOTAL_LISTENING_TIME}}</span></article>
-                              <article><strong>{{annualListening.summary.playCount}}</strong><span>{{_QUALIFIED_PLAYS}}</span></article>
-                              <article><strong>{{annualListening.summary.uniqueTracks}}</strong><span>{{_UNIQUE_TRACKS}}</span></article>
-                              <article><strong>{{annualListening.summary.uniqueArtists}}</strong><span>{{_UNIQUE_ARTISTS}}</span></article>
+                              <article>
+                                <strong
+                                  >{{formatListeningTime(annualListening.summary.totalPlayedSeconds)}}</strong
+                                ><span>{{_TOTAL_LISTENING_TIME}}</span>
+                              </article>
+                              <article>
+                                <strong
+                                  >{{annualListening.summary.playCount}}</strong
+                                ><span>{{_QUALIFIED_PLAYS}}</span>
+                              </article>
+                              <article>
+                                <strong
+                                  >{{annualListening.summary.uniqueTracks}}</strong
+                                ><span>{{_UNIQUE_TRACKS}}</span>
+                              </article>
+                              <article>
+                                <strong
+                                  >{{annualListening.summary.uniqueArtists}}</strong
+                                ><span>{{_UNIQUE_ARTISTS}}</span>
+                              </article>
                             </div>
                             <div class="annual-recap-grid">
                               <section class="annual-recap-card top-tracks">
                                 <h2>{{_TOP_TRACKS}}</h2>
                                 <ol>
-                                  <li ng-repeat="track in annualListening.summary.topTracks track by (track.source + ':' + track.id)">
-                                    <span class="rank">{{$index + 1}}</span><img ng-src="{{track.imgUrl}}" />
-                                    <span class="song"><strong>{{track.title}}</strong><small>{{track.artist}}</small></span>
-                                    <span class="plays">{{track.playCount}} × · {{formatListeningTime(track.playedSeconds)}}</span>
+                                  <li
+                                    ng-repeat="track in annualListening.summary.topTracks track by (track.source + ':' + track.id)"
+                                  >
+                                    <span class="rank">{{$index + 1}}</span
+                                    ><img ng-src="{{track.imgUrl}}" />
+                                    <span class="song"
+                                      ><strong>{{track.title}}</strong
+                                      ><small>{{track.artist}}</small></span
+                                    >
+                                    <span class="plays"
+                                      >{{track.playCount}} × ·
+                                      {{formatListeningTime(track.playedSeconds)}}</span
+                                    >
                                   </li>
                                 </ol>
                               </section>
                               <section class="annual-recap-card">
                                 <h2>{{_MONTHLY_LISTENING}}</h2>
                                 <div class="annual-month-bars">
-                                  <div ng-repeat="month in annualListening.summary.months track by month.month" title="{{month.month}} · {{formatListeningTime(month.playedSeconds)}}">
-                                    <i ng-style="{height: ((month.playedSeconds / (annualListening.summary.totalPlayedSeconds || 1)) * 600 + 4) + 'px'}"></i>
+                                  <div
+                                    ng-repeat="month in annualListening.summary.months track by month.month"
+                                    title="{{month.month}} · {{formatListeningTime(month.playedSeconds)}}"
+                                  >
+                                    <i
+                                      ng-style="{height: ((month.playedSeconds / (annualListening.summary.totalPlayedSeconds || 1)) * 600 + 4) + 'px'}"
+                                    ></i>
                                     <span>{{month.month.slice(5)}}</span>
                                   </div>
                                 </div>
                               </section>
                               <section class="annual-recap-card">
                                 <h2>{{_TOP_ARTISTS}}</h2>
-                                <ol class="artist-list"><li ng-repeat="artist in annualListening.summary.topArtists track by artist.artist"><span class="rank">{{$index + 1}}</span><strong>{{artist.artist}}</strong><span>{{artist.playCount}} ×</span></li></ol>
+                                <ol class="artist-list">
+                                  <li
+                                    ng-repeat="artist in annualListening.summary.topArtists track by artist.artist"
+                                  >
+                                    <span class="rank">{{$index + 1}}</span
+                                    ><strong>{{artist.artist}}</strong
+                                    ><span>{{artist.playCount}} ×</span>
+                                  </li>
+                                </ol>
                               </section>
                             </div>
                           </div>
@@ -1546,7 +1609,10 @@
                                 <p class="audio-cache-description">
                                   {{_AUDIO_CACHE_DESCRIPTION}}
                                 </p>
-                                <label class="audio-cache-toggle" for="classic-audio-cache-enabled">
+                                <label
+                                  class="audio-cache-toggle"
+                                  for="classic-audio-cache-enabled"
+                                >
                                   <input
                                     id="classic-audio-cache-enabled"
                                     type="checkbox"
@@ -1556,7 +1622,10 @@
                                   />
                                   <span>{{_AUDIO_CACHE_ENABLED}}</span>
                                 </label>
-                                <label class="audio-cache-toggle loudness-normalization-toggle" for="classic-loudness-normalization-enabled">
+                                <label
+                                  class="audio-cache-toggle loudness-normalization-toggle"
+                                  for="classic-loudness-normalization-enabled"
+                                >
                                   <input
                                     id="classic-loudness-normalization-enabled"
                                     type="checkbox"
@@ -1564,15 +1633,23 @@
                                     ng-change="updateLoudnessNormalizationEnabled()"
                                     ng-disabled="audioCacheActionPending"
                                   />
-                                  <span>{{_LOUDNESS_NORMALIZATION_ENABLED}}</span>
+                                  <span
+                                    >{{_LOUDNESS_NORMALIZATION_ENABLED}}</span
+                                  >
                                 </label>
                                 <p class="loudness-normalization-description">
                                   {{_LOUDNESS_NORMALIZATION_DESCRIPTION}}
                                 </p>
-                                <p class="loudness-normalization-description" ng-if="audioCacheSettings.loudnessNormalizationEnabled !== false">
+                                <p
+                                  class="loudness-normalization-description"
+                                  ng-if="audioCacheSettings.loudnessNormalizationEnabled !== false"
+                                >
                                   {{loudnessNormalizationStatus()}}
                                 </p>
-                                <label class="audio-cache-capacity" for="classic-audio-cache-capacity">
+                                <label
+                                  class="audio-cache-capacity"
+                                  for="classic-audio-cache-capacity"
+                                >
                                   <span>{{_AUDIO_CACHE_CAPACITY}}</span>
                                   <select
                                     id="classic-audio-cache-capacity"
@@ -1582,19 +1659,40 @@
                                     ng-disabled="audioCacheActionPending"
                                   ></select>
                                 </label>
-                                <dl class="audio-cache-status" aria-live="polite">
+                                <dl
+                                  class="audio-cache-status"
+                                  aria-live="polite"
+                                >
                                   <div>
                                     <dt>{{_AUDIO_CACHE_USAGE}}</dt>
-                                    <dd>{{formatAudioCacheBytes(audioCacheSettings.usedBytes)}} · {{audioCacheSettings.readyEntries}} {{_AUDIO_CACHE_TRACKS}}</dd>
+                                    <dd>
+                                      {{formatAudioCacheBytes(audioCacheSettings.usedBytes)}}
+                                      · {{audioCacheSettings.readyEntries}}
+                                      {{_AUDIO_CACHE_TRACKS}}
+                                    </dd>
                                   </div>
                                   <div>
                                     <dt>{{_AUDIO_CACHE_DOWNLOAD_STATUS}}</dt>
-                                    <dd ng-if="audioCacheSettings.queuedEntries > 0">{{_AUDIO_CACHE_DOWNLOAD_QUEUED}}: {{audioCacheSettings.queuedEntries}}</dd>
-                                    <dd ng-if="!audioCacheSettings.queuedEntries">{{_AUDIO_CACHE_DOWNLOAD_IDLE}}</dd>
+                                    <dd
+                                      ng-if="audioCacheSettings.queuedEntries > 0"
+                                    >
+                                      {{_AUDIO_CACHE_DOWNLOAD_QUEUED}}:
+                                      {{audioCacheSettings.queuedEntries}}
+                                    </dd>
+                                    <dd
+                                      ng-if="!audioCacheSettings.queuedEntries"
+                                    >
+                                      {{_AUDIO_CACHE_DOWNLOAD_IDLE}}
+                                    </dd>
                                   </div>
                                 </dl>
-                                <p class="audio-cache-error" ng-if="audioCacheSettings.lastError" role="alert">
-                                  {{_AUDIO_CACHE_FAILURE_NOTICE}} {{audioCacheSettings.lastError}}
+                                <p
+                                  class="audio-cache-error"
+                                  ng-if="audioCacheSettings.lastError"
+                                  role="alert"
+                                >
+                                  {{_AUDIO_CACHE_FAILURE_NOTICE}}
+                                  {{audioCacheSettings.lastError}}
                                 </p>
                                 <div class="audio-cache-actions">
                                   <button
@@ -1642,9 +1740,14 @@
                                 ng-if="!isChrome"
                                 data-audio-effects-settings
                               >
-                                <div class="audio-effects-summary" aria-live="polite">
+                                <div
+                                  class="audio-effects-summary"
+                                  aria-live="polite"
+                                >
                                   <div>
-                                    <strong>{{audioEffectPresetLabel(audioEffects.activePreset)}}</strong>
+                                    <strong
+                                      >{{audioEffectPresetLabel(audioEffects.activePreset)}}</strong
+                                    >
                                     <p>{{audioEffectStatus()}}</p>
                                   </div>
                                   <button
@@ -1659,7 +1762,11 @@
                                 <p class="audio-effects-description">
                                   {{_AUDIO_EFFECT_DESCRIPTION}}
                                 </p>
-                                <div class="audio-effects-preset-grid" role="radiogroup" aria-label="{{_AUDIO_EFFECT_PRESET_LABEL}}">
+                                <div
+                                  class="audio-effects-preset-grid"
+                                  role="radiogroup"
+                                  aria-label="{{_AUDIO_EFFECT_PRESET_LABEL}}"
+                                >
                                   <button
                                     type="button"
                                     class="audio-effect-preset"
@@ -1670,12 +1777,24 @@
                                     role="radio"
                                     ng-attr-aria-checked="{{audioEffects.activePreset === preset.id}}"
                                   >
-                                    <span class="audio-effect-preset-name">{{audioEffectPresetLabel(preset.id)}}</span>
-                                    <span class="audio-effect-preset-description">{{audioEffectPresetDescription(preset.id)}}</span>
-                                    <span class="audio-effect-headphone" ng-if="preset.headphoneOnly">{{_AUDIO_EFFECT_HEADPHONE_HINT}}</span>
+                                    <span class="audio-effect-preset-name"
+                                      >{{audioEffectPresetLabel(preset.id)}}</span
+                                    >
+                                    <span
+                                      class="audio-effect-preset-description"
+                                      >{{audioEffectPresetDescription(preset.id)}}</span
+                                    >
+                                    <span
+                                      class="audio-effect-headphone"
+                                      ng-if="preset.headphoneOnly"
+                                      >{{_AUDIO_EFFECT_HEADPHONE_HINT}}</span
+                                    >
                                   </button>
                                 </div>
-                                <p class="audio-effects-warning" ng-if="audioEffects.degraded || audioEffects.supported === false">
+                                <p
+                                  class="audio-effects-warning"
+                                  ng-if="audioEffects.degraded || audioEffects.supported === false"
+                                >
                                   {{audioEffectStatus()}}
                                 </p>
                               </div>
@@ -1692,7 +1811,9 @@
                                 <p class="machine-translation-description">
                                   {{_MACHINE_TRANSLATION_SECURE_STORAGE_NOTICE}}
                                 </p>
-                                <p class="machine-translation-description machine-translation-privacy">
+                                <p
+                                  class="machine-translation-description machine-translation-privacy"
+                                >
                                   {{_MACHINE_TRANSLATION_PRIVACY_NOTICE}}
                                 </p>
                                 <div class="machine-translation-rules">
@@ -1702,34 +1823,61 @@
                                     ng-click="toggleMachineTranslationRules()"
                                     ng-attr-aria-expanded="{{machineTranslationRulesOpen}}"
                                   >
-                                    {{machineTranslationRulesOpen ? _MACHINE_TRANSLATION_HIDE_PROMPT : _MACHINE_TRANSLATION_VIEW_PROMPT}}
+                                    {{machineTranslationRulesOpen ?
+                                    _MACHINE_TRANSLATION_HIDE_PROMPT :
+                                    _MACHINE_TRANSLATION_VIEW_PROMPT}}
                                   </button>
                                   <div ng-if="machineTranslationRulesOpen">
-                                    <strong>{{_MACHINE_TRANSLATION_FIXED_RULES}}</strong>
-                                    <p class="machine-translation-prompt-unavailable" ng-if="!machineTranslationConfig.immutableSystemPrompt || !machineTranslationConfig.promptTemplatePreview">
+                                    <strong
+                                      >{{_MACHINE_TRANSLATION_FIXED_RULES}}</strong
+                                    >
+                                    <p
+                                      class="machine-translation-prompt-unavailable"
+                                      ng-if="!machineTranslationConfig.immutableSystemPrompt || !machineTranslationConfig.promptTemplatePreview"
+                                    >
                                       {{_MACHINE_TRANSLATION_PROMPT_PREVIEW_UNAVAILABLE}}
                                     </p>
-                                    <label ng-if="machineTranslationConfig.immutableSystemPrompt">
-                                      <span>{{_MACHINE_TRANSLATION_IMMUTABLE_PROMPT}}</span>
-                                      <pre>{{machineTranslationConfig.immutableSystemPrompt}}</pre>
+                                    <label
+                                      ng-if="machineTranslationConfig.immutableSystemPrompt"
+                                    >
+                                      <span
+                                        >{{_MACHINE_TRANSLATION_IMMUTABLE_PROMPT}}</span
+                                      >
+                                      <pre>
+{{machineTranslationConfig.immutableSystemPrompt}}</pre
+                                      >
                                     </label>
-                                    <label ng-if="machineTranslationConfig.promptTemplatePreview">
-                                      <span>{{_MACHINE_TRANSLATION_PROMPT_TEMPLATE}}</span>
-                                      <pre>{{machineTranslationConfig.promptTemplatePreview}}</pre>
+                                    <label
+                                      ng-if="machineTranslationConfig.promptTemplatePreview"
+                                    >
+                                      <span
+                                        >{{_MACHINE_TRANSLATION_PROMPT_TEMPLATE}}</span
+                                      >
+                                      <pre>
+{{machineTranslationConfig.promptTemplatePreview}}</pre
+                                      >
                                     </label>
                                   </div>
                                 </div>
-                                <label class="machine-translation-key-label machine-translation-style-label">
-                                  <span>{{_MACHINE_TRANSLATION_STYLE_HINT}}</span>
+                                <label
+                                  class="machine-translation-key-label machine-translation-style-label"
+                                >
+                                  <span
+                                    >{{_MACHINE_TRANSLATION_STYLE_HINT}}</span
+                                  >
                                   <textarea
                                     rows="3"
                                     maxlength="{{machineTranslationConfig.maxStyleHintChars || 1200}}"
                                     ng-model="machineTranslationConfig.styleHint"
                                     placeholder="{{_MACHINE_TRANSLATION_STYLE_HINT_PLACEHOLDER}}"
                                   ></textarea>
-                                  <small>{{_MACHINE_TRANSLATION_STYLE_HINT_HELP}}</small>
+                                  <small
+                                    >{{_MACHINE_TRANSLATION_STYLE_HINT_HELP}}</small
+                                  >
                                 </label>
-                                <div class="machine-translation-actions machine-translation-style-actions">
+                                <div
+                                  class="machine-translation-actions machine-translation-style-actions"
+                                >
                                   <button
                                     type="button"
                                     class="btn btn-primary confirm-button"
@@ -1830,7 +1978,9 @@
                               <div class="settings-title">
                                 <span>{{_RECOVER_PLAYLIST}}</span>
                               </div>
-                              <div class="settings-content playlist-backup-settings">
+                              <div
+                                class="settings-content playlist-backup-settings"
+                              >
                                 <p>{{_RECOVER_WARNING}}</p>
                                 <div class="playlist-backup-actions">
                                   <label
@@ -2192,53 +2342,256 @@
                             <header class="audio-cache-library-head">
                               <div>
                                 <h2>{{_AUDIO_CACHE_LIBRARY}}</h2>
-                                <p><span data-audio-cache-summary="total">{{audioCacheManager.entries.length}} {{_AUDIO_CACHE_TRACKS}}</span> · <span data-audio-cache-summary="space">{{formatAudioCacheBytes(audioCacheSettings.usedBytes)}}</span></p>
+                                <p>
+                                  <span data-audio-cache-summary="total"
+                                    >{{audioCacheManager.entries.length}}
+                                    {{_AUDIO_CACHE_TRACKS}}</span
+                                  >
+                                  ·
+                                  <span data-audio-cache-summary="space"
+                                    >{{formatAudioCacheBytes(audioCacheSettings.usedBytes)}}</span
+                                  >
+                                </p>
                               </div>
-                              <button type="button" class="btn btn-default" ng-click="refreshAudioCacheInventory();refreshAudioCacheStatus()" ng-disabled="audioCacheManager.loading || audioCacheManager.deleting" data-audio-cache-action="refresh">
+                              <button
+                                type="button"
+                                class="btn btn-default"
+                                ng-click="refreshAudioCacheInventory();refreshAudioCacheStatus()"
+                                ng-disabled="audioCacheManager.loading || audioCacheManager.deleting"
+                                data-audio-cache-action="refresh"
+                              >
                                 {{_AUDIO_CACHE_REFRESH}}
                               </button>
                             </header>
                             <div class="audio-cache-library-toolbar">
-                              <div class="audio-cache-library-filters" role="group" aria-label="{{_AUDIO_CACHE_TITLE}}">
-                                <button type="button" ng-click="audioCacheManager.filter='all'" ng-class="{active: audioCacheManager.filter === 'all'}" data-audio-cache-library-filter data-audio-cache-filter="all">{{_AUDIO_CACHE_FILTER_ALL}}</button>
-                                <button type="button" ng-click="audioCacheManager.filter='downloaded'" ng-class="{active: audioCacheManager.filter === 'downloaded'}" data-audio-cache-library-filter data-audio-cache-filter="downloaded">{{_AUDIO_CACHE_FILTER_DOWNLOADED}}</button>
-                                <button type="button" ng-click="audioCacheManager.filter='playlist'" ng-class="{active: audioCacheManager.filter === 'playlist'}" data-audio-cache-library-filter data-audio-cache-filter="playlist">{{_AUDIO_CACHE_FILTER_PLAYLIST}}</button>
-                                <button type="button" ng-click="audioCacheManager.filter='temporary'" ng-class="{active: audioCacheManager.filter === 'temporary'}" data-audio-cache-library-filter data-audio-cache-filter="temporary">{{_AUDIO_CACHE_FILTER_TEMPORARY}}</button>
+                              <div
+                                class="audio-cache-library-filters"
+                                role="group"
+                                aria-label="{{_AUDIO_CACHE_TITLE}}"
+                              >
+                                <button
+                                  type="button"
+                                  ng-click="audioCacheManager.filter='all'"
+                                  ng-class="{active: audioCacheManager.filter === 'all'}"
+                                  data-audio-cache-library-filter
+                                  data-audio-cache-filter="all"
+                                >
+                                  {{_AUDIO_CACHE_FILTER_ALL}}
+                                </button>
+                                <button
+                                  type="button"
+                                  ng-click="audioCacheManager.filter='downloaded'"
+                                  ng-class="{active: audioCacheManager.filter === 'downloaded'}"
+                                  data-audio-cache-library-filter
+                                  data-audio-cache-filter="downloaded"
+                                >
+                                  {{_AUDIO_CACHE_FILTER_DOWNLOADED}}
+                                </button>
+                                <button
+                                  type="button"
+                                  ng-click="audioCacheManager.filter='playlist'"
+                                  ng-class="{active: audioCacheManager.filter === 'playlist'}"
+                                  data-audio-cache-library-filter
+                                  data-audio-cache-filter="playlist"
+                                >
+                                  {{_AUDIO_CACHE_FILTER_PLAYLIST}}
+                                </button>
+                                <button
+                                  type="button"
+                                  ng-click="audioCacheManager.filter='temporary'"
+                                  ng-class="{active: audioCacheManager.filter === 'temporary'}"
+                                  data-audio-cache-library-filter
+                                  data-audio-cache-filter="temporary"
+                                >
+                                  {{_AUDIO_CACHE_FILTER_TEMPORARY}}
+                                </button>
                               </div>
-                              <input type="search" class="form-control" ng-model="audioCacheManager.query" placeholder="{{_AUDIO_CACHE_SEARCH_PLACEHOLDER}}" data-audio-cache-search />
-                              <label><span>{{_AUDIO_CACHE_SORT_LABEL}}</span><select ng-model="audioCacheManager.sort" ng-options="option.value as option.label for option in audioCacheSortOptions" data-audio-cache-sort></select></label>
+                              <input
+                                type="search"
+                                class="form-control"
+                                ng-model="audioCacheManager.query"
+                                placeholder="{{_AUDIO_CACHE_SEARCH_PLACEHOLDER}}"
+                                data-audio-cache-search
+                              />
+                              <label
+                                ><span>{{_AUDIO_CACHE_SORT_LABEL}}</span
+                                ><select
+                                  ng-model="audioCacheManager.sort"
+                                  ng-options="option.value as option.label for option in audioCacheSortOptions"
+                                  data-audio-cache-sort
+                                ></select
+                              ></label>
                             </div>
                             <div class="audio-cache-library-selection">
-                              <span>{{_AUDIO_CACHE_SELECTED}}: {{audioCacheSelectedEntries().length}} · {{formatAudioCacheBytes(audioCacheSelectedBytes())}}</span>
+                              <span
+                                >{{_AUDIO_CACHE_SELECTED}}:
+                                {{audioCacheSelectedEntries().length}} ·
+                                {{formatAudioCacheBytes(audioCacheSelectedBytes())}}</span
+                              >
                               <div>
-                                <button type="button" class="btn btn-default" ng-click="selectVisibleAudioCacheEntries()" ng-disabled="!visibleAudioCacheEntries().length">{{_AUDIO_CACHE_SELECT_VISIBLE}}</button>
-                                <button type="button" class="btn btn-default" ng-click="clearAudioCacheSelection()" ng-disabled="!audioCacheSelectedEntries().length">{{_AUDIO_CACHE_CLEAR_SELECTION}}</button>
-                                <button type="button" class="btn btn-warning" ng-click="requestDeleteSelectedAudioCacheEntries()" ng-disabled="!audioCacheSelectedEntries().length || audioCacheManager.deleting" data-audio-cache-action="delete-selected">{{_AUDIO_CACHE_DELETE_SELECTED}}</button>
+                                <button
+                                  type="button"
+                                  class="btn btn-default"
+                                  ng-click="selectVisibleAudioCacheEntries()"
+                                  ng-disabled="!visibleAudioCacheEntries().length"
+                                >
+                                  {{_AUDIO_CACHE_SELECT_VISIBLE}}
+                                </button>
+                                <button
+                                  type="button"
+                                  class="btn btn-default"
+                                  ng-click="clearAudioCacheSelection()"
+                                  ng-disabled="!audioCacheSelectedEntries().length"
+                                >
+                                  {{_AUDIO_CACHE_CLEAR_SELECTION}}
+                                </button>
+                                <button
+                                  type="button"
+                                  class="btn btn-warning"
+                                  ng-click="requestDeleteSelectedAudioCacheEntries()"
+                                  ng-disabled="!audioCacheSelectedEntries().length || audioCacheManager.deleting"
+                                  data-audio-cache-action="delete-selected"
+                                >
+                                  {{_AUDIO_CACHE_DELETE_SELECTED}}
+                                </button>
                               </div>
                             </div>
-                            <section class="audio-cache-library-confirm" ng-if="audioCacheManager.deleteConfirmationOpen" role="alertdialog" data-audio-cache-delete-confirm>
-                              <p>{{_AUDIO_CACHE_DELETE_CONFIRM_PREFIX}} {{audioCacheManager.pendingDeleteEntries.length}} {{_AUDIO_CACHE_TRACKS}}（{{formatAudioCacheBytes(pendingAudioCacheDeleteBytes())}}）？</p>
+                            <section
+                              class="audio-cache-library-confirm"
+                              ng-if="audioCacheManager.deleteConfirmationOpen"
+                              role="alertdialog"
+                              data-audio-cache-delete-confirm
+                            >
+                              <p>
+                                {{_AUDIO_CACHE_DELETE_CONFIRM_PREFIX}}
+                                {{audioCacheManager.pendingDeleteEntries.length}}
+                                {{_AUDIO_CACHE_TRACKS}}（{{formatAudioCacheBytes(pendingAudioCacheDeleteBytes())}}）？
+                              </p>
                               <small>{{_AUDIO_CACHE_DELETE_AUDIO_ONLY}}</small>
-                              <div><button type="button" class="btn btn-warning" ng-click="confirmDeleteAudioCacheEntries()" ng-disabled="audioCacheManager.deleting">{{_CONFIRM}}</button><button type="button" class="btn btn-default" ng-click="cancelDeleteAudioCacheEntries()" ng-disabled="audioCacheManager.deleting">{{_CANCEL}}</button></div>
+                              <div>
+                                <button
+                                  type="button"
+                                  class="btn btn-warning"
+                                  ng-click="confirmDeleteAudioCacheEntries()"
+                                  ng-disabled="audioCacheManager.deleting"
+                                >
+                                  {{_CONFIRM}}</button
+                                ><button
+                                  type="button"
+                                  class="btn btn-default"
+                                  ng-click="cancelDeleteAudioCacheEntries()"
+                                  ng-disabled="audioCacheManager.deleting"
+                                >
+                                  {{_CANCEL}}
+                                </button>
+                              </div>
                             </section>
-                            <p ng-if="audioCacheManager.loading" data-audio-cache-state="loading">{{_AUDIO_CACHE_INVENTORY_LOADING}}</p>
-                            <p class="audio-cache-error" ng-if="audioCacheManager.error" role="alert" data-audio-cache-state="error">{{_AUDIO_CACHE_FAILURE_NOTICE}} {{audioCacheManager.error}}</p>
-                            <div class="audio-cache-library-list" ng-if="!audioCacheManager.loading">
-                              <article class="audio-cache-library-row" ng-repeat="entry in visibleAudioCacheEntries() track by entry.cacheKey" data-audio-cache-entry>
-                                <input type="checkbox" ng-model="audioCacheManager.selected[entry.cacheKey]" aria-label="{{_AUDIO_CACHE_SELECT_TRACK}} {{entry.title}}" data-audio-cache-library-select data-audio-cache-select />
-                                <img ng-if="entry.coverUrl" ng-src="{{entry.coverUrl}}" alt="" /><span class="audio-cache-entry-cover" ng-if="!entry.coverUrl">♪</span>
-                                <div class="audio-cache-library-song"><strong title="{{entry.title}}">{{entry.title}}</strong><span>{{entry.artist || _AUDIO_CACHE_UNKNOWN_ARTIST}}</span></div>
-                                <span class="audio-cache-library-duration">{{formatTrackDuration(entry.duration)}}</span>
-                                <span class="audio-cache-library-size">{{formatAudioCacheBytes(entry.byteLength)}}</span>
-                                <em ng-class="{'is-temporary': entry.retention === 'temporary', 'is-downloaded': entry.downloaded}">{{entry.downloaded ? _AUDIO_CACHE_DOWNLOADED : (entry.retention === 'playlist' ? _AUDIO_CACHE_IN_PLAYLIST : _AUDIO_CACHE_TEMPORARY)}}</em>
-                                <span class="audio-cache-library-date">{{formatAudioCacheDate(entry.cachedAt)}}</span>
+                            <p
+                              ng-if="audioCacheManager.loading"
+                              data-audio-cache-state="loading"
+                            >
+                              {{_AUDIO_CACHE_INVENTORY_LOADING}}
+                            </p>
+                            <p
+                              class="audio-cache-error"
+                              ng-if="audioCacheManager.error"
+                              role="alert"
+                              data-audio-cache-state="error"
+                            >
+                              {{_AUDIO_CACHE_FAILURE_NOTICE}}
+                              {{audioCacheManager.error}}
+                            </p>
+                            <div
+                              class="audio-cache-library-list"
+                              ng-if="!audioCacheManager.loading"
+                            >
+                              <article
+                                class="audio-cache-library-row"
+                                ng-repeat="entry in visibleAudioCacheEntries() track by entry.cacheKey"
+                                data-audio-cache-entry
+                              >
+                                <input
+                                  type="checkbox"
+                                  ng-model="audioCacheManager.selected[entry.cacheKey]"
+                                  aria-label="{{_AUDIO_CACHE_SELECT_TRACK}} {{entry.title}}"
+                                  data-audio-cache-library-select
+                                  data-audio-cache-select
+                                />
+                                <img
+                                  ng-if="entry.coverUrl"
+                                  ng-src="{{entry.coverUrl}}"
+                                  alt=""
+                                /><span
+                                  class="audio-cache-entry-cover"
+                                  ng-if="!entry.coverUrl"
+                                  >♪</span
+                                >
+                                <div class="audio-cache-library-song">
+                                  <strong title="{{entry.title}}"
+                                    >{{entry.title}}</strong
+                                  ><span
+                                    >{{entry.artist ||
+                                    _AUDIO_CACHE_UNKNOWN_ARTIST}}</span
+                                  >
+                                </div>
+                                <span class="audio-cache-library-duration"
+                                  >{{formatTrackDuration(entry.duration)}}</span
+                                >
+                                <span class="audio-cache-library-size"
+                                  >{{formatAudioCacheBytes(entry.byteLength)}}</span
+                                >
+                                <em
+                                  ng-class="{'is-temporary': entry.retention === 'temporary', 'is-downloaded': entry.downloaded}"
+                                  >{{entry.downloaded ? _AUDIO_CACHE_DOWNLOADED
+                                  : (entry.retention === 'playlist' ?
+                                  _AUDIO_CACHE_IN_PLAYLIST :
+                                  _AUDIO_CACHE_TEMPORARY)}}</em
+                                >
+                                <span class="audio-cache-library-date"
+                                  >{{formatAudioCacheDate(entry.cachedAt)}}</span
+                                >
                                 <div class="audio-cache-library-actions">
-                                  <button type="button" class="btn btn-default" ng-click="playAudioCacheEntry(entry)" ng-disabled="!entry.playable" data-audio-cache-library-play data-audio-cache-action="play">{{entry.playable ? _PLAY_ALL : _AUDIO_CACHE_NOT_PLAYABLE}}</button>
-                                  <button type="button" class="btn btn-default" ng-click="setAudioCacheDownloaded(entry, !entry.downloaded)" ng-disabled="audioCacheManager.deleting" data-audio-cache-action="keep-offline">{{entry.downloaded ? _AUDIO_CACHE_CANCEL_DOWNLOAD : _AUDIO_CACHE_KEEP_OFFLINE}}</button>
-                                  <button type="button" class="btn btn-default" ng-click="requestDeleteAudioCacheEntries([entry])" ng-disabled="audioCacheManager.deleting" data-audio-cache-library-delete data-audio-cache-action="delete">{{_AUDIO_CACHE_DELETE_ENTRY}}</button>
+                                  <button
+                                    type="button"
+                                    class="btn btn-default"
+                                    ng-click="playAudioCacheEntry(entry)"
+                                    ng-disabled="!entry.playable"
+                                    data-audio-cache-library-play
+                                    data-audio-cache-action="play"
+                                  >
+                                    {{entry.playable ? _PLAY_ALL :
+                                    _AUDIO_CACHE_NOT_PLAYABLE}}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="btn btn-default"
+                                    ng-click="setAudioCacheDownloaded(entry, !entry.downloaded)"
+                                    ng-disabled="audioCacheManager.deleting"
+                                    data-audio-cache-action="keep-offline"
+                                  >
+                                    {{entry.downloaded ?
+                                    _AUDIO_CACHE_CANCEL_DOWNLOAD :
+                                    _AUDIO_CACHE_KEEP_OFFLINE}}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="btn btn-default"
+                                    ng-click="requestDeleteAudioCacheEntries([entry])"
+                                    ng-disabled="audioCacheManager.deleting"
+                                    data-audio-cache-library-delete
+                                    data-audio-cache-action="delete"
+                                  >
+                                    {{_AUDIO_CACHE_DELETE_ENTRY}}
+                                  </button>
                                 </div>
                               </article>
-                              <p class="audio-cache-inventory-empty" ng-if="!visibleAudioCacheEntries().length" data-audio-cache-state="empty">{{_AUDIO_CACHE_INVENTORY_EMPTY}}</p>
+                              <p
+                                class="audio-cache-inventory-empty"
+                                ng-if="!visibleAudioCacheEntries().length"
+                                data-audio-cache-state="empty"
+                              >
+                                {{_AUDIO_CACHE_INVENTORY_EMPTY}}
+                              </p>
                             </div>
                           </section>
                           <div
@@ -2745,7 +3098,10 @@
                         >
                           <span>FX</span>
                         </button>
-                        <span class="audio-effects-toggle-state" ng-if="audioEffects.activePreset !== 'original'"></span>
+                        <span
+                          class="audio-effects-toggle-state"
+                          ng-if="audioEffects.activePreset !== 'original'"
+                        ></span>
                       </div>
                       <div ng-if="!isChrome" class="lyric-toggle">
                         <div
@@ -2768,9 +3124,19 @@
                           <strong>{{_AUDIO_EFFECT_TITLE}}</strong>
                           <small>{{audioEffectStatus()}}</small>
                         </div>
-                        <button type="button" ng-click="toggleAudioEffectsPanel()" aria-label="{{_CLOSE}}">×</button>
+                        <button
+                          type="button"
+                          ng-click="toggleAudioEffectsPanel()"
+                          aria-label="{{_CLOSE}}"
+                        >
+                          ×
+                        </button>
                       </header>
-                      <div class="audio-effects-popover-grid" role="radiogroup" aria-label="{{_AUDIO_EFFECT_PRESET_LABEL}}">
+                      <div
+                        class="audio-effects-popover-grid"
+                        role="radiogroup"
+                        aria-label="{{_AUDIO_EFFECT_PRESET_LABEL}}"
+                      >
                         <button
                           type="button"
                           ng-repeat="preset in audioEffectPresets track by preset.id"
@@ -2781,8 +3147,12 @@
                           ng-attr-aria-checked="{{audioEffects.activePreset === preset.id}}"
                         >
                           <strong>{{audioEffectPresetLabel(preset.id)}}</strong>
-                          <small>{{audioEffectPresetDescription(preset.id)}}</small>
-                          <em ng-if="preset.headphoneOnly">{{_AUDIO_EFFECT_HEADPHONE_HINT}}</em>
+                          <small
+                            >{{audioEffectPresetDescription(preset.id)}}</small
+                          >
+                          <em ng-if="preset.headphoneOnly"
+                            >{{_AUDIO_EFFECT_HEADPHONE_HINT}}</em
+                          >
                         </button>
                       </div>
                       <footer>
@@ -2791,7 +3161,9 @@
                           class="audio-effects-ab"
                           ng-click="compareAudioEffectWithOriginal()"
                           ng-disabled="audioEffects.pending || audioEffects.supported === false"
-                        >{{audioEffectComparisonLabel()}}</button>
+                        >
+                          {{audioEffectComparisonLabel()}}
+                        </button>
                       </footer>
                     </section>
                     <div
@@ -2844,21 +3216,29 @@
                               <strong>{{entry.track.title}}</strong>
                               <small>{{entry.track.artist}}</small>
                             </span>
-                            <time>{{formatTrackDuration(entry.track.duration)}}</time>
+                            <time
+                              >{{formatTrackDuration(entry.track.duration)}}</time
+                            >
                             <button
                               type="button"
                               ng-disabled="$first"
                               ng-click="movePlayNextQueueEntry(entry.queueId, $index - 1)"
-                            >↑</button>
+                            >
+                              ↑
+                            </button>
                             <button
                               type="button"
                               ng-disabled="$last"
                               ng-click="movePlayNextQueueEntry(entry.queueId, $index + 1)"
-                            >↓</button>
+                            >
+                              ↓
+                            </button>
                             <button
                               type="button"
                               ng-click="removePlayNextQueueEntry(entry.queueId)"
-                            >×</button>
+                            >
+                              ×
+                            </button>
                           </li>
                         </ol>
                       </section>
@@ -3592,7 +3972,9 @@
                                   ng-class="{'opensidebar':isOpenSidebar}"
                                   class="sidebar-block"
                                 >
-                                  <div><span class="icon li-featured-list"></span></div>
+                                  <div>
+                                    <span class="icon li-featured-list"></span>
+                                  </div>
                                   <a>{{_AUDIO_CACHE_LIBRARY}}</a>
                                 </div>
                               </li>
@@ -3786,6 +4168,25 @@
                       ng-controller="InstantSearchController"
                     >
                       <div class="navigation">
+                        <div class="mobile-page-heading" aria-label="Listen2">
+                          <span
+                            class="mobile-page-heading-mark"
+                            aria-hidden="true"
+                          >
+                            <svg
+                              class="mobile-page-heading-icon"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              stroke-width="1.8"
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                            >
+                              <use href="#music"></use>
+                            </svg>
+                          </span>
+                          <span class="mobile-page-heading-title">Listen2</span>
+                        </div>
                         <div class="backfront">
                           <svg
                             fill="currentColor"
@@ -4910,7 +5311,10 @@
                                 <p class="audio-cache-description">
                                   {{_AUDIO_CACHE_DESCRIPTION}}
                                 </p>
-                                <label class="audio-cache-toggle" for="modern-audio-cache-enabled">
+                                <label
+                                  class="audio-cache-toggle"
+                                  for="modern-audio-cache-enabled"
+                                >
                                   <input
                                     id="modern-audio-cache-enabled"
                                     type="checkbox"
@@ -4920,7 +5324,10 @@
                                   />
                                   <span>{{_AUDIO_CACHE_ENABLED}}</span>
                                 </label>
-                                <label class="audio-cache-toggle loudness-normalization-toggle" for="modern-loudness-normalization-enabled">
+                                <label
+                                  class="audio-cache-toggle loudness-normalization-toggle"
+                                  for="modern-loudness-normalization-enabled"
+                                >
                                   <input
                                     id="modern-loudness-normalization-enabled"
                                     type="checkbox"
@@ -4928,15 +5335,23 @@
                                     ng-change="updateLoudnessNormalizationEnabled()"
                                     ng-disabled="audioCacheActionPending"
                                   />
-                                  <span>{{_LOUDNESS_NORMALIZATION_ENABLED}}</span>
+                                  <span
+                                    >{{_LOUDNESS_NORMALIZATION_ENABLED}}</span
+                                  >
                                 </label>
                                 <p class="loudness-normalization-description">
                                   {{_LOUDNESS_NORMALIZATION_DESCRIPTION}}
                                 </p>
-                                <p class="loudness-normalization-description" ng-if="audioCacheSettings.loudnessNormalizationEnabled !== false">
+                                <p
+                                  class="loudness-normalization-description"
+                                  ng-if="audioCacheSettings.loudnessNormalizationEnabled !== false"
+                                >
                                   {{loudnessNormalizationStatus()}}
                                 </p>
-                                <label class="audio-cache-capacity" for="modern-audio-cache-capacity">
+                                <label
+                                  class="audio-cache-capacity"
+                                  for="modern-audio-cache-capacity"
+                                >
                                   <span>{{_AUDIO_CACHE_CAPACITY}}</span>
                                   <select
                                     id="modern-audio-cache-capacity"
@@ -4946,19 +5361,40 @@
                                     ng-disabled="audioCacheActionPending"
                                   ></select>
                                 </label>
-                                <dl class="audio-cache-status" aria-live="polite">
+                                <dl
+                                  class="audio-cache-status"
+                                  aria-live="polite"
+                                >
                                   <div>
                                     <dt>{{_AUDIO_CACHE_USAGE}}</dt>
-                                    <dd>{{formatAudioCacheBytes(audioCacheSettings.usedBytes)}} · {{audioCacheSettings.readyEntries}} {{_AUDIO_CACHE_TRACKS}}</dd>
+                                    <dd>
+                                      {{formatAudioCacheBytes(audioCacheSettings.usedBytes)}}
+                                      · {{audioCacheSettings.readyEntries}}
+                                      {{_AUDIO_CACHE_TRACKS}}
+                                    </dd>
                                   </div>
                                   <div>
                                     <dt>{{_AUDIO_CACHE_DOWNLOAD_STATUS}}</dt>
-                                    <dd ng-if="audioCacheSettings.queuedEntries > 0">{{_AUDIO_CACHE_DOWNLOAD_QUEUED}}: {{audioCacheSettings.queuedEntries}}</dd>
-                                    <dd ng-if="!audioCacheSettings.queuedEntries">{{_AUDIO_CACHE_DOWNLOAD_IDLE}}</dd>
+                                    <dd
+                                      ng-if="audioCacheSettings.queuedEntries > 0"
+                                    >
+                                      {{_AUDIO_CACHE_DOWNLOAD_QUEUED}}:
+                                      {{audioCacheSettings.queuedEntries}}
+                                    </dd>
+                                    <dd
+                                      ng-if="!audioCacheSettings.queuedEntries"
+                                    >
+                                      {{_AUDIO_CACHE_DOWNLOAD_IDLE}}
+                                    </dd>
                                   </div>
                                 </dl>
-                                <p class="audio-cache-error" ng-if="audioCacheSettings.lastError" role="alert">
-                                  {{_AUDIO_CACHE_FAILURE_NOTICE}} {{audioCacheSettings.lastError}}
+                                <p
+                                  class="audio-cache-error"
+                                  ng-if="audioCacheSettings.lastError"
+                                  role="alert"
+                                >
+                                  {{_AUDIO_CACHE_FAILURE_NOTICE}}
+                                  {{audioCacheSettings.lastError}}
                                 </p>
                                 <div class="audio-cache-actions">
                                   <button
@@ -5006,9 +5442,14 @@
                                 ng-if="!isChrome"
                                 data-audio-effects-settings
                               >
-                                <div class="audio-effects-summary" aria-live="polite">
+                                <div
+                                  class="audio-effects-summary"
+                                  aria-live="polite"
+                                >
                                   <div>
-                                    <strong>{{audioEffectPresetLabel(audioEffects.activePreset)}}</strong>
+                                    <strong
+                                      >{{audioEffectPresetLabel(audioEffects.activePreset)}}</strong
+                                    >
                                     <p>{{audioEffectStatus()}}</p>
                                   </div>
                                   <button
@@ -5023,7 +5464,11 @@
                                 <p class="audio-effects-description">
                                   {{_AUDIO_EFFECT_DESCRIPTION}}
                                 </p>
-                                <div class="audio-effects-preset-grid" role="radiogroup" aria-label="{{_AUDIO_EFFECT_PRESET_LABEL}}">
+                                <div
+                                  class="audio-effects-preset-grid"
+                                  role="radiogroup"
+                                  aria-label="{{_AUDIO_EFFECT_PRESET_LABEL}}"
+                                >
                                   <button
                                     type="button"
                                     class="audio-effect-preset"
@@ -5034,12 +5479,24 @@
                                     role="radio"
                                     ng-attr-aria-checked="{{audioEffects.activePreset === preset.id}}"
                                   >
-                                    <span class="audio-effect-preset-name">{{audioEffectPresetLabel(preset.id)}}</span>
-                                    <span class="audio-effect-preset-description">{{audioEffectPresetDescription(preset.id)}}</span>
-                                    <span class="audio-effect-headphone" ng-if="preset.headphoneOnly">{{_AUDIO_EFFECT_HEADPHONE_HINT}}</span>
+                                    <span class="audio-effect-preset-name"
+                                      >{{audioEffectPresetLabel(preset.id)}}</span
+                                    >
+                                    <span
+                                      class="audio-effect-preset-description"
+                                      >{{audioEffectPresetDescription(preset.id)}}</span
+                                    >
+                                    <span
+                                      class="audio-effect-headphone"
+                                      ng-if="preset.headphoneOnly"
+                                      >{{_AUDIO_EFFECT_HEADPHONE_HINT}}</span
+                                    >
                                   </button>
                                 </div>
-                                <p class="audio-effects-warning" ng-if="audioEffects.degraded || audioEffects.supported === false">
+                                <p
+                                  class="audio-effects-warning"
+                                  ng-if="audioEffects.degraded || audioEffects.supported === false"
+                                >
                                   {{audioEffectStatus()}}
                                 </p>
                               </div>
@@ -5056,7 +5513,9 @@
                                 <p class="machine-translation-description">
                                   {{_MACHINE_TRANSLATION_SECURE_STORAGE_NOTICE}}
                                 </p>
-                                <p class="machine-translation-description machine-translation-privacy">
+                                <p
+                                  class="machine-translation-description machine-translation-privacy"
+                                >
                                   {{_MACHINE_TRANSLATION_PRIVACY_NOTICE}}
                                 </p>
                                 <div class="machine-translation-rules">
@@ -5066,34 +5525,61 @@
                                     ng-click="toggleMachineTranslationRules()"
                                     ng-attr-aria-expanded="{{machineTranslationRulesOpen}}"
                                   >
-                                    {{machineTranslationRulesOpen ? _MACHINE_TRANSLATION_HIDE_PROMPT : _MACHINE_TRANSLATION_VIEW_PROMPT}}
+                                    {{machineTranslationRulesOpen ?
+                                    _MACHINE_TRANSLATION_HIDE_PROMPT :
+                                    _MACHINE_TRANSLATION_VIEW_PROMPT}}
                                   </button>
                                   <div ng-if="machineTranslationRulesOpen">
-                                    <strong>{{_MACHINE_TRANSLATION_FIXED_RULES}}</strong>
-                                    <p class="machine-translation-prompt-unavailable" ng-if="!machineTranslationConfig.immutableSystemPrompt || !machineTranslationConfig.promptTemplatePreview">
+                                    <strong
+                                      >{{_MACHINE_TRANSLATION_FIXED_RULES}}</strong
+                                    >
+                                    <p
+                                      class="machine-translation-prompt-unavailable"
+                                      ng-if="!machineTranslationConfig.immutableSystemPrompt || !machineTranslationConfig.promptTemplatePreview"
+                                    >
                                       {{_MACHINE_TRANSLATION_PROMPT_PREVIEW_UNAVAILABLE}}
                                     </p>
-                                    <label ng-if="machineTranslationConfig.immutableSystemPrompt">
-                                      <span>{{_MACHINE_TRANSLATION_IMMUTABLE_PROMPT}}</span>
-                                      <pre>{{machineTranslationConfig.immutableSystemPrompt}}</pre>
+                                    <label
+                                      ng-if="machineTranslationConfig.immutableSystemPrompt"
+                                    >
+                                      <span
+                                        >{{_MACHINE_TRANSLATION_IMMUTABLE_PROMPT}}</span
+                                      >
+                                      <pre>
+{{machineTranslationConfig.immutableSystemPrompt}}</pre
+                                      >
                                     </label>
-                                    <label ng-if="machineTranslationConfig.promptTemplatePreview">
-                                      <span>{{_MACHINE_TRANSLATION_PROMPT_TEMPLATE}}</span>
-                                      <pre>{{machineTranslationConfig.promptTemplatePreview}}</pre>
+                                    <label
+                                      ng-if="machineTranslationConfig.promptTemplatePreview"
+                                    >
+                                      <span
+                                        >{{_MACHINE_TRANSLATION_PROMPT_TEMPLATE}}</span
+                                      >
+                                      <pre>
+{{machineTranslationConfig.promptTemplatePreview}}</pre
+                                      >
                                     </label>
                                   </div>
                                 </div>
-                                <label class="machine-translation-key-label machine-translation-style-label">
-                                  <span>{{_MACHINE_TRANSLATION_STYLE_HINT}}</span>
+                                <label
+                                  class="machine-translation-key-label machine-translation-style-label"
+                                >
+                                  <span
+                                    >{{_MACHINE_TRANSLATION_STYLE_HINT}}</span
+                                  >
                                   <textarea
                                     rows="3"
                                     maxlength="{{machineTranslationConfig.maxStyleHintChars || 1200}}"
                                     ng-model="machineTranslationConfig.styleHint"
                                     placeholder="{{_MACHINE_TRANSLATION_STYLE_HINT_PLACEHOLDER}}"
                                   ></textarea>
-                                  <small>{{_MACHINE_TRANSLATION_STYLE_HINT_HELP}}</small>
+                                  <small
+                                    >{{_MACHINE_TRANSLATION_STYLE_HINT_HELP}}</small
+                                  >
                                 </label>
-                                <div class="machine-translation-actions machine-translation-style-actions">
+                                <div
+                                  class="machine-translation-actions machine-translation-style-actions"
+                                >
                                   <button
                                     type="button"
                                     class="btn btn-primary confirm-button"
@@ -5194,7 +5680,9 @@
                               <div class="settings-title">
                                 <span>{{_RECOVER_PLAYLIST}}</span>
                               </div>
-                              <div class="settings-content playlist-backup-settings">
+                              <div
+                                class="settings-content playlist-backup-settings"
+                              >
                                 <p>{{_RECOVER_WARNING}}</p>
                                 <div class="playlist-backup-actions">
                                   <label
@@ -5591,7 +6079,8 @@
 
                                   <div class="usercard-title">
                                     <div class="usercard-nickname">
-                                      {{source=='bilibili' ? '登录哔哩哔哩' : _NOT_LOGIN_NICKNAME}}
+                                      {{source=='bilibili' ? '登录哔哩哔哩' :
+                                      _NOT_LOGIN_NICKNAME}}
                                     </div>
                                     <div
                                       ng-if="source=='netease'"
@@ -5633,19 +6122,247 @@
                             data-audio-cache-library-page
                           >
                             <header class="audio-cache-library-head">
-                              <div><h2>{{_AUDIO_CACHE_LIBRARY}}</h2><p><span data-audio-cache-summary="total">{{audioCacheManager.entries.length}} {{_AUDIO_CACHE_TRACKS}}</span> · <span data-audio-cache-summary="space">{{formatAudioCacheBytes(audioCacheSettings.usedBytes)}}</span></p></div>
-                              <button type="button" class="btn btn-default" ng-click="refreshAudioCacheInventory();refreshAudioCacheStatus()" ng-disabled="audioCacheManager.loading || audioCacheManager.deleting" data-audio-cache-action="refresh">{{_AUDIO_CACHE_REFRESH}}</button>
+                              <div>
+                                <h2>{{_AUDIO_CACHE_LIBRARY}}</h2>
+                                <p>
+                                  <span data-audio-cache-summary="total"
+                                    >{{audioCacheManager.entries.length}}
+                                    {{_AUDIO_CACHE_TRACKS}}</span
+                                  >
+                                  ·
+                                  <span data-audio-cache-summary="space"
+                                    >{{formatAudioCacheBytes(audioCacheSettings.usedBytes)}}</span
+                                  >
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                class="btn btn-default"
+                                ng-click="refreshAudioCacheInventory();refreshAudioCacheStatus()"
+                                ng-disabled="audioCacheManager.loading || audioCacheManager.deleting"
+                                data-audio-cache-action="refresh"
+                              >
+                                {{_AUDIO_CACHE_REFRESH}}
+                              </button>
                             </header>
                             <div class="audio-cache-library-toolbar">
-                              <div class="audio-cache-library-filters" role="group" aria-label="{{_AUDIO_CACHE_TITLE}}">
-                                <button type="button" ng-click="audioCacheManager.filter='all'" ng-class="{active: audioCacheManager.filter === 'all'}" data-audio-cache-library-filter data-audio-cache-filter="all">{{_AUDIO_CACHE_FILTER_ALL}}</button><button type="button" ng-click="audioCacheManager.filter='downloaded'" ng-class="{active: audioCacheManager.filter === 'downloaded'}" data-audio-cache-library-filter data-audio-cache-filter="downloaded">{{_AUDIO_CACHE_FILTER_DOWNLOADED}}</button><button type="button" ng-click="audioCacheManager.filter='playlist'" ng-class="{active: audioCacheManager.filter === 'playlist'}" data-audio-cache-library-filter data-audio-cache-filter="playlist">{{_AUDIO_CACHE_FILTER_PLAYLIST}}</button><button type="button" ng-click="audioCacheManager.filter='temporary'" ng-class="{active: audioCacheManager.filter === 'temporary'}" data-audio-cache-library-filter data-audio-cache-filter="temporary">{{_AUDIO_CACHE_FILTER_TEMPORARY}}</button>
+                              <div
+                                class="audio-cache-library-filters"
+                                role="group"
+                                aria-label="{{_AUDIO_CACHE_TITLE}}"
+                              >
+                                <button
+                                  type="button"
+                                  ng-click="audioCacheManager.filter='all'"
+                                  ng-class="{active: audioCacheManager.filter === 'all'}"
+                                  data-audio-cache-library-filter
+                                  data-audio-cache-filter="all"
+                                >
+                                  {{_AUDIO_CACHE_FILTER_ALL}}</button
+                                ><button
+                                  type="button"
+                                  ng-click="audioCacheManager.filter='downloaded'"
+                                  ng-class="{active: audioCacheManager.filter === 'downloaded'}"
+                                  data-audio-cache-library-filter
+                                  data-audio-cache-filter="downloaded"
+                                >
+                                  {{_AUDIO_CACHE_FILTER_DOWNLOADED}}</button
+                                ><button
+                                  type="button"
+                                  ng-click="audioCacheManager.filter='playlist'"
+                                  ng-class="{active: audioCacheManager.filter === 'playlist'}"
+                                  data-audio-cache-library-filter
+                                  data-audio-cache-filter="playlist"
+                                >
+                                  {{_AUDIO_CACHE_FILTER_PLAYLIST}}</button
+                                ><button
+                                  type="button"
+                                  ng-click="audioCacheManager.filter='temporary'"
+                                  ng-class="{active: audioCacheManager.filter === 'temporary'}"
+                                  data-audio-cache-library-filter
+                                  data-audio-cache-filter="temporary"
+                                >
+                                  {{_AUDIO_CACHE_FILTER_TEMPORARY}}
+                                </button>
                               </div>
-                              <input type="search" class="form-control" ng-model="audioCacheManager.query" placeholder="{{_AUDIO_CACHE_SEARCH_PLACEHOLDER}}" data-audio-cache-search /><label><span>{{_AUDIO_CACHE_SORT_LABEL}}</span><select ng-model="audioCacheManager.sort" ng-options="option.value as option.label for option in audioCacheSortOptions" data-audio-cache-sort></select></label>
+                              <input
+                                type="search"
+                                class="form-control"
+                                ng-model="audioCacheManager.query"
+                                placeholder="{{_AUDIO_CACHE_SEARCH_PLACEHOLDER}}"
+                                data-audio-cache-search
+                              /><label
+                                ><span>{{_AUDIO_CACHE_SORT_LABEL}}</span
+                                ><select
+                                  ng-model="audioCacheManager.sort"
+                                  ng-options="option.value as option.label for option in audioCacheSortOptions"
+                                  data-audio-cache-sort
+                                ></select
+                              ></label>
                             </div>
-                            <div class="audio-cache-library-selection"><span>{{_AUDIO_CACHE_SELECTED}}: {{audioCacheSelectedEntries().length}} · {{formatAudioCacheBytes(audioCacheSelectedBytes())}}</span><div><button type="button" class="btn btn-default" ng-click="selectVisibleAudioCacheEntries()" ng-disabled="!visibleAudioCacheEntries().length">{{_AUDIO_CACHE_SELECT_VISIBLE}}</button><button type="button" class="btn btn-default" ng-click="clearAudioCacheSelection()" ng-disabled="!audioCacheSelectedEntries().length">{{_AUDIO_CACHE_CLEAR_SELECTION}}</button><button type="button" class="btn btn-warning" ng-click="requestDeleteSelectedAudioCacheEntries()" ng-disabled="!audioCacheSelectedEntries().length || audioCacheManager.deleting" data-audio-cache-action="delete-selected">{{_AUDIO_CACHE_DELETE_SELECTED}}</button></div></div>
-                            <section class="audio-cache-library-confirm" ng-if="audioCacheManager.deleteConfirmationOpen" role="alertdialog" data-audio-cache-delete-confirm><p>{{_AUDIO_CACHE_DELETE_CONFIRM_PREFIX}} {{audioCacheManager.pendingDeleteEntries.length}} {{_AUDIO_CACHE_TRACKS}}（{{formatAudioCacheBytes(pendingAudioCacheDeleteBytes())}}）？</p><small>{{_AUDIO_CACHE_DELETE_AUDIO_ONLY}}</small><div><button type="button" class="btn btn-warning" ng-click="confirmDeleteAudioCacheEntries()" ng-disabled="audioCacheManager.deleting">{{_CONFIRM}}</button><button type="button" class="btn btn-default" ng-click="cancelDeleteAudioCacheEntries()" ng-disabled="audioCacheManager.deleting">{{_CANCEL}}</button></div></section>
-                            <p ng-if="audioCacheManager.loading" data-audio-cache-state="loading">{{_AUDIO_CACHE_INVENTORY_LOADING}}</p><p class="audio-cache-error" ng-if="audioCacheManager.error" role="alert" data-audio-cache-state="error">{{_AUDIO_CACHE_FAILURE_NOTICE}} {{audioCacheManager.error}}</p>
-                            <div class="audio-cache-library-list" ng-if="!audioCacheManager.loading"><article class="audio-cache-library-row" ng-repeat="entry in visibleAudioCacheEntries() track by entry.cacheKey" data-audio-cache-entry><input type="checkbox" ng-model="audioCacheManager.selected[entry.cacheKey]" aria-label="{{_AUDIO_CACHE_SELECT_TRACK}} {{entry.title}}" data-audio-cache-library-select data-audio-cache-select /><img ng-if="entry.coverUrl" ng-src="{{entry.coverUrl}}" alt="" /><span class="audio-cache-entry-cover" ng-if="!entry.coverUrl">♪</span><div class="audio-cache-library-song"><strong title="{{entry.title}}">{{entry.title}}</strong><span>{{entry.artist || _AUDIO_CACHE_UNKNOWN_ARTIST}}</span></div><span class="audio-cache-library-duration">{{formatTrackDuration(entry.duration)}}</span><span class="audio-cache-library-size">{{formatAudioCacheBytes(entry.byteLength)}}</span><em ng-class="{'is-temporary': entry.retention === 'temporary', 'is-downloaded': entry.downloaded}">{{entry.downloaded ? _AUDIO_CACHE_DOWNLOADED : (entry.retention === 'playlist' ? _AUDIO_CACHE_IN_PLAYLIST : _AUDIO_CACHE_TEMPORARY)}}</em><span class="audio-cache-library-date">{{formatAudioCacheDate(entry.cachedAt)}}</span><div class="audio-cache-library-actions"><button type="button" class="btn btn-default" ng-click="playAudioCacheEntry(entry)" ng-disabled="!entry.playable" data-audio-cache-library-play data-audio-cache-action="play">{{entry.playable ? _PLAY_ALL : _AUDIO_CACHE_NOT_PLAYABLE}}</button><button type="button" class="btn btn-default" ng-click="setAudioCacheDownloaded(entry, !entry.downloaded)" ng-disabled="audioCacheManager.deleting" data-audio-cache-action="keep-offline">{{entry.downloaded ? _AUDIO_CACHE_CANCEL_DOWNLOAD : _AUDIO_CACHE_KEEP_OFFLINE}}</button><button type="button" class="btn btn-default" ng-click="requestDeleteAudioCacheEntries([entry])" ng-disabled="audioCacheManager.deleting" data-audio-cache-library-delete data-audio-cache-action="delete">{{_AUDIO_CACHE_DELETE_ENTRY}}</button></div></article><p class="audio-cache-inventory-empty" ng-if="!visibleAudioCacheEntries().length" data-audio-cache-state="empty">{{_AUDIO_CACHE_INVENTORY_EMPTY}}</p></div>
+                            <div class="audio-cache-library-selection">
+                              <span
+                                >{{_AUDIO_CACHE_SELECTED}}:
+                                {{audioCacheSelectedEntries().length}} ·
+                                {{formatAudioCacheBytes(audioCacheSelectedBytes())}}</span
+                              >
+                              <div>
+                                <button
+                                  type="button"
+                                  class="btn btn-default"
+                                  ng-click="selectVisibleAudioCacheEntries()"
+                                  ng-disabled="!visibleAudioCacheEntries().length"
+                                >
+                                  {{_AUDIO_CACHE_SELECT_VISIBLE}}</button
+                                ><button
+                                  type="button"
+                                  class="btn btn-default"
+                                  ng-click="clearAudioCacheSelection()"
+                                  ng-disabled="!audioCacheSelectedEntries().length"
+                                >
+                                  {{_AUDIO_CACHE_CLEAR_SELECTION}}</button
+                                ><button
+                                  type="button"
+                                  class="btn btn-warning"
+                                  ng-click="requestDeleteSelectedAudioCacheEntries()"
+                                  ng-disabled="!audioCacheSelectedEntries().length || audioCacheManager.deleting"
+                                  data-audio-cache-action="delete-selected"
+                                >
+                                  {{_AUDIO_CACHE_DELETE_SELECTED}}
+                                </button>
+                              </div>
+                            </div>
+                            <section
+                              class="audio-cache-library-confirm"
+                              ng-if="audioCacheManager.deleteConfirmationOpen"
+                              role="alertdialog"
+                              data-audio-cache-delete-confirm
+                            >
+                              <p>
+                                {{_AUDIO_CACHE_DELETE_CONFIRM_PREFIX}}
+                                {{audioCacheManager.pendingDeleteEntries.length}}
+                                {{_AUDIO_CACHE_TRACKS}}（{{formatAudioCacheBytes(pendingAudioCacheDeleteBytes())}}）？
+                              </p>
+                              <small>{{_AUDIO_CACHE_DELETE_AUDIO_ONLY}}</small>
+                              <div>
+                                <button
+                                  type="button"
+                                  class="btn btn-warning"
+                                  ng-click="confirmDeleteAudioCacheEntries()"
+                                  ng-disabled="audioCacheManager.deleting"
+                                >
+                                  {{_CONFIRM}}</button
+                                ><button
+                                  type="button"
+                                  class="btn btn-default"
+                                  ng-click="cancelDeleteAudioCacheEntries()"
+                                  ng-disabled="audioCacheManager.deleting"
+                                >
+                                  {{_CANCEL}}
+                                </button>
+                              </div>
+                            </section>
+                            <p
+                              ng-if="audioCacheManager.loading"
+                              data-audio-cache-state="loading"
+                            >
+                              {{_AUDIO_CACHE_INVENTORY_LOADING}}
+                            </p>
+                            <p
+                              class="audio-cache-error"
+                              ng-if="audioCacheManager.error"
+                              role="alert"
+                              data-audio-cache-state="error"
+                            >
+                              {{_AUDIO_CACHE_FAILURE_NOTICE}}
+                              {{audioCacheManager.error}}
+                            </p>
+                            <div
+                              class="audio-cache-library-list"
+                              ng-if="!audioCacheManager.loading"
+                            >
+                              <article
+                                class="audio-cache-library-row"
+                                ng-repeat="entry in visibleAudioCacheEntries() track by entry.cacheKey"
+                                data-audio-cache-entry
+                              >
+                                <input
+                                  type="checkbox"
+                                  ng-model="audioCacheManager.selected[entry.cacheKey]"
+                                  aria-label="{{_AUDIO_CACHE_SELECT_TRACK}} {{entry.title}}"
+                                  data-audio-cache-library-select
+                                  data-audio-cache-select
+                                /><img
+                                  ng-if="entry.coverUrl"
+                                  ng-src="{{entry.coverUrl}}"
+                                  alt=""
+                                /><span
+                                  class="audio-cache-entry-cover"
+                                  ng-if="!entry.coverUrl"
+                                  >♪</span
+                                >
+                                <div class="audio-cache-library-song">
+                                  <strong title="{{entry.title}}"
+                                    >{{entry.title}}</strong
+                                  ><span
+                                    >{{entry.artist ||
+                                    _AUDIO_CACHE_UNKNOWN_ARTIST}}</span
+                                  >
+                                </div>
+                                <span class="audio-cache-library-duration"
+                                  >{{formatTrackDuration(entry.duration)}}</span
+                                ><span class="audio-cache-library-size"
+                                  >{{formatAudioCacheBytes(entry.byteLength)}}</span
+                                ><em
+                                  ng-class="{'is-temporary': entry.retention === 'temporary', 'is-downloaded': entry.downloaded}"
+                                  >{{entry.downloaded ? _AUDIO_CACHE_DOWNLOADED
+                                  : (entry.retention === 'playlist' ?
+                                  _AUDIO_CACHE_IN_PLAYLIST :
+                                  _AUDIO_CACHE_TEMPORARY)}}</em
+                                ><span class="audio-cache-library-date"
+                                  >{{formatAudioCacheDate(entry.cachedAt)}}</span
+                                >
+                                <div class="audio-cache-library-actions">
+                                  <button
+                                    type="button"
+                                    class="btn btn-default"
+                                    ng-click="playAudioCacheEntry(entry)"
+                                    ng-disabled="!entry.playable"
+                                    data-audio-cache-library-play
+                                    data-audio-cache-action="play"
+                                  >
+                                    {{entry.playable ? _PLAY_ALL :
+                                    _AUDIO_CACHE_NOT_PLAYABLE}}</button
+                                  ><button
+                                    type="button"
+                                    class="btn btn-default"
+                                    ng-click="setAudioCacheDownloaded(entry, !entry.downloaded)"
+                                    ng-disabled="audioCacheManager.deleting"
+                                    data-audio-cache-action="keep-offline"
+                                  >
+                                    {{entry.downloaded ?
+                                    _AUDIO_CACHE_CANCEL_DOWNLOAD :
+                                    _AUDIO_CACHE_KEEP_OFFLINE}}</button
+                                  ><button
+                                    type="button"
+                                    class="btn btn-default"
+                                    ng-click="requestDeleteAudioCacheEntries([entry])"
+                                    ng-disabled="audioCacheManager.deleting"
+                                    data-audio-cache-library-delete
+                                    data-audio-cache-action="delete"
+                                  >
+                                    {{_AUDIO_CACHE_DELETE_ENTRY}}
+                                  </button>
+                                </div>
+                              </article>
+                              <p
+                                class="audio-cache-inventory-empty"
+                                ng-if="!visibleAudioCacheEntries().length"
+                                data-audio-cache-state="empty"
+                              >
+                                {{_AUDIO_CACHE_INVENTORY_EMPTY}}
+                              </p>
+                            </div>
                           </section>
                           <div
                             class="playlist-detail"
@@ -6128,7 +6845,9 @@
                                     </svg>
                                   </a>
                                 </div>
-                                <div class="time">{{formatTrackDuration(song.duration)}}</div>
+                                <div class="time">
+                                  {{formatTrackDuration(song.duration)}}
+                                </div>
                               </li>
                             </ul>
                           </div>
@@ -6163,16 +6882,25 @@
                         class="songdetail-wrapper now-playing-stage"
                       >
                         <div class="draggable-zone"></div>
-                        <div class="now-playing-vignette" aria-hidden="true"></div>
+                        <div
+                          class="now-playing-vignette"
+                          aria-hidden="true"
+                        ></div>
                         <div class="now-playing-ambient" aria-hidden="true">
                           <span
                             class="now-playing-ambient-cover"
                             ng-style="currentPlaying && currentPlaying.img_url ? {'background-image': 'url(' + currentPlaying.img_url + ')'} : {}"
                           ></span>
-                          <span class="now-playing-ambient-orb orb-violet"></span>
+                          <span
+                            class="now-playing-ambient-orb orb-violet"
+                          ></span>
                           <span class="now-playing-ambient-orb orb-mint"></span>
-                          <span class="now-playing-ambient-beam beam-one"></span>
-                          <span class="now-playing-ambient-beam beam-two"></span>
+                          <span
+                            class="now-playing-ambient-beam beam-one"
+                          ></span>
+                          <span
+                            class="now-playing-ambient-beam beam-two"
+                          ></span>
                           <span class="now-playing-ambient-grid"></span>
                           <span class="now-playing-ambient-stars"></span>
                         </div>
@@ -6234,8 +6962,7 @@
                                   audio-visualizer-has-track="playlist && playlist.length > 0"
                                   audio-visualizer-active="window_type == 'track' && playlist && playlist.length > 0 && !bilibiliMv.active && !bilibiliMv.loading"
                                   aria-hidden="true"
-                                >
-                                </div>
+                                ></div>
                                 <div
                                   ng-if="window_type=='track'"
                                   class="covershadow"
@@ -6412,7 +7139,9 @@
                                   aria-label="{{_MACHINE_TRANSLATION_RETRANSLATE}}"
                                 >
                                   <span aria-hidden="true">AI</span>
-                                  <span>{{_MACHINE_TRANSLATION_RETRANSLATE}}</span>
+                                  <span
+                                    >{{_MACHINE_TRANSLATION_RETRANSLATE}}</span
+                                  >
                                 </button>
                                 <button
                                   type="button"
@@ -6631,7 +7360,15 @@
 
                           <div class="splitter"></div>
 
-                          <div class="detail" ng-if="playlist.length > 0">
+                          <div
+                            class="detail mobile-current-track"
+                            ng-if="playlist.length > 0"
+                            ng-click="toggleNowPlaying()"
+                            ng-keydown="($event.key === 'Enter' || $event.key === ' ') && toggleNowPlaying()"
+                            role="button"
+                            tabindex="0"
+                            aria-label="打开全屏播放"
+                          >
                             <div class="title">
                               <span
                                 ng-if="currentPlaying.source === 'xiami'"
@@ -6642,12 +7379,12 @@
                             <div class="more-info">
                               <div class="singer">
                                 <a
-                                  ng-click="showPlaylist(currentPlaying.artist_id)"
+                                  ng-click="showPlaylist(currentPlaying.artist_id); $event.stopPropagation()"
                                   >{{ currentPlaying.artist }}</a
                                 >
                                 -
                                 <a
-                                  ng-click="showPlaylist(currentPlaying.album_id)"
+                                  ng-click="showPlaylist(currentPlaying.album_id); $event.stopPropagation()"
                                   >{{ currentPlaying.album }}</a
                                 >
                               </div>
@@ -7045,7 +7782,10 @@
                             >
                               <span>FX</span>
                             </button>
-                            <span class="audio-effects-toggle-state" ng-if="audioEffects.activePreset !== 'original'"></span>
+                            <span
+                              class="audio-effects-toggle-state"
+                              ng-if="audioEffects.activePreset !== 'original'"
+                            ></span>
                           </div>
                           <div
                             ng-if="!isChrome"
@@ -7186,9 +7926,19 @@
                           <strong>{{_AUDIO_EFFECT_TITLE}}</strong>
                           <small>{{audioEffectStatus()}}</small>
                         </div>
-                        <button type="button" ng-click="toggleAudioEffectsPanel()" aria-label="{{_CLOSE}}">×</button>
+                        <button
+                          type="button"
+                          ng-click="toggleAudioEffectsPanel()"
+                          aria-label="{{_CLOSE}}"
+                        >
+                          ×
+                        </button>
                       </header>
-                      <div class="audio-effects-popover-grid" role="radiogroup" aria-label="{{_AUDIO_EFFECT_PRESET_LABEL}}">
+                      <div
+                        class="audio-effects-popover-grid"
+                        role="radiogroup"
+                        aria-label="{{_AUDIO_EFFECT_PRESET_LABEL}}"
+                      >
                         <button
                           type="button"
                           ng-repeat="preset in audioEffectPresets track by preset.id"
@@ -7199,8 +7949,12 @@
                           ng-attr-aria-checked="{{audioEffects.activePreset === preset.id}}"
                         >
                           <strong>{{audioEffectPresetLabel(preset.id)}}</strong>
-                          <small>{{audioEffectPresetDescription(preset.id)}}</small>
-                          <em ng-if="preset.headphoneOnly">{{_AUDIO_EFFECT_HEADPHONE_HINT}}</em>
+                          <small
+                            >{{audioEffectPresetDescription(preset.id)}}</small
+                          >
+                          <em ng-if="preset.headphoneOnly"
+                            >{{_AUDIO_EFFECT_HEADPHONE_HINT}}</em
+                          >
                         </button>
                       </div>
                       <footer>
@@ -7209,7 +7963,9 @@
                           class="audio-effects-ab"
                           ng-click="compareAudioEffectWithOriginal()"
                           ng-disabled="audioEffects.pending || audioEffects.supported === false"
-                        >{{audioEffectComparisonLabel()}}</button>
+                        >
+                          {{audioEffectComparisonLabel()}}
+                        </button>
                       </footer>
                     </section>
                     <div
@@ -7311,21 +8067,29 @@
                               <strong>{{entry.track.title}}</strong>
                               <small>{{entry.track.artist}}</small>
                             </span>
-                            <time>{{formatTrackDuration(entry.track.duration)}}</time>
+                            <time
+                              >{{formatTrackDuration(entry.track.duration)}}</time
+                            >
                             <button
                               type="button"
                               ng-disabled="$first"
                               ng-click="movePlayNextQueueEntry(entry.queueId, $index - 1)"
-                            >↑</button>
+                            >
+                              ↑
+                            </button>
                             <button
                               type="button"
                               ng-disabled="$last"
                               ng-click="movePlayNextQueueEntry(entry.queueId, $index + 1)"
-                            >↓</button>
+                            >
+                              ↓
+                            </button>
                             <button
                               type="button"
                               ng-click="removePlayNextQueueEntry(entry.queueId)"
-                            >×</button>
+                            >
+                              ×
+                            </button>
                           </li>
                         </ol>
                       </section>
@@ -7405,6 +8169,60 @@
                       </ul>
                     </div>
                   </div>
+                  <nav
+                    class="mobile-tabbar"
+                    data-mobile-tabbar
+                    aria-label="移动导航"
+                  >
+                    <button
+                      type="button"
+                      class="mobile-tab"
+                      data-mobile-tab="home"
+                      ng-class="{active: current_tag==2 && window_url_stack.length == 0}"
+                      ng-click="showTag(2)"
+                    >
+                      <svg class="mobile-tab-icon" aria-hidden="true">
+                        <use href="#home"></use>
+                      </svg>
+                      <span>首页</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="mobile-tab"
+                      data-mobile-tab="discover"
+                      ng-class="{active: current_tag==3 && window_url_stack.length == 0}"
+                      ng-click="showTag(3)"
+                    >
+                      <svg class="mobile-tab-icon" aria-hidden="true">
+                        <use href="#search"></use>
+                      </svg>
+                      <span>发现</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="mobile-tab"
+                      data-mobile-tab="library"
+                      ng-class="{active: getCurrentUrl() === '/playlist?list_id=lmplaylist_reserve'}"
+                      ng-click="showPlaylist('lmplaylist_reserve')"
+                    >
+                      <svg class="mobile-tab-icon" aria-hidden="true">
+                        <use href="#music"></use>
+                      </svg>
+                      <span>音乐库</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="mobile-tab"
+                      data-mobile-tab="settings"
+                      ng-class="{active: current_tag==4 && window_url_stack.length == 0}"
+                      ng-click="showTag(4)"
+                    >
+                      <svg class="mobile-tab-icon" aria-hidden="true">
+                        <use href="#settings"></use>
+                      </svg>
+                      <span>设置</span>
+                    </button>
+                  </nav>
                   <div
                     class="bilibili-mv-overlay"
                     ng-show="bilibiliMv.active || bilibiliMv.loading"

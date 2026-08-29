@@ -499,7 +499,6 @@ i18next.use(i18nextHttpBackend).init({
   lng: 'zh-CN',
   fallbackLng: 'zh-CN',
   supportedLngs: ['zh-CN', 'zh-TC', 'en-US', 'fr-FR', 'ko-KR', 'pt-BR'],
-  preload: ['zh-CN', 'zh-TC', 'en-US', 'fr-FR', 'ko-KR', 'pt-BR'],
   debug: false,
   backend: {
     loadPath: 'i18n/{{lng}}.json',

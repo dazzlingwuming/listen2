@@ -1,0 +1,89 @@
+plugins {
+    id 'com.android.application'
+}
+
+def listen1SourceDirectory = file("${rootDir}/../app/listen1_chrome_extension")
+def generatedAssetsDirectory = layout.buildDirectory.dir('generated/listen1-assets')
+
+tasks.register('syncListen1Assets', Copy) {
+    from(listen1SourceDirectory) {
+        // This is deliberately an allow-list: extension metadata, developer
+        // documentation, lockfiles, and tests are not packaged in the APK.
+        include 'listen1.html'
+        include 'annual_recap.html'
+        include 'css/**'
+        include 'fonts/**'
+        include 'images/**'
+        include 'i18n/*.json'
+        include 'rules_1.json'
+        include 'js/vendor/*.js'
+        include 'js/provider/*.js'
+        include 'js/controller/*.js'
+        include 'js/app.js'
+        include 'js/audio_visualizer.js'
+        include 'js/bilibili_mv_player.js'
+        include 'js/bilibili_qr.js'
+        include 'js/bridge.js'
+        include 'js/github.js'
+        include 'js/l1_player.js'
+        include 'js/lastfm.js'
+        include 'js/loweb.js'
+        include 'js/lowebutil.js'
+        include 'js/myplaylist.js'
+        include 'js/player_thread.js'
+        include 'js/playlist_backup.js'
+    }
+    into(generatedAssetsDirectory.map { it.dir('listen1') })
+    includeEmptyDirs = false
+}
+
+android {
+    namespace 'com.dazzlingwuming.listen2'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.dazzlingwuming.listen2'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '2.34.0'
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+    }
+
+    buildTypes {
+        debug {
+            debuggable true
+        }
+        release {
+            debuggable false
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    sourceSets {
+        main {
+            assets.srcDir(generatedAssetsDirectory)
+        }
+    }
+}
+
+tasks.configureEach { task ->
+    if (task.name == 'mergeDebugAssets' || task.name == 'mergeReleaseAssets') {
+        task.dependsOn(tasks.named('syncListen1Assets'))
+    }
+}
+
+dependencies {
+    implementation 'androidx.webkit:webkit:1.12.1'
+    testImplementation 'junit:junit:4.13.2'
+}

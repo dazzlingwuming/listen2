@@ -13,6 +13,24 @@ angular.module('listenone').controller('PlayListController', [
     $scope.currentFilterId = '';
     $scope.loading = true;
     $scope.showMore = false;
+    let initialPlaylistLoadPending = true;
+
+    const runAfterFirstPaint = (task) => {
+      const scheduleIdle = () => {
+        if (typeof window.requestIdleCallback === 'function') {
+          window.requestIdleCallback(task, { timeout: 1800 });
+          return;
+        }
+        window.setTimeout(task, 400);
+      };
+      if (typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(() =>
+          window.requestAnimationFrame(scheduleIdle)
+        );
+        return;
+      }
+      scheduleIdle();
+    };
 
     $scope.$on('infinite_scroll:hit_bottom', (event, data) => {
       if ($scope.loading === true) {
@@ -31,6 +49,11 @@ angular.module('listenone').controller('PlayListController', [
     });
 
     $scope.loadPlaylist = () => {
+      if (initialPlaylistLoadPending) {
+        initialPlaylistLoadPending = false;
+        runAfterFirstPaint($scope.loadPlaylist);
+        return;
+      }
       const offset = 0;
       $scope.showMore = false;
       MediaService.showPlaylistArray(
