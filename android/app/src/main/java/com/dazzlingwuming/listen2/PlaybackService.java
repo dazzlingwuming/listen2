@@ -2,7 +2,9 @@ package com.dazzlingwuming.listen2;
 
 import android.content.Intent;
 import android.os.Binder;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 
 import androidx.media3.common.AudioAttributes;
 import androidx.media3.common.C;
@@ -41,6 +43,7 @@ public final class PlaybackService extends MediaSessionService
     private PlaybackSettingsStore settings;
     private PlaybackCoordinator coordinator;
     private PlaybackMediaResolver resolver;
+    private Handler playerHandler;
     private boolean released;
     private long snapshotRevision;
     private volatile PlaybackSnapshot latestPageSnapshot = initialSnapshot();
@@ -49,6 +52,7 @@ public final class PlaybackService extends MediaSessionService
     @Override
     public void onCreate() {
         super.onCreate();
+        playerHandler = new Handler(Looper.getMainLooper());
         AudioAttributes attributes = new AudioAttributes.Builder()
                 .setUsage(C.USAGE_MEDIA)
                 .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
@@ -56,6 +60,9 @@ public final class PlaybackService extends MediaSessionService
         player = new ExoPlayer.Builder(this).build();
         player.setAudioAttributes(attributes, true);
         player.setHandleAudioBecomingNoisy(true);
+        // Media playback remains legal when the screen is off; the lock is released
+        // automatically by ExoPlayer whenever playback is paused or stopped.
+        player.setWakeMode(C.WAKE_MODE_LOCAL);
         settings = new PlaybackSettingsStore(getApplicationContext());
         applyVolume();
         mediaSession = new MediaSession.Builder(this, player).build();
@@ -95,6 +102,7 @@ public final class PlaybackService extends MediaSessionService
 
             @Override
             public void onIsPlayingChanged(boolean isPlaying) {
+                if (isPlaying) retainStartedPlaybackService();
                 publishPlayerSnapshot(isPlaying ? "playing" : "interrupted");
             }
 
@@ -134,42 +142,57 @@ public final class PlaybackService extends MediaSessionService
         transitionExecutor.execute(() -> {
             if (released) return;
             latestPageSnapshot = snapshot;
-            if (player == null) return;
-            switch (command.getType()) {
-                case PLAY:
-                    player.play();
-                    break;
-                case PAUSE:
-                    player.pause();
-                    break;
-                case SEEK:
-                    player.seekTo(number(command.getPayload().get("positionMs")));
-                    break;
-                case VOLUME:
-                    int percent = (int) number(command.getPayload().get("volumePercent"));
-                    settings.setVolumePercent(percent);
-                    if (!settings.isMuted()) player.setVolume(percent / 100f);
-                    break;
-                case MUTE:
-                    settings.setMuted(Boolean.TRUE.equals(command.getPayload().get("muted")));
-                    applyVolume();
-                    break;
-                case CLEAR:
-                    player.stop();
-                    player.clearMediaItems();
-                    publishPlayerSnapshot("idle");
-                    stopForeground(STOP_FOREGROUND_REMOVE);
-                    stopSelf();
-                    break;
-                case SELECT_PREPARED:
-                    player.setPlayWhenReady("playing".equals(snapshot.toMap().get("state")));
-                    break;
-                default:
-                    // Other semantic commands are recorded as a native snapshot;
-                    // coordinator/media projection performs their transport work.
-                    break;
-            }
+            if (playerHandler != null) playerHandler.post(() -> applyPlayerCommand(command, snapshot));
         });
+    }
+
+    /** ExoPlayer and MediaSession are main-looper confined even though semantic transitions serialize elsewhere. */
+    private void applyPlayerCommand(PlaybackCommand command, PlaybackSnapshot snapshot) {
+        if (released || player == null) return;
+        switch (command.getType()) {
+            case PLAY:
+                retainStartedPlaybackService();
+                player.play();
+                break;
+            case PAUSE:
+                player.pause();
+                break;
+            case SEEK:
+                player.seekTo(number(command.getPayload().get("positionMs")));
+                break;
+            case VOLUME:
+                int percent = (int) number(command.getPayload().get("volumePercent"));
+                settings.setVolumePercent(percent);
+                if (!settings.isMuted()) player.setVolume(percent / 100f);
+                break;
+            case MUTE:
+                settings.setMuted(Boolean.TRUE.equals(command.getPayload().get("muted")));
+                applyVolume();
+                break;
+            case CLEAR:
+                player.stop();
+                player.clearMediaItems();
+                publishPlayerSnapshot("idle");
+                stopForeground(STOP_FOREGROUND_REMOVE);
+                stopSelf();
+                break;
+            case SELECT_PREPARED:
+                player.setPlayWhenReady("playing".equals(snapshot.toMap().get("state")));
+                break;
+            default:
+                // Other semantic commands are recorded as a native snapshot;
+                // coordinator/media projection performs their transport work.
+                break;
+        }
+    }
+
+    /** A bound page is disposable; active audio must also retain a started service lifecycle. */
+    private void retainStartedPlaybackService() {
+        try {
+            startService(new Intent(this, PlaybackService.class));
+        } catch (IllegalStateException ignored) {
+            // The existing service/session remains truthful even if a background-start policy rejects retention.
+        }
     }
 
     @Override
@@ -205,6 +228,7 @@ public final class PlaybackService extends MediaSessionService
             transitionExecutor.shutdownNow();
             transitionExecutor = null;
         }
+        playerHandler = null;
         if (database != null) {
             database.close();
             database = null;
@@ -307,15 +331,18 @@ public final class PlaybackService extends MediaSessionService
     private final class ServicePlayerPort implements PlaybackCoordinator.PlayerPort {
         @Override
         public void project(PlaybackCoordinator.Projection projection) {
-            if (player == null) throw new IllegalStateException("player released");
-            MediaMetadata metadata = new MediaMetadata.Builder()
-                    .setTitle("Listen2")
-                    .setArtist("Bilibili")
-                    .build();
-            player.setMediaItem(new MediaItem.Builder().setMediaId(projection.getOccurrenceId())
-                    .setMediaMetadata(metadata).build());
-            player.prepare();
-            player.setPlayWhenReady(projection.isPlayWhenReady());
+            if (playerHandler == null) throw new IllegalStateException("player released");
+            playerHandler.post(() -> {
+                if (player == null || released) return;
+                MediaMetadata metadata = new MediaMetadata.Builder()
+                        .setTitle("Listen2")
+                        .setArtist("Bilibili")
+                        .build();
+                player.setMediaItem(new MediaItem.Builder().setMediaId(projection.getOccurrenceId())
+                        .setMediaMetadata(metadata).build());
+                player.prepare();
+                player.setPlayWhenReady(projection.isPlayWhenReady());
+            });
         }
     }
 
