@@ -9,6 +9,8 @@ import java.net.URISyntaxException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -33,6 +35,7 @@ final class AndroidRpcContract {
         BILIBILI_SEARCH("bilibili.search"),
         BILIBILI_VIDEO_DETAIL("bilibili.video.detail"),
         BILIBILI_AUDIO_MANIFEST("bilibili.audio.manifest"),
+        PLAYBACK_COMMAND("playback.command"),
         RPC_CANCEL("rpc.cancel");
 
         final String wireName;
@@ -186,7 +189,58 @@ final class AndroidRpcContract {
                     && targetEpoch >= 0
                     ? TypedRequest.cancel(requestId, pageEpoch, targetId, targetEpoch) : null;
         }
+        if (operation == Operation.PLAYBACK_COMMAND) {
+            if (!hasExactlyKeys(payload, "expectedRevision", "command", "payload")) return null;
+            Object expectedRevision = payload.opt("expectedRevision");
+            Object command = payload.opt("command");
+            JSONObject commandPayload = payload.optJSONObject("payload");
+            if (!(expectedRevision instanceof Number) || ((Number) expectedRevision).longValue() < 0L
+                    || ((Number) expectedRevision).longValue() > Integer.MAX_VALUE
+                    || !(command instanceof String) || ((String) command).isEmpty()
+                    || ((String) command).length() > 64 || commandPayload == null) return null;
+            return TypedRequest.playbackCommand(requestId, pageEpoch, payload);
+        }
         return null;
+    }
+
+    /**
+     * Converts the closed playback operation into the pure-Java policy envelope.
+     * JSON arrays, nulls, and transport-like nested structures are rejected before
+     * they can reach a native playback owner.
+     */
+    static Map<String, Object> toPlaybackEnvelope(TypedRequest request) {
+        if (request == null || request.operation != Operation.PLAYBACK_COMMAND
+                || request.playbackPayload == null) return null;
+        try {
+            Map<String, Object> envelope = new LinkedHashMap<>();
+            envelope.put("requestId", request.requestId);
+            envelope.put("pageEpoch", Long.valueOf(request.pageEpoch));
+            envelope.put("expectedRevision", Long.valueOf(request.playbackPayload.getLong("expectedRevision")));
+            envelope.put("command", request.playbackPayload.getString("command"));
+            Map<String, Object> commandPayload = jsonObjectToMap(
+                    request.playbackPayload.getJSONObject("payload"));
+            if (commandPayload == null) return null;
+            envelope.put("payload", commandPayload);
+            return envelope;
+        } catch (JSONException ignored) {
+            return null;
+        }
+    }
+
+    private static Map<String, Object> jsonObjectToMap(JSONObject object) {
+        if (object == null || object.length() > 16) return null;
+        Map<String, Object> result = new LinkedHashMap<>();
+        java.util.Iterator<String> keys = object.keys();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            if (key == null || key.isEmpty() || key.length() > 64) return null;
+            Object value = object.opt(key);
+            if (!(value instanceof String) && !(value instanceof Boolean) && !(value instanceof Number)) {
+                return null;
+            }
+            result.put(key, value);
+        }
+        return result;
     }
 
     static ProjectionResult projectSearchResponse(TypedRequest request, String rawBody) {
@@ -333,6 +387,7 @@ final class AndroidRpcContract {
         final long cid;
         final String targetRequestId;
         final int targetPageEpoch;
+        final JSONObject playbackPayload;
 
         TypedRequest(String requestId, int pageEpoch, Operation operation, String keyword, int page) {
             this.requestId = requestId;
@@ -345,6 +400,7 @@ final class AndroidRpcContract {
             this.cid = 0L;
             this.targetRequestId = null;
             this.targetPageEpoch = 0;
+            this.playbackPayload = null;
         }
 
         private TypedRequest(String requestId, int pageEpoch, Operation operation, String bvid,
@@ -359,6 +415,7 @@ final class AndroidRpcContract {
             this.cid = cid;
             this.targetRequestId = targetRequestId;
             this.targetPageEpoch = targetPageEpoch;
+            this.playbackPayload = null;
         }
 
         static TypedRequest videoDetail(String requestId, int pageEpoch, String bvid) {
@@ -376,6 +433,24 @@ final class AndroidRpcContract {
                 int targetPageEpoch) {
             return new TypedRequest(requestId, pageEpoch, Operation.RPC_CANCEL,
                     null, null, 0L, targetRequestId, targetPageEpoch);
+        }
+
+        static TypedRequest playbackCommand(String requestId, int pageEpoch, JSONObject payload) {
+            return new TypedRequest(requestId, pageEpoch, payload);
+        }
+
+        private TypedRequest(String requestId, int pageEpoch, JSONObject playbackPayload) {
+            this.requestId = requestId;
+            this.pageEpoch = pageEpoch;
+            this.operation = Operation.PLAYBACK_COMMAND;
+            this.keyword = null;
+            this.page = 0;
+            this.bvid = null;
+            this.selectionMode = null;
+            this.cid = 0L;
+            this.targetRequestId = null;
+            this.targetPageEpoch = 0;
+            this.playbackPayload = playbackPayload;
         }
     }
 

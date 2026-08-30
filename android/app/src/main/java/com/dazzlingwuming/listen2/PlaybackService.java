@@ -1,5 +1,9 @@
 package com.dazzlingwuming.listen2;
 
+import android.content.Intent;
+import android.os.Binder;
+import android.os.IBinder;
+
 import androidx.media3.common.AudioAttributes;
 import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
@@ -23,7 +27,9 @@ import java.util.List;
  * they never allocate a player. Transport candidates are transient and are not
  * included in MediaSession extras, Room records, or published snapshots.
  */
-public final class PlaybackService extends MediaSessionService {
+public final class PlaybackService extends MediaSessionService
+        implements PlaybackBridgeController.ServicePort {
+    static final String ACTION_PAGE_PORT = "com.dazzlingwuming.listen2.action.PLAYBACK_PAGE_PORT";
     private ExoPlayer player;
     private MediaSession mediaSession;
     private ExecutorService transitionExecutor;
@@ -33,6 +39,8 @@ public final class PlaybackService extends MediaSessionService {
     private PlaybackCoordinator coordinator;
     private PlaybackMediaResolver resolver;
     private boolean released;
+    private volatile PlaybackSnapshot latestPageSnapshot = initialSnapshot();
+    private final PageBinder pageBinder = new PageBinder();
 
     @Override
     public void onCreate() {
@@ -77,6 +85,58 @@ public final class PlaybackService extends MediaSessionService {
         return mediaSession;
     }
 
+    @Override
+    public IBinder onBind(Intent intent) {
+        if (intent != null && ACTION_PAGE_PORT.equals(intent.getAction())) return pageBinder;
+        return super.onBind(intent);
+    }
+
+    /** Local-only binder: explicit same-app binding never exposes the player or session. */
+    public final class PageBinder extends Binder {
+        PlaybackBridgeController.ServicePort getPort() {
+            return PlaybackService.this;
+        }
+    }
+
+    @Override
+    public void dispatch(PlaybackCommand command, PlaybackSnapshot snapshot) {
+        if (command == null || snapshot == null || released || transitionExecutor == null) {
+            throw new IllegalStateException("playback service unavailable");
+        }
+        // The page sends logical commands only. This owner retains the sanitized
+        // authoritative projection and mutates the player on its one transition lane.
+        transitionExecutor.execute(() -> {
+            if (released) return;
+            latestPageSnapshot = snapshot;
+            if (player == null) return;
+            switch (command.getType()) {
+                case PLAY:
+                    player.play();
+                    break;
+                case PAUSE:
+                    player.pause();
+                    break;
+                case SELECT_PREPARED:
+                    player.setPlayWhenReady("playing".equals(snapshot.toMap().get("state")));
+                    break;
+                default:
+                    // Other semantic commands are recorded as a native snapshot;
+                    // coordinator/media projection performs their transport work.
+                    break;
+            }
+        });
+    }
+
+    @Override
+    public void rendererDetached() {
+        // Renderer lifecycle intentionally has no audio-side effect.
+    }
+
+    @Override
+    public PlaybackSnapshot latestSnapshot() {
+        return latestPageSnapshot;
+    }
+
     /** Safe repeated teardown for process death, idle release, and service destruction. */
     @Override
     public void onDestroy() {
@@ -113,6 +173,15 @@ public final class PlaybackService extends MediaSessionService {
 
     private long coordinatorRevision() {
         return 0L;
+    }
+
+    private static PlaybackSnapshot initialSnapshot() {
+        return new PlaybackSnapshot(1, 0L, 0L, PlaybackSnapshot.State.IDLE,
+                new PlaybackSnapshot.Metadata("", "", 0L, "bundled-placeholder"),
+                0L, 0L, 100, false, PlaybackSnapshot.Mode.SEQUENTIAL,
+                new PlaybackSnapshot.ActionAvailability(true, false, false, false, false, false),
+                java.util.Collections.<PlaybackSnapshot.QueueOccurrence>emptyList(), null,
+                new PlaybackSnapshot.RecoveryStatus("ready", false));
     }
 
     private final class ServicePlayerPort implements PlaybackCoordinator.PlayerPort {

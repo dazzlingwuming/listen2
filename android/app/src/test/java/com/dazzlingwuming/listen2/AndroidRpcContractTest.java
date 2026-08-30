@@ -6,6 +6,8 @@ import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
+import java.util.Map;
+
 public final class AndroidRpcContractTest {
     @Test
     public void acceptsOnlyTheExactTypedSearchEnvelopeAndBuildsItsRouteNatively() throws Exception {
@@ -112,6 +114,31 @@ public final class AndroidRpcContractTest {
         assertEquals(1, projected.result.getJSONArray("rows").length());
         assertEquals("BV1xx411c7mD", projected.result.getJSONArray("rows")
                 .getJSONObject(0).getString("bvid"));
+    }
+
+    @Test
+    public void playbackUsesTheExistingTypedEnvelopeAndOnlyPassesClosedDomainFields() {
+        String raw = "{\"version\":2,\"operation\":\"playback.command\","
+                + "\"requestId\":\"playback-1\",\"pageEpoch\":4,\"payload\":{"
+                + "\"expectedRevision\":0,\"command\":\"prepareSelection\",\"payload\":{"
+                + "\"source\":\"bilibili\",\"providerTrackId\":\"BV1xx411c7mD\","
+                + "\"providerPartId\":7,\"title\":\"Title\",\"artist\":\"Artist\","
+                + "\"durationMs\":1234,\"mediaKind\":\"audio\"}}}";
+
+        AndroidRpcContract.ParseResult parsed = AndroidRpcContract.parseRequest(raw);
+        assertTrue(parsed.isValid());
+        assertEquals(AndroidRpcContract.Operation.PLAYBACK_COMMAND, parsed.request.operation);
+        Map<String, Object> envelope = AndroidRpcContract.toPlaybackEnvelope(parsed.request);
+        assertEquals("playback-1", envelope.get("requestId"));
+        assertEquals(4L, envelope.get("pageEpoch"));
+        assertEquals("prepareSelection", envelope.get("command"));
+        assertFalse(envelope.toString().contains("url"));
+
+        String withArray = raw.replace("\"mediaKind\":\"audio\"",
+                "\"mediaKind\":\"audio\",\"candidate\":[\"https://invalid.example\"]");
+        AndroidRpcContract.ParseResult malformed = AndroidRpcContract.parseRequest(withArray);
+        assertTrue(malformed.isValid());
+        assertEquals(null, AndroidRpcContract.toPlaybackEnvelope(malformed.request));
     }
 
 }

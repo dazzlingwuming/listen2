@@ -45,6 +45,9 @@ final class AndroidHttpBridge {
     private static final long TYPED_DEADLINE_MILLIS = 25_000L;
     private final ThreadPoolExecutor networkExecutor;
     private final BridgeRequestRegistry typedRequests = new BridgeRequestRegistry();
+    // Installed by the Activity after it connects to the sole playback service.
+    // This remains the existing trusted WebMessage listener, not a second bridge.
+    private PlaybackBridgeController playbackController;
     // Accessed only by the single-threaded network executor. This anonymous
     // value is intentionally not written to CookieManager.
     private String anonymousBilibiliBuvid3;
@@ -88,6 +91,7 @@ final class AndroidHttpBridge {
     }
 
     void destroy(WebView webView) {
+        if (playbackController != null) playbackController.detachCurrentPage();
         typedRequests.cancelAll();
         networkExecutor.shutdownNow();
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
@@ -100,6 +104,11 @@ final class AndroidHttpBridge {
         if (typedRequests.isDestroyed()) return;
         pageGeneration += 1;
         typedRequests.cancelForPageTransition();
+        if (playbackController != null) playbackController.detachCurrentPage();
+    }
+
+    void setPlaybackController(PlaybackBridgeController controller) {
+        playbackController = controller;
     }
 
     private final class Listener implements WebViewCompat.WebMessageListener {
@@ -204,6 +213,10 @@ final class AndroidHttpBridge {
                     AndroidRpcContract.errorReply(parsed, parsed.errorCode));
             return;
         }
+        if (parsed.request.operation == AndroidRpcContract.Operation.PLAYBACK_COMMAND) {
+            handlePlaybackCommand(view, replyProxy, parsed.request);
+            return;
+        }
         if (parsed.request.operation == AndroidRpcContract.Operation.RPC_CANCEL) {
             BridgeRequestRegistry.SettleResult result = typedRequests.cancel(
                     new BridgeRequestRegistry.RequestKey(parsed.request.targetPageEpoch,
@@ -250,6 +263,50 @@ final class AndroidHttpBridge {
             replyTypedOnMain(view, replyProxy, AndroidRpcContract.reply(parsed.request,
                     AndroidRpcContract.Terminal.ERROR, 0, null, "BRIDGE_BUSY"));
         }
+    }
+
+    private void handlePlaybackCommand(WebView view, JavaScriptReplyProxy replyProxy,
+            AndroidRpcContract.TypedRequest request) {
+        PlaybackBridgeController controller = playbackController;
+        if (controller == null) {
+            replyTypedOnMain(view, replyProxy, AndroidRpcContract.reply(request,
+                    AndroidRpcContract.Terminal.ERROR, 0, null, "PLAYBACK_UNAVAILABLE"));
+            return;
+        }
+        java.util.Map<String, Object> envelope = AndroidRpcContract.toPlaybackEnvelope(request);
+        if (envelope == null) {
+            replyTypedOnMain(view, replyProxy, AndroidRpcContract.reply(request,
+                    AndroidRpcContract.Terminal.ERROR, 0, null, "INVALID_PAYLOAD"));
+            return;
+        }
+        String command = (String) envelope.get("command");
+        if ("subscribe".equals(command) && !controller.isAttached(request.pageEpoch)) {
+            controller.attach(request.pageEpoch, snapshot -> postPlaybackSnapshot(view, replyProxy,
+                    request.pageEpoch, snapshot));
+        }
+        if (!controller.isAttached(request.pageEpoch)) {
+            replyTypedOnMain(view, replyProxy, AndroidRpcContract.reply(request,
+                    AndroidRpcContract.Terminal.ERROR, 0, null, "STALE_PAGE_EPOCH"));
+            return;
+        }
+        PlaybackBridgeController.Reply result = controller.handle(envelope);
+        if (!result.isAccepted()) {
+            replyTypedOnMain(view, replyProxy, AndroidRpcContract.reply(request,
+                    AndroidRpcContract.Terminal.ERROR, 0, null, result.getErrorCode()));
+            return;
+        }
+        JSONObject acknowledgement = new JSONObject();
+        try {
+            acknowledgement.put("accepted", true);
+            acknowledgement.put("revision", result.getSnapshot().getRevision());
+        } catch (JSONException impossible) {
+            throw new IllegalStateException(impossible);
+        }
+        // Terminal acknowledgement is enqueued before the snapshot. A page never
+        // treats this acknowledgement as final playback truth.
+        replyTypedOnMain(view, replyProxy, AndroidRpcContract.reply(request,
+                AndroidRpcContract.Terminal.OK, 0, acknowledgement, null));
+        controller.publish(result.getSnapshot());
     }
 
     private static ParsedRequest parseRequest(String rawMessage) {
@@ -678,6 +735,28 @@ final class AndroidHttpBridge {
                 replyProxy.postMessage(payload);
             } catch (RuntimeException ignored) {
                 // Destruction can race an async terminal reply.
+            }
+        });
+    }
+
+    private static void postPlaybackSnapshot(WebView view, JavaScriptReplyProxy replyProxy,
+            int pageEpoch, PlaybackSnapshot snapshot) {
+        if (snapshot == null) return;
+        JSONObject event = new JSONObject();
+        try {
+            event.put("version", AndroidRpcContract.PROTOCOL_VERSION);
+            event.put("operation", "playback.snapshot");
+            event.put("pageEpoch", pageEpoch);
+            event.put("snapshot", new JSONObject(snapshot.toMap()));
+        } catch (JSONException impossible) {
+            throw new IllegalStateException(impossible);
+        }
+        final String payload = event.toString();
+        view.post(() -> {
+            try {
+                replyProxy.postMessage(payload);
+            } catch (RuntimeException ignored) {
+                // The renderer may have detached after the command terminalled.
             }
         });
     }
