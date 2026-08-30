@@ -10,6 +10,7 @@ import android.content.Intent;
 
 import androidx.test.platform.app.InstrumentationRegistry;
 
+import org.junit.Assume;
 import org.junit.Test;
 
 import java.util.ArrayList;
@@ -21,6 +22,7 @@ import java.util.Map;
 public final class PlaybackRecoveryInstrumentationTest {
     @Test
     public void stageASeedsCommittedCheckpointAndDetachesRendererWithoutStoppingOwner() throws Exception {
+        requireHostProcessDeathStage("stageASeedsCommittedCheckpointAndDetachesRendererWithoutStoppingOwner");
         PlaybackInstrumentationFixture.clearDurableState();
         try (PlaybackInstrumentationFixture fixture = PlaybackInstrumentationFixture.connect()) {
             PlaybackCheckpointRepository repository = fixture.checkpointRepository();
@@ -53,6 +55,7 @@ public final class PlaybackRecoveryInstrumentationTest {
 
     @Test
     public void stageBRestoresPausedExactSemanticCheckpointWithoutTransport() throws Exception {
+        requireHostProcessDeathStage("stageBRestoresPausedExactSemanticCheckpointWithoutTransport");
         try (PlaybackInstrumentationFixture fixture = PlaybackInstrumentationFixture.connect()) {
             fixture.await(() -> "restored".equals(recovery(fixture.snapshot())));
             Map<String, Object> snapshot = fixture.snapshot();
@@ -72,6 +75,12 @@ public final class PlaybackRecoveryInstrumentationTest {
         Activity activity = instrumentation.startActivitySync(intent);
         if (activity == null) throw new AssertionError("MainActivity did not reconnect");
         return activity;
+    }
+
+    private static void requireHostProcessDeathStage(String method) {
+        String expected = PlaybackRecoveryInstrumentationTest.class.getName() + "#" + method;
+        String selected = InstrumentationRegistry.getArguments().getString("class", "");
+        Assume.assumeTrue("run " + expected + " through phase02-process-death-smoke.sh", expected.equals(selected));
     }
 
     private static String recovery(Map<String, Object> snapshot) {
