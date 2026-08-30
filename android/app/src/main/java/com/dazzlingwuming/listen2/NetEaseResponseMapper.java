@@ -48,8 +48,11 @@ final class NetEaseResponseMapper {
 
     static String errorForStatus(int status) {
         if (status == 401) return "LOGIN_REQUIRED";
+        if (status == 402) return "MEMBERSHIP_REQUIRED";
         if (status == 403) return "ENTITLEMENT_REQUIRED";
+        if (status == 423) return "DRM_RESTRICTED";
         if (status == 429) return "RATE_LIMIT";
+        if (status == 451) return "REGION_RESTRICTED";
         if (status >= 500 && status <= 599) return "PROVIDER_STATUS";
         return "HTTP_STATUS";
     }

@@ -52,6 +52,10 @@ final class NetEaseProviderClient {
                     AndroidRpcContract.Terminal.OK, response.status, mapped.value, null)
                     : AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.ERROR,
                     response.status, null, mapped.errorCode);
+        } catch (InterruptedException ignored) {
+            Thread.currentThread().interrupt();
+            return AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.CANCELLED, 0,
+                    null, "CANCELLED");
         } catch (URISyntaxException ignored) {
             return AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.ERROR, 0,
                     null, "INVALID_PAYLOAD");
