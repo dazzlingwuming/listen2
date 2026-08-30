@@ -167,6 +167,26 @@ function run() {
     searchScope.bilibiliSearch.message,
     '匿名请求暂时被来源拒绝'
   );
+  searchScope.keywords = 'cancelled-request';
+  searchScope.submitBilibiliSearch();
+  const cancelledSearch = searchHandles[3];
+  searchScope.cancelBilibiliSearch();
+  assert.strictEqual(cancelledSearch.cancelled, true);
+  assert.strictEqual(searchScope.bilibiliSearch.state, 'cancelled');
+  cancelledSearch.resolve({
+    result: [{ id: 'late-result', source: 'bilibili' }],
+    total: 1,
+  });
+  assert.strictEqual(
+    searchScope.bilibiliSearch.state,
+    'cancelled',
+    'a late reply must not replace a terminal cancellation'
+  );
+  assert.strictEqual(
+    searchScope.result.length,
+    1,
+    'a late cancelled reply must not replace prior visible rows'
+  );
   searchScope.openBilibiliDetail(searchScope.result[0]);
   assert.strictEqual(searchScope.bilibiliDetail.state, 'loading');
   detailHandles[0].resolve({

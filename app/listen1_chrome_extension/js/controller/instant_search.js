@@ -122,7 +122,14 @@ angular.module('listenone').controller('InstantSearchController', [
       );
     }
     function settleSearch(epoch, query, page, state, message) {
-      if (!currentSearch(epoch, query, page)) return false;
+      // A cancellation is terminal for this exact request identity. The
+      // bridge may still deliver a late network reply after cancel(), but it
+      // must never replace the user's visible cancelled state.
+      if (
+        !currentSearch(epoch, query, page) ||
+        $scope.bilibiliSearch.state !== 'loading'
+      )
+        return false;
       clearSearchDeadline();
       activeSearchHandle = null;
       $scope.loading = false;

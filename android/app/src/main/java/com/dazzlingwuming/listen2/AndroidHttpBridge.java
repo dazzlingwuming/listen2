@@ -461,16 +461,27 @@ final class AndroidHttpBridge {
         }
         AndroidRpcContract.TypedReply reply = executeTypedMetadataOperation(request, key, true);
         // A provider-status response can reject an otherwise valid anonymous
-        // fingerprint. Retry the same closed search operation once without
+        // fingerprint. Retry the same closed metadata operation once without
         // sending any cookie; this neither broadens the route nor grants
         // authenticated access.
-        if (request.operation == AndroidRpcContract.Operation.BILIBILI_SEARCH
-                && reply.terminal == AndroidRpcContract.Terminal.ERROR
-                && ("PROVIDER_STATUS".equals(reply.errorCode)
-                        || "BILIBILI_ANONYMOUS_COOKIE_UNAVAILABLE".equals(reply.errorCode))) {
+        if (shouldRetryWithoutAnonymousCookie(request, reply)) {
             return executeTypedMetadataOperation(request, key, false);
         }
         return reply;
+    }
+
+    static boolean shouldRetryWithoutAnonymousCookie(
+            AndroidRpcContract.TypedRequest request, AndroidRpcContract.TypedReply reply) {
+        if (request == null || reply == null
+                || reply.terminal != AndroidRpcContract.Terminal.ERROR) {
+            return false;
+        }
+        boolean closedMetadataOperation = request.operation
+                == AndroidRpcContract.Operation.BILIBILI_SEARCH
+                || request.operation == AndroidRpcContract.Operation.BILIBILI_VIDEO_DETAIL;
+        return closedMetadataOperation
+                && ("PROVIDER_STATUS".equals(reply.errorCode)
+                        || "BILIBILI_ANONYMOUS_COOKIE_UNAVAILABLE".equals(reply.errorCode));
     }
 
     private AndroidRpcContract.TypedReply executeTypedMetadataOperation(

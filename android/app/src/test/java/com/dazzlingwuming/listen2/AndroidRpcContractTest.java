@@ -55,6 +55,26 @@ public final class AndroidRpcContractTest {
     }
 
     @Test
+    public void retriesOnlyClosedBilibiliMetadataWithoutAnonymousCookie() {
+        AndroidRpcContract.TypedReply rejected = AndroidRpcContract.reply(
+                AndroidRpcContract.TypedRequest.videoDetail("detail", 3, "BV1xx411c7mD"),
+                AndroidRpcContract.Terminal.ERROR, 200, null, "PROVIDER_STATUS");
+        assertTrue(AndroidHttpBridge.shouldRetryWithoutAnonymousCookie(
+                AndroidRpcContract.TypedRequest.videoDetail("detail", 3, "BV1xx411c7mD"), rejected));
+        assertTrue(AndroidHttpBridge.shouldRetryWithoutAnonymousCookie(
+                new AndroidRpcContract.TypedRequest("search", 3,
+                        AndroidRpcContract.Operation.BILIBILI_SEARCH, "test", 1), rejected));
+        assertFalse(AndroidHttpBridge.shouldRetryWithoutAnonymousCookie(
+                AndroidRpcContract.TypedRequest.audioManifest(
+                        "manifest", 3, "BV1xx411c7mD", "explicit", 123L), rejected));
+        assertFalse(AndroidHttpBridge.shouldRetryWithoutAnonymousCookie(
+                AndroidRpcContract.TypedRequest.videoDetail("detail", 3, "BV1xx411c7mD"),
+                AndroidRpcContract.reply(AndroidRpcContract.TypedRequest.videoDetail(
+                        "detail", 3, "BV1xx411c7mD"), AndroidRpcContract.Terminal.ERROR,
+                        200, null, "MALFORMED_PROVIDER_RESPONSE")));
+    }
+
+    @Test
     public void searchProjectionAllowsOnlyProviderKeywordEmphasisMarkup() throws Exception {
         AndroidRpcContract.TypedRequest request = new AndroidRpcContract.TypedRequest(
                 "search", 1, AndroidRpcContract.Operation.BILIBILI_SEARCH, "test", 1);

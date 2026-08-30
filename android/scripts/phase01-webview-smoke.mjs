@@ -50,20 +50,24 @@ class Cdp {
   close() { this.socket?.close(); }
 }
 
-const stateExpression = `(() => { const root=document.querySelector('.bilibili-mobile-search'); const detail=document.querySelector('.bilibili-mobile-detail'); const text=document.body.innerText; const progress=(document.querySelector('.current')?.innerText || '0:00').trim(); const targetRects=[...document.querySelectorAll('button')].filter(b => b.getAttribute('aria-label')==='提交哔哩哔哩搜索' || b.textContent.includes('播放此分P')).map(b => { const r=b.getBoundingClientRect(); return {w:Math.round(r.width),h:Math.round(r.height)}; }); const searchState=text.includes('已取消本次搜索')?'cancelled':document.querySelectorAll('.bilibili-mobile-result').length>0?'content':text.includes('正在搜索哔哩哔哩…')?'loading':text.includes('搜索超时')?'timeout':text.includes('没有找到结果')?'empty':text.includes('重新搜索哔哩哔哩')?'error':''; const searchError=searchState==='error'?(text.includes('网络连接不可用')?'network':text.includes('无法建立安全连接')?'tls':text.includes('匿名请求暂时被来源拒绝')?'provider-rejected':text.includes('搜索结果暂时无法识别')?'malformed':'unknown'):''; return {shell:Boolean(root && document.querySelector('.mobile-tabbar')),searchState,searchError,resultCount:document.querySelectorAll('.bilibili-mobile-result').length,detailState:detail ? (document.querySelectorAll('.bilibili-mobile-parts button').length>0?'content':text.includes('正在读取分P…')?'loading':text.includes('所选分P不可用')?'invalid-part':'error') : 'idle',partCount:document.querySelectorAll('.bilibili-mobile-parts button').length,bvid:String(detail?.dataset.bilibiliBvid||''),cid:String(detail?.dataset.bilibiliCid||''),progress:/^[0-9]+:[0-9]{2}$/.test(progress)?progress:'0:00',playback:text.includes('正在播放')?'playing':text.includes('已暂停')?'paused':text.includes('正在准备播放')?'resolving':'',lyric:text.includes('暂无可用歌词')?'unavailable':text.includes('歌词暂时无法加载')?'error':text.includes('正在获取歌词…')?'loading':'',width:Math.round(innerWidth),height:Math.round(innerHeight),overflow:document.documentElement.scrollWidth>innerWidth+1,targets:targetRects}; })()`;
+const stateExpression = `(() => { const root=document.querySelector('.bilibili-mobile-search'); const detail=document.querySelector('.bilibili-mobile-detail'); const detailScope=detail&&window.angular&&window.angular.element(detail).scope&&window.angular.element(detail).scope(); const detailTrackId=String(detailScope&&detailScope.bilibiliDetail&&detailScope.bilibiliDetail.track&&detailScope.bilibiliDetail.track.id||''); const text=document.body.innerText; const progress=(document.querySelector('.current')?.innerText || '0:00').trim(); const targetRects=[...document.querySelectorAll('button')].filter(b => b.getAttribute('aria-label')==='提交哔哩哔哩搜索' || b.textContent.includes('播放此分P')).map(b => { const r=b.getBoundingClientRect(); return {w:Math.round(r.width),h:Math.round(r.height)}; }); const searchState=text.includes('已取消本次搜索')?'cancelled':document.querySelectorAll('.bilibili-mobile-result').length>0?'content':text.includes('正在搜索哔哩哔哩…')?'loading':text.includes('搜索超时')?'timeout':text.includes('没有找到结果')?'empty':text.includes('重新搜索哔哩哔哩')?'error':''; const searchError=searchState==='error'?(text.includes('网络连接不可用')?'network':text.includes('无法建立安全连接')?'tls':text.includes('匿名请求暂时被来源拒绝')?'provider-rejected':text.includes('搜索结果暂时无法识别')?'malformed':'unknown'):''; return {shell:Boolean(root && document.querySelector('.mobile-tabbar')),searchState,searchError,resultCount:document.querySelectorAll('.bilibili-mobile-result').length,detailState:detail ? (document.querySelectorAll('.bilibili-mobile-parts button').length>0?'content':text.includes('正在读取分P…')?'loading':text.includes('所选分P不可用')?'invalid-part':'error') : 'idle',partCount:document.querySelectorAll('.bilibili-mobile-parts button').length,bvid:String(detail?.dataset.bilibiliBvid||''),cid:String(detail?.dataset.bilibiliCid||''),detailTrackId:/^bitrack_v_BV[A-Za-z0-9]{10}$/.test(detailTrackId)?detailTrackId:'',progress:/^[0-9]+:[0-9]{2}$/.test(progress)?progress:'0:00',playback:text.includes('正在播放')?'playing':text.includes('已暂停')?'paused':text.includes('正在准备播放')?'resolving':'',lyric:text.includes('暂无可用歌词')?'unavailable':text.includes('歌词暂时无法加载')?'error':text.includes('正在获取歌词…')?'loading':'',width:Math.round(innerWidth),height:Math.round(innerHeight),overflow:document.documentElement.scrollWidth>innerWidth+1,targets:targetRects}; })()`;
 
-async function waitState(cdp, predicate, label, timeout = 20000) {
+async function waitState(cdp, predicate, label, timeout = 20000, interval = 250) {
   const until = Date.now() + timeout;
-  while (Date.now() < until) { const state = await cdp.eval(stateExpression); if (predicate(state)) return state; await wait(250); }
+  while (Date.now() < until) { const state = await cdp.eval(stateExpression); if (predicate(state)) return state; await wait(interval); }
   throw new Error(`timed out: ${label}`);
 }
-async function tapSelector(cdp, selector) {
-  const point = await cdp.eval(`(() => { const element=document.querySelector(${JSON.stringify(selector)}); if(!element)return null; const r=element.getBoundingClientRect(); return r.width && r.height ? {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2),scale:window.devicePixelRatio||1} : null; })()`);
-  return tapPoint(point);
+async function tapSelector(cdp, selector, index = 0) {
+  const point = await cdp.eval(`(() => { const element=[...document.querySelectorAll(${JSON.stringify(selector)})][${Number(index)}]; if(!element)return null; const r=element.getBoundingClientRect(); return r.width && r.height ? {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2),scale:window.devicePixelRatio||1} : null; })()`);
+  return activatePoint(point);
 }
 async function tap(cdp, text) {
   const point = await cdp.eval(`(() => { const element=[...document.querySelectorAll('button')].find(x => x.getAttribute('aria-label')===${JSON.stringify(text)} || x.textContent.trim().includes(${JSON.stringify(text)})); if(!element)return null; const r=element.getBoundingClientRect(); return r.width && r.height ? {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2),scale:window.devicePixelRatio||1} : null; })()`);
   return activatePoint(point);
+}
+async function tapImmediately(cdp, text) {
+  const point = await cdp.eval(`(() => { const element=[...document.querySelectorAll('button')].find(x => x.getAttribute('aria-label')===${JSON.stringify(text)} || x.textContent.trim().includes(${JSON.stringify(text)})); if(!element)return null; const r=element.getBoundingClientRect(); return r.width && r.height ? {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2),scale:window.devicePixelRatio||1} : null; })()`);
+  return tapPoint(point);
 }
 async function tapVisibleSearchInput(cdp) {
   const point = await cdp.eval(`(() => { const element=[...document.querySelectorAll('#search-input')].find(x => { const r=x.getBoundingClientRect(); const style=getComputedStyle(x); return r.width>0 && r.height>0 && style.visibility!=='hidden' && style.display!=='none'; }); if(!element)return null; const r=element.getBoundingClientRect(); return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2),scale:window.devicePixelRatio||1}; })()`);
@@ -97,11 +101,29 @@ async function activatePoint(point) {
     return true;
   } catch { return false; }
 }
+async function activatePointFast(point) {
+  if (!tapPoint(point)) return false;
+  // Cancellation is time-sensitive: wait only for the WebView focus update,
+  // then send the same native activation event before a fast provider reply
+  // can replace the control.
+  await wait(15);
+  const adb = process.env.PHASE01_ADB || path.join(process.env.ANDROID_SDK_ROOT || '', 'platform-tools', 'adb');
+  const serial = process.env.PHASE01_SERIAL;
+  try {
+    execFileSync(adb, ['-s', serial, 'shell', 'input', 'keyevent', '66'], { stdio: 'ignore', timeout: 5000 });
+    return true;
+  } catch { return false; }
+}
+async function cancelSearch(cdp) {
+  const point = await cdp.eval(`(() => { const element=[...document.querySelectorAll('button')].find(x => x.textContent.trim().includes('取消本次搜索')); if(!element)return null; const r=element.getBoundingClientRect(); return r.width && r.height ? {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2),scale:window.devicePixelRatio||1} : null; })()`);
+  return activatePointFast(point);
+}
+function isSafeQuery(text) { return /^[A-Za-z0-9%s]+$/.test(text); }
 async function query(cdp, text) {
   if (!(await tapVisibleSearchInput(cdp))) return false;
   const adb = process.env.PHASE01_ADB || path.join(process.env.ANDROID_SDK_ROOT || '', 'platform-tools', 'adb');
   const serial = process.env.PHASE01_SERIAL;
-  if (!serial || !fs.existsSync(adb) || !/^[A-Za-z0-9%s]+$/.test(text)) throw new Error('safe ADB query input is unavailable');
+  if (!serial || !fs.existsSync(adb) || !isSafeQuery(text)) throw new Error('safe ADB query input is unavailable');
   try {
     execFileSync(adb, ['-s', serial, 'shell', 'input', 'text', text], { stdio: 'ignore', timeout: 5000 });
     execFileSync(adb, ['-s', serial, 'shell', 'input', 'keyevent', '66'], { stdio: 'ignore', timeout: 5000 });
@@ -121,17 +143,34 @@ async function run() {
   try {
     await cdp.connect(); await cdp.command('Page.enable'); await cdp.command('Runtime.enable'); fs.mkdirSync(shots, { recursive: true });
     stage = 'local phone shell'; const home = await waitState(cdp, (state) => state.shell, 'local phone shell'); await snap(cdp, path.join(shots, '01-home.png'));
-    const keyword = process.env.PHASE01_ADB_QUERY || 'Bilibili%sMusic';
+    const keyword = process.env.PHASE01_ADB_QUERY || 'Test';
     stage = 'query input'; if (!(await query(cdp, keyword)) || !(await submitSearch(cdp))) throw new Error('fixed Bilibili search control unavailable');
-    stage = 'initial search state'; const initial = await waitState(cdp, (state) => Boolean(state.searchState), 'initial Bilibili search state', 3000);
+    stage = 'initial search state'; const initial = await waitState(cdp, (state) => Boolean(state.searchState), 'initial Bilibili search state', 3000, 25);
     if (initial.searchState === 'error' && initial.searchError === 'provider-rejected') fail('anonymous Bilibili provider rejected current search', 76);
     if (initial.searchState !== 'loading') throw new Error('Bilibili search did not reach a cancellable loading state');
-    stage = 'search cancellation'; if (!(await tap(cdp, '取消本次搜索'))) throw new Error('search cancellation control unavailable');
+    stage = 'search cancellation'; if (!(await cancelSearch(cdp))) throw new Error('search cancellation control unavailable');
     await waitState(cdp, (state) => state.searchState === 'cancelled', 'search cancellation');
-    stage = 'revised search'; if (!(await query(cdp, process.env.PHASE01_REVISED_ADB_QUERY || 'Live')) || !(await submitSearch(cdp))) throw new Error('current Bilibili search could not be submitted');
-    stage = 'current results'; const results = await waitState(cdp, (state) => state.searchState === 'content' && state.resultCount > 0, 'current labelled results', 30000); await snap(cdp, path.join(shots, '01-results.png'));
-    stage = 'open detail'; if (!(await tapSelector(cdp, '.bilibili-mobile-result button'))) throw new Error('result detail control unavailable');
-    stage = 'part list'; const parts = await waitState(cdp, (state) => state.detailState === 'content' && state.partCount > 0, 'exact part list', 30000); await snap(cdp, path.join(shots, '01-part.png'));
+    stage = 'clear cancelled query'; if (!(await tap(cdp, '清空搜索'))) throw new Error('search clear control unavailable');
+    await waitState(cdp, (state) => state.searchState === '', 'cleared search state');
+    stage = 'revised search'; if (!(await query(cdp, process.env.PHASE01_REVISED_ADB_QUERY || 'Test')) || !(await submitSearch(cdp))) throw new Error('current Bilibili search could not be submitted');
+    stage = 'current results'; const revisedTerminal = await waitState(cdp, (state) => state.searchState && state.searchState !== 'loading', 'revised Bilibili terminal state', 30000);
+    if (revisedTerminal.searchState === 'error' && revisedTerminal.searchError === 'provider-rejected') fail('anonymous Bilibili provider rejected revised search', 76);
+    if (revisedTerminal.searchState !== 'content' || revisedTerminal.resultCount < 1) throw new Error(`revised Bilibili terminal state=${safe(revisedTerminal.searchState || 'unknown')} error=${safe(revisedTerminal.searchError || 'none')}`);
+    const results = revisedTerminal; await snap(cdp, path.join(shots, '01-results.png'));
+    stage = 'open detail'; let parts = null;
+    // Results are live provider rows: a current search page can include a
+    // removed or unavailable video. Select only a bounded number of visible
+    // rows and keep the exact row/part chosen by the UI, never a known BVID.
+    for (let index = 0; index < Math.min(results.resultCount, 5); index += 1) {
+      if (!(await tapSelector(cdp, '.bilibili-mobile-result button', index))) throw new Error('result detail control unavailable');
+      const detail = await waitState(cdp, (state) => state.detailState !== 'loading', 'current result detail terminal state', 30000);
+      if (detail.detailState === 'content' && detail.partCount > 0) { parts = detail; break; }
+      process.stderr.write(`INFO: current-result-${index + 1} detail=${safe(detail.detailState)} track=${safe(detail.detailTrackId || 'unavailable')}\n`);
+      if (!(await tap(cdp, '返回搜索结果'))) throw new Error('unavailable result could not return to current results');
+      await waitState(cdp, (state) => state.detailState === 'idle' && state.resultCount > 0, 'return to current results');
+    }
+    if (!parts) throw new Error('no playable public part in five current provider results');
+    stage = 'part list'; await snap(cdp, path.join(shots, '01-part.png'));
     if (!safeId.test(parts.bvid) || !/^\d{1,20}$/.test(parts.cid)) throw new Error('bounded BVID/CID unavailable');
     if (!(await tapSelector(cdp, '.bilibili-mobile-parts button')) || !(await tap(cdp, '播放此分P'))) throw new Error('part/play control unavailable');
     const playing = await waitState(cdp, (state) => state.playback === 'playing' && state.progress !== '0:00', 'forward audio progress', 45000);
@@ -167,6 +206,7 @@ function selfTest() {
   const identity = { gitSha: 'a'.repeat(40), apkSha: 'b'.repeat(64), packageName: 'com.dazzlingwuming.listen2.debug', api: '35' };
   const good = ['**Status:** PASS', `- Git SHA: ${identity.gitSha}`, `- APK SHA-256: ${identity.apkSha}`, `- Package: ${identity.packageName}`, '- API: 35', 'live-provider-audio: PASS', ...required.map((step) => `- ${step}: PASS`)].join('\n'); validate(good, identity, shots);
   for (const bad of [good.replace('active-audio-and-progress: PASS', 'active-audio-and-progress: BLOCKED'), good.replace('live-provider-audio: PASS', 'fixture: PASS'), `${good}\nCookie: x`, `${good}\nhttps://x/?token=x`]) { let rejected = false; try { validate(bad, identity, shots); } catch { rejected = true; } if (!rejected) fail('known-bad evidence unexpectedly passed', 73); }
+  if (!isSafeQuery('Test') || isSafeQuery('Test;drop')) fail('safe native query validation regressed', 73);
   fs.rmSync(root, { recursive: true, force: true }); process.stdout.write('PASS: CDP/evidence self-test\n');
 }
 
