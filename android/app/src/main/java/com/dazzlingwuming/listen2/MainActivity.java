@@ -2,12 +2,16 @@ package com.dazzlingwuming.listen2;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
+import android.content.ServiceConnection;
 import android.graphics.Color;
 import android.graphics.Insets;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.IBinder;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -41,7 +45,26 @@ public final class MainActivity extends Activity {
     private TextView loadingMessage;
     private WebViewAssetLoader assetLoader;
     private AndroidHttpBridge httpBridge;
+    private PlaybackBridgeController playbackController;
+    private boolean playbackServiceBound;
     private boolean navigationInProgress;
+
+    private final ServiceConnection playbackServiceConnection = new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder binder) {
+            if (!(binder instanceof PlaybackService.PageBinder) || httpBridge == null) return;
+            PlaybackBridgeController.ServicePort port =
+                    ((PlaybackService.PageBinder) binder).getPort();
+            playbackController = new PlaybackBridgeController(port);
+            httpBridge.setPlaybackController(playbackController);
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+            playbackController = null;
+            if (httpBridge != null) httpBridge.setPlaybackController(null);
+        }
+    };
 
     @Override
     @SuppressLint("SetJavaScriptEnabled")
@@ -58,6 +81,7 @@ public final class MainActivity extends Activity {
         webView = new WebView(this);
         configureWebView(webView);
         httpBridge = AndroidHttpBridge.install(webView);
+        connectPlaybackService();
         root.addView(webView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
@@ -66,6 +90,12 @@ public final class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(root);
         webView.loadUrl(START_PAGE);
+    }
+
+    private void connectPlaybackService() {
+        Intent intent = new Intent(this, PlaybackService.class);
+        intent.setAction(PlaybackService.ACTION_PAGE_PORT);
+        playbackServiceBound = bindService(intent, playbackServiceConnection, Context.BIND_AUTO_CREATE);
     }
 
     private void applySystemBarInsets(View root) {
@@ -127,13 +157,30 @@ public final class MainActivity extends Activity {
     @Override
     public void onBackPressed() {
         if (webView != null && navigationInProgress) {
-            // Cancelling a navigation must not affect foreground audio, which is owned by the page.
+            // Cancelling a renderer navigation must not affect service-owned audio.
             webView.stopLoading();
             if (httpBridge != null) httpBridge.onPageStarted();
             navigationInProgress = false;
             if (loadingView != null) loadingView.setVisibility(View.GONE);
             return;
         }
+        if (requestPackagedPlayerBack()) return;
+        finishBackNavigation();
+    }
+
+    private boolean requestPackagedPlayerBack() {
+        if (webView == null) return false;
+        // Plan 02-07 supplies this bounded UI-only hook. No native back path
+        // pauses/releases the service, and absent/retiring pages fall through.
+        webView.evaluateJavascript("(function(){var handler=window.Listen2AndroidPlaybackBack;"
+                + "return typeof handler === 'function' && handler() ? 'true' : 'false';})()",
+                value -> {
+                    if (!"\"true\"".equals(value)) finishBackNavigation();
+                });
+        return true;
+    }
+
+    private void finishBackNavigation() {
         if (webView != null && webView.canGoBack()) {
             webView.goBack();
         } else {
@@ -146,6 +193,13 @@ public final class MainActivity extends Activity {
         WebView retiringWebView = webView;
         webView = null;
         navigationInProgress = false;
+        if (playbackServiceBound) {
+            unbindService(playbackServiceConnection);
+            playbackServiceBound = false;
+        }
+        // The bridge detaches page authority before renderer destruction. It never
+        // releases, pauses, or otherwise owns the service player.
+        playbackController = null;
         if (retiringWebView != null) {
             retiringWebView.stopLoading();
             if (httpBridge != null) {
