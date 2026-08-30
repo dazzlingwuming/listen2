@@ -171,7 +171,7 @@ app/listen1_chrome_extension/js/
 
 **What goes wrong:** `PlaybackService` currently constructs `PlaybackMediaResolver` with `descriptor -> java.util.Collections.<String>emptyList()`. [VERIFIED: android/app/src/main/java/com/dazzlingwuming/listen2/PlaybackService.java:89-92] No real NetEase rendition can be exercised through the current Media3 owner.
 
-**Avoidance:** Phase 3 must either own the missing native rendition-resolution seam or obtain an explicit roadmap reallocation before planning implementation. A fixture-only resolver is insufficient for NET-004 E2E acceptance.
+**Avoidance:** D-03 assigns Phase 3 the missing native, authorized default-rendition resolver; it must have no quality selector, alternate-rendition, advanced-failover, MV, or part-switch surface, which remain Phase 9. An approved route and authorized test item are still external live-gate prerequisites: without them, return the typed unavailable result and preserve the 03-08 live gate as `BLOCKED`, while fixtures prove only the deterministic seam. [VERIFIED: .planning/phases/03-netease-lyrics-provider-contract/03-CONTEXT.md:20,43-45; .planning/phases/03-netease-lyrics-provider-contract/03-08-PLAN.md:101-116]
 
 ## Code Examples
 
@@ -271,24 +271,22 @@ This is a proposed skeleton [ASSUMED]. It must execute on the existing player ap
 
 | # | Claim | Section | Risk if wrong |
 |---|---|---|---|
-| A1 | A native NetEase rendition/detail/lyric route can be implemented from an authorized provider contract without new dependencies. | Architecture Patterns | Could require an approved provider integration or change phase scope/dependency. |
+| A1 | An approved, entitlement-compliant NetEase route and authorized test item will be available for the 03-08 live gate. | Architecture Patterns / Environment Availability | NET-004 cannot receive live completion evidence; the gate must remain `BLOCKED`/not verified while deterministic implementation continues. |
 | A2 | `LyricClock`, `selectionGeneration`, and proposed operation names are appropriate concrete contract names. | Code Examples / Architecture | Names or DTO split may change, but the authority and identity requirements remain. |
-| A3 | Room should store full lyric text as part of Phase 3 rather than metadata plus protected file/cache storage. | Pattern 3 | Storage size/retention and migration design need an explicit implementation decision. |
 
-## Open Questions / Planning Blockers
+## Open Questions (RESOLVED)
 
-1. **Native NetEase rendition dependency is unresolved.**
-   - What we know: the Phase 3 success criterion requires real rendition playback, but current `PlaybackService` resolver starts with an empty candidate list. [VERIFIED: android/app/src/main/java/com/dazzlingwuming/listen2/PlaybackService.java:89-92]
-   - What's unclear: the approved, entitlement-compliant NetEase detail/rendition/lyric request contract and whether Phase 3 is authorized to implement it despite `PLAY-002` being assigned to Phase 9. [VERIFIED: .planning/REQUIREMENTS.md:49-50,184,189]
-   - Recommendation: resolve before final PLAN.md: explicitly assign the closed NetEase native resolver to this phase, or revise the dependency/requirement allocation. Do not plan an arbitrary URL bridge or claim NET-004 with only fixtures.
+1. **D-03 resolves the Phase 3/Phase 9 rendition boundary.**
+   - Resolution: Phase 3 owns only a native, authorized default NetEase rendition resolver. The sole Media3 owner resolves and consumes that one default selection and may refresh only the same default; quality choice, alternate renditions, advanced failover, MV, and part switching remain Phase 9. [VERIFIED: .planning/phases/03-netease-lyrics-provider-contract/03-CONTEXT.md:10,20,25]
+   - External execution prerequisite, not a solved provider fact: the actual approved entitlement-compliant route and authorized test item are not present in this workspace. The 03-08 gate must fail closed as `BLOCKED`/not verified when either is unavailable; fixtures may verify the deterministic resolver seam but cannot complete NET-004. [VERIFIED: .planning/phases/03-netease-lyrics-provider-contract/03-CONTEXT.md:43-45; .planning/phases/03-netease-lyrics-provider-contract/03-08-PLAN.md:101-116]
 
-2. **The sibling `listen1_mobile` reference is unavailable in this workspace.**
-   - What we know: no sibling directory, branch or tracked reference files matching `listen1_mobile`, `background-player.screen.js`, or the cited Redux files were found during this research. [VERIFIED: filesystem/branch scan, 2026-08-31]
-   - Recommendation: continue from the current desktop/Android contracts; if original-mobile behavior is required for a product decision, provide the exact checkout/revision for read-only comparison.
+2. **The sibling `listen1_mobile` reference is reclassified as a non-blocking, optional behavior reference.**
+   - Resolution: Phase 3 plans from the current desktop/Android contracts; no mobile runtime, direct-network route, or security assumption may be copied. The unavailable sibling checkout therefore does not block implementation or evidence planning. [VERIFIED: .planning/phases/03-netease-lyrics-provider-contract/03-CONTEXT.md:22,55-61; .planning/phases/03-netease-lyrics-provider-contract/03-VALIDATION.md:78,85]
+   - Preserved evidence: no sibling directory, branch, or tracked files matching `listen1_mobile`, `background-player.screen.js`, or the cited Redux files were available during this research. [VERIFIED: filesystem/branch scan, 2026-08-31]
 
-3. **Lyric text retention and migration boundary needs a locked decision.**
-   - What we know: Room currently has `LyricMetadataEntity`, but its fields are metadata only: `lyricId`, `source`, `providerTrackId`, `language`, `updatedAtMs`. [VERIFIED: android/app/src/main/java/com/dazzlingwuming/listen2/data/DurableRecordEntities.java:66-82]
-   - Recommendation: planner should include a short schema spike/migration task before committing to full LRC persistence, with size bounds and corruption recovery.
+3. **D-12 resolves lyric retention and migration ownership.**
+   - Resolution: Room owns bounded provider/track/part/revision lyric selection, offset, match metadata, and validated bounded lyric content with migration tests and transactional expected-revision writes. It is the Android durable authority, not WebView localStorage. [VERIFIED: .planning/phases/03-netease-lyrics-provider-contract/03-CONTEXT.md:32-33,42,45; .planning/phases/03-netease-lyrics-provider-contract/03-04-PLAN.md:89-123]
+   - Exclusion: transport candidates, URLs/query strings, headers, cookies, credentials, provider bodies, raw errors, and personal paths remain excluded from Room and related Android state. [VERIFIED: .planning/phases/03-netease-lyrics-provider-contract/03-CONTEXT.md:26,45; .planning/phases/03-netease-lyrics-provider-contract/03-04-PLAN.md:104,119]
 
 ## Sources
 
