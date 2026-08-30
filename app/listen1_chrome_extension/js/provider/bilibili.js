@@ -1931,6 +1931,33 @@ class bilibili {
     };
   }
 
+  static parse_android_typed_search_response(response) {
+    const result = response && response.result;
+    if (
+      !result ||
+      result.source !== 'bilibili' ||
+      !Array.isArray(result.rows) ||
+      !Number.isFinite(result.total)
+    ) {
+      throw new Error('Android typed search returned an invalid response.');
+    }
+    return {
+      total: Math.max(0, result.total),
+      result: result.rows.map((row) => ({
+        artist: row.author,
+        artist_id: Number.isFinite(row.authorId)
+          ? `biartist_v_${row.authorId}`
+          : '',
+        duration: this.parse_duration(row.duration || ''),
+        id: row.id,
+        img_url: row.cover || '',
+        source: 'bilibili',
+        source_url: `https://www.bilibili.com/${row.bvid}`,
+        title: row.title,
+      })),
+    };
+  }
+
   static show_playlist(url) {
     let offset = getParameterByName('offset', url);
     if (offset === undefined) {
@@ -2493,10 +2520,22 @@ class bilibili {
               total: 0,
               error: this.create_android_search_failure(error),
             });
-          androidHttp.get(target_url).then(
+          const androidSearch =
+            typeof androidHttp.request === 'function'
+              ? androidHttp.request(
+                  'bilibili.search',
+                  { keyword, page: Number(curpage) || 1 },
+                  { pageEpoch: 0 }
+                )
+              : androidHttp.get(target_url);
+          androidSearch.then(
             (response) => {
               try {
-                fn(this.parse_android_search_response(response));
+                fn(
+                  response && response.result
+                    ? this.parse_android_typed_search_response(response)
+                    : this.parse_android_search_response(response)
+                );
               } catch (error) {
                 finishFailure(error);
               }

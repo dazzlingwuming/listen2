@@ -94,6 +94,11 @@ final class AndroidHttpBridge {
                 Uri sourceOrigin,
                 boolean isMainFrame,
                 JavaScriptReplyProxy replyProxy) {
+            if (isTypedProtocol(message == null ? null : message.getData())) {
+                handleTypedRequest(view, message == null ? null : message.getData(), sourceOrigin,
+                        isMainFrame, replyProxy);
+                return;
+            }
             ParsedRequest parsed = parseRequest(message == null ? null : message.getData());
             if (!HttpBridgePolicy.isTrustedSourceOrigin(
                     sourceOrigin == null ? null : sourceOrigin.getScheme(),
@@ -131,6 +136,48 @@ final class AndroidHttpBridge {
             } catch (RejectedExecutionException ignored) {
                 replyOnMain(view, replyProxy, BridgeReply.error(parsed.requestId, 0, "BRIDGE_BUSY"));
             }
+        }
+    }
+
+    private static boolean isTypedProtocol(String rawMessage) {
+        if (rawMessage == null || rawMessage.length() > HttpBridgePolicy.MAX_MESSAGE_LENGTH) return false;
+        try {
+            Object version = new JSONObject(rawMessage).opt("version");
+            return version instanceof Number
+                    && ((Number) version).intValue() == AndroidRpcContract.PROTOCOL_VERSION;
+        } catch (JSONException ignored) {
+            return false;
+        }
+    }
+
+    private void handleTypedRequest(
+            WebView view,
+            String rawMessage,
+            Uri sourceOrigin,
+            boolean isMainFrame,
+            JavaScriptReplyProxy replyProxy) {
+        AndroidRpcContract.ParseResult parsed = AndroidRpcContract.parseRequest(rawMessage);
+        if (!HttpBridgePolicy.isTrustedSourceOrigin(
+                sourceOrigin == null ? null : sourceOrigin.getScheme(),
+                sourceOrigin == null ? null : sourceOrigin.getHost(),
+                sourceOrigin == null ? -2 : sourceOrigin.getPort(), isMainFrame)) {
+            replyTypedOnMain(view, replyProxy, AndroidRpcContract.reply(
+                    parsed.request, AndroidRpcContract.Terminal.ERROR, 0, null, "UNTRUSTED_ORIGIN"));
+            return;
+        }
+        if (!parsed.isValid()) {
+            replyTypedOnMain(view, replyProxy, AndroidRpcContract.reply(
+                    null, AndroidRpcContract.Terminal.ERROR, 0, null, parsed.errorCode));
+            return;
+        }
+        try {
+            networkExecutor.execute(() -> {
+                AndroidRpcContract.TypedReply reply = executeTypedSearch(parsed.request);
+                replyTypedOnMain(view, replyProxy, reply);
+            });
+        } catch (RejectedExecutionException ignored) {
+            replyTypedOnMain(view, replyProxy, AndroidRpcContract.reply(parsed.request,
+                    AndroidRpcContract.Terminal.ERROR, 0, null, "BRIDGE_BUSY"));
         }
     }
 
@@ -298,6 +345,54 @@ final class AndroidHttpBridge {
         }
     }
 
+    private AndroidRpcContract.TypedReply executeTypedSearch(AndroidRpcContract.TypedRequest request) {
+        HttpsURLConnection connection = null;
+        try {
+            java.net.URI uri = AndroidRpcContract.buildSearchUri(request);
+            connection = (HttpsURLConnection) new URL(uri.toASCIIString()).openConnection();
+            connection.setRequestMethod("GET");
+            configureConnection(connection, HttpBridgePolicy.RequestRoute.BILIBILI_GET);
+            String cookieHeader = resolveCookieHeader(
+                    HttpBridgePolicy.ValidationResult.valid(uri, HttpBridgePolicy.RequestRoute.BILIBILI_GET),
+                    uri.toASCIIString());
+            if (cookieHeader == null) {
+                return AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.ERROR, 0,
+                        null, "BILIBILI_ANONYMOUS_COOKIE_UNAVAILABLE");
+            }
+            connection.setRequestProperty("Cookie", cookieHeader);
+            int status = connection.getResponseCode();
+            if (status >= 300 && status < 400) {
+                return AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.ERROR, status,
+                        null, "REDIRECT_NOT_ALLOWED");
+            }
+            if (status < 200 || status >= 300
+                    || connection.getContentLengthLong() > HttpBridgePolicy.MAX_RESPONSE_BYTES) {
+                return AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.ERROR, status,
+                        null, status >= 200 ? "RESPONSE_TOO_LARGE" : "HTTP_STATUS");
+            }
+            try (InputStream input = connection.getInputStream()) {
+                AndroidRpcContract.ProjectionResult projection = AndroidRpcContract.projectSearchResponse(
+                        request, readBoundedUtf8(input, HttpBridgePolicy.MAX_RESPONSE_BYTES));
+                return projection.isValid()
+                        ? AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.OK, status,
+                                projection.result, null)
+                        : AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.ERROR, status,
+                                null, projection.errorCode);
+            }
+        } catch (ResponseTooLargeException ignored) {
+            return AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.ERROR, 0,
+                    null, "RESPONSE_TOO_LARGE");
+        } catch (SocketTimeoutException ignored) {
+            return AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.ERROR, 0,
+                    null, "NETWORK_TIMEOUT");
+        } catch (IOException | RuntimeException | java.net.URISyntaxException ignored) {
+            return AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.ERROR, 0,
+                    null, "NETWORK_IO_ERROR");
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
+    }
+
     private static void configureConnection(
             HttpsURLConnection connection,
             HttpBridgePolicy.RequestRoute route) {
@@ -336,6 +431,18 @@ final class AndroidHttpBridge {
                 replyProxy.postMessage(payload);
             } catch (RuntimeException ignored) {
                 // The WebView may have been destroyed while an async request ran.
+            }
+        });
+    }
+
+    private static void replyTypedOnMain(
+            WebView view, JavaScriptReplyProxy replyProxy, AndroidRpcContract.TypedReply reply) {
+        final String payload = reply.toJson();
+        view.post(() -> {
+            try {
+                replyProxy.postMessage(payload);
+            } catch (RuntimeException ignored) {
+                // Destruction can race an async terminal reply.
             }
         });
     }

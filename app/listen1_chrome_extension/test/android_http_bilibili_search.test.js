@@ -332,27 +332,36 @@ async function run() {
         .success(resolve);
     });
     assert.strictEqual(bridge.posted.length, 1);
-    assert.match(bridge.posted[0].url, /keyword=Android%20Song/);
+    assert.strictEqual(bridge.posted[0].operation, 'bilibili.search');
+    assert.deepStrictEqual(toPlain(bridge.posted[0].payload), {
+      keyword: 'Android Song',
+      page: 3,
+    });
     bridge.emit({
-      body: JSON.stringify({
-        data: {
-          numResults: 7,
-          result: [
-            {
-              author: 'Android Artist',
-              bvid: 'BV_ANDROID',
-              duration: '03:21',
-              mid: 9,
-              pic: '//android.example/cover.jpg',
-              title: '<em>Android Song</em>',
-            },
-          ],
-        },
-      }),
-      ok: true,
+      terminal: 'ok',
+      result: {
+        source: 'bilibili',
+        total: 7,
+        rows: [
+          {
+            author: 'Android Artist',
+            authorId: 9,
+            bvid: 'BV_ANDROID',
+            capability: 'part-selection-required',
+            cover: 'https://android.example/cover.jpg',
+            duration: '03:21',
+            id: 'bitrack_v_BV_ANDROID',
+            provider: 'bilibili',
+            source: 'bilibili',
+            title: 'Android Song',
+            type: 'video',
+          },
+        ],
+      },
       requestId: bridge.posted[0].requestId,
+      pageEpoch: 0,
       status: 200,
-      version: 1,
+      version: 2,
     });
     const result = await resultPromise;
     assert.strictEqual(axiosCalls.length, 0);
@@ -376,19 +385,19 @@ async function run() {
       provider.search('/search?keywords=Failure&curpage=1').success(resolve);
     });
     bridge.emit({
-      body: '',
-      error: 'network unavailable',
-      ok: false,
+      error: 'NETWORK_IO_ERROR',
+      terminal: 'error',
       requestId: bridge.posted[0].requestId,
+      pageEpoch: 0,
       status: 0,
-      version: 1,
+      version: 2,
     });
     const result = await resultPromise;
     assert.strictEqual(axiosCalls.length, 0);
     assert.deepStrictEqual(toPlain(result), {
       error: {
         message: 'Bilibili search could not be completed through Android HTTP.',
-        status: 'android-http-failed',
+        status: 'android-rpc-failed',
       },
       result: [],
       total: 0,

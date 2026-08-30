@@ -141,6 +141,7 @@ function smoothScrollTo(element, to, duration) {
 // accepts the versioned GET envelope implemented by the Android shell.
 const Listen2AndroidHttpAdapter = (() => {
   const PROTOCOL_VERSION = 1;
+  const TYPED_PROTOCOL_VERSION = 2;
   const DEFAULT_TIMEOUT_MS = 12000;
   const MAX_TIMEOUT_MS = 30000;
   const MAX_URL_LENGTH = 4096;
@@ -149,6 +150,8 @@ const Listen2AndroidHttpAdapter = (() => {
   const MAX_RESPONSE_MESSAGE_LENGTH = 4 * 1024 * 1024 + 4096;
   const MAX_RESPONSE_BODY_LENGTH = 2 * 1024 * 1024;
   const MAX_ERROR_LENGTH = 1024;
+  const MAX_TYPED_KEYWORD_BYTES = 256;
+  const MAX_PAGE_EPOCH = 2147483647;
   const pending = new Map();
   let requestSequence = 0;
   let responseBridge = null;
@@ -183,7 +186,7 @@ const Listen2AndroidHttpAdapter = (() => {
     }
   }
 
-  function isValidResponse(response) {
+  function isValidLegacyResponse(response) {
     return Boolean(
       response &&
         typeof response === 'object' &&
@@ -201,6 +204,40 @@ const Listen2AndroidHttpAdapter = (() => {
         (response.error === undefined ||
           (typeof response.error === 'string' &&
             response.error.length <= MAX_ERROR_LENGTH))
+    );
+  }
+
+  function isValidTypedResponse(response) {
+    if (
+      !response ||
+      typeof response !== 'object' ||
+      Array.isArray(response) ||
+      response.version !== TYPED_PROTOCOL_VERSION ||
+      typeof response.requestId !== 'string' ||
+      response.requestId.length === 0 ||
+      response.requestId.length > 128 ||
+      !Number.isInteger(response.pageEpoch) ||
+      response.pageEpoch < 0 ||
+      response.pageEpoch > MAX_PAGE_EPOCH ||
+      !['ok', 'cancelled', 'error'].includes(response.terminal) ||
+      !Number.isInteger(response.status) ||
+      response.status < 0 ||
+      response.status > 599
+    ) {
+      return false;
+    }
+    if (response.terminal === 'ok') {
+      return (
+        response.error === undefined &&
+        response.result &&
+        typeof response.result === 'object' &&
+        !Array.isArray(response.result)
+      );
+    }
+    return (
+      typeof response.error === 'string' &&
+      response.error.length > 0 &&
+      response.error.length <= MAX_ERROR_LENGTH
     );
   }
 
@@ -246,9 +283,40 @@ const Listen2AndroidHttpAdapter = (() => {
 
   function handleResponse(event) {
     const response = normalizeEventData(event);
-    if (!isValidResponse(response)) return;
+    if (!isValidLegacyResponse(response) && !isValidTypedResponse(response))
+      return;
     const entry = pending.get(response.requestId);
     if (!entry) return;
+
+    if (entry.version === TYPED_PROTOCOL_VERSION) {
+      if (
+        response.version !== TYPED_PROTOCOL_VERSION ||
+        response.pageEpoch !== entry.pageEpoch
+      ) {
+        return;
+      }
+      pending.delete(response.requestId);
+      clearTimeout(entry.timeoutId);
+      if (response.terminal !== 'ok') {
+        rejectPending(
+          entry,
+          createError(
+            response.terminal === 'cancelled'
+              ? 'android-rpc-cancelled'
+              : 'android-rpc-failed',
+            'Android typed request could not be completed.',
+            { status: response.status, safeCode: response.error }
+          )
+        );
+        return;
+      }
+      resolvePending(entry, {
+        status: response.status,
+        result: response.result,
+      });
+      return;
+    }
+    if (response.version !== PROTOCOL_VERSION) return;
 
     pending.delete(response.requestId);
     clearTimeout(entry.timeoutId);
@@ -318,6 +386,114 @@ const Listen2AndroidHttpAdapter = (() => {
     }
   }
 
+  function byteLength(value) {
+    try {
+      return new TextEncoder().encode(value).length;
+    } catch (error) {
+      return unescape(encodeURIComponent(value)).length;
+    }
+  }
+
+  function validateTypedRequest(operation, payload, pageEpoch) {
+    if (operation !== 'bilibili.search') return 'android-rpc-invalid-operation';
+    if (
+      !Number.isInteger(pageEpoch) ||
+      pageEpoch < 0 ||
+      pageEpoch > MAX_PAGE_EPOCH
+    ) {
+      return 'android-rpc-invalid-epoch';
+    }
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return 'android-rpc-invalid-payload';
+    }
+    const keys = Object.keys(payload).sort();
+    if (keys.length !== 2 || keys[0] !== 'keyword' || keys[1] !== 'page') {
+      return 'android-rpc-invalid-payload';
+    }
+    if (
+      typeof payload.keyword !== 'string' ||
+      !payload.keyword.trim() ||
+      byteLength(payload.keyword.trim()) > MAX_TYPED_KEYWORD_BYTES ||
+      !Number.isInteger(payload.page) ||
+      payload.page < 1 ||
+      payload.page > 1000
+    ) {
+      return 'android-rpc-invalid-payload';
+    }
+    return null;
+  }
+
+  function request(operation, payload, options = {}) {
+    const bridge = getBridge();
+    if (!bridge || !ensureResponseListener(bridge)) {
+      return Promise.reject(
+        createError(
+          'android-rpc-unavailable',
+          'Android typed requests are not supported in this environment.'
+        )
+      );
+    }
+    const {pageEpoch} = options;
+    const validationError = validateTypedRequest(operation, payload, pageEpoch);
+    if (validationError) {
+      return Promise.reject(
+        createError(
+          validationError,
+          'Android typed request was rejected before dispatch.'
+        )
+      );
+    }
+    const timeoutMs = Math.min(
+      MAX_TIMEOUT_MS,
+      Math.max(
+        1,
+        Number.isFinite(options.timeoutMs)
+          ? Math.floor(options.timeoutMs)
+          : DEFAULT_TIMEOUT_MS
+      )
+    );
+    const requestId = createRequestId();
+    const envelope = JSON.stringify({
+      version: TYPED_PROTOCOL_VERSION,
+      operation,
+      requestId,
+      pageEpoch,
+      payload: { keyword: payload.keyword.trim(), page: payload.page },
+    });
+    return new Promise((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        const entry = pending.get(requestId);
+        if (!entry) return;
+        pending.delete(requestId);
+        rejectPending(
+          entry,
+          createError('android-rpc-timeout', 'Android typed request timed out.')
+        );
+      }, timeoutMs);
+      const entry = {
+        resolve,
+        reject,
+        timeoutId,
+        version: TYPED_PROTOCOL_VERSION,
+        pageEpoch,
+      };
+      pending.set(requestId, entry);
+      try {
+        bridge.postMessage(envelope);
+      } catch (error) {
+        pending.delete(requestId);
+        clearTimeout(timeoutId);
+        rejectPending(
+          entry,
+          createError(
+            'android-rpc-post-failed',
+            'Android typed request could not be sent.'
+          )
+        );
+      }
+    });
+  }
+
   function get(url, options = {}) {
     const bridge = getBridge();
     if (!bridge || !ensureResponseListener(bridge)) {
@@ -385,6 +561,7 @@ const Listen2AndroidHttpAdapter = (() => {
       return Boolean(bridge && supportsResponseEvents(bridge));
     },
     get,
+    request,
   };
 })();
 
