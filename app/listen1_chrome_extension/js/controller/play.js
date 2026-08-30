@@ -435,8 +435,214 @@ angular.module('listenone').controller('PlayController', [
         }
       });
     };
+    $scope.androidQueueSheetOpen = false;
+    $scope.androidQueueConfirmation = {
+      open: false,
+      kind: '',
+      entry: null,
+    };
+    let androidQueueReturnFocus = null;
+    let androidQueueConfirmationReturnFocus = null;
+    let androidQueueDragOccurrenceId = '';
+
+    function focusAndroidQueueTarget(selector) {
+      $timeout(() => {
+        const target = document.querySelector(selector);
+        if (target) target.focus();
+      });
+    }
+
+    function sendAndroidQueueCommand(command, payload) {
+      if (
+        !androidPlaybackAdapter ||
+        $scope.androidPlaybackCommandPending ||
+        !$scope.androidPlaybackSnapshot.revision
+      ) {
+        return Promise.resolve(null);
+      }
+      $scope.androidPlaybackCommandPending = `queue:${command}`;
+      return androidPlaybackAdapter
+        .command(command, payload)
+        .then((snapshot) => {
+          $scope.$evalAsync(() => applyAndroidPlaybackSnapshot(snapshot));
+          return snapshot;
+        })
+        .catch(() => {
+          $scope.$evalAsync(() => {
+            $scope.androidPlaybackCommandPending = '';
+          });
+          return null;
+        });
+    }
+
+    $scope.retryAndroidPlayback = () => {
+      const currentOccurrence = $scope.androidPlaybackQueue[0];
+      if (
+        !isAndroidPlaybackActionAvailable('retry') ||
+        !currentOccurrence ||
+        !currentOccurrence.occurrenceId
+      ) {
+        return Promise.resolve(null);
+      }
+      return sendAndroidQueueCommand('retry', {
+        occurrenceId: currentOccurrence.occurrenceId,
+      });
+    };
+
+    $scope.openAndroidQueueSheet = (event) => {
+      if (!$scope.androidPlaybackDetailOpen) return;
+      androidQueueReturnFocus = event && event.currentTarget;
+      $scope.androidQueueSheetOpen = true;
+      focusAndroidQueueTarget(
+        '[data-android-queue-sheet] [data-android-queue-close]'
+      );
+    };
+    $scope.closeAndroidQueueSheet = () => {
+      if ($scope.androidQueueConfirmation.open) {
+        $scope.closeAndroidQueueConfirmation(true);
+      }
+      $scope.androidQueueSheetOpen = false;
+      $timeout(() => {
+        if (
+          androidQueueReturnFocus &&
+          document.contains(androidQueueReturnFocus)
+        ) {
+          androidQueueReturnFocus.focus();
+        }
+      });
+    };
+    $scope.requestAndroidQueueMove = (entry, targetIndex) => {
+      const sourceIndex = $scope.androidPlaybackQueue.findIndex(
+        (candidate) => candidate.occurrenceId === (entry && entry.occurrenceId)
+      );
+      if (
+        sourceIndex < 0 ||
+        targetIndex < 0 ||
+        targetIndex >= $scope.androidPlaybackQueue.length ||
+        sourceIndex === targetIndex
+      ) {
+        return Promise.resolve(null);
+      }
+      return sendAndroidQueueCommand('reorder', {
+        occurrenceId: entry.occurrenceId,
+        targetIndex,
+      });
+    };
+    $scope.startAndroidQueueDrag = (entry, event) => {
+      androidQueueDragOccurrenceId = entry && entry.occurrenceId;
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData(
+          'text/plain',
+          androidQueueDragOccurrenceId || ''
+        );
+      }
+    };
+    $scope.dropAndroidQueueAt = (entry, event) => {
+      event.preventDefault();
+      const occurrenceId =
+        (event.dataTransfer && event.dataTransfer.getData('text/plain')) ||
+        androidQueueDragOccurrenceId;
+      androidQueueDragOccurrenceId = '';
+      const source = $scope.androidPlaybackQueue.find(
+        (candidate) => candidate.occurrenceId === occurrenceId
+      );
+      const targetIndex = $scope.androidPlaybackQueue.findIndex(
+        (candidate) => candidate.occurrenceId === (entry && entry.occurrenceId)
+      );
+      return $scope.requestAndroidQueueMove(source, targetIndex);
+    };
+    $scope.requestAndroidQueueRemove = (entry, event) => {
+      if (!entry || !entry.occurrenceId) return;
+      androidQueueConfirmationReturnFocus = event && event.currentTarget;
+      $scope.androidQueueConfirmation = { open: true, kind: 'remove', entry };
+      focusAndroidQueueTarget(
+        '[data-android-queue-confirmation] [data-android-queue-confirm]'
+      );
+    };
+    $scope.requestAndroidQueueClear = (event) => {
+      if (!$scope.androidPlaybackQueue.length) return;
+      androidQueueConfirmationReturnFocus = event && event.currentTarget;
+      $scope.androidQueueConfirmation = {
+        open: true,
+        kind: 'clear',
+        entry: null,
+      };
+      focusAndroidQueueTarget(
+        '[data-android-queue-confirmation] [data-android-queue-confirm]'
+      );
+    };
+    $scope.closeAndroidQueueConfirmation = (restoreFocus) => {
+      const wasOpen = $scope.androidQueueConfirmation.open;
+      $scope.androidQueueConfirmation = { open: false, kind: '', entry: null };
+      if (
+        restoreFocus &&
+        wasOpen &&
+        androidQueueConfirmationReturnFocus &&
+        document.contains(androidQueueConfirmationReturnFocus)
+      ) {
+        $timeout(() => androidQueueConfirmationReturnFocus.focus());
+      }
+    };
+    $scope.confirmAndroidQueueMutation = () => {
+      const confirmation = $scope.androidQueueConfirmation;
+      if (!confirmation.open) return Promise.resolve(null);
+      const command = confirmation.kind === 'clear' ? 'clear' : 'remove';
+      const payload =
+        command === 'clear'
+          ? {}
+          : {
+              occurrenceId:
+                confirmation.entry && confirmation.entry.occurrenceId,
+            };
+      if (!payload.occurrenceId && command === 'remove')
+        return Promise.resolve(null);
+      return sendAndroidQueueCommand(command, payload).then((snapshot) => {
+        if (snapshot) $scope.closeAndroidQueueConfirmation(true);
+        return snapshot;
+      });
+    };
+    $scope.handleAndroidQueueKeydown = (event) => {
+      if (event.key === 'Escape' || event.keyCode === 27) {
+        event.preventDefault();
+        if ($scope.androidQueueConfirmation.open) {
+          $scope.closeAndroidQueueConfirmation(true);
+        } else {
+          $scope.closeAndroidQueueSheet();
+        }
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const dialog = event.currentTarget;
+      const focusable = Array.from(
+        dialog.querySelectorAll('button:not([disabled]), input:not([disabled])')
+      ).filter((element) => element.offsetParent !== null);
+      if (!focusable.length) {
+        event.preventDefault();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
     $scope.handleAndroidPlayerBack = (event) => {
       if (!$scope.androidPlaybackEnabled) return false;
+      if ($scope.androidQueueConfirmation.open) {
+        event.preventDefault();
+        $scope.closeAndroidQueueConfirmation(true);
+        return true;
+      }
+      if ($scope.androidQueueSheetOpen) {
+        event.preventDefault();
+        $scope.closeAndroidQueueSheet();
+        return true;
+      }
       if (!$scope.androidPlaybackDetailOpen) return false;
       event.preventDefault();
       $scope.closeAndroidPlayerDetail();
