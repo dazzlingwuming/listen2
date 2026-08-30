@@ -84,12 +84,12 @@ final class AndroidRpcContract {
             }
             String keyword = ((String) keywordValue).trim();
             int page = ((Number) pageValue).intValue();
-            if (keyword.isEmpty() || keyword.getBytes(StandardCharsets.UTF_8).length > MAX_KEYWORD_BYTES
-                    || page < 1 || page > MAX_PAGE) {
-                return ParseResult.error(requestId, "INVALID_PAYLOAD");
-            }
-            return ParseResult.success(new TypedRequest(
-                    requestId, ((Number) epochValue).intValue(), operation, keyword, page));
+            String validation = validateInput(requestId, ((Number) epochValue).intValue(),
+                    operation, keyword, page);
+            return validation == null
+                    ? ParseResult.success(new TypedRequest(requestId, ((Number) epochValue).intValue(),
+                            operation, keyword, page))
+                    : ParseResult.error(requestId, validation);
         } catch (JSONException ignored) {
             return ParseResult.error("INVALID_JSON");
         }
@@ -104,6 +104,18 @@ final class AndroidRpcContract {
                 + "&platform=pc";
         return new URI("https", null, HttpBridgePolicy.BILIBILI_API_HOST, -1,
                 BILIBILI_SEARCH_PATH, query, null);
+    }
+
+    /** Android-free validation hook for deterministic JVM boundary tests. */
+    static String validateInput(String requestId, int pageEpoch, Operation operation,
+            String keyword, int page) {
+        if (!isValidRequestId(requestId)) return "INVALID_REQUEST_ID";
+        if (pageEpoch < 0) return "INVALID_PAGE_EPOCH";
+        if (operation == null) return "UNSUPPORTED_OPERATION";
+        if (keyword == null || keyword.trim().isEmpty()
+                || keyword.trim().getBytes(StandardCharsets.UTF_8).length > MAX_KEYWORD_BYTES
+                || page < 1 || page > MAX_PAGE) return "INVALID_PAYLOAD";
+        return null;
     }
 
     static ProjectionResult projectSearchResponse(TypedRequest request, String rawBody) {
