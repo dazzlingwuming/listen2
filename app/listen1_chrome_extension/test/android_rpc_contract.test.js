@@ -149,6 +149,28 @@ async function run() {
       error.message.indexOf('UNSUPPORTED_CODEC') === -1
   );
 
+  const rejected = adapter.request(
+    'bilibili.search',
+    { keyword: 'Music', page: 1 },
+    { pageEpoch: 11 }
+  );
+  const rejectedRequest = nativeBridge.posted[4];
+  nativeBridge.emit({
+    version: 2,
+    terminal: 'error',
+    requestId: rejectedRequest.requestId,
+    pageEpoch: 11,
+    status: 412,
+    error: 'HTTP_STATUS',
+  });
+  await assert.rejects(
+    rejected.promise,
+    (error) =>
+      error.code === 'android-rpc-provider-status' &&
+      error.kind === 'provider-status' &&
+      error.retryable === true
+  );
+
   const timedOut = adapter.request(
     'bilibili.search',
     { keyword: 'timeout', page: 1 },
@@ -158,7 +180,7 @@ async function run() {
     timedOut.promise,
     (error) => error.code === 'android-rpc-timeout' && error.kind === 'timeout'
   );
-  assert.strictEqual(nativeBridge.posted[5].operation, 'rpc.cancel');
+  assert.strictEqual(nativeBridge.posted[6].operation, 'rpc.cancel');
 
   const teardown = adapter.request(
     'bilibili.video.detail',

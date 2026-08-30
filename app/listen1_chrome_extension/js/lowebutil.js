@@ -245,6 +245,11 @@ const Listen2AndroidHttpAdapter = (() => {
     const safeCode = String((response && response.error) || '')
       .trim()
       .toUpperCase();
+    const providerRejectedHttp =
+      safeCode === 'HTTP_STATUS' &&
+      Number.isInteger(Number(response && response.status)) &&
+      Number(response.status) >= 400 &&
+      Number(response.status) < 500;
     const codeByNativeCode = {
       CANCELLED: 'android-rpc-cancelled',
       TIMEOUT: 'android-rpc-timeout',
@@ -262,7 +267,9 @@ const Listen2AndroidHttpAdapter = (() => {
       PROVIDER_STATUS: 'android-rpc-provider-status',
       IDENTITY_MISMATCH: 'android-rpc-malformed-response',
     };
-    const code = codeByNativeCode[safeCode] || fallbackCode;
+    const code = providerRejectedHttp
+      ? 'android-rpc-provider-status'
+      : codeByNativeCode[safeCode] || fallbackCode;
     const kind = code.replace(/^android-rpc-/, '');
     return createError(code, 'Android typed request could not be completed.', {
       kind,
