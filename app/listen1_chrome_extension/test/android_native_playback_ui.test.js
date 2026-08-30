@@ -11,6 +11,7 @@ const controller = fs.readFileSync(
   'utf8'
 );
 const markup = fs.readFileSync(path.join(root, 'listen1.html'), 'utf8');
+const css = fs.readFileSync(path.join(root, 'css', 'redesign.css'), 'utf8');
 
 function requireText(source, expected, explanation) {
   assert.ok(source.includes(expected), `${explanation}: missing ${expected}`);
@@ -63,6 +64,17 @@ function run() {
     !markup.includes('当前设备无法播放此音频'),
     'legacy unsafe Android error copy must not remain in the phone player'
   );
+
+  [
+    '--android-player-target: 48px',
+    '--android-mini-player-height: 72px',
+    'min-height: var(--android-player-target)',
+    'min-width: var(--android-player-target)',
+    'height: 100svh',
+    'prefers-reduced-motion: reduce',
+    'env(safe-area-inset-bottom, 0px)',
+    'forced-colors: active',
+  ].forEach((text) => requireText(css, text, 'phone layout contract'));
   console.log('android native playback UI tests passed');
 }
 

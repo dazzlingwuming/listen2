@@ -8798,8 +8798,7 @@
                             role="slider"
                             min="0"
                             max="{{androidPlaybackSnapshot.durationMs || 0}}"
-                            ng-value="androidPlaybackSeekValue()"
-                            ng-input="previewAndroidSeek($event)"
+                            ng-model="androidPlaybackSeekDraft"
                             ng-change="commitAndroidSeek()"
                             ng-disabled="!androidPlaybackCan('seek')"
                             aria-label="播放进度"
@@ -8808,7 +8807,7 @@
                             >{{androidPlaybackElapsed()}} /
                             {{androidPlaybackDuration()}}</span
                           >
-                          <small ng-if="androidPlaybackSeekDraft !== null"
+                          <small ng-if="androidPlaybackSeekAdjusting"
                             >正在调整进度</small
                           >
                           <small ng-if="androidPlaybackSeekUnavailable"
@@ -8861,8 +8860,8 @@
                               type="range"
                               min="0"
                               max="100"
-                              ng-value="androidPlaybackSnapshot.volumePercent"
-                              ng-change="adjustAndroidPlaybackVolume($event)"
+                              ng-model="androidPlaybackVolumeDraft"
+                              ng-change="adjustAndroidPlaybackVolume(androidPlaybackVolumeDraft)"
                               ng-disabled="androidPlaybackCommandPending"
                               aria-label="音量"
                             />

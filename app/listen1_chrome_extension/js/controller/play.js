@@ -211,7 +211,9 @@ angular.module('listenone').controller('PlayController', [
     $scope.androidPlaybackDetailOpen = false;
     $scope.androidPlaybackCommandPending = '';
     $scope.androidPlaybackSeekDraft = null;
+    $scope.androidPlaybackSeekAdjusting = false;
     $scope.androidPlaybackSeekUnavailable = false;
+    $scope.androidPlaybackVolumeDraft = 100;
     $scope.androidPlaybackBusy = true;
     $scope.androidPlaybackRetryAttempt = 1;
     $scope.androidPlaybackRetryMax = 2;
@@ -331,10 +333,12 @@ angular.module('listenone').controller('PlayController', [
       };
       $scope.androidPlaybackSnapshot = safeSnapshot;
       $scope.androidPlaybackQueue = safeSnapshot.queue;
+      $scope.androidPlaybackVolumeDraft = safeSnapshot.volumePercent;
       $scope.androidPlaybackBusy =
         !safeSnapshot.revision || safeSnapshot.state === 'resolving';
       $scope.androidPlaybackCommandPending = '';
-      $scope.androidPlaybackSeekDraft = null;
+      $scope.androidPlaybackSeekDraft = safeSnapshot.positionMs;
+      $scope.androidPlaybackSeekAdjusting = false;
       $scope.androidPlaybackSeekUnavailable = false;
       if (revision > androidPlaybackLastAnnouncementRevision) {
         androidPlaybackLastAnnouncementRevision = revision;
@@ -392,7 +396,8 @@ angular.module('listenone').controller('PlayController', [
       });
     };
     $scope.adjustAndroidPlaybackVolume = (event) => {
-      const value = Math.max(0, Math.min(100, Number(event.target.value) || 0));
+      const rawValue = event && event.target ? event.target.value : event;
+      const value = Math.max(0, Math.min(100, Number(rawValue) || 0));
       return $scope.sendAndroidPlaybackCommand('volume', {
         volumePercent: value,
       });
@@ -409,6 +414,7 @@ angular.module('listenone').controller('PlayController', [
           Number(event.target.value) || 0
         )
       );
+      $scope.androidPlaybackSeekAdjusting = true;
     };
     $scope.commitAndroidSeek = () => {
       if (!isAndroidPlaybackActionAvailable('seek')) {
@@ -417,6 +423,7 @@ angular.module('listenone').controller('PlayController', [
       }
       const positionMs = Number($scope.androidPlaybackSeekDraft);
       if (!Number.isFinite(positionMs)) return Promise.resolve(null);
+      $scope.androidPlaybackSeekAdjusting = true;
       return $scope.sendAndroidPlaybackCommand('seek', { positionMs });
     };
     $scope.openAndroidPlayerDetail = (event) => {

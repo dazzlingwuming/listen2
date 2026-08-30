@@ -11,6 +11,7 @@ const controller = fs.readFileSync(
   'utf8'
 );
 const markup = fs.readFileSync(path.join(root, 'listen1.html'), 'utf8');
+const css = fs.readFileSync(path.join(root, 'css', 'redesign.css'), 'utf8');
 
 function requireText(source, expected, explanation) {
   assert.ok(source.includes(expected), `${explanation}: missing ${expected}`);
@@ -64,6 +65,13 @@ function run() {
       markup.indexOf('track by entry.occurrenceId'),
     'Android queue must be keyed by native occurrence identity'
   );
+  [
+    '.android-queue-sheet',
+    '.android-queue-row',
+    '.android-queue-confirmation',
+    'overscroll-behavior: contain',
+    'max-height: min(82svh',
+  ].forEach((text) => requireText(css, text, 'queue sheet layout contract'));
   console.log('android native queue UI tests passed');
 }
 
