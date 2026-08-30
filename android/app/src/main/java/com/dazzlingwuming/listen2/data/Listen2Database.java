@@ -7,6 +7,7 @@ import androidx.room.RoomDatabase;
         PlaybackEntities.CheckpointEntity.class,
         PlaybackEntities.OccurrenceEntity.class,
         PlaybackEntities.HistoryEntity.class,
+        PlaybackEntities.ShuffleEntity.class,
         PlaybackEntities.TransitionTokenEntity.class,
         DurableRecordEntities.PlaylistEntity.class,
         DurableRecordEntities.PlaylistTrackEntity.class,

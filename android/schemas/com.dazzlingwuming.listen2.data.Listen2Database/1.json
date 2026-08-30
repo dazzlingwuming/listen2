@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "23ceb20e9a6d153f8cde9f81833e5a37",
+    "identityHash": "97ebc58abe9c030520e9130711b4b69b",
     "entities": [
       {
         "tableName": "playback_checkpoint",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`checkpointId` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `transitionToken` TEXT NOT NULL, `baseContextId` TEXT NOT NULL, `currentOccurrenceId` TEXT NOT NULL, `baseCurrentOccurrenceId` TEXT NOT NULL, `mode` TEXT NOT NULL, `modeBeforeQueue` TEXT NOT NULL, `queueContextActive` INTEGER NOT NULL, `historyCursor` INTEGER NOT NULL, `positionMs` INTEGER NOT NULL, `updatedAtMs` INTEGER NOT NULL, PRIMARY KEY(`checkpointId`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`checkpointId` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `transitionToken` TEXT NOT NULL, `baseContextId` TEXT NOT NULL, `currentOccurrenceId` TEXT NOT NULL, `baseCurrentOccurrenceId` TEXT NOT NULL, `mode` TEXT NOT NULL, `modeBeforeQueue` TEXT NOT NULL, `queueContextActive` INTEGER NOT NULL, `historyCursor` INTEGER NOT NULL, `shuffleNextIndex` INTEGER NOT NULL, `positionMs` INTEGER NOT NULL, `updatedAtMs` INTEGER NOT NULL, PRIMARY KEY(`checkpointId`), FOREIGN KEY(`currentOccurrenceId`) REFERENCES `playback_occurrences`(`occurrenceId`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`baseCurrentOccurrenceId`) REFERENCES `playback_occurrences`(`occurrenceId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "checkpointId",
@@ -69,6 +69,12 @@
             "notNull": true
           },
           {
+            "fieldPath": "shuffleNextIndex",
+            "columnName": "shuffleNextIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
             "fieldPath": "positionMs",
             "columnName": "positionMs",
             "affinity": "INTEGER",
@@ -86,11 +92,55 @@
           "columnNames": [
             "checkpointId"
           ]
-        }
+        },
+        "indices": [
+          {
+            "name": "index_playback_checkpoint_currentOccurrenceId",
+            "unique": false,
+            "columnNames": [
+              "currentOccurrenceId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_playback_checkpoint_currentOccurrenceId` ON `${TABLE_NAME}` (`currentOccurrenceId`)"
+          },
+          {
+            "name": "index_playback_checkpoint_baseCurrentOccurrenceId",
+            "unique": false,
+            "columnNames": [
+              "baseCurrentOccurrenceId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_playback_checkpoint_baseCurrentOccurrenceId` ON `${TABLE_NAME}` (`baseCurrentOccurrenceId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "playback_occurrences",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "currentOccurrenceId"
+            ],
+            "referencedColumns": [
+              "occurrenceId"
+            ]
+          },
+          {
+            "table": "playback_occurrences",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "baseCurrentOccurrenceId"
+            ],
+            "referencedColumns": [
+              "occurrenceId"
+            ]
+          }
+        ]
       },
       {
         "tableName": "playback_occurrences",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`occurrenceId` TEXT NOT NULL, `trackHandle` TEXT NOT NULL, `role` TEXT NOT NULL, `ordinal` INTEGER NOT NULL, `playable` INTEGER NOT NULL, PRIMARY KEY(`occurrenceId`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`occurrenceId` TEXT NOT NULL, `trackHandle` TEXT NOT NULL, `source` TEXT NOT NULL, `providerTrackId` TEXT NOT NULL, `providerPartId` INTEGER NOT NULL, `role` TEXT NOT NULL, `ordinal` INTEGER NOT NULL, `playable` INTEGER NOT NULL, PRIMARY KEY(`occurrenceId`))",
         "fields": [
           {
             "fieldPath": "occurrenceId",
@@ -102,6 +152,24 @@
             "fieldPath": "trackHandle",
             "columnName": "trackHandle",
             "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "providerTrackId",
+            "columnName": "providerTrackId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "providerPartId",
+            "columnName": "providerPartId",
+            "affinity": "INTEGER",
             "notNull": true
           },
           {
@@ -148,6 +216,17 @@
             ],
             "orders": [],
             "createSql": "CREATE INDEX IF NOT EXISTS `index_playback_occurrences_trackHandle` ON `${TABLE_NAME}` (`trackHandle`)"
+          },
+          {
+            "name": "index_playback_occurrences_source_providerTrackId_providerPartId",
+            "unique": false,
+            "columnNames": [
+              "source",
+              "providerTrackId",
+              "providerPartId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_playback_occurrences_source_providerTrackId_providerPartId` ON `${TABLE_NAME}` (`source`, `providerTrackId`, `providerPartId`)"
           }
         ]
       },
@@ -189,6 +268,54 @@
             ],
             "orders": [],
             "createSql": "CREATE INDEX IF NOT EXISTS `index_playback_history_occurrenceId` ON `${TABLE_NAME}` (`occurrenceId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "playback_occurrences",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "occurrenceId"
+            ],
+            "referencedColumns": [
+              "occurrenceId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "playback_shuffle_order",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`ordinal` INTEGER NOT NULL, `occurrenceId` TEXT NOT NULL, PRIMARY KEY(`ordinal`), FOREIGN KEY(`occurrenceId`) REFERENCES `playback_occurrences`(`occurrenceId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "ordinal",
+            "columnName": "ordinal",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "occurrenceId",
+            "columnName": "occurrenceId",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "ordinal"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_playback_shuffle_order_occurrenceId",
+            "unique": false,
+            "columnNames": [
+              "occurrenceId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_playback_shuffle_order_occurrenceId` ON `${TABLE_NAME}` (`occurrenceId`)"
           }
         ],
         "foreignKeys": [
@@ -609,7 +736,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '23ceb20e9a6d153f8cde9f81833e5a37')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '97ebc58abe9c030520e9130711b4b69b')"
     ]
   }
 }

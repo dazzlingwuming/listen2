@@ -55,10 +55,13 @@ public final class PlaybackCheckpointRepository {
                 // Clear/rewrite is intentional: a state transition is all-or-nothing and
                 // preserves occurrence identities rather than collapsing duplicate tracks.
                 dao.deletePlaybackHistory();
+                dao.deleteShuffleOrder();
+                dao.deleteCheckpoint();
                 dao.deletePlaybackOccurrences();
                 dao.insertOccurrences(nextState.toOccurrenceEntities());
                 nextState.requireHistoryReferences();
                 dao.insertHistory(nextState.toHistoryEntities());
+                dao.insertShuffleOrder(nextState.toShuffleEntities());
                 dao.insertCheckpoint(nextState.toCheckpointEntity());
                 dao.insertTransitionToken(new PlaybackEntities.TransitionTokenEntity(
                         nextState.transitionToken, nextState.revision));
@@ -83,10 +86,15 @@ public final class PlaybackCheckpointRepository {
         for (PlaybackEntities.OccurrenceEntity occurrence : dao.getQueueOccurrences()) {
             queue.add(occurrence.occurrenceId);
         }
-        return new RestoredState(checkpoint.revision, checkpoint.currentOccurrenceId, occurrences, queue,
-                checkpoint.positionMs, PlaybackQueueEngine.Mode.valueOf(checkpoint.mode),
+        List<String> history = new ArrayList<>();
+        for (PlaybackEntities.HistoryEntity entry : dao.getHistory()) history.add(entry.occurrenceId);
+        List<String> shuffle = new ArrayList<>();
+        for (PlaybackEntities.ShuffleEntity entry : dao.getShuffleOrder()) shuffle.add(entry.occurrenceId);
+        return new RestoredState(checkpoint.revision, checkpoint.baseContextId,
+                checkpoint.currentOccurrenceId, checkpoint.baseCurrentOccurrenceId, occurrences, queue, history,
+                shuffle, checkpoint.positionMs, PlaybackQueueEngine.Mode.valueOf(checkpoint.mode),
                 PlaybackQueueEngine.Mode.valueOf(checkpoint.modeBeforeQueue), checkpoint.historyCursor,
-                checkpoint.queueContextActive);
+                checkpoint.queueContextActive, checkpoint.shuffleNextIndex);
     }
 
     public static final class Result {
@@ -121,12 +129,25 @@ public final class PlaybackCheckpointRepository {
         private final long positionMs;
         private final List<OccurrenceState> occurrences;
         private final List<HistoryState> history;
+        private final List<String> shuffleOccurrenceIds;
+        private final int shuffleNextIndex;
 
         public DurableState(long revision, @NonNull String transitionToken, @NonNull String baseContextId,
                 @NonNull String currentOccurrenceId, @NonNull String baseCurrentOccurrenceId,
                 @NonNull PlaybackQueueEngine.Mode mode, @NonNull PlaybackQueueEngine.Mode modeBeforeQueue,
                 boolean queueContextActive, int historyCursor, long positionMs,
                 @NonNull List<OccurrenceState> occurrences, @NonNull List<HistoryState> history) {
+            this(revision, transitionToken, baseContextId, currentOccurrenceId, baseCurrentOccurrenceId, mode,
+                    modeBeforeQueue, queueContextActive, historyCursor, positionMs, occurrences, history,
+                    Collections.<String>emptyList(), 0);
+        }
+
+        public DurableState(long revision, @NonNull String transitionToken, @NonNull String baseContextId,
+                @NonNull String currentOccurrenceId, @NonNull String baseCurrentOccurrenceId,
+                @NonNull PlaybackQueueEngine.Mode mode, @NonNull PlaybackQueueEngine.Mode modeBeforeQueue,
+                boolean queueContextActive, int historyCursor, long positionMs,
+                @NonNull List<OccurrenceState> occurrences, @NonNull List<HistoryState> history,
+                @NonNull List<String> shuffleOccurrenceIds, int shuffleNextIndex) {
             this.revision = revision;
             this.transitionToken = transitionToken;
             this.baseContextId = baseContextId;
@@ -139,12 +160,15 @@ public final class PlaybackCheckpointRepository {
             this.positionMs = positionMs;
             this.occurrences = Collections.unmodifiableList(new ArrayList<>(occurrences));
             this.history = Collections.unmodifiableList(new ArrayList<>(history));
+            this.shuffleOccurrenceIds = Collections.unmodifiableList(new ArrayList<>(shuffleOccurrenceIds));
+            this.shuffleNextIndex = shuffleNextIndex;
         }
 
         public DurableState withInvalidHistoryReference() {
             return new DurableState(revision, transitionToken, baseContextId, currentOccurrenceId,
                     baseCurrentOccurrenceId, mode, modeBeforeQueue, queueContextActive, historyCursor,
-                    positionMs, occurrences, Arrays.asList(new HistoryState(0, "missing-occurrence", 1L)));
+                    positionMs, occurrences, Arrays.asList(new HistoryState(0, "missing-occurrence", 1L)),
+                    shuffleOccurrenceIds, shuffleNextIndex);
         }
 
         private boolean hasSafeShape() {
@@ -159,7 +183,10 @@ public final class PlaybackCheckpointRepository {
                     return false;
                 }
             }
-            return occurrenceIds.contains(currentOccurrenceId) && occurrenceIds.contains(baseCurrentOccurrenceId);
+            if (!occurrenceIds.contains(currentOccurrenceId) || !occurrenceIds.contains(baseCurrentOccurrenceId)
+                    || shuffleOccurrenceIds.size() > occurrences.size() || shuffleNextIndex < 0
+                    || shuffleNextIndex > shuffleOccurrenceIds.size()) return false;
+            return hasContiguousRoleOrdinals() && allKnown(shuffleOccurrenceIds, occurrenceIds);
         }
 
         private List<PlaybackEntities.OccurrenceEntity> toOccurrenceEntities() {
@@ -171,6 +198,14 @@ public final class PlaybackCheckpointRepository {
         private List<PlaybackEntities.HistoryEntity> toHistoryEntities() {
             List<PlaybackEntities.HistoryEntity> rows = new ArrayList<>();
             for (HistoryState entry : history) rows.add(entry.toEntity());
+            return rows;
+        }
+
+        private List<PlaybackEntities.ShuffleEntity> toShuffleEntities() {
+            List<PlaybackEntities.ShuffleEntity> rows = new ArrayList<>();
+            for (int index = 0; index < shuffleOccurrenceIds.size(); index += 1) {
+                rows.add(new PlaybackEntities.ShuffleEntity(index, shuffleOccurrenceIds.get(index)));
+            }
             return rows;
         }
 
@@ -186,37 +221,73 @@ public final class PlaybackCheckpointRepository {
             if (!history.isEmpty() && historyCursor >= history.size()) throw new InvalidTransitionException();
         }
 
+        private boolean hasContiguousRoleOrdinals() {
+            for (String role : Arrays.asList("base", "queue", "shuffle")) {
+                List<Integer> ordinals = new ArrayList<>();
+                for (OccurrenceState occurrence : occurrences) {
+                    if (role.equals(occurrence.role)) ordinals.add(occurrence.ordinal);
+                }
+                Collections.sort(ordinals);
+                for (int index = 0; index < ordinals.size(); index += 1) {
+                    if (ordinals.get(index).intValue() != index) return false;
+                }
+            }
+            return true;
+        }
+
+        private static boolean allKnown(List<String> values, Set<String> known) {
+            Set<String> unique = new HashSet<>();
+            for (String value : values) {
+                if (!known.contains(value) || !unique.add(value)) return false;
+            }
+            return true;
+        }
+
         private PlaybackEntities.CheckpointEntity toCheckpointEntity() {
             return new PlaybackEntities.CheckpointEntity(revision, transitionToken, baseContextId,
                     currentOccurrenceId, baseCurrentOccurrenceId, mode.name(), modeBeforeQueue.name(),
-                    queueContextActive, historyCursor, positionMs, System.currentTimeMillis());
+                    queueContextActive, historyCursor, shuffleNextIndex, positionMs, System.currentTimeMillis());
         }
     }
 
     public static final class OccurrenceState {
         private final String occurrenceId;
         private final String trackHandle;
+        private final String source;
+        private final String providerTrackId;
+        private final long providerPartId;
         private final String role;
         private final int ordinal;
         private final boolean playable;
 
         public OccurrenceState(@NonNull String occurrenceId, @NonNull String trackHandle, @NonNull String role,
                 int ordinal, boolean playable) {
+            this(occurrenceId, trackHandle, "bilibili", trackHandle, 1L, role, ordinal, playable);
+        }
+
+        public OccurrenceState(@NonNull String occurrenceId, @NonNull String trackHandle, @NonNull String source,
+                @NonNull String providerTrackId, long providerPartId, @NonNull String role, int ordinal,
+                boolean playable) {
             this.occurrenceId = occurrenceId;
             this.trackHandle = trackHandle;
+            this.source = source;
+            this.providerTrackId = providerTrackId;
+            this.providerPartId = providerPartId;
             this.role = role;
             this.ordinal = ordinal;
             this.playable = playable;
         }
 
         private boolean isSafe() {
-            return isLogicalId(occurrenceId) && isLogicalId(trackHandle)
+            return isLogicalId(occurrenceId) && isLogicalId(trackHandle) && "bilibili".equals(source)
+                    && isLogicalId(providerTrackId) && providerPartId > 0L
                     && ("base".equals(role) || "queue".equals(role) || "shuffle".equals(role))
                     && ordinal >= 0;
         }
 
         private PlaybackEntities.OccurrenceEntity toEntity() {
-            return new PlaybackEntities.OccurrenceEntity(occurrenceId, trackHandle, role, ordinal, playable);
+            return new PlaybackEntities.OccurrenceEntity(occurrenceId, trackHandle, source, providerTrackId,
+                    providerPartId, role, ordinal, playable);
         }
     }
 
@@ -242,43 +313,71 @@ public final class PlaybackCheckpointRepository {
 
     public static final class RestoredState {
         private final long revision;
+        private final String baseContextId;
         private final String currentOccurrenceId;
+        private final String baseCurrentOccurrenceId;
         private final List<String> occurrenceIds;
         private final List<String> queueOccurrenceIds;
+        private final List<String> historyOccurrenceIds;
+        private final List<String> shuffleOccurrenceIds;
         private final long positionMs;
         private final PlaybackQueueEngine.Mode mode;
         private final PlaybackQueueEngine.Mode modeBeforeQueue;
         private final int historyCursor;
         private final boolean queueContextActive;
+        private final int shuffleNextIndex;
 
-        RestoredState(long revision, String currentOccurrenceId, List<String> occurrenceIds,
-                List<String> queueOccurrenceIds, long positionMs, PlaybackQueueEngine.Mode mode,
+        RestoredState(long revision, String baseContextId, String currentOccurrenceId,
+                String baseCurrentOccurrenceId, List<String> occurrenceIds, List<String> queueOccurrenceIds,
+                List<String> historyOccurrenceIds, List<String> shuffleOccurrenceIds, long positionMs,
+                PlaybackQueueEngine.Mode mode,
                 PlaybackQueueEngine.Mode modeBeforeQueue, int historyCursor, boolean queueContextActive) {
+            this(revision, baseContextId, currentOccurrenceId, baseCurrentOccurrenceId, occurrenceIds,
+                    queueOccurrenceIds, historyOccurrenceIds, shuffleOccurrenceIds, positionMs, mode,
+                    modeBeforeQueue, historyCursor, queueContextActive, 0);
+        }
+
+        RestoredState(long revision, String baseContextId, String currentOccurrenceId,
+                String baseCurrentOccurrenceId, List<String> occurrenceIds, List<String> queueOccurrenceIds,
+                List<String> historyOccurrenceIds, List<String> shuffleOccurrenceIds, long positionMs,
+                PlaybackQueueEngine.Mode mode, PlaybackQueueEngine.Mode modeBeforeQueue, int historyCursor,
+                boolean queueContextActive, int shuffleNextIndex) {
             this.revision = revision;
+            this.baseContextId = baseContextId;
             this.currentOccurrenceId = currentOccurrenceId;
+            this.baseCurrentOccurrenceId = baseCurrentOccurrenceId;
             this.occurrenceIds = Collections.unmodifiableList(new ArrayList<>(occurrenceIds));
             this.queueOccurrenceIds = Collections.unmodifiableList(new ArrayList<>(queueOccurrenceIds));
+            this.historyOccurrenceIds = Collections.unmodifiableList(new ArrayList<>(historyOccurrenceIds));
+            this.shuffleOccurrenceIds = Collections.unmodifiableList(new ArrayList<>(shuffleOccurrenceIds));
             this.positionMs = positionMs;
             this.mode = mode;
             this.modeBeforeQueue = modeBeforeQueue;
             this.historyCursor = historyCursor;
             this.queueContextActive = queueContextActive;
+            this.shuffleNextIndex = shuffleNextIndex;
         }
 
         static RestoredState empty() {
-            return new RestoredState(0L, "", Collections.emptyList(), Collections.emptyList(), 0L,
-                    PlaybackQueueEngine.Mode.SEQUENTIAL, PlaybackQueueEngine.Mode.SEQUENTIAL, 0, false);
+            return new RestoredState(0L, "", "", "", Collections.emptyList(), Collections.emptyList(),
+                    Collections.emptyList(), Collections.emptyList(), 0L,
+                    PlaybackQueueEngine.Mode.SEQUENTIAL, PlaybackQueueEngine.Mode.SEQUENTIAL, 0, false, 0);
         }
 
         public long getRevision() { return revision; }
+        public String getBaseContextId() { return baseContextId; }
         public String getCurrentOccurrenceId() { return currentOccurrenceId; }
+        public String getBaseCurrentOccurrenceId() { return baseCurrentOccurrenceId; }
         public List<String> getOccurrenceIds() { return occurrenceIds; }
         public List<String> getQueueOccurrenceIds() { return queueOccurrenceIds; }
+        public List<String> getHistoryOccurrenceIds() { return historyOccurrenceIds; }
+        public List<String> getShuffleOccurrenceIds() { return shuffleOccurrenceIds; }
         public long getPositionMs() { return positionMs; }
         public PlaybackQueueEngine.Mode getMode() { return mode; }
         public PlaybackQueueEngine.Mode getModeBeforeQueue() { return modeBeforeQueue; }
         public int getHistoryCursor() { return historyCursor; }
         public boolean isQueueContextActive() { return queueContextActive; }
+        public int getShuffleNextIndex() { return shuffleNextIndex; }
     }
 
     private static boolean isLogicalId(String value) {

@@ -39,6 +39,12 @@ public final class PlaybackPersistenceInstrumentationTest {
             assertEquals(Arrays.asList("occ-base-1", "occ-queue-1", "occ-queue-2"),
                     restored.getOccurrenceIds());
             assertEquals(Arrays.asList("occ-queue-1", "occ-queue-2"), restored.getQueueOccurrenceIds());
+            assertEquals(Arrays.asList("occ-base-1", "occ-queue-1"), restored.getHistoryOccurrenceIds());
+            assertEquals(Arrays.asList("occ-base-1"), restored.getShuffleOccurrenceIds());
+            assertEquals("base-context-1", restored.getBaseContextId());
+            assertEquals("occ-base-1", restored.getBaseCurrentOccurrenceId());
+            assertEquals(1, restored.getHistoryCursor());
+            assertEquals(1, restored.getShuffleNextIndex());
             assertEquals(40_000L, restored.getPositionMs());
             assertEquals(PlaybackQueueEngine.Mode.SHUFFLE, restored.getMode());
         } finally {
@@ -96,6 +102,7 @@ public final class PlaybackPersistenceInstrumentationTest {
                                 true)),
                 Arrays.asList(
                         new PlaybackCheckpointRepository.HistoryState(0, "occ-base-1", 100L),
-                        new PlaybackCheckpointRepository.HistoryState(1, "occ-queue-1", 200L)));
+                        new PlaybackCheckpointRepository.HistoryState(1, "occ-queue-1", 200L)),
+                Arrays.asList("occ-base-1"), 1);
     }
 }

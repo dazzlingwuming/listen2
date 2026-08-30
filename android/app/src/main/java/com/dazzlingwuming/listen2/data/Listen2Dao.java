@@ -21,6 +21,9 @@ public interface Listen2Dao {
     @Query("SELECT * FROM playback_history ORDER BY ordinal ASC")
     List<PlaybackEntities.HistoryEntity> getHistory();
 
+    @Query("SELECT * FROM playback_shuffle_order ORDER BY ordinal ASC")
+    List<PlaybackEntities.ShuffleEntity> getShuffleOrder();
+
     @Query("SELECT * FROM accepted_transition_tokens WHERE transitionToken = :token")
     PlaybackEntities.TransitionTokenEntity getTransitionToken(String token);
 
@@ -34,10 +37,19 @@ public interface Listen2Dao {
     void insertHistory(List<PlaybackEntities.HistoryEntity> history);
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
+    void insertShuffleOrder(List<PlaybackEntities.ShuffleEntity> shuffleOrder);
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     void insertTransitionToken(PlaybackEntities.TransitionTokenEntity token);
 
     @Query("DELETE FROM playback_history")
     void deletePlaybackHistory();
+
+    @Query("DELETE FROM playback_shuffle_order")
+    void deleteShuffleOrder();
+
+    @Query("DELETE FROM playback_checkpoint")
+    void deleteCheckpoint();
 
     @Query("DELETE FROM playback_occurrences")
     void deletePlaybackOccurrences();
