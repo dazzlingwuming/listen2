@@ -35,7 +35,7 @@ Deliver Android parity as dependency-ordered, emulator-proven vertical slices: f
   4. A user can cancel an in-flight search or detail request and receive one clear terminal state; timeouts, destroyed pages, and expired responses cannot leave a spinner or alter the new page.
   5. Unsafe origins, frames, navigation targets, URL shapes, payloads, and media-proxy attempts are rejected without exposing cookies, caller headers, local files, or executable provider content.
 
-**Plans:** 2/7 plans executed
+**Plans:** 4/7 plans executed
 **Wave 1**
 
 - [x] 01-01-PLAN.md
@@ -43,8 +43,8 @@ Deliver Android parity as dependency-ordered, emulator-proven vertical slices: f
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 01-03-PLAN.md
-- [ ] 01-05-PLAN.md
+- [x] 01-03-PLAN.md
+- [x] 01-05-PLAN.md
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -228,7 +228,7 @@ Deliver Android parity as dependency-ordered, emulator-proven vertical slices: f
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Verified Bilibili Startup Slice | 2/7 | In Progress|  |
+| 1. Verified Bilibili Startup Slice | 4/7 | In Progress|  |
 | 2. Native Media3 Playback & Background Control | 0/TBD | Not started | - |
 | 3. NetEase Lyrics & Provider Contract | 0/TBD | Not started | - |
 | 4. Durable Library & Playlist Management | 0/TBD | Not started | - |
