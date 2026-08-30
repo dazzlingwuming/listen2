@@ -2,6 +2,12 @@
 /* global MediaMetadata playerSendMessage MediaService */
 /* global Howl Howler */
 {
+  const usesNativeAndroidPlayback = () =>
+    typeof window !== 'undefined' &&
+    window.Listen2AndroidHttpAdapter &&
+    typeof window.Listen2AndroidHttpAdapter.isAvailable === 'function' &&
+    window.Listen2AndroidHttpAdapter.isAvailable();
+
   const prepareAudioAnalysis = (howl) => {
     if (
       howl &&
@@ -59,6 +65,7 @@
     }
 
     setRefreshRate(rate = 10) {
+      if (usesNativeAndroidPlayback()) return;
       clearInterval(this.refreshTimer);
       this.refreshTimer = setInterval(() => {
         if (this.playing) {
@@ -138,6 +145,7 @@
     }
 
     get playing() {
+      if (usesNativeAndroidPlayback()) return false;
       return this.currentHowl ? this.currentHowl.playing() : false;
     }
 
@@ -1259,6 +1267,7 @@
     }
 
     clearPlaylist() {
+      if (usesNativeAndroidPlayback()) return;
       this.clearPlaybackWatch();
       this.stopAll(); // stop the loadded track before remove list
       this.playlist = [];
@@ -1292,6 +1301,7 @@
     }
 
     setNewPlaylist(list) {
+      if (usesNativeAndroidPlayback()) return;
       if (list.length) {
         // stop current
         this.clearPlaybackWatch();
@@ -1357,6 +1367,7 @@
      * (leave empty to play the first or current).
      */
     play(idx) {
+      if (usesNativeAndroidPlayback()) return;
       this.load(idx);
       this._playback_session += 1;
 
@@ -1968,6 +1979,7 @@
      * (leave empty to load the first or current).
      */
     load(idx) {
+      if (usesNativeAndroidPlayback()) return;
       let index = typeof idx === 'number' ? idx : this.index;
       if (index < 0) return;
       if (!this.playlist[index]) {
@@ -1991,6 +2003,7 @@
     }
 
     finishLoad(index, playNow) {
+      if (usesNativeAndroidPlayback()) return;
       const data = this.playlist[index];
 
       // If we already loaded this track, use the current one.
@@ -2207,6 +2220,7 @@
      * Pause the currently playing track.
      */
     pause() {
+      if (usesNativeAndroidPlayback()) return;
       if (!this.currentHowl) return;
 
       // Puase the sound.
@@ -2219,6 +2233,7 @@
      * @param  {String} direction 'next' or 'prev'.
      */
     skip(direction, bypassPlayNextQueue = false) {
+      if (usesNativeAndroidPlayback()) return;
       const previousTrack = this.currentAudio;
       this.finishListeningHistory();
       this.clearPlaybackWatch();
@@ -2311,6 +2326,7 @@
      * @param  {Number} val Volume between 0 and 1.
      */
     set volume(val) {
+      if (usesNativeAndroidPlayback()) return;
       // Update the global volume (affecting all Howls).
       if (typeof val === 'number') {
         Howler.volume(val);
@@ -2325,6 +2341,7 @@
     }
 
     adjustVolume(inc) {
+      if (usesNativeAndroidPlayback()) return;
       this.volume = inc
         ? Math.min(this.volume + 0.1, 1)
         : Math.max(this.volume - 0.1, 0);
@@ -2333,6 +2350,7 @@
     }
 
     mute() {
+      if (usesNativeAndroidPlayback()) return;
       Howler.mute(true);
       playerSendMessage(this.mode, {
         type: 'BG_PLAYER:MUTE',
@@ -2341,6 +2359,7 @@
     }
 
     unmute() {
+      if (usesNativeAndroidPlayback()) return;
       Howler.mute(false);
       playerSendMessage(this.mode, {
         type: 'BG_PLAYER:MUTE',
@@ -2353,6 +2372,7 @@
      * @param  {Number} per Percentage through the song to skip.
      */
     seek(per) {
+      if (usesNativeAndroidPlayback()) return;
       if (!this.currentHowl) return;
 
       // Get the Howl we want to manipulate.
@@ -2370,6 +2390,7 @@
      */
 
     seekTime(seconds) {
+      if (usesNativeAndroidPlayback()) return;
       if (!this.currentHowl) return;
       const audio = this.currentHowl;
       audio.seek(seconds);
@@ -2483,6 +2504,7 @@
   window.threadPlayer = threadPlayer;
 
   if (
+    !usesNativeAndroidPlayback() &&
     navigator.mediaSession &&
     typeof navigator.mediaSession.setActionHandler === 'function'
   ) {
