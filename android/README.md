@@ -55,3 +55,7 @@ Debug builds use the side-by-side package ID
 `com.dazzlingwuming.listen2.debug`, so installing a test APK does not replace
 or clear data from an existing Listen2 release installation. Release builds
 keep the production package ID `com.dazzlingwuming.listen2`.
+
+For the fail-closed Phase-01 API-35 live gate, see
+[`evidence/phase01/README.md`](evidence/phase01/README.md). Its build and
+instrumentation checks remain separate from public provider/audio proof.

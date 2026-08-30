@@ -1,7 +1,17 @@
 # Phase 01 API-35 evidence
 
-`phase01-api35-smoke.sh --wave0-verify` writes only a generated identity record under `android/app/build/reports/phase01/` after the platform instrumentation tracer passes. The record contains timestamp/timezone, selected emulator serial, API, ABI, WebView identity, Git SHA, APK SHA-256, command outcome, and the explicit `liveProviderVerified:false` marker.
+The non-substitutable live gate is:
 
-It deliberately removes command output and never records provider bodies, URLs/query strings, headers, cookies, credentials, signed media candidates, raw exceptions, screenshots, or personal absolute paths. Delete `android/app/build/` to remove generated reports.
+```sh
+ANDROID_SDK_ROOT=/opt/homebrew/share/android-commandlinetools \
+GRADLE_BIN=/tmp/listen2-ci.CBSD9n/gradle-8.10.2/bin/gradle \
+ANDROID_SERIAL=emulator-5554 \
+bash android/scripts/phase01-api35-smoke.sh --run \
+  --evidence .planning/phases/01-verified-bilibili-startup-slice/01-API35-EVIDENCE.md
+```
 
-This Wave-0 record proves only that the packaged appassets page and typed bridge tracer ran on API 35. It is not evidence of live Bilibili availability, selected-part playback, audible progress, pause/resume, or lyrics. Those remain mandatory later live-smoke gates and must be marked `BLOCKED` or `not verified` if unavailable.
+`--prepare` verifies one selected API-35 emulator and WebView provider. `--wave0-verify`, unit tests, instrumentation, APK assembly, and signature verification are deterministic/host checks, not proof of live Bilibili playback. `--self-test` rejects bad device selection and redaction canaries. `--verify-evidence PATH` recomputes current Git/APK/device identity and rejects incomplete or substituted pass records.
+
+Allowed evidence is limited to timestamp/timezone, Git/APK SHA-256, package/variant, API/ABI/WebView/network labels, selected public BVID/CID/part, approved timings/terminal markers, and screenshot names. It never stores provider bodies, URL query values, signed candidates, headers, cookies, credentials, storage, raw exceptions, or personal paths. The CDP client serializes only fixed state/timing/geometry/bounded-ID fields.
+
+If an AVD, provider, CDN, codec, or network prerequisite fails, preserve `BLOCKED / not verified`; the verifier exits nonzero. Restore the prerequisite and rerun from `--prepare`. The runner removes its ADB forward and restores temporary font/rotation settings on exit. Delete `android/app/build/` to remove generated build reports.
