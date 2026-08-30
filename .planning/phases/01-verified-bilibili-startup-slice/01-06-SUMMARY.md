@@ -136,6 +136,11 @@ status: complete
 
 None. Live API-35 audio progress, pause/resume, and lyric-provider evidence are deliberately reserved for the next plan's explicit runtime gate, not represented as a product stub.
 
+## Self-Check: PASSED
+
+- `01-06-SUMMARY.md` exists at the required phase path.
+- Task commits `f5a21b6` and `fd14fdd` exist on the current branch and remote.
+
 ## Next Phase Readiness
 
 - Plan 01-07 can install this exact APK and verify public Bilibili audio advances past `0:00`, pause/resume works, and the lyric entry is truthful on API 35.
