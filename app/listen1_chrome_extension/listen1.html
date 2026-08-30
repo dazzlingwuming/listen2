@@ -758,11 +758,12 @@
                           <input
                             class="form-control search-input"
                             id="search-input"
-                            type="text"
+                            type="search"
                             ng-model="keywords"
                             placeholder="{{_SEARCH_PLACEHOLDER}}"
                             ng-model-options="{debounce: 500}"
                             ng-keyup="enterEvent($event)"
+                            aria-label="搜索哔哩哔哩音乐"
                           />
                         </div>
                         <div
@@ -4231,6 +4232,13 @@
                           <div>
                             <p>你的音乐</p>
                             <h2 id="mobile-library-hub-title">音乐库</h2>
+                            <p
+                              class="mobile-library-account-state"
+                              ng-if="androidAccountState && !androidAccountState.available"
+                            >
+                              {{androidAccountState.message ||
+                              '登录功能将在后续版本提供'}}
+                            </p>
                           </div>
                           <button
                             type="button"
@@ -4445,6 +4453,7 @@
                             placeholder="{{_SEARCH_PLACEHOLDER}}"
                             ng-model-options="{debounce: 500}"
                             ng-keyup="enterEvent($event)"
+                            aria-label="搜索哔哩哔哩音乐"
                           />
                         </div>
                         <div
@@ -4520,6 +4529,202 @@
                         content-selector="'#playlist-content'"
                       >
                         <div class="topbar-spacer"></div>
+                        <section
+                          class="bilibili-mobile-search"
+                          ng-if="is_window_hidden==1"
+                          aria-labelledby="bilibili-mobile-search-title"
+                        >
+                          <div class="bilibili-mobile-search-source">
+                            <span class="bilibili-mobile-source-chip"
+                              >哔哩哔哩</span
+                            >
+                            <span>当前搜索来源</span>
+                          </div>
+                          <h1 id="bilibili-mobile-search-title">
+                            搜索哔哩哔哩音乐
+                          </h1>
+                          <p
+                            class="bilibili-mobile-search-intro"
+                            ng-if="bilibiliSearch.state == 'idle'"
+                          >
+                            输入歌名、歌手或视频标题开始搜索。
+                          </p>
+                          <div class="bilibili-mobile-search-actions">
+                            <button
+                              type="button"
+                              ng-click="submitBilibiliSearch()"
+                              aria-label="提交哔哩哔哩搜索"
+                            >
+                              搜索
+                            </button>
+                            <button
+                              type="button"
+                              ng-if="bilibiliSearch.state == 'loading'"
+                              ng-click="cancelBilibiliSearch()"
+                            >
+                              取消本次搜索
+                            </button>
+                            <button
+                              type="button"
+                              ng-if="keywords && bilibiliSearch.state != 'loading'"
+                              ng-click="clearBilibiliSearch()"
+                            >
+                              清空搜索
+                            </button>
+                          </div>
+                          <div
+                            class="bilibili-mobile-live"
+                            aria-live="polite"
+                            aria-atomic="true"
+                            aria-busy="{{bilibiliSearch.state == 'loading'}}"
+                          >
+                            <p ng-if="bilibiliSearch.state == 'loading'">
+                              正在搜索哔哩哔哩…
+                            </p>
+                            <p ng-if="bilibiliSearch.state == 'cancelled'">
+                              已取消本次搜索
+                            </p>
+                            <p ng-if="bilibiliSearch.state == 'empty'">
+                              没有找到结果
+                            </p>
+                            <p
+                              ng-if="bilibiliSearch.state == 'error' || bilibiliSearch.state == 'timeout'"
+                              ng-bind="bilibiliSearch.message"
+                            ></p>
+                            <button
+                              type="button"
+                              ng-if="bilibiliSearch.state == 'error' || bilibiliSearch.state == 'timeout' || bilibiliSearch.state == 'cancelled'"
+                              ng-click="retryBilibiliSearch()"
+                            >
+                              重新搜索哔哩哔哩
+                            </button>
+                          </div>
+                          <ul
+                            class="bilibili-mobile-results"
+                            ng-if="bilibiliSearch.state != 'idle' && bilibiliDetail.state == 'idle'"
+                          >
+                            <li
+                              ng-repeat="song in result track by song.id"
+                              class="bilibili-mobile-result"
+                            >
+                              <button
+                                type="button"
+                                ng-click="openBilibiliDetail(song)"
+                                aria-label="{{song.title}}，{{song.artist}}，哔哩哔哩"
+                              >
+                                <span
+                                  class="bilibili-mobile-cover"
+                                  aria-hidden="true"
+                                  >♫</span
+                                >
+                                <span class="bilibili-mobile-result-copy">
+                                  <strong ng-bind="song.title"></strong>
+                                  <span ng-bind="song.artist"></span>
+                                  <small
+                                    ><span>哔哩哔哩</span
+                                    ><span
+                                      ng-bind="song.duration || '时长未知'"
+                                    ></span
+                                    ><span
+                                      ng-bind="song.capability || '请选择分P'"
+                                    ></span
+                                  ></small>
+                                </span>
+                                <span
+                                  class="bilibili-mobile-open"
+                                  aria-hidden="true"
+                                  >›</span
+                                >
+                              </button>
+                            </li>
+                          </ul>
+                          <section
+                            class="bilibili-mobile-detail"
+                            ng-if="bilibiliDetail.state != 'idle'"
+                            aria-labelledby="bilibili-mobile-detail-title"
+                          >
+                            <button
+                              type="button"
+                              class="bilibili-mobile-back"
+                              ng-click="backFromBilibiliDetail()"
+                            >
+                              返回搜索结果
+                            </button>
+                            <h2
+                              id="bilibili-mobile-detail-title"
+                              ng-bind="bilibiliDetail.track.title"
+                            ></h2>
+                            <p ng-bind="bilibiliDetail.track.artist"></p>
+                            <div
+                              class="bilibili-mobile-live"
+                              aria-live="polite"
+                              aria-atomic="true"
+                              aria-busy="{{bilibiliDetail.state == 'loading'}}"
+                            >
+                              <p ng-if="bilibiliDetail.state == 'loading'">
+                                正在读取分P…
+                              </p>
+                              <button
+                                type="button"
+                                ng-if="bilibiliDetail.state == 'loading'"
+                                ng-click="cancelBilibiliDetail()"
+                              >
+                                取消读取分P
+                              </button>
+                              <p ng-if="bilibiliDetail.state == 'cancelled'">
+                                已取消读取分P
+                              </p>
+                              <p
+                                ng-if="bilibiliDetail.state == 'error' || bilibiliDetail.state == 'timeout' || bilibiliDetail.state == 'invalid-part'"
+                                ng-bind="bilibiliDetail.message"
+                              ></p>
+                              <button
+                                type="button"
+                                ng-if="bilibiliDetail.state == 'error' || bilibiliDetail.state == 'timeout'"
+                                ng-click="retryBilibiliDetail()"
+                              >
+                                重新读取分P
+                              </button>
+                            </div>
+                            <ul
+                              class="bilibili-mobile-parts"
+                              role="listbox"
+                              aria-label="分P列表"
+                              ng-if="bilibiliDetail.state == 'content'"
+                            >
+                              <li
+                                ng-repeat="part in bilibiliDetail.parts track by part.cid"
+                              >
+                                <button
+                                  type="button"
+                                  ng-click="selectBilibiliPart(part.cid)"
+                                  aria-selected="{{bilibiliDetail.selectedCid == part.cid}}"
+                                  ng-class="{'is-selected': bilibiliDetail.selectedCid == part.cid}"
+                                >
+                                  <span
+                                    ng-if="bilibiliDetail.selectedCid == part.cid"
+                                    >已选择</span
+                                  >
+                                  <span ng-bind="part.title"></span>
+                                  <small
+                                    ng-bind="part.duration || '时长未知'"
+                                  ></small>
+                                  <small
+                                    ng-bind="part.capability == 'playable' ? '可播放' : part.capability == 'login-required' ? '需要登录' : '暂不可播放'"
+                                  ></small>
+                                </button>
+                              </li>
+                            </ul>
+                            <button
+                              type="button"
+                              class="bilibili-mobile-play"
+                              ng-click="playSelectedBilibiliPart()"
+                              ng-disabled="!canPlaySelectedBilibiliPart()"
+                            >
+                              播放此分P
+                            </button>
+                          </section>
+                        </section>
                         <div ng-include="'annual_recap.html'"></div>
                         <!-- hot playlist window-->
                         <div
