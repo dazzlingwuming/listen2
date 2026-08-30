@@ -11,6 +11,7 @@ AVDMANAGER_BIN="${AVDMANAGER:-$(command -v avdmanager || true)}"
 SDKMANAGER_BIN="${SDKMANAGER:-$(command -v sdkmanager || true)}"
 GRADLE_BIN="${GRADLE_BIN:-/tmp/listen2-ci.CBSD9n/gradle-8.10.2/bin/gradle}"
 PACKAGE="com.dazzlingwuming.listen2.debug"
+ACTIVITY_CLASS="com.dazzlingwuming.listen2.MainActivity"
 APK="$ROOT/android/app/build/outputs/apk/debug/app-debug.apk"
 EVIDENCE_DEFAULT="$ROOT/.planning/phases/01-verified-bilibili-startup-slice/01-API35-EVIDENCE.md"
 EVIDENCE_DIR="$ROOT/.planning/phases/01-verified-bilibili-startup-slice/evidence"
@@ -81,8 +82,19 @@ build_exact_apk() {
 }
 prepare_cdp() {
   "$ADB" -s "$SERIAL" shell am force-stop "$PACKAGE"; "$ADB" -s "$SERIAL" shell pm clear "$PACKAGE" >/dev/null
-  "$ADB" -s "$SERIAL" shell monkey -p "$PACKAGE" 1 >/dev/null
-  timeout_run 20 "$ADB" -s "$SERIAL" forward "tcp:$PORT" localabstract:webview_devtools_remote || die "CDP forward failed" 72
+  "$ADB" -s "$SERIAL" shell am start -W -n "$PACKAGE/$ACTIVITY_CLASS" >/dev/null || die "cold launch failed" 72
+  local deadline=$((SECONDS + 20))
+  while (( SECONDS < deadline )); do
+    "$ADB" -s "$SERIAL" shell dumpsys window 2>/dev/null | grep -q "$PACKAGE" && break
+    sleep 1
+  done
+  (( SECONDS < deadline )) || die "cold launch did not focus the debug package" 72
+  local app_pid socket
+  app_pid="$(device_field "pidof $PACKAGE" | awk '{print $1}')"
+  [[ "$app_pid" =~ ^[0-9]+$ ]] || die "debug package has no WebView process" 72
+  socket="webview_devtools_remote_$app_pid"
+  "$ADB" -s "$SERIAL" shell cat /proc/net/unix 2>/dev/null | grep -q "@$socket" || die "debug WebView socket is unavailable" 72
+  timeout_run 20 "$ADB" -s "$SERIAL" forward "tcp:$PORT" "localabstract:$socket" || die "CDP forward failed" 72
   FORWARD_CREATED=1
 }
 write_blocked_evidence() {
