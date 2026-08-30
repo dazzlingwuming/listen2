@@ -404,7 +404,7 @@ class netease {
     if (
       !adapter ||
       typeof adapter.isAvailable !== 'function' ||
-      typeof adapter.get !== 'function'
+      typeof adapter.request !== 'function'
     ) {
       return null;
     }
@@ -465,7 +465,121 @@ class netease {
     return { result, total, type: searchType };
   }
 
-  static search(url) {
+  static map_android_search_error(error) {
+    const code = error && typeof error.code === 'string' ? error.code : '';
+    const safeErrors = {
+      'android-rpc-cancelled': {
+        status: 'android-rpc-cancelled',
+        message: 'NetEase request was cancelled.',
+      },
+      'android-rpc-timeout': {
+        status: 'android-rpc-timeout',
+        message: 'NetEase request timed out.',
+      },
+      'android-rpc-network': {
+        status: 'android-rpc-network',
+        message: 'NetEase is unavailable while this device is offline.',
+      },
+      'android-rpc-tls': {
+        status: 'android-rpc-tls',
+        message: 'NetEase could not be reached securely on this device.',
+      },
+      'android-rpc-permission': {
+        status: 'android-rpc-permission',
+        message: 'NetEase requires permission or an eligible account.',
+      },
+      'android-rpc-malformed-response': {
+        status: 'android-rpc-malformed-response',
+        message: 'NetEase returned data this device cannot use safely.',
+      },
+      'android-rpc-provider-status': {
+        status: 'android-rpc-provider-status',
+        message: 'NetEase rejected this request.',
+      },
+      'android-rpc-unavailable-route': {
+        status: 'android-rpc-unavailable-route',
+        message: 'NetEase is unavailable on this Android device.',
+      },
+      'android-rpc-unavailable': {
+        status: 'android-rpc-unavailable',
+        message: 'NetEase is unavailable on this Android device.',
+      },
+    };
+    return (
+      safeErrors[code] || {
+        status: 'android-rpc-failed',
+        message: 'NetEase could not complete this request.',
+      }
+    );
+  }
+
+  static parse_android_typed_search_response(response, searchType) {
+    const result = response && response.result;
+    if (
+      !result ||
+      result.source !== 'netease' ||
+      !Array.isArray(result.rows) ||
+      !Number.isSafeInteger(result.total) ||
+      result.total < 0
+    ) {
+      throw new Error('Android typed NetEase response was invalid.');
+    }
+    const rows = result.rows.map((row) => {
+      if (
+        !row ||
+        row.source !== 'netease' ||
+        row.provider !== 'netease' ||
+        typeof row.id !== 'string' ||
+        !/^netrack_[1-9][0-9]{0,17}$/.test(row.id) ||
+        typeof row.title !== 'string' ||
+        typeof row.artist !== 'string' ||
+        typeof row.capability !== 'string'
+      ) {
+        throw new Error('Android typed NetEase row was invalid.');
+      }
+      const safe = {
+        id: row.id,
+        title: row.title,
+        artist: row.artist,
+        source: 'netease',
+        provider: 'netease',
+        capability: row.capability,
+      };
+      if (Number.isSafeInteger(row.durationMs) && row.durationMs > 0) {
+        safe.duration = Math.floor(row.durationMs / 1000);
+      }
+      // Capability is logical UI state. A media URL or candidate must never
+      // cross this Android boundary; native owns the eventual rendition.
+      return safe;
+    });
+    return { result: rows, total: result.total, type: searchType };
+  }
+
+  static create_android_search_facade(handle, searchType) {
+    const promise = handle.promise
+      .then((response) =>
+        this.parse_android_typed_search_response(response, searchType)
+      )
+      .catch((error) => ({
+        result: [],
+        total: 0,
+        type: searchType,
+        error: this.map_android_search_error(error),
+      }));
+    return {
+      requestId: handle.requestId,
+      pageEpoch: handle.pageEpoch,
+      cancel: handle.cancel,
+      promise,
+      then: promise.then.bind(promise),
+      catch: promise.catch.bind(promise),
+      success(fn) {
+        promise.then(fn);
+      },
+    };
+  }
+
+  static search(url, options = {}) {
     // use chrome extension to modify referer.
     const target_url = 'https://music.163.com/api/search/pc';
     const keyword = getParameterByName('keywords', url);
@@ -481,28 +595,22 @@ class netease {
       limit: 20,
       type: ne_search_type,
     };
+    const androidHttp = this.get_android_http_adapter();
+    if (androidHttp) {
+      const pageEpoch = Number.isInteger(options.pageEpoch)
+        ? options.pageEpoch
+        : 0;
+      return this.create_android_search_facade(
+        androidHttp.request(
+          'netease.search',
+          { keyword, page: Number(curpage) || 1 },
+          { pageEpoch }
+        ),
+        searchType
+      );
+    }
     return {
       success: (fn) => {
-        const androidHttp = this.get_android_http_adapter();
-        if (androidHttp) {
-          const androidTargetUrl =
-            'https://music.163.com/api/search/get/web' +
-            `?s=${encodeURIComponent(keyword)}` +
-            `&type=${ne_search_type}` +
-            `&offset=${encodeURIComponent(String(req_data.offset))}` +
-            '&limit=20';
-          androidHttp.get(androidTargetUrl).then(
-            (response) => {
-              try {
-                fn(this.parse_android_search_response(response, searchType));
-              } catch (error) {
-                fn({ result: [], total: 0, type: searchType });
-              }
-            },
-            () => fn({ result: [], total: 0, type: searchType })
-          );
-          return;
-        }
         this.ne_ensure_cookie(() => {
           axios
             .post(target_url, new URLSearchParams(req_data))

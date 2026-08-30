@@ -277,6 +277,7 @@ const Listen2AndroidHttpAdapter = (() => {
       UNSUPPORTED_CODEC: 'android-rpc-unsupported-codec',
       MALFORMED_PROVIDER_RESPONSE: 'android-rpc-malformed-response',
       PROVIDER_STATUS: 'android-rpc-provider-status',
+      NETEASE_ROUTE_UNAVAILABLE: 'android-rpc-unavailable-route',
       IDENTITY_MISMATCH: 'android-rpc-malformed-response',
     };
     const code = providerRejectedHttp
@@ -476,6 +477,7 @@ const Listen2AndroidHttpAdapter = (() => {
         'bilibili.search',
         'bilibili.video.detail',
         'bilibili.audio.manifest',
+        'netease.search',
         'playback.command',
       ].includes(operation)
     ) {
@@ -498,7 +500,7 @@ const Listen2AndroidHttpAdapter = (() => {
         : 'android-rpc-invalid-payload';
     }
     const keys = Object.keys(payload).sort();
-    if (operation === 'bilibili.search') {
+    if (operation === 'bilibili.search' || operation === 'netease.search') {
       if (keys.length !== 2 || keys[0] !== 'keyword' || keys[1] !== 'page') {
         return 'android-rpc-invalid-payload';
       }
@@ -543,7 +545,7 @@ const Listen2AndroidHttpAdapter = (() => {
         payload: { ...payload.payload },
       };
     }
-    if (operation === 'bilibili.search') {
+    if (operation === 'bilibili.search' || operation === 'netease.search') {
       return { keyword: payload.keyword.trim(), page: payload.page };
     }
     if (operation === 'bilibili.video.detail') {
@@ -809,7 +811,7 @@ const Listen2AndroidHttpAdapter = (() => {
       Array.isArray(envelope.payload)
     )
       return false;
-    const {payload} = envelope;
+    const { payload } = envelope;
     const keys = Object.keys(payload).sort();
     const exact = (values) =>
       keys.length === values.length &&
@@ -947,7 +949,7 @@ const Listen2AndroidHttpAdapter = (() => {
     )
       return false;
     if (snapshot.prepared !== undefined) {
-      const {prepared} = snapshot;
+      const { prepared } = snapshot;
       if (
         !prepared ||
         typeof prepared !== 'object' ||

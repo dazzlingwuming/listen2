@@ -137,136 +137,64 @@ async function run() {
     const { axiosCalls, cookieSetCalls, provider } = createProviderContext({
       bridge,
     });
-    const resultPromise = new Promise((resolve) => {
-      provider
-        .search('/search?keywords=Android%20Song&curpage=2&type=0')
-        .success(resolve);
-    });
+    const search = provider.search(
+      '/search?keywords=Android%20Song&curpage=2&type=0',
+      { pageEpoch: 5 }
+    );
+    const resultPromise = new Promise((resolve) => search.success(resolve));
     assert.strictEqual(bridge.posted.length, 1);
     const request = bridge.posted[0];
-    assert.strictEqual(request.method, 'GET');
-    assert.strictEqual(Object.hasOwn(request, 'body'), false);
-    const searchUrl = new URL(request.url);
-    assert.strictEqual(searchUrl.origin, 'https://music.163.com');
-    assert.strictEqual(searchUrl.pathname, '/api/search/get/web');
-    assert.strictEqual(searchUrl.searchParams.get('s'), 'Android Song');
-    assert.strictEqual(searchUrl.searchParams.get('offset'), '20');
-    assert.strictEqual(searchUrl.searchParams.get('limit'), '20');
-    assert.strictEqual(searchUrl.searchParams.get('type'), '1');
+    assert.strictEqual(request.version, 2);
+    assert.strictEqual(request.operation, 'netease.search');
+    assert.strictEqual(request.pageEpoch, 5);
+    assert.deepStrictEqual(toPlain(request.payload), {
+      keyword: 'Android Song',
+      page: 2,
+    });
+    ['url', 'headers', 'cookie', 'body'].forEach((key) =>
+      assert.strictEqual(Object.hasOwn(request.payload, key), false)
+    );
     bridge.emit({
-      body: JSON.stringify({
-        code: 200,
-        result: {
-          songCount: 7,
-          songs: [
-            {
-              album: { id: 32, name: 'Android Album', picUrl: 'android.jpg' },
-              artists: [{ id: 22, name: 'Android Artist' }],
-              fee: 0,
-              id: 12,
-              name: 'Android Song',
-            },
-          ],
-        },
-      }),
-      ok: true,
+      version: 2,
+      terminal: 'ok',
       requestId: request.requestId,
+      pageEpoch: 5,
       status: 200,
-      version: 1,
+      result: {
+        source: 'netease',
+        provider: 'netease',
+        total: 7,
+        rows: [
+          {
+            source: 'netease',
+            provider: 'netease',
+            id: 'netrack_12',
+            providerTrackId: '12',
+            title: 'Android Song',
+            artist: 'Android Artist',
+            durationMs: 245000,
+            capability: 'route-unavailable',
+          },
+        ],
+      },
     });
     assert.strictEqual(axiosCalls.length, 0);
     assert.strictEqual(cookieSetCalls(), 0);
     assert.deepStrictEqual(toPlain(await resultPromise), {
       result: [
         {
-          album: 'Android Album',
-          album_id: 'nealbum_32',
           artist: 'Android Artist',
-          artist_id: 'neartist_22',
+          capability: 'route-unavailable',
+          duration: 245,
           id: 'netrack_12',
-          img_url: 'android.jpg',
+          provider: 'netease',
           source: 'netease',
-          source_url: 'https://music.163.com/#/song?id=12',
           title: 'Android Song',
         },
       ],
       total: 7,
       type: '0',
     });
-  }
-
-  {
-    const bridge = createBridge();
-    const { axiosCalls, provider } = createProviderContext({ bridge });
-    const resultPromise = new Promise((resolve) => {
-      provider
-        .search('/search?keywords=Failure&curpage=1&type=0')
-        .success(resolve);
-    });
-    bridge.emit({
-      body: JSON.stringify({ code: -462, verifyType: 50 }),
-      ok: true,
-      requestId: bridge.posted[0].requestId,
-      status: 200,
-      version: 1,
-    });
-    assert.deepStrictEqual(toPlain(await resultPromise), {
-      result: [],
-      total: 0,
-      type: '0',
-    });
-    assert.strictEqual(axiosCalls.length, 0);
-  }
-
-  {
-    const bridge = createBridge();
-    const { axiosCalls, provider } = createProviderContext({ bridge });
-    const resultPromise = new Promise((resolve) => {
-      provider
-        .search('/search?keywords=Android&curpage=1&type=1')
-        .success(resolve);
-    });
-    const request = bridge.posted[0];
-    const searchUrl = new URL(request.url);
-    assert.strictEqual(searchUrl.searchParams.get('type'), '1000');
-    bridge.emit({
-      body: JSON.stringify({
-        code: 200,
-        result: {
-          playlistCount: 9,
-          playlists: [
-            {
-              coverImgUrl: 'playlist.jpg',
-              creator: { nickname: 'Playlist Author' },
-              id: 51,
-              name: 'Android Playlist',
-              trackCount: 12,
-            },
-          ],
-        },
-      }),
-      ok: true,
-      requestId: request.requestId,
-      status: 200,
-      version: 1,
-    });
-    assert.deepStrictEqual(toPlain(await resultPromise), {
-      result: [
-        {
-          author: 'Playlist Author',
-          count: 12,
-          id: 'neplaylist_51',
-          img_url: 'playlist.jpg',
-          source: 'netease',
-          source_url: 'https://music.163.com/#/playlist?id=51',
-          title: 'Android Playlist',
-          url: 'neplaylist_51',
-        },
-      ],
-      total: 9,
-      type: '1',
-    });
-    assert.strictEqual(axiosCalls.length, 0);
   }
 
   {
