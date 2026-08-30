@@ -16,6 +16,7 @@ import androidx.media3.session.SessionToken;
 import androidx.test.platform.app.InstrumentationRegistry;
 
 import java.lang.reflect.Field;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -101,6 +102,10 @@ final class PlaybackInstrumentationFixture implements AutoCloseable {
         return privateField(service(), "mediaSession", MediaSession.class);
     }
 
+    PlaybackCheckpointRepository checkpointRepository() throws Exception {
+        return privateField(service(), "checkpointRepository", PlaybackCheckpointRepository.class);
+    }
+
     void installSilenceMedia() throws Exception {
         onMain(() -> {
             ExoPlayer player = player();
@@ -108,6 +113,21 @@ final class PlaybackInstrumentationFixture implements AutoCloseable {
                     .setDurationUs(60_000_000L)
                     .createMediaSource();
             player.setMediaSource(source);
+            player.prepare();
+            return null;
+        });
+        await(() -> playbackState() == Player.STATE_READY);
+    }
+
+    void installSilencePlaylist(int items) throws Exception {
+        if (items < 2) throw new IllegalArgumentException("playlist requires two items");
+        onMain(() -> {
+            List<androidx.media3.exoplayer.source.MediaSource> sources = new java.util.ArrayList<>();
+            for (int index = 0; index < items; index += 1) {
+                sources.add(new SilenceMediaSource.Factory().setDurationUs(60_000_000L).createMediaSource());
+            }
+            ExoPlayer player = player();
+            player.setMediaSources(sources);
             player.prepare();
             return null;
         });
@@ -132,6 +152,20 @@ final class PlaybackInstrumentationFixture implements AutoCloseable {
         onMain(() -> { controller.setVolume(volume); return null; });
     }
 
+    void next(MediaController controller) throws Exception {
+        onMain(() -> { controller.seekToNextMediaItem(); return null; });
+    }
+
+    int mediaItemCount() throws Exception { return onMain(() -> player().getMediaItemCount()); }
+
+    int currentMediaItemIndex() throws Exception { return onMain(() -> player().getCurrentMediaItemIndex()); }
+
+    void dispatchClear() {
+        PlaybackSnapshot snapshot = service().latestSnapshot();
+        service().dispatch(new PlaybackCommand("instrumentation-clear", 0L, snapshot.getRevision(),
+                PlaybackCommand.Type.CLEAR, java.util.Collections.<String, Object>emptyMap()), snapshot);
+    }
+
     boolean playPauseAvailable(MediaController controller) throws Exception {
         return onMain(() -> controller.isCommandAvailable(Player.COMMAND_PLAY_PAUSE));
     }
@@ -145,6 +179,12 @@ final class PlaybackInstrumentationFixture implements AutoCloseable {
     }
 
     void release(MediaController controller) throws Exception { onMain(() -> { controller.release(); return null; }); }
+
+    static void clearDurableState() {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        context.stopService(new Intent(context, PlaybackService.class));
+        context.deleteDatabase("listen2-playback.db");
+    }
 
     void await(Condition condition) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(TIMEOUT_MS);
