@@ -398,6 +398,73 @@ class netease {
     return song.fee !== 4 && song.fee !== 1;
   }
 
+  static get_android_http_adapter() {
+    if (typeof window === 'undefined') return null;
+    const adapter = window.Listen2AndroidHttpAdapter;
+    if (
+      !adapter ||
+      typeof adapter.isAvailable !== 'function' ||
+      typeof adapter.get !== 'function'
+    ) {
+      return null;
+    }
+    try {
+      return adapter.isAvailable() ? adapter : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  static parse_android_search_response(response, searchType) {
+    if (!response || typeof response.body !== 'string') {
+      throw new Error(
+        'Android HTTP returned an invalid NetEase search response.'
+      );
+    }
+    const data = JSON.parse(response.body);
+    if (!data || data.code !== 200) {
+      throw new Error('NetEase search returned an unsuccessful response.');
+    }
+    let result = [];
+    let total = 0;
+    if (searchType === '0') {
+      if (!data.result || !Array.isArray(data.result.songs)) {
+        throw new Error('NetEase song search returned an invalid response.');
+      }
+      result = data.result.songs.map((song_info) => ({
+        id: `netrack_${song_info.id}`,
+        title: song_info.name,
+        artist: song_info.artists[0].name,
+        artist_id: `neartist_${song_info.artists[0].id}`,
+        album: song_info.album.name,
+        album_id: `nealbum_${song_info.album.id}`,
+        source: 'netease',
+        source_url: `https://music.163.com/#/song?id=${song_info.id}`,
+        img_url: song_info.album.picUrl,
+        url: !this.is_playable(song_info) ? '' : undefined,
+      }));
+      total = data.result.songCount;
+    } else if (searchType === '1') {
+      if (!data.result || !Array.isArray(data.result.playlists)) {
+        throw new Error(
+          'NetEase playlist search returned an invalid response.'
+        );
+      }
+      result = data.result.playlists.map((info) => ({
+        id: `neplaylist_${info.id}`,
+        title: info.name,
+        source: 'netease',
+        source_url: `https://music.163.com/#/playlist?id=${info.id}`,
+        img_url: info.coverImgUrl,
+        url: `neplaylist_${info.id}`,
+        author: info.creator.nickname,
+        count: info.trackCount,
+      }));
+      total = data.result.playlistCount;
+    }
+    return { result, total, type: searchType };
+  }
+
   static search(url) {
     // use chrome extension to modify referer.
     const target_url = 'https://music.163.com/api/search/pc';
@@ -416,6 +483,26 @@ class netease {
     };
     return {
       success: (fn) => {
+        const androidHttp = this.get_android_http_adapter();
+        if (androidHttp) {
+          const androidTargetUrl =
+            'https://music.163.com/api/search/get/web' +
+            `?s=${encodeURIComponent(keyword)}` +
+            `&type=${ne_search_type}` +
+            `&offset=${encodeURIComponent(String(req_data.offset))}` +
+            '&limit=20';
+          androidHttp.get(androidTargetUrl).then(
+            (response) => {
+              try {
+                fn(this.parse_android_search_response(response, searchType));
+              } catch (error) {
+                fn({ result: [], total: 0, type: searchType });
+              }
+            },
+            () => fn({ result: [], total: 0, type: searchType })
+          );
+          return;
+        }
         this.ne_ensure_cookie(() => {
           axios
             .post(target_url, new URLSearchParams(req_data))

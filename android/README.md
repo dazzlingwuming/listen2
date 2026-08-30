@@ -19,6 +19,22 @@ system browser; all other navigation schemes are blocked. As a consequence,
 legacy provider requests that rely on cleartext HTTP or browser CORS may fail.
 This sample intentionally does not weaken those defaults.
 
+The only native HTTP bridge is a WebMessage listener named
+`Listen2AndroidHttp`, exposed solely to
+`https://appassets.androidplatform.net`. Protocol version `1` accepts only
+HTTPS `GET` requests on `api.bilibili.com` and the exact NetEase search route
+at `music.163.com/api/search/get/web`; the NetEase query keys and values are
+also validated and bounded.
+It does not accept caller-supplied headers, caps messages and response bodies,
+does not follow redirects, and returns explicit protocol error codes for
+validation, transport, HTTP, and JSON errors. It is deliberately unavailable
+on WebView implementations that do not support `WEB_MESSAGE_LISTENER`; the app
+does not fall back to `addJavascriptInterface`.
+
+For anonymous Bilibili requests, the native host obtains a bounded `buvid3`
+value from Bilibili's fixed fingerprint endpoint and keeps it in memory only.
+It never exposes custom Cookie/header controls to the packaged page.
+
 ## Build and verification
 
 Use JDK 17, Android SDK Platform 35, Build Tools 35.0.0, and Gradle 8.10.2:
@@ -31,8 +47,9 @@ gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
 ```
 
 `NavigationPolicyTest` is a JVM test for the WebView URL boundary and the two
-file-URL security flags. The repository does not currently include a Gradle
-wrapper JAR; CI provisions the pinned Gradle distribution explicitly.
+file-URL security flags. `HttpBridgePolicyTest` covers the HTTP bridge's pure
+JVM request and origin boundary. The repository does not currently include a
+Gradle wrapper JAR; CI provisions the pinned Gradle distribution explicitly.
 
 Debug builds use the side-by-side package ID
 `com.dazzlingwuming.listen2.debug`, so installing a test APK does not replace

@@ -110,7 +110,7 @@ assert.strictEqual(
   'classic and modern settings layouts must link to the cache library'
 );
 assert.strictEqual(
-  occurrences(html, /class="source-button offline-download-button"/g),
+  occurrences(html, /class="\s*source-button\s+offline-download-button\s*"/g),
   4,
   'all classic and modern song-list layouts must expose Bilibili offline download'
 );

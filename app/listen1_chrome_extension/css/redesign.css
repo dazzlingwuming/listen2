@@ -8799,13 +8799,15 @@ body.modern-white .audio-effects-summary p {
  */
 
 .modern-body .mobile-page-heading,
-.modern-body .mobile-tabbar {
+.modern-body .mobile-tabbar,
+.modern-body .mobile-library-hub {
   display: none;
 }
 
 @media screen and (min-width: 761px) {
   .modern-body .mobile-page-heading,
-  .modern-body .mobile-tabbar {
+  .modern-body .mobile-tabbar,
+  .modern-body .mobile-library-hub {
     display: none !important;
   }
 }
@@ -9856,6 +9858,249 @@ body.modern-white .audio-effects-summary p {
 
   .modern-body .mobile-tabbar .mobile-tab:active {
     transform: scale(0.97);
+  }
+
+  .modern-body .mobile-library-hub {
+    position: fixed;
+    z-index: 140;
+    inset: 0;
+    display: flex;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    align-items: flex-end;
+    box-sizing: border-box;
+    padding: 12px 8px
+      calc(var(--mobile-tabbar-height) + var(--mobile-dock-height) + 8px);
+  }
+
+  .modern-body .mobile-library-hub-backdrop {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    min-width: 0;
+    min-height: 100%;
+    border: 0;
+    background: rgba(5, 7, 13, 0.38);
+  }
+
+  .modern-body .mobile-library-hub-panel {
+    position: relative;
+    display: flex;
+    width: min(100%, 560px);
+    max-width: 100%;
+    max-height: min(680px, calc(100svh - 116px));
+    min-width: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    margin: 0 auto;
+    overflow: hidden;
+    border: 1px solid var(--ui-border-strong);
+    border-radius: 20px;
+    background: var(--ui-surface-raised);
+    box-shadow: 0 22px 54px rgba(4, 7, 14, 0.32);
+  }
+
+  .modern-body .mobile-library-hub-header {
+    display: flex;
+    min-height: 66px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--ui-border);
+  }
+
+  .modern-body .mobile-library-hub-header p,
+  .modern-body .mobile-library-hub-header h2,
+  .modern-body .mobile-library-hub-section-heading h3,
+  .modern-body .mobile-library-hub-empty {
+    margin: 0;
+  }
+
+  .modern-body .mobile-library-hub-header p {
+    color: var(--ui-muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+  }
+
+  .modern-body .mobile-library-hub-header h2 {
+    margin-top: 2px;
+    color: var(--ui-text);
+    font-size: 21px;
+    line-height: 1.2;
+  }
+
+  .modern-body .mobile-library-hub-close,
+  .modern-body .mobile-library-hub-section-heading button {
+    display: inline-flex;
+    min-width: 44px;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 12px;
+    background: transparent;
+    color: var(--ui-muted);
+  }
+
+  .modern-body .mobile-library-hub-close:active,
+  .modern-body .mobile-library-hub-section-heading button:active,
+  .modern-body .mobile-library-hub-playlist:active,
+  .modern-body .mobile-library-hub-tools button:active {
+    background: var(--ui-accent-soft);
+    color: var(--ui-accent);
+  }
+
+  .modern-body .mobile-library-hub-close svg,
+  .modern-body .mobile-library-hub-section-heading button svg {
+    width: 19px;
+    height: 19px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+  }
+
+  .modern-body .mobile-library-hub-scroll {
+    min-width: 0;
+    padding: 12px 14px 18px;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .modern-body .mobile-library-hub-primary,
+  .modern-body .mobile-library-hub-playlist,
+  .modern-body .mobile-library-hub-tools button {
+    width: 100%;
+    min-width: 0;
+    min-height: 48px;
+    border: 0;
+    color: var(--ui-text);
+    font-family: inherit;
+    text-align: left;
+  }
+
+  .modern-body .mobile-library-hub-primary {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 10px 12px;
+    border: 1px solid rgba(var(--ui-accent-rgb), 0.24);
+    border-radius: 14px;
+    background: var(--ui-accent-soft);
+  }
+
+  .modern-body .mobile-library-hub-primary svg {
+    width: 20px;
+    height: 20px;
+    flex: 0 0 20px;
+    fill: none;
+    stroke: var(--ui-accent);
+    stroke-width: 1.8;
+  }
+
+  .modern-body .mobile-library-hub-primary span {
+    display: grid;
+    min-width: 0;
+    gap: 2px;
+  }
+
+  .modern-body .mobile-library-hub-primary strong,
+  .modern-body .mobile-library-hub-playlist span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .modern-body .mobile-library-hub-primary small {
+    color: var(--ui-muted);
+    font-size: 12px;
+  }
+
+  .modern-body .mobile-library-hub-section {
+    min-width: 0;
+    margin-top: 18px;
+  }
+
+  .modern-body .mobile-library-hub-section-heading {
+    display: flex;
+    min-width: 0;
+    min-height: 44px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .modern-body .mobile-library-hub-section-heading h3 {
+    min-width: 0;
+    color: var(--ui-text);
+    font-size: 14px;
+    line-height: 1.35;
+  }
+
+  .modern-body .mobile-library-hub-section-heading button {
+    gap: 4px;
+    padding: 0 8px;
+    color: var(--ui-accent);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .modern-body .mobile-library-hub-section-heading button span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .modern-body .mobile-library-hub-playlists {
+    min-width: 0;
+  }
+
+  .modern-body .mobile-library-hub-playlist {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 0 10px;
+    border-bottom: 1px solid var(--ui-border);
+    background: transparent;
+    font-size: 14px;
+  }
+
+  .modern-body .mobile-library-hub-playlist span:first-child {
+    min-width: 0;
+  }
+
+  .modern-body .mobile-library-hub-playlist span:last-child {
+    flex: 0 0 auto;
+    color: var(--ui-muted);
+    font-size: 20px;
+  }
+
+  .modern-body .mobile-library-hub-empty {
+    min-height: 48px;
+    padding: 14px 10px;
+    box-sizing: border-box;
+    border-bottom: 1px solid var(--ui-border);
+    color: var(--ui-muted);
+    font-size: 13px;
+  }
+
+  .modern-body .mobile-library-hub-tools {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .modern-body .mobile-library-hub-tools button {
+    padding: 0 12px;
+    border: 1px solid var(--ui-border);
+    border-radius: 12px;
+    background: var(--ui-surface);
+    font-size: 13px;
+    font-weight: 700;
   }
 
   .modern-body

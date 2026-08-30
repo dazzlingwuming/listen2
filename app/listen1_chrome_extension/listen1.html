@@ -475,7 +475,10 @@
                         </div>
                       </section>
                       <section
-                        class="dialog-audio-cache-confirm dialog-track-local-data-confirm"
+                        class="
+                          dialog-audio-cache-confirm
+                          dialog-track-local-data-confirm
+                        "
                         ng-show="dialog_type==16 && !isChrome"
                         role="alertdialog"
                         aria-modal="true"
@@ -1233,7 +1236,10 @@
                                       ></a>
                                       <a
                                         title="{{_AUDIO_CACHE_DOWNLOAD_TRACK}}"
-                                        class="source-button offline-download-button"
+                                        class="
+                                          source-button
+                                          offline-download-button
+                                        "
                                         ng-show="options && !isChrome && song.source === 'bilibili'"
                                         ng-click="downloadTrackForOffline(song)"
                                         ><span aria-hidden="true">⇩</span></a
@@ -1623,7 +1629,10 @@
                                   <span>{{_AUDIO_CACHE_ENABLED}}</span>
                                 </label>
                                 <label
-                                  class="audio-cache-toggle loudness-normalization-toggle"
+                                  class="
+                                    audio-cache-toggle
+                                    loudness-normalization-toggle
+                                  "
                                   for="classic-loudness-normalization-enabled"
                                 >
                                   <input
@@ -1802,7 +1811,10 @@
                                 <span>{{_MACHINE_TRANSLATION_TITLE}}</span>
                               </div>
                               <div
-                                class="settings-content machine-translation-settings"
+                                class="
+                                  settings-content
+                                  machine-translation-settings
+                                "
                                 ng-if="!isChrome"
                               >
                                 <p class="machine-translation-description">
@@ -1812,7 +1824,10 @@
                                   {{_MACHINE_TRANSLATION_SECURE_STORAGE_NOTICE}}
                                 </p>
                                 <p
-                                  class="machine-translation-description machine-translation-privacy"
+                                  class="
+                                    machine-translation-description
+                                    machine-translation-privacy
+                                  "
                                 >
                                   {{_MACHINE_TRANSLATION_PRIVACY_NOTICE}}
                                 </p>
@@ -1832,7 +1847,9 @@
                                       >{{_MACHINE_TRANSLATION_FIXED_RULES}}</strong
                                     >
                                     <p
-                                      class="machine-translation-prompt-unavailable"
+                                      class="
+                                        machine-translation-prompt-unavailable
+                                      "
                                       ng-if="!machineTranslationConfig.immutableSystemPrompt || !machineTranslationConfig.promptTemplatePreview"
                                     >
                                       {{_MACHINE_TRANSLATION_PROMPT_PREVIEW_UNAVAILABLE}}
@@ -1860,7 +1877,10 @@
                                   </div>
                                 </div>
                                 <label
-                                  class="machine-translation-key-label machine-translation-style-label"
+                                  class="
+                                    machine-translation-key-label
+                                    machine-translation-style-label
+                                  "
                                 >
                                   <span
                                     >{{_MACHINE_TRANSLATION_STYLE_HINT}}</span
@@ -1876,7 +1896,10 @@
                                   >
                                 </label>
                                 <div
-                                  class="machine-translation-actions machine-translation-style-actions"
+                                  class="
+                                    machine-translation-actions
+                                    machine-translation-style-actions
+                                  "
                                 >
                                   <button
                                     type="button"
@@ -1979,12 +2002,18 @@
                                 <span>{{_RECOVER_PLAYLIST}}</span>
                               </div>
                               <div
-                                class="settings-content playlist-backup-settings"
+                                class="
+                                  settings-content
+                                  playlist-backup-settings
+                                "
                               >
                                 <p>{{_RECOVER_WARNING}}</p>
                                 <div class="playlist-backup-actions">
                                   <label
-                                    class="upload-button playlist-backup-merge-action"
+                                    class="
+                                      upload-button
+                                      playlist-backup-merge-action
+                                    "
                                     for="my-file-selector-classic-merge"
                                   >
                                     <input
@@ -1997,7 +2026,11 @@
                                     />{{_RECOVER_FROM_LOCAL_FILE}}
                                   </label>
                                   <button
-                                    class="btn btn-primary confirm-button playlist-backup-merge-action"
+                                    class="
+                                      btn btn-primary
+                                      confirm-button
+                                      playlist-backup-merge-action
+                                    "
                                     ng-show="githubStatus == 2"
                                     ng-click="showDialog(10)"
                                   >
@@ -2005,7 +2038,10 @@
                                   </button>
                                 </div>
                                 <label
-                                  class="upload-button playlist-backup-replace-action"
+                                  class="
+                                    upload-button
+                                    playlist-backup-replace-action
+                                  "
                                   for="my-file-selector-classic-replace"
                                 >
                                   <input
@@ -2781,7 +2817,10 @@
                                   ></a>
                                   <a
                                     title="{{_AUDIO_CACHE_DOWNLOAD_TRACK}}"
-                                    class="source-button offline-download-button"
+                                    class="
+                                      source-button
+                                      offline-download-button
+                                    "
                                     ng-show="options && !isChrome && song.source === 'bilibili'"
                                     ng-click="downloadTrackForOffline(song)"
                                     ><span aria-hidden="true">⇩</span></a
@@ -2824,7 +2863,10 @@
                             </div>
                             <button
                               type="button"
-                              class="translate-switch lyric-ai-retranslate-classic"
+                              class="
+                                translate-switch
+                                lyric-ai-retranslate-classic
+                              "
                               ng-if="!isChrome && currentPlaying.source === 'bilibili' && currentLyricResult && currentLyricResult.lyric"
                               ng-click="requestAiLyricRetranslation()"
                               title="{{_MACHINE_TRANSLATION_RETRANSLATE}}"
@@ -2834,7 +2876,10 @@
                             </button>
                             <button
                               type="button"
-                              class="translate-switch lyric-source-restore-classic"
+                              class="
+                                translate-switch
+                                lyric-source-restore-classic
+                              "
                               ng-if="(lyricTranslationSourceSnapshot || currentLyricResult.sourceTlyric) && lyricTranslationSource === 'machine'"
                               ng-click="restoreSourceLyricTranslation()"
                               title="{{_MACHINE_TRANSLATION_RESTORE_SOURCE_SESSION}}"
@@ -3725,7 +3770,10 @@
                         </div>
                       </section>
                       <section
-                        class="dialog-audio-cache-confirm dialog-track-local-data-confirm"
+                        class="
+                          dialog-audio-cache-confirm
+                          dialog-track-local-data-confirm
+                        "
                         ng-show="dialog_type==16 && !isChrome"
                         role="alertdialog"
                         aria-modal="true"
@@ -4163,6 +4211,133 @@
                       </div>
                     </div>
 
+                    <section
+                      class="mobile-library-hub"
+                      ng-show="current_tag==1 && is_window_hidden==1"
+                      aria-labelledby="mobile-library-hub-title"
+                    >
+                      <button
+                        type="button"
+                        class="mobile-library-hub-backdrop"
+                        ng-click="showTag(2)"
+                        aria-label="关闭音乐库"
+                      ></button>
+                      <div
+                        class="mobile-library-hub-panel"
+                        role="dialog"
+                        aria-modal="true"
+                      >
+                        <header class="mobile-library-hub-header">
+                          <div>
+                            <p>你的音乐</p>
+                            <h2 id="mobile-library-hub-title">音乐库</h2>
+                          </div>
+                          <button
+                            type="button"
+                            class="mobile-library-hub-close"
+                            ng-click="showTag(2)"
+                            aria-label="关闭音乐库"
+                          >
+                            <svg aria-hidden="true"><use href="#x"></use></svg>
+                          </button>
+                        </header>
+
+                        <div class="mobile-library-hub-scroll">
+                          <button
+                            type="button"
+                            class="mobile-library-hub-primary"
+                            ng-if="!isChrome"
+                            ng-click="showPlaylist('lmplaylist_reserve')"
+                          >
+                            <svg aria-hidden="true">
+                              <use href="#music"></use>
+                            </svg>
+                            <span>
+                              <strong>{{_LOCAL_MUSIC}}</strong>
+                              <small>本机音乐与已添加曲目</small>
+                            </span>
+                          </button>
+
+                          <section class="mobile-library-hub-section">
+                            <header class="mobile-library-hub-section-heading">
+                              <h3>{{_CREATED_PLAYLIST}}</h3>
+                              <button
+                                type="button"
+                                ng-click="showDialog(5)"
+                                aria-label="{{_CREATE_PLAYLIST}}"
+                              >
+                                <svg aria-hidden="true">
+                                  <use href="#plus-square"></use>
+                                </svg>
+                                <span>{{_CREATE_PLAYLIST}}</span>
+                              </button>
+                            </header>
+                            <div class="mobile-library-hub-playlists">
+                              <button
+                                type="button"
+                                class="mobile-library-hub-playlist"
+                                ng-repeat="i in myplaylists track by $index"
+                                ng-click="showPlaylist(i.info.id)"
+                              >
+                                <span>{{i.info.title}}</span>
+                                <span aria-hidden="true">›</span>
+                              </button>
+                              <p
+                                class="mobile-library-hub-empty"
+                                ng-if="!myplaylists.length"
+                              >
+                                还没有创建歌单
+                              </p>
+                            </div>
+                          </section>
+
+                          <section class="mobile-library-hub-section">
+                            <header class="mobile-library-hub-section-heading">
+                              <h3>{{_FAVORITED_PLAYLIST}}</h3>
+                            </header>
+                            <div class="mobile-library-hub-playlists">
+                              <button
+                                type="button"
+                                class="mobile-library-hub-playlist"
+                                ng-repeat="i in favoriteplaylists track by $index"
+                                ng-click="showPlaylist(i.info.id, {useCache: false})"
+                              >
+                                <span>{{i.info.title}}</span>
+                                <span aria-hidden="true">›</span>
+                              </button>
+                              <p
+                                class="mobile-library-hub-empty"
+                                ng-if="!favoriteplaylists.length"
+                              >
+                                还没有收藏歌单
+                              </p>
+                            </div>
+                          </section>
+
+                          <section
+                            class="
+                              mobile-library-hub-section
+                              mobile-library-hub-tools
+                            "
+                          >
+                            <button type="button" ng-click="showTag(5)">
+                              账户
+                            </button>
+                            <button
+                              type="button"
+                              ng-if="!isChrome"
+                              ng-click="showTag(7); refreshAnnualListeningSummary()"
+                            >
+                              年度回顾
+                            </button>
+                            <button type="button" ng-click="showTag(4)">
+                              设置
+                            </button>
+                          </section>
+                        </div>
+                      </div>
+                    </section>
+
                     <div
                       class="content"
                       ng-controller="InstantSearchController"
@@ -4194,7 +4369,12 @@
                             focusable="false"
                             data-prefix="fas"
                             data-icon="angle-left"
-                            class="svg-inline--fa fa-angle-left fa-w-8 icon li-back"
+                            class="
+                              svg-inline--fa
+                              fa-angle-left fa-w-8
+                              icon
+                              li-back
+                            "
                             ng-click="popWindow()"
                             role="img"
                             xmlns="http://www.w3.org/2000/svg"
@@ -4212,7 +4392,12 @@
                             focusable="false"
                             data-prefix="fas"
                             data-icon="angle-right"
-                            class="svg-inline--fa fa-angle-right fa-w-8 icon li-advance"
+                            class="
+                              svg-inline--fa
+                              fa-angle-right fa-w-8
+                              icon
+                              li-advance
+                            "
                             ng-click="forwardWindow()"
                             role="img"
                             xmlns="http://www.w3.org/2000/svg"
@@ -4338,7 +4523,10 @@
                         <div ng-include="'annual_recap.html'"></div>
                         <!-- hot playlist window-->
                         <div
-                          class="page page-hot-playlist editorial-discovery-page"
+                          class="
+                            page page-hot-playlist
+                            editorial-discovery-page
+                          "
                           ng-show="current_tag==2 && is_window_hidden==1"
                           ng-controller="PlayListController"
                           ng-init="loadPlaylist();"
@@ -4426,7 +4614,10 @@
                                   role="img"
                                   xmlns="http://www.w3.org/2000/svg"
                                   viewBox="0 0 512 512"
-                                  class="svg-inline--fa fa-ellipsis-h fa-w-16 fa-9x"
+                                  class="
+                                    svg-inline--fa
+                                    fa-ellipsis-h fa-w-16 fa-9x
+                                  "
                                 >
                                   <path
                                     fill="currentColor"
@@ -4475,7 +4666,9 @@
                                 id="playlist-content"
                               >
                                 <div
-                                  class="discovery-state discovery-state-loading"
+                                  class="
+                                    discovery-state discovery-state-loading
+                                  "
                                   ng-if="loading && result.length === 0"
                                   role="status"
                                   aria-live="polite"
@@ -4860,7 +5053,10 @@
                                       ></a>
                                       <a
                                         title="{{_AUDIO_CACHE_DOWNLOAD_TRACK}}"
-                                        class="source-button offline-download-button"
+                                        class="
+                                          source-button
+                                          offline-download-button
+                                        "
                                         ng-show="options && !isChrome && song.source === 'bilibili'"
                                         ng-click="downloadTrackForOffline(song)"
                                         ><span aria-hidden="true">⇩</span></a
@@ -5325,7 +5521,10 @@
                                   <span>{{_AUDIO_CACHE_ENABLED}}</span>
                                 </label>
                                 <label
-                                  class="audio-cache-toggle loudness-normalization-toggle"
+                                  class="
+                                    audio-cache-toggle
+                                    loudness-normalization-toggle
+                                  "
                                   for="modern-loudness-normalization-enabled"
                                 >
                                   <input
@@ -5504,7 +5703,10 @@
                                 <span>{{_MACHINE_TRANSLATION_TITLE}}</span>
                               </div>
                               <div
-                                class="settings-content machine-translation-settings"
+                                class="
+                                  settings-content
+                                  machine-translation-settings
+                                "
                                 ng-if="!isChrome"
                               >
                                 <p class="machine-translation-description">
@@ -5514,7 +5716,10 @@
                                   {{_MACHINE_TRANSLATION_SECURE_STORAGE_NOTICE}}
                                 </p>
                                 <p
-                                  class="machine-translation-description machine-translation-privacy"
+                                  class="
+                                    machine-translation-description
+                                    machine-translation-privacy
+                                  "
                                 >
                                   {{_MACHINE_TRANSLATION_PRIVACY_NOTICE}}
                                 </p>
@@ -5534,7 +5739,9 @@
                                       >{{_MACHINE_TRANSLATION_FIXED_RULES}}</strong
                                     >
                                     <p
-                                      class="machine-translation-prompt-unavailable"
+                                      class="
+                                        machine-translation-prompt-unavailable
+                                      "
                                       ng-if="!machineTranslationConfig.immutableSystemPrompt || !machineTranslationConfig.promptTemplatePreview"
                                     >
                                       {{_MACHINE_TRANSLATION_PROMPT_PREVIEW_UNAVAILABLE}}
@@ -5562,7 +5769,10 @@
                                   </div>
                                 </div>
                                 <label
-                                  class="machine-translation-key-label machine-translation-style-label"
+                                  class="
+                                    machine-translation-key-label
+                                    machine-translation-style-label
+                                  "
                                 >
                                   <span
                                     >{{_MACHINE_TRANSLATION_STYLE_HINT}}</span
@@ -5578,7 +5788,10 @@
                                   >
                                 </label>
                                 <div
-                                  class="machine-translation-actions machine-translation-style-actions"
+                                  class="
+                                    machine-translation-actions
+                                    machine-translation-style-actions
+                                  "
                                 >
                                   <button
                                     type="button"
@@ -5681,12 +5894,18 @@
                                 <span>{{_RECOVER_PLAYLIST}}</span>
                               </div>
                               <div
-                                class="settings-content playlist-backup-settings"
+                                class="
+                                  settings-content
+                                  playlist-backup-settings
+                                "
                               >
                                 <p>{{_RECOVER_WARNING}}</p>
                                 <div class="playlist-backup-actions">
                                   <label
-                                    class="upload-button playlist-backup-merge-action"
+                                    class="
+                                      upload-button
+                                      playlist-backup-merge-action
+                                    "
                                     for="my-file-selector-modern-merge"
                                   >
                                     <input
@@ -5699,7 +5918,11 @@
                                     />{{_RECOVER_FROM_LOCAL_FILE}}
                                   </label>
                                   <button
-                                    class="btn btn-primary confirm-button playlist-backup-merge-action"
+                                    class="
+                                      btn btn-primary
+                                      confirm-button
+                                      playlist-backup-merge-action
+                                    "
                                     ng-show="githubStatus == 2"
                                     ng-click="showDialog(10)"
                                   >
@@ -5707,7 +5930,10 @@
                                   </button>
                                 </div>
                                 <label
-                                  class="upload-button playlist-backup-replace-action"
+                                  class="
+                                    upload-button
+                                    playlist-backup-replace-action
+                                  "
                                   for="my-file-selector-modern-replace"
                                 >
                                   <input
@@ -6062,7 +6288,10 @@
                                       focusable="false"
                                       data-prefix="fas"
                                       data-icon="sign-in-alt"
-                                      class="svg-inline--fa fa-sign-in-alt fa-w-16"
+                                      class="
+                                        svg-inline--fa
+                                        fa-sign-in-alt fa-w-16
+                                      "
                                       role="img"
                                       xmlns="http://www.w3.org/2000/svg"
                                       viewBox="0 0 512 512"
@@ -6793,7 +7022,10 @@
                                   </a>
                                   <a
                                     title="{{_AUDIO_CACHE_DOWNLOAD_TRACK}}"
-                                    class="source-button offline-download-button"
+                                    class="
+                                      source-button
+                                      offline-download-button
+                                    "
                                     ng-show="options && !isChrome && song.source === 'bilibili'"
                                     ng-click="downloadTrackForOffline(song)"
                                     ><span aria-hidden="true">⇩</span></a
@@ -8202,8 +8434,8 @@
                       type="button"
                       class="mobile-tab"
                       data-mobile-tab="library"
-                      ng-class="{active: getCurrentUrl() === '/playlist?list_id=lmplaylist_reserve'}"
-                      ng-click="showPlaylist('lmplaylist_reserve')"
+                      ng-class="{active: (current_tag==1 && window_url_stack.length == 0) || (getCurrentUrl() && getCurrentUrl().indexOf('/playlist?') === 0)}"
+                      ng-click="showTag(1)"
                     >
                       <svg class="mobile-tab-icon" aria-hidden="true">
                         <use href="#music"></use>

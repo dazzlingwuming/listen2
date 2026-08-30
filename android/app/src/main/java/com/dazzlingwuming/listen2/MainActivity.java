@@ -39,6 +39,7 @@ public final class MainActivity extends Activity {
     private View loadingView;
     private TextView loadingMessage;
     private WebViewAssetLoader assetLoader;
+    private AndroidHttpBridge httpBridge;
 
     @Override
     @SuppressLint("SetJavaScriptEnabled")
@@ -54,6 +55,7 @@ public final class MainActivity extends Activity {
         applySystemBarInsets(root);
         webView = new WebView(this);
         configureWebView(webView);
+        httpBridge = AndroidHttpBridge.install(webView);
         root.addView(webView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
@@ -132,6 +134,10 @@ public final class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         if (webView != null) {
+            if (httpBridge != null) {
+                httpBridge.destroy(webView);
+                httpBridge = null;
+            }
             webView.destroy();
             webView = null;
         }

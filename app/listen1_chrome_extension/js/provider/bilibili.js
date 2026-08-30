@@ -1887,6 +1887,50 @@ class bilibili {
     return track;
   }
 
+  static get_android_http_adapter() {
+    if (typeof window === 'undefined') return null;
+    const adapter = window.Listen2AndroidHttpAdapter;
+    if (
+      !adapter ||
+      typeof adapter.isAvailable !== 'function' ||
+      typeof adapter.get !== 'function'
+    ) {
+      return null;
+    }
+    try {
+      return adapter.isAvailable() ? adapter : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  static create_android_search_failure(error) {
+    return {
+      status:
+        (error && typeof error.code === 'string' && error.code) ||
+        'android-search-failed',
+      message: 'Bilibili search could not be completed through Android HTTP.',
+    };
+  }
+
+  static parse_android_search_response(response) {
+    if (!response || typeof response.body !== 'string') {
+      throw new Error(
+        'Android HTTP returned an invalid Bilibili search response.'
+      );
+    }
+    const payload = JSON.parse(response.body);
+    const data = payload && payload.data;
+    if (!data || !Array.isArray(data.result)) {
+      throw new Error('Bilibili search returned an invalid response.');
+    }
+    const total = Number(data.numResults);
+    return {
+      result: data.result.map((song) => this.bi_convert_song2(song)),
+      total: Number.isFinite(total) && total >= 0 ? total : 0,
+    };
+  }
+
   static show_playlist(url) {
     let offset = getParameterByName('offset', url);
     if (offset === undefined) {
@@ -2440,6 +2484,27 @@ class bilibili {
         const target_url = `https://api.bilibili.com/x/web-interface/search/type?__refresh__=true&_extra=&context=&page=${curpage}&page_size=42&platform=pc&highlight=1&single_column=0&keyword=${encodeURIComponent(
           keyword
         )}&category_id=&search_type=video&dynamic_offset=0&preload=true&com2co=true`;
+
+        const androidHttp = this.get_android_http_adapter();
+        if (androidHttp) {
+          const finishFailure = (error) =>
+            fn({
+              result: [],
+              total: 0,
+              error: this.create_android_search_failure(error),
+            });
+          androidHttp.get(target_url).then(
+            (response) => {
+              try {
+                fn(this.parse_android_search_response(response));
+              } catch (error) {
+                finishFailure(error);
+              }
+            },
+            (error) => finishFailure(error)
+          );
+          return;
+        }
 
         const domain = `https://api.bilibili.com`;
         const cookieName = 'buvid3';
