@@ -286,6 +286,56 @@
   }
 }
 
+.mobile-primary-play,
+.mobile-playback-state {
+  display: none;
+}
+
+@media screen and (max-width: 760px) {
+  .modern-body .mobile-primary-play {
+    position: absolute;
+    z-index: 2;
+    top: 0;
+    right: 0;
+    display: inline-flex;
+    width: 48px;
+    min-width: 48px;
+    height: 48px;
+    min-height: 48px;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 1px solid rgba(var(--ui-accent-rgb), 0.4);
+    border-radius: 12px;
+    background: var(--ui-accent);
+    color: #ffffff;
+    font-size: 16px;
+    line-height: 1;
+  }
+
+  .modern-body .mobile-playback-state {
+    display: block;
+    overflow: hidden;
+    color: var(--ui-muted);
+    font-size: 12px;
+    line-height: 16px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .modern-body .now-playing-empty-lyrics button {
+    min-width: 48px;
+    min-height: 48px;
+    margin-top: 8px;
+    padding: 8px 12px;
+    border: 1px solid rgba(var(--ui-accent-rgb), 0.46);
+    border-radius: 12px;
+    background: var(--ui-accent-soft);
+    color: var(--ui-text);
+    font: inherit;
+  }
+}
+
 .modern-body.theme-modern-light {
   --ui-bg: #f4f5f8;
   --ui-surface: #ffffff;

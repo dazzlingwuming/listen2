@@ -194,6 +194,13 @@ angular.module('listenone').controller('PlayController', [
     $scope.lyricSearchResults = [];
     $scope.lyricSearchState = 'idle';
     $scope.lyricSearchPending = false;
+    $scope.foregroundPlaybackState = 'idle';
+    $scope.foregroundPlaybackFailure = null;
+    $scope.primaryLyricState = {
+      state: 'idle',
+      trackId: '',
+      token: 0,
+    };
     $scope.lyricTranslationLookupPending = false;
     $scope.lyricTranslationConfirmOpen = false;
     $scope.lyricTranslationConfirmPending = false;
@@ -393,6 +400,59 @@ angular.module('listenone').controller('PlayController', [
     const AUDIO_CACHE_STATUS_POLL_MS = 2000;
     let audioCacheStatusPollTimer = null;
     let playControllerDestroyed = false;
+
+    function setPrimaryLyricState(track, state) {
+      if (!track || !track.id) return;
+      $scope.primaryLyricState = {
+        state,
+        trackId: track.id,
+        token: lyricRequestToken,
+      };
+    }
+
+    function isCurrentPrimaryLyricState(track, requestToken) {
+      return (
+        !playControllerDestroyed &&
+        // The legacy resolver below owns the active lyric token.
+        // eslint-disable-next-line no-use-before-define
+        isCurrentLyricRequest(track, requestToken) &&
+        $scope.primaryLyricState.trackId === track.id &&
+        $scope.primaryLyricState.token === requestToken
+      );
+    }
+
+    $scope.openPrimaryLyrics = () => {
+      const track = $scope.currentPlaying;
+      if (!track || !track.id) return;
+      if (
+        $scope.window_type !== 'track' &&
+        typeof $scope.toggleNowPlaying === 'function'
+      ) {
+        $scope.toggleNowPlaying();
+      }
+      if (
+        $scope.primaryLyricState.trackId !== track.id ||
+        $scope.primaryLyricState.state === 'idle'
+      ) {
+        // eslint-disable-next-line no-use-before-define
+        requestTrackLyric(track);
+      }
+    };
+
+    $scope.cancelPrimaryLyrics = () => {
+      lyricRequestToken += 1;
+      const track = $scope.currentPlaying;
+      if (track && track.id) {
+        setPrimaryLyricState(track, 'idle');
+      }
+    };
+
+    $scope.retryPrimaryLyrics = () => {
+      if ($scope.currentPlaying && $scope.currentPlaying.id) {
+        // eslint-disable-next-line no-use-before-define
+        requestTrackLyric($scope.currentPlaying);
+      }
+    };
     const inheritedCloseDialog = $scope.closeDialog;
     if (typeof inheritedCloseDialog === 'function') {
       $scope.closeDialog = () => {
@@ -2036,6 +2096,7 @@ angular.module('listenone').controller('PlayController', [
       const safeResult = result || {};
       resetLyricDisplay();
       if (!safeResult.lyric) {
+        setPrimaryLyricState(track, 'unavailable');
         return;
       }
       $scope.currentLyricResult = { ...safeResult };
@@ -2064,6 +2125,7 @@ angular.module('listenone').controller('PlayController', [
         (safeResult.machineTranslated
           ? safeResult.translationProvider || 'DeepSeek'
           : '');
+      setPrimaryLyricState(track, 'content');
     }
 
     function lyricResultToCandidate(track, result) {
@@ -2565,15 +2627,24 @@ angular.module('listenone').controller('PlayController', [
       lyricRequestToken += 1;
       const requestToken = lyricRequestToken;
       resetLyricDisplay();
+      setPrimaryLyricState(track, 'loading');
       if (!isElectron()) {
-        getProviderLyric(track).then((result) => {
-          if (!isCurrentLyricRequest(track, requestToken)) return;
-          $scope.$evalAsync(() => {
+        getProviderLyric(track)
+          .then((result) => {
             if (!isCurrentLyricRequest(track, requestToken)) return;
-            applyLyricResult(track, result);
-            applyAutomaticLyricTranslation(track, result, requestToken);
+            $scope.$evalAsync(() => {
+              if (!isCurrentLyricRequest(track, requestToken)) return;
+              applyLyricResult(track, result);
+              applyAutomaticLyricTranslation(track, result, requestToken);
+            });
+          })
+          .catch(() => {
+            $scope.$evalAsync(() => {
+              if (isCurrentPrimaryLyricState(track, requestToken)) {
+                setPrimaryLyricState(track, 'error');
+              }
+            });
           });
-        });
         return;
       }
 
@@ -2637,6 +2708,13 @@ angular.module('listenone').controller('PlayController', [
               });
             }
           );
+        })
+        .catch(() => {
+          $scope.$evalAsync(() => {
+            if (isCurrentPrimaryLyricState(track, requestToken)) {
+              setPrimaryLyricState(track, 'error');
+            }
+          });
         });
     }
 
@@ -2976,6 +3054,24 @@ angular.module('listenone').controller('PlayController', [
             break;
           }
 
+          case 'FOREGROUND_PLAYBACK_STATE': {
+            const state = msg.data || {};
+            $scope.$evalAsync(() => {
+              if (
+                !$scope.currentPlaying ||
+                state.trackId !== $scope.currentPlaying.id
+              ) {
+                return;
+              }
+              $scope.foregroundPlaybackState = state.state || 'error';
+              $scope.foregroundPlaybackFailure =
+                state.failure && typeof state.failure === 'object'
+                  ? { kind: state.failure.kind || '' }
+                  : null;
+            });
+            break;
+          }
+
           case 'VOLUME': {
             $scope.$evalAsync(() => {
               $scope.volume = msg.data;
@@ -3131,6 +3227,10 @@ angular.module('listenone').controller('PlayController', [
             current.nowplaying_track_id = msg.data.currentPlaying.id;
             localStorage.setObject('player-settings', current);
             const track = msg.data.currentPlaying;
+            $scope.foregroundPlaybackState = isVideoTrack
+              ? 'resolving'
+              : 'idle';
+            $scope.foregroundPlaybackFailure = null;
             $scope.lyricOffsetMs = getTrackLyricOffset(track.id);
             lyricSearchToken += 1;
             resetLyricTranslationConfirmation();
@@ -3435,6 +3535,7 @@ angular.module('listenone').controller('PlayController', [
 
     $scope.$on('$destroy', () => {
       playControllerDestroyed = true;
+      lyricRequestToken += 1;
       cancelAudioCacheStatusPoll();
       if (bilibiliMvPlayer) {
         bilibiliMvPlayer.destroy();

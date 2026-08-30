@@ -12,6 +12,14 @@ const playerSource = fs.readFileSync(
   path.join(extensionRoot, 'js', 'player_thread.js'),
   'utf8'
 );
+const playControllerSource = fs.readFileSync(
+  path.join(extensionRoot, 'js', 'controller', 'play.js'),
+  'utf8'
+);
+const markup = fs.readFileSync(
+  path.join(extensionRoot, 'listen1.html'),
+  'utf8'
+);
 
 function loadPlayer() {
   const events = [];
@@ -161,6 +169,31 @@ function run() {
 
   assert.ok(!playerSource.includes('ExoPlayer'));
   assert.ok(!playerSource.includes('MediaSessionService'));
+  [
+    'primaryLyricState',
+    'openPrimaryLyrics',
+    'cancelPrimaryLyrics',
+    'retryPrimaryLyrics',
+    'FOREGROUND_PLAYBACK_STATE',
+  ].forEach((needle) =>
+    assert.ok(playControllerSource.includes(needle), `missing ${needle}`)
+  );
+  [
+    '正在获取歌词…',
+    '取消获取歌词',
+    '暂无可用歌词',
+    '歌词暂时无法加载',
+    '重新获取歌词',
+    '音频仍可继续播放。',
+    'aria-live="polite"',
+  ].forEach((needle) =>
+    assert.ok(markup.includes(needle), `missing lyric state copy: ${needle}`)
+  );
+  const primaryLyricSection = playControllerSource.slice(
+    playControllerSource.indexOf('function requestTrackLyric'),
+    playControllerSource.indexOf('$scope.openLyricPicker')
+  );
+  assert.ok(!/\.pause\(|\.stop\(|setMediaURI\(/.test(primaryLyricSection));
   console.log('android bilibili foreground playback tests passed');
 }
 
