@@ -39,4 +39,22 @@ public final class LyricClockProjectionTest {
         assertFalse(projection.toLyricContext().toMap().toString().contains("url"));
         assertFalse(projection.toLyricContext().toMap().toString().contains("candidate"));
     }
+
+    @Test
+    public void staleRevisionCannotReplaceCurrentSelectionAfterTransitionOrRestore() {
+        LyricClockProjection.Identity current = new LyricClockProjection.Identity("netease", "123456",
+                1L, "track-current", "occ-current", 7L);
+        LyricClockProjection.Projection accepted = LyricClockProjection.project(null, current, 20L,
+                600L, 3_000L, PlaybackSnapshot.State.PLAYING, "available",
+                LyricClockProjection.Event.TRANSITION);
+        LyricClockProjection.Identity stale = new LyricClockProjection.Identity("bilibili", "BV1xx411c7mD",
+                1L, "track-stale", "occ-stale", 6L);
+        LyricClockProjection.Projection rejected = LyricClockProjection.project(accepted, stale, 19L,
+                10L, 3_000L, PlaybackSnapshot.State.PAUSED, "available",
+                LyricClockProjection.Event.RESTORE);
+
+        assertEquals(20L, rejected.getPlaybackRevision());
+        assertEquals(600L, rejected.getPositionMs());
+        assertEquals("netease", rejected.toLyricContext().toMap().get("source"));
+    }
 }

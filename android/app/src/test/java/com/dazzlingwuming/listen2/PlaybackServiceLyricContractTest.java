@@ -50,4 +50,16 @@ public final class PlaybackServiceLyricContractTest {
                         "available", "playing"));
         assertTrue(PlaybackService.shouldPublishForegroundCadence(true, active));
     }
+
+    @Test(expected = IllegalStateException.class)
+    public void snapshotRejectsTransportLikeKeysAndValuesRecursively() {
+        PlaybackSnapshot unsafe = new PlaybackSnapshot(1, 7L, 9L, PlaybackSnapshot.State.PAUSED,
+                new PlaybackSnapshot.Metadata("https://media.invalid/secret", "Artist", 1_000L,
+                        "bundled-placeholder"), 200L, 1_000L, 100, false,
+                PlaybackSnapshot.Mode.SEQUENTIAL,
+                new PlaybackSnapshot.ActionAvailability(true, false, false, false, true, true),
+                Collections.<PlaybackSnapshot.QueueOccurrence>emptyList(), null,
+                new PlaybackSnapshot.RecoveryStatus("ready", false));
+        unsafe.toMap();
+    }
 }

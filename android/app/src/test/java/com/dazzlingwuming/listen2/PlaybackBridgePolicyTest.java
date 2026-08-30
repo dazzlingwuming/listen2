@@ -16,6 +16,20 @@ import org.junit.Test;
 
 public final class PlaybackBridgePolicyTest {
     @Test
+    public void acceptsOnlyDistinctSourceSpecificNetEaseIdentity() {
+        PlaybackBridgePolicy policy = new PlaybackBridgePolicy(4L, 0L);
+
+        assertTrue(policy.parseAndApply(command("prepareSelection", 4L, 0L,
+                mapOf("source", "netease", "providerTrackId", "123456", "providerPartId", 1L,
+                        "title", "Title", "artist", "Artist", "durationMs", 1000L,
+                        "mediaKind", "audio"))).isAccepted());
+        assertCode("INVALID_PAYLOAD", new PlaybackBridgePolicy(4L, 0L).parseAndApply(
+                command("prepareSelection", 4L, 0L,
+                        mapOf("source", "netease", "providerTrackId", "BV1xx411c7mD", "providerPartId", 1L,
+                                "title", "Title", "artist", "Artist", "durationMs", 1000L,
+                                "mediaKind", "audio"))));
+    }
+    @Test
     public void mintsOpaqueSelectionIdentityAndRequiresItForSelection() {
         PlaybackBridgePolicy policy = new PlaybackBridgePolicy(4L, 0L);
 

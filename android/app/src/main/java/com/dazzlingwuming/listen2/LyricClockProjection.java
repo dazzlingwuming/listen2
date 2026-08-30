@@ -72,7 +72,9 @@ public final class LyricClockProjection {
         long boundedDuration = Math.max(0L, Math.min(MAX_DURATION_MS, durationMs));
         long boundedPosition = Math.max(0L, Math.min(boundedDuration, positionMs));
         boolean sameSelection = previous != null && previous.identity.matches(identity);
-        if (sameSelection && playbackRevision <= previous.playbackRevision) return previous;
+        // A delayed callback cannot revive a retired source/occurrence merely by
+        // carrying a different identity; revision is global to the native owner.
+        if (previous != null && playbackRevision <= previous.playbackRevision) return previous;
         if (sameSelection && event != Event.SEEK && boundedPosition < previous.positionMs) {
             boundedPosition = previous.positionMs;
         }

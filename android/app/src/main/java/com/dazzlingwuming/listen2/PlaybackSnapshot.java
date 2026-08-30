@@ -94,6 +94,7 @@ public final class PlaybackSnapshot {
         if (preparedSelection != null) result.put("prepared", preparedSelection.toMap());
         result.put("recovery", recoveryStatus.toMap());
         result.put("lyric", lyricContext.toMap());
+        assertPageSafe(result);
         return Collections.unmodifiableMap(result);
     }
 
@@ -273,5 +274,42 @@ public final class PlaybackSnapshot {
             value.put("state", state);
             return Collections.unmodifiableMap(value);
         }
+    }
+
+    /** Last line of defense before a nested value crosses into the packaged page. */
+    private static void assertPageSafe(Object value) {
+        if (value instanceof Map) {
+            for (Map.Entry<?, ?> entry : ((Map<?, ?>) value).entrySet()) {
+                if (!(entry.getKey() instanceof String) || isForbiddenKey((String) entry.getKey())) {
+                    throw new IllegalStateException("snapshot contains forbidden field");
+                }
+                assertPageSafe(entry.getValue());
+            }
+            return;
+        }
+        if (value instanceof List) {
+            for (Object row : (List<?>) value) assertPageSafe(row);
+            return;
+        }
+        if (value instanceof String && isForbiddenValue((String) value)) {
+            throw new IllegalStateException("snapshot contains transport-like value");
+        }
+        if (!(value instanceof String || value instanceof Number || value instanceof Boolean)) {
+            throw new IllegalStateException("snapshot contains unsupported value");
+        }
+    }
+
+    private static boolean isForbiddenKey(String key) {
+        String normalized = key.toLowerCase();
+        return normalized.contains("url") || normalized.contains("query") || normalized.contains("candidate")
+                || normalized.contains("header") || normalized.contains("cookie") || normalized.contains("body")
+                || normalized.contains("credential") || normalized.contains("databaseerror")
+                || normalized.contains("exception") || normalized.contains("path");
+    }
+
+    private static boolean isForbiddenValue(String value) {
+        String normalized = value.toLowerCase();
+        return normalized.contains("://") || normalized.contains("cookie=")
+                || normalized.contains("authorization:") || normalized.contains("bearer ");
     }
 }
