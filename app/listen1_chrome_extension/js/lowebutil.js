@@ -152,9 +152,21 @@ const Listen2AndroidHttpAdapter = (() => {
   const MAX_ERROR_LENGTH = 1024;
   const MAX_TYPED_KEYWORD_BYTES = 256;
   const MAX_PAGE_EPOCH = 2147483647;
+  const MAX_PLAYBACK_TEXT_LENGTH = 256;
+  const MAX_PLAYBACK_DURATION_MS = 28800000;
+  const PLAYBACK_SNAPSHOT_VERSION = 1;
   const pending = new Map();
   let requestSequence = 0;
   let responseBridge = null;
+  const playback = {
+    pageEpoch: null,
+    revision: 0,
+    snapshot: null,
+    onSnapshot: null,
+    detached: true,
+    pendingCommands: new Map(),
+    issuedPrepared: new WeakSet(),
+  };
 
   function createError(code, message, details = {}) {
     const error = new Error(message);
@@ -336,6 +348,14 @@ const Listen2AndroidHttpAdapter = (() => {
 
   function handleResponse(event) {
     const response = normalizeEventData(event);
+    // The playback snapshot parser is kept beside the playback client so its
+    // state and transport filtering cannot drift apart.
+    // eslint-disable-next-line no-use-before-define
+    if (isPlaybackSnapshotEvent(response)) {
+      // eslint-disable-next-line no-use-before-define
+      acceptPlaybackSnapshot(response);
+      return;
+    }
     if (!isValidLegacyResponse(response) && !isValidTypedResponse(response))
       return;
     const entry = pending.get(response.requestId);
@@ -456,6 +476,7 @@ const Listen2AndroidHttpAdapter = (() => {
         'bilibili.search',
         'bilibili.video.detail',
         'bilibili.audio.manifest',
+        'playback.command',
       ].includes(operation)
     ) {
       return 'android-rpc-invalid-operation';
@@ -469,6 +490,12 @@ const Listen2AndroidHttpAdapter = (() => {
     }
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
       return 'android-rpc-invalid-payload';
+    }
+    if (operation === 'playback.command') {
+      // eslint-disable-next-line no-use-before-define
+      return validatePlaybackEnvelope(payload)
+        ? null
+        : 'android-rpc-invalid-payload';
     }
     const keys = Object.keys(payload).sort();
     if (operation === 'bilibili.search') {
@@ -509,6 +536,13 @@ const Listen2AndroidHttpAdapter = (() => {
   }
 
   function normalizedTypedPayload(operation, payload) {
+    if (operation === 'playback.command') {
+      return {
+        expectedRevision: payload.expectedRevision,
+        command: payload.command,
+        payload: { ...payload.payload },
+      };
+    }
     if (operation === 'bilibili.search') {
       return { keyword: payload.keyword.trim(), page: payload.page };
     }
@@ -730,6 +764,453 @@ const Listen2AndroidHttpAdapter = (() => {
     });
   }
 
+  function isPlainPlaybackText(value) {
+    return (
+      typeof value === 'string' &&
+      value.length <= MAX_PLAYBACK_TEXT_LENGTH &&
+      !Array.from(value).some(
+        (character) =>
+          character === '<' ||
+          character === '>' ||
+          character.charCodeAt(0) < 0x20
+      )
+    );
+  }
+
+  function isPositiveSafeInteger(value) {
+    return Number.isSafeInteger(value) && value > 0;
+  }
+
+  function isSafePlaybackHandle(value, prefix) {
+    return (
+      typeof value === 'string' &&
+      value.length > prefix.length &&
+      value.length <= 128 &&
+      value.startsWith(prefix) &&
+      /^[A-Za-z0-9-]+$/.test(value)
+    );
+  }
+
+  function validatePlaybackEnvelope(envelope) {
+    const expected = ['command', 'expectedRevision', 'payload'];
+    if (
+      !envelope ||
+      typeof envelope !== 'object' ||
+      Array.isArray(envelope) ||
+      Object.keys(envelope).length !== expected.length ||
+      !expected.every((key) =>
+        Object.prototype.hasOwnProperty.call(envelope, key)
+      ) ||
+      !Number.isSafeInteger(envelope.expectedRevision) ||
+      envelope.expectedRevision < 0 ||
+      typeof envelope.command !== 'string' ||
+      !envelope.payload ||
+      typeof envelope.payload !== 'object' ||
+      Array.isArray(envelope.payload)
+    )
+      return false;
+    const {payload} = envelope;
+    const keys = Object.keys(payload).sort();
+    const exact = (values) =>
+      keys.length === values.length &&
+      values.every((value, index) => keys[index] === value);
+    switch (envelope.command) {
+      case 'prepareSelection':
+        return (
+          exact([
+            'artist',
+            'durationMs',
+            'mediaKind',
+            'providerPartId',
+            'providerTrackId',
+            'source',
+            'title',
+          ]) &&
+          payload.source === 'bilibili' &&
+          isSafeBvid(payload.providerTrackId) &&
+          isPositiveSafeInteger(payload.providerPartId) &&
+          isPlainPlaybackText(payload.title) &&
+          isPlainPlaybackText(payload.artist) &&
+          Number.isSafeInteger(payload.durationMs) &&
+          payload.durationMs >= 0 &&
+          payload.durationMs <= MAX_PLAYBACK_DURATION_MS &&
+          payload.mediaKind === 'audio'
+        );
+      case 'selectPrepared':
+        return (
+          exact([
+            'occurrenceId',
+            'playWhenReady',
+            'selectionAction',
+            'trackHandle',
+          ]) &&
+          isSafePlaybackHandle(payload.trackHandle, 'track-') &&
+          isSafePlaybackHandle(payload.occurrenceId, 'occ-') &&
+          ['replace-current', 'enqueue-next'].includes(
+            payload.selectionAction
+          ) &&
+          typeof payload.playWhenReady === 'boolean'
+        );
+      case 'seek':
+        return (
+          exact(['positionMs']) &&
+          Number.isSafeInteger(payload.positionMs) &&
+          payload.positionMs >= 0 &&
+          payload.positionMs <= MAX_PLAYBACK_DURATION_MS
+        );
+      case 'volume':
+        return (
+          exact(['volumePercent']) &&
+          Number.isSafeInteger(payload.volumePercent) &&
+          payload.volumePercent >= 0 &&
+          payload.volumePercent <= 100
+        );
+      case 'mute':
+        return exact(['muted']) && typeof payload.muted === 'boolean';
+      case 'mode':
+        return (
+          exact(['mode']) &&
+          ['sequential', 'shuffle', 'repeat-one', 'repeat-all'].includes(
+            payload.mode
+          )
+        );
+      case 'reorder':
+        return (
+          exact(['occurrenceId', 'targetIndex']) &&
+          isSafePlaybackHandle(payload.occurrenceId, 'occ-') &&
+          Number.isSafeInteger(payload.targetIndex) &&
+          payload.targetIndex >= 0
+        );
+      case 'remove':
+      case 'retry':
+        return (
+          exact(['occurrenceId']) &&
+          isSafePlaybackHandle(payload.occurrenceId, 'occ-')
+        );
+      case 'play':
+      case 'pause':
+      case 'previous':
+      case 'next':
+      case 'clear':
+      case 'subscribe':
+      case 'detach':
+        return exact([]);
+      default:
+        return false;
+    }
+  }
+
+  function isPlaybackSnapshotEvent(event) {
+    return Boolean(
+      event &&
+        typeof event === 'object' &&
+        !Array.isArray(event) &&
+        event.version === TYPED_PROTOCOL_VERSION &&
+        event.operation === 'playback.snapshot' &&
+        Number.isInteger(event.pageEpoch) &&
+        event.snapshot &&
+        typeof event.snapshot === 'object' &&
+        !Array.isArray(event.snapshot)
+    );
+  }
+
+  function isSafePlaybackSnapshot(snapshot, pageEpoch, lastRevision) {
+    if (
+      snapshot.version !== PLAYBACK_SNAPSHOT_VERSION ||
+      snapshot.pageEpoch !== pageEpoch ||
+      !Number.isSafeInteger(snapshot.revision) ||
+      snapshot.revision <= lastRevision ||
+      !['idle', 'resolving', 'playing', 'paused', 'error'].includes(
+        snapshot.state
+      ) ||
+      !snapshot.metadata ||
+      typeof snapshot.metadata !== 'object' ||
+      !isPlainPlaybackText(snapshot.metadata.title) ||
+      !isPlainPlaybackText(snapshot.metadata.artist) ||
+      !Number.isSafeInteger(snapshot.durationMs) ||
+      snapshot.durationMs < 0 ||
+      snapshot.durationMs > MAX_PLAYBACK_DURATION_MS ||
+      !Number.isSafeInteger(snapshot.positionMs) ||
+      snapshot.positionMs < 0 ||
+      snapshot.positionMs > MAX_PLAYBACK_DURATION_MS ||
+      !Number.isSafeInteger(snapshot.volumePercent) ||
+      snapshot.volumePercent < 0 ||
+      snapshot.volumePercent > 100 ||
+      typeof snapshot.muted !== 'boolean' ||
+      !['sequential', 'shuffle', 'repeat-one', 'repeat-all'].includes(
+        snapshot.mode
+      ) ||
+      !Array.isArray(snapshot.queue) ||
+      snapshot.queue.length > 100 ||
+      !snapshot.recovery ||
+      typeof snapshot.recovery !== 'object'
+    )
+      return false;
+    if (snapshot.prepared !== undefined) {
+      const {prepared} = snapshot;
+      if (
+        !prepared ||
+        typeof prepared !== 'object' ||
+        Array.isArray(prepared) ||
+        !isSafePlaybackHandle(prepared.trackHandle, 'track-') ||
+        !isSafePlaybackHandle(prepared.occurrenceId, 'occ-')
+      )
+        return false;
+    }
+    return true;
+  }
+
+  function safePlaybackSnapshot(snapshot) {
+    const result = {
+      version: snapshot.version,
+      pageEpoch: snapshot.pageEpoch,
+      revision: snapshot.revision,
+      state: snapshot.state,
+      metadata: {
+        title: snapshot.metadata.title,
+        artist: snapshot.metadata.artist,
+        durationMs: snapshot.durationMs,
+      },
+      positionMs: snapshot.positionMs,
+      durationMs: snapshot.durationMs,
+      volumePercent: snapshot.volumePercent,
+      muted: snapshot.muted,
+      mode: snapshot.mode,
+      actions:
+        snapshot.actions && typeof snapshot.actions === 'object'
+          ? { ...snapshot.actions }
+          : {},
+      queue: snapshot.queue.map((entry) => ({
+        occurrenceId: entry && entry.occurrenceId,
+        title: entry && entry.title,
+        artist: entry && entry.artist,
+        durationMs: entry && entry.durationMs,
+      })),
+      recovery: {
+        status:
+          typeof snapshot.recovery.status === 'string'
+            ? snapshot.recovery.status
+            : 'unknown',
+        retryable: snapshot.recovery.retryable === true,
+      },
+    };
+    if (snapshot.prepared) {
+      result.prepared = {
+        trackHandle: snapshot.prepared.trackHandle,
+        occurrenceId: snapshot.prepared.occurrenceId,
+      };
+    }
+    return Object.freeze(result);
+  }
+
+  function acceptPlaybackSnapshot(event) {
+    if (
+      playback.detached ||
+      event.pageEpoch !== playback.pageEpoch ||
+      !isSafePlaybackSnapshot(
+        event.snapshot,
+        playback.pageEpoch,
+        playback.revision
+      )
+    )
+      return;
+    playback.revision = event.snapshot.revision;
+    playback.snapshot = safePlaybackSnapshot(event.snapshot);
+    if (typeof playback.onSnapshot === 'function') {
+      playback.onSnapshot(playback.snapshot);
+      scheduleAngularDigest();
+    }
+  }
+
+  function playbackError(code) {
+    return createError(
+      code,
+      'Android playback command could not be completed.'
+    );
+  }
+
+  function requestPlayback(command, payload, options = {}) {
+    if (playback.detached || !Number.isInteger(playback.pageEpoch)) {
+      return Promise.reject(playbackError('android-playback-unavailable'));
+    }
+    if (playback.pendingCommands.has(command)) {
+      return Promise.reject(playbackError('android-playback-pending'));
+    }
+    const expectedRevision = playback.revision;
+    const envelope = { expectedRevision, command, payload };
+    if (!validatePlaybackEnvelope(envelope)) {
+      return Promise.reject(playbackError('android-playback-invalid-command'));
+    }
+    const requestHandle = request('playback.command', envelope, {
+      pageEpoch: playback.pageEpoch,
+      timeoutMs: options.timeoutMs,
+    });
+    const promise = requestHandle.promise
+      .then(({ result }) => {
+        const targetRevision = result && result.revision;
+        if (
+          !Number.isSafeInteger(targetRevision) ||
+          targetRevision <= expectedRevision
+        ) {
+          throw playbackError('android-playback-rejected');
+        }
+        return new Promise((resolve, reject) => {
+          const awaitSnapshot = () => {
+            if (playback.detached) {
+              reject(playbackError('android-playback-cancelled'));
+            } else if (playback.revision >= targetRevision) {
+              resolve(playback.snapshot);
+            } else {
+              setTimeout(awaitSnapshot, 0);
+            }
+          };
+          awaitSnapshot();
+        });
+      })
+      .catch((error) => {
+        if (error && error.code === 'android-rpc-cancelled') {
+          throw playbackError('android-playback-cancelled');
+        }
+        throw playbackError('android-playback-rejected');
+      })
+      .finally(() => playback.pendingCommands.delete(command));
+    playback.pendingCommands.set(command, requestHandle);
+    return promise;
+  }
+
+  function detachPlayback() {
+    playback.pendingCommands.forEach((handle) => handle.cancel());
+    playback.pendingCommands.clear();
+    playback.issuedPrepared = new WeakSet();
+    playback.detached = true;
+    playback.pageEpoch = null;
+    playback.revision = 0;
+    playback.snapshot = null;
+    playback.onSnapshot = null;
+  }
+
+  function connectPlayback(options = {}) {
+    if (
+      !Number.isInteger(options.pageEpoch) ||
+      options.pageEpoch < 0 ||
+      options.pageEpoch > MAX_PAGE_EPOCH
+    ) {
+      return {
+        promise: Promise.reject(
+          playbackError('android-playback-invalid-epoch')
+        ),
+        cancel() {},
+      };
+    }
+    const bridge = getBridge();
+    if (!bridge || !ensureResponseListener(bridge)) {
+      return {
+        promise: Promise.reject(playbackError('android-playback-unavailable')),
+        cancel() {},
+      };
+    }
+    if (!playback.detached && playback.pageEpoch === options.pageEpoch) {
+      return { promise: Promise.resolve(playback.snapshot), cancel() {} };
+    }
+    detachPlayback();
+    playback.pageEpoch = options.pageEpoch;
+    playback.revision = 0;
+    playback.snapshot = null;
+    playback.onSnapshot =
+      typeof options.onSnapshot === 'function' ? options.onSnapshot : null;
+    playback.detached = false;
+    return {
+      promise: requestPlayback('subscribe', {}, options),
+      cancel: detachPlayback,
+    };
+  }
+
+  function normalizeSelection(selection) {
+    const expected = [
+      'artist',
+      'bvid',
+      'cid',
+      'durationMs',
+      'mediaKind',
+      'source',
+      'title',
+    ];
+    if (
+      !selection ||
+      typeof selection !== 'object' ||
+      Array.isArray(selection) ||
+      Object.keys(selection).length !== expected.length ||
+      !expected.every((key) =>
+        Object.prototype.hasOwnProperty.call(selection, key)
+      )
+    )
+      return null;
+    const payload = {
+      source: selection.source,
+      providerTrackId: selection.bvid,
+      providerPartId: selection.cid,
+      title:
+        typeof selection.title === 'string'
+          ? selection.title.trim()
+          : selection.title,
+      artist:
+        typeof selection.artist === 'string'
+          ? selection.artist.trim()
+          : selection.artist,
+      durationMs: selection.durationMs,
+      mediaKind: selection.mediaKind,
+    };
+    return validatePlaybackEnvelope({
+      expectedRevision: 0,
+      command: 'prepareSelection',
+      payload,
+    })
+      ? payload
+      : null;
+  }
+
+  function preparePlaybackSelection(selection, options) {
+    const payload = normalizeSelection(selection);
+    if (!payload)
+      return Promise.reject(
+        playbackError('android-playback-invalid-selection')
+      );
+    return requestPlayback('prepareSelection', payload, options).then(
+      (snapshot) => {
+        const prepared = snapshot && snapshot.prepared;
+        if (!prepared) throw playbackError('android-playback-rejected');
+        const trusted = Object.freeze({
+          trackHandle: prepared.trackHandle,
+          occurrenceId: prepared.occurrenceId,
+          expectedRevision: snapshot.revision,
+        });
+        playback.issuedPrepared.add(trusted);
+        return trusted;
+      }
+    );
+  }
+
+  function selectPlaybackPrepared(prepared, options = {}) {
+    if (
+      !prepared ||
+      typeof prepared !== 'object' ||
+      !playback.issuedPrepared.has(prepared)
+    ) {
+      return Promise.reject(playbackError('android-playback-invalid-prepared'));
+    }
+    playback.issuedPrepared.delete(prepared);
+    return requestPlayback(
+      'selectPrepared',
+      {
+        trackHandle: prepared.trackHandle,
+        occurrenceId: prepared.occurrenceId,
+        selectionAction: options.action || 'replace-current',
+        playWhenReady: options.playWhenReady === true,
+      },
+      options
+    );
+  }
+
   function get(url, options = {}) {
     const bridge = getBridge();
     if (!bridge || !ensureResponseListener(bridge)) {
@@ -800,6 +1281,20 @@ const Listen2AndroidHttpAdapter = (() => {
     request,
     cancelPageEpoch,
     teardown,
+    connect: connectPlayback,
+    subscribe: connectPlayback,
+    prepareSelection: preparePlaybackSelection,
+    selectPrepared: selectPlaybackPrepared,
+    command(command, payload, options) {
+      return requestPlayback(command, payload || {}, options);
+    },
+    detach: detachPlayback,
+    isPlaybackReady() {
+      return !playback.detached && playback.snapshot !== null;
+    },
+    getPlaybackSnapshot() {
+      return playback.snapshot;
+    },
   };
 })();
 
