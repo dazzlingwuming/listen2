@@ -73,7 +73,7 @@ Deliver Android parity as dependency-ordered, emulator-proven vertical slices: f
   4. When the screen turns off, the activity or renderer is destroyed, or audio focus/noisy/headset/Bluetooth events occur, playback continues or recovers through the legal MediaSession foreground-service path with an understandable state.
   5. When nothing is playing, the app does not retain a high-cost foreground playback service; user-visible library, queue, lyric metadata, cache-catalog, and SAF records have a migration-safe durable store.
 
-**Plans:** 6/10 plans executed
+**Plans:** 7/10 plans executed
 
 - [x] 02-01-PLAN.md
 - [x] 02-02-PLAN.md
@@ -81,7 +81,7 @@ Deliver Android parity as dependency-ordered, emulator-proven vertical slices: f
 - [x] 02-04-PLAN.md
 - [x] 02-05-PLAN.md
 - [x] 02-06-PLAN.md
-- [ ] 02-07-PLAN.md
+- [x] 02-07-PLAN.md
 - [ ] 02-08-PLAN.md
 - [ ] 02-09-PLAN.md
 - [ ] 02-10-PLAN.md
@@ -240,7 +240,7 @@ Deliver Android parity as dependency-ordered, emulator-proven vertical slices: f
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Verified Bilibili Startup Slice | 6/7 | In Progress|  |
-| 2. Native Media3 Playback & Background Control | 6/10 | In Progress|  |
+| 2. Native Media3 Playback & Background Control | 7/10 | In Progress|  |
 | 3. NetEase Lyrics & Provider Contract | 0/TBD | Not started | - |
 | 4. Durable Library & Playlist Management | 0/TBD | Not started | - |
 | 5. Secure Account Sessions | 0/TBD | Not started | - |
