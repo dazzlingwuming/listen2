@@ -17,10 +17,13 @@ import androidx.room.Room;
 import com.dazzlingwuming.listen2.data.Listen2Database;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Sole Android playback owner. Activities and WebViews connect as controllers;
@@ -39,6 +42,7 @@ public final class PlaybackService extends MediaSessionService
     private PlaybackCoordinator coordinator;
     private PlaybackMediaResolver resolver;
     private boolean released;
+    private long snapshotRevision;
     private volatile PlaybackSnapshot latestPageSnapshot = initialSnapshot();
     private final PageBinder pageBinder = new PageBinder();
 
@@ -51,6 +55,7 @@ public final class PlaybackService extends MediaSessionService
                 .build();
         player = new ExoPlayer.Builder(this).build();
         player.setAudioAttributes(attributes, true);
+        player.setHandleAudioBecomingNoisy(true);
         settings = new PlaybackSettingsStore(getApplicationContext());
         applyVolume();
         mediaSession = new MediaSession.Builder(this, player).build();
@@ -59,6 +64,15 @@ public final class PlaybackService extends MediaSessionService
                 .build();
         checkpointRepository = new PlaybackCheckpointRepository(database);
         transitionExecutor = Executors.newSingleThreadExecutor();
+        transitionExecutor.execute(() -> {
+            PlaybackSnapshot restored = restoredSnapshot(checkpointRepository.restore());
+            synchronized (PlaybackService.this) {
+                if (!released) {
+                    latestPageSnapshot = restored;
+                    snapshotRevision = restored.getRevision();
+                }
+            }
+        });
         PlaybackQueueEngine.Clock clock = System::currentTimeMillis;
         PlaybackQueueEngine engine = new PlaybackQueueEngine(Arrays.asList(
                 new PlaybackQueueEngine.Track("bootstrap-track", true)), 0,
@@ -76,6 +90,18 @@ public final class PlaybackService extends MediaSessionService
                 if (playbackState == Player.STATE_ENDED && coordinator != null) {
                     coordinator.onNaturalEnd(coordinatorRevision(), "player-ended-" + System.nanoTime());
                 }
+                publishPlayerSnapshot(playbackState == Player.STATE_ENDED ? "ended" : "ready");
+            }
+
+            @Override
+            public void onIsPlayingChanged(boolean isPlaying) {
+                publishPlayerSnapshot(isPlaying ? "playing" : "interrupted");
+            }
+
+            @Override
+            public void onPositionDiscontinuity(Player.PositionInfo oldPosition,
+                    Player.PositionInfo newPosition, int reason) {
+                publishPlayerSnapshot("ready");
             }
         });
     }
@@ -115,6 +141,25 @@ public final class PlaybackService extends MediaSessionService
                     break;
                 case PAUSE:
                     player.pause();
+                    break;
+                case SEEK:
+                    player.seekTo(number(command.getPayload().get("positionMs")));
+                    break;
+                case VOLUME:
+                    int percent = (int) number(command.getPayload().get("volumePercent"));
+                    settings.setVolumePercent(percent);
+                    if (!settings.isMuted()) player.setVolume(percent / 100f);
+                    break;
+                case MUTE:
+                    settings.setMuted(Boolean.TRUE.equals(command.getPayload().get("muted")));
+                    applyVolume();
+                    break;
+                case CLEAR:
+                    player.stop();
+                    player.clearMediaItems();
+                    publishPlayerSnapshot("idle");
+                    stopForeground(STOP_FOREGROUND_REMOVE);
+                    stopSelf();
                     break;
                 case SELECT_PREPARED:
                     player.setPlayWhenReady("playing".equals(snapshot.toMap().get("state")));
@@ -172,7 +217,82 @@ public final class PlaybackService extends MediaSessionService
     }
 
     private long coordinatorRevision() {
-        return 0L;
+        return latestPageSnapshot.getRevision();
+    }
+
+    /** Player callbacks are the only authority for operational state after a command is accepted. */
+    private synchronized void publishPlayerSnapshot(String recoveryCode) {
+        if (released || player == null) return;
+        PlaybackSnapshot previous = latestPageSnapshot;
+        Map<String, Object> prior = previous.toMap();
+        long revision = Math.max(snapshotRevision, previous.getRevision()) + 1L;
+        snapshotRevision = revision;
+        long position = Math.max(0L, player.getCurrentPosition());
+        long duration = player.getDuration() == C.TIME_UNSET ? 0L : Math.max(0L, player.getDuration());
+        PlaybackSnapshot.State state;
+        if (player.isPlaying()) state = PlaybackSnapshot.State.PLAYING;
+        else if (player.getPlaybackState() == Player.STATE_IDLE) state = PlaybackSnapshot.State.IDLE;
+        else if (player.getPlaybackState() == Player.STATE_BUFFERING) state = PlaybackSnapshot.State.RESOLVING;
+        else state = PlaybackSnapshot.State.PAUSED;
+        latestPageSnapshot = new PlaybackSnapshot(1, number(prior.get("pageEpoch")), revision, state,
+                metadata(prior, duration), position, duration, settings.getVolumePercent(), settings.isMuted(),
+                mode(prior.get("mode")), actions(duration), previous.getQueue(), previous.getPreparedSelection(),
+                new PlaybackSnapshot.RecoveryStatus(recoveryCode, "interrupted".equals(recoveryCode)));
+    }
+
+    /** Rebuilds a paused/actionable semantic projection after process death; transport never survives it. */
+    private PlaybackSnapshot restoredSnapshot(PlaybackCheckpointRepository.RestoredState restored) {
+        if (restored.getRevision() <= 0L || restored.getCurrentOccurrenceId().isEmpty()) return initialSnapshot();
+        List<PlaybackSnapshot.QueueOccurrence> queue = new ArrayList<>();
+        for (String occurrenceId : restored.getQueueOccurrenceIds()) {
+            queue.add(new PlaybackSnapshot.QueueOccurrence(occurrenceId, occurrenceId,
+                    "Recovered queue item", "Listen2", 0L));
+        }
+        return new PlaybackSnapshot(1, 0L, restored.getRevision(), PlaybackSnapshot.State.PAUSED,
+                new PlaybackSnapshot.Metadata("Recovered playback", "Listen2", 0L, "bundled-placeholder"),
+                restored.getPositionMs(), 0L, settings.getVolumePercent(), settings.isMuted(),
+                snapshotMode(restored.getMode()),
+                new PlaybackSnapshot.ActionAvailability(true, false, restored.getHistoryCursor() > 0,
+                        !queue.isEmpty(), false, true), queue, null,
+                new PlaybackSnapshot.RecoveryStatus("restored", true));
+    }
+
+    private PlaybackSnapshot.Metadata metadata(Map<String, Object> prior, long duration) {
+        Object value = prior.get("metadata");
+        if (value instanceof Map) {
+            Map<?, ?> metadata = (Map<?, ?>) value;
+            Object title = metadata.get("title");
+            Object artist = metadata.get("artist");
+            Object artwork = metadata.get("artworkState");
+            if (title instanceof String && artist instanceof String && artwork instanceof String) {
+                return new PlaybackSnapshot.Metadata((String) title, (String) artist, duration, (String) artwork);
+            }
+        }
+        return new PlaybackSnapshot.Metadata("Listen2", "Listen2", duration, "bundled-placeholder");
+    }
+
+    private PlaybackSnapshot.ActionAvailability actions(long duration) {
+        boolean hasMedia = player.getMediaItemCount() > 0;
+        return new PlaybackSnapshot.ActionAvailability(hasMedia && !player.isPlaying(), hasMedia && player.isPlaying(),
+                player.hasPreviousMediaItem(), player.hasNextMediaItem(), duration > 0L, hasMedia);
+    }
+
+    private static PlaybackSnapshot.Mode mode(Object value) {
+        if ("shuffle".equals(value)) return PlaybackSnapshot.Mode.SHUFFLE;
+        if ("repeat-one".equals(value)) return PlaybackSnapshot.Mode.REPEAT_ONE;
+        if ("repeat-all".equals(value)) return PlaybackSnapshot.Mode.REPEAT_ALL;
+        return PlaybackSnapshot.Mode.SEQUENTIAL;
+    }
+
+    private static PlaybackSnapshot.Mode snapshotMode(PlaybackQueueEngine.Mode value) {
+        if (value == PlaybackQueueEngine.Mode.SHUFFLE) return PlaybackSnapshot.Mode.SHUFFLE;
+        if (value == PlaybackQueueEngine.Mode.REPEAT_ONE) return PlaybackSnapshot.Mode.REPEAT_ONE;
+        if (value == PlaybackQueueEngine.Mode.REPEAT_ALL) return PlaybackSnapshot.Mode.REPEAT_ALL;
+        return PlaybackSnapshot.Mode.SEQUENTIAL;
+    }
+
+    private static long number(Object value) {
+        return value instanceof Number ? ((Number) value).longValue() : 0L;
     }
 
     private static PlaybackSnapshot initialSnapshot() {
