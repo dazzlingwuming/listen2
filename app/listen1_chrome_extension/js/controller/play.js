@@ -196,6 +196,252 @@ angular.module('listenone').controller('PlayController', [
     $scope.lyricSearchPending = false;
     $scope.foregroundPlaybackState = 'idle';
     $scope.foregroundPlaybackFailure = null;
+    const androidPlaybackAdapter =
+      typeof window !== 'undefined' &&
+      window.Listen2AndroidHttpAdapter &&
+      typeof window.Listen2AndroidHttpAdapter.isAvailable === 'function' &&
+      window.Listen2AndroidHttpAdapter.isAvailable()
+        ? window.Listen2AndroidHttpAdapter
+        : null;
+    let androidPlaybackRefreshTimer = null;
+    let androidPlaybackLastAnnouncementRevision = 0;
+    let androidPlaybackReturnFocus = null;
+    let playControllerDestroyed = false;
+    $scope.androidPlaybackEnabled = Boolean(androidPlaybackAdapter);
+    $scope.androidPlaybackDetailOpen = false;
+    $scope.androidPlaybackCommandPending = '';
+    $scope.androidPlaybackSeekDraft = null;
+    $scope.androidPlaybackSeekUnavailable = false;
+    $scope.androidPlaybackBusy = true;
+    $scope.androidPlaybackRetryAttempt = 1;
+    $scope.androidPlaybackRetryMax = 2;
+    $scope.androidPlaybackQueue = [];
+    $scope.androidPlaybackSnapshot = {
+      revision: 0,
+      state: 'connecting',
+      metadata: { title: '', artist: '', artworkState: 'bundled-placeholder' },
+      positionMs: 0,
+      durationMs: 0,
+      volumePercent: 100,
+      muted: false,
+      mode: 'sequential',
+      actions: {},
+      queue: [],
+      recovery: { status: 'connecting', retryable: false },
+    };
+
+    function isAndroidPlaybackActionAvailable(action) {
+      return (
+        $scope.androidPlaybackEnabled &&
+        $scope.androidPlaybackSnapshot &&
+        $scope.androidPlaybackSnapshot.actions &&
+        $scope.androidPlaybackSnapshot.actions[action] === true
+      );
+    }
+
+    function androidPlaybackStateCopy(snapshot) {
+      const safeSnapshot = snapshot || {};
+      const recovery = safeSnapshot.recovery || {};
+      if (!safeSnapshot.revision) return '正在连接播放器…';
+      if (recovery.status === 'buffering') return '正在缓冲…';
+      if (recovery.status === 'retrying') {
+        return `正在尝试恢复播放（${$scope.androidPlaybackRetryAttempt}/${$scope.androidPlaybackRetryMax}）…`;
+      }
+      if (recovery.status === 'interrupted') return '播放已暂停';
+      if (recovery.status === 'restored') return '已恢复播放队列';
+      if (safeSnapshot.state === 'resolving') return '正在准备播放…';
+      if (safeSnapshot.state === 'playing') return '正在播放';
+      if (safeSnapshot.state === 'paused') return '已暂停';
+      if (safeSnapshot.state === 'error') return '当前歌曲暂时无法播放';
+      return '还没有正在播放的内容';
+    }
+
+    $scope.androidPlaybackStateCopy = () =>
+      androidPlaybackStateCopy($scope.androidPlaybackSnapshot);
+    $scope.androidPlaybackHasCurrent = () =>
+      Boolean(
+        $scope.androidPlaybackSnapshot &&
+          $scope.androidPlaybackSnapshot.metadata &&
+          $scope.androidPlaybackSnapshot.metadata.title
+      );
+    $scope.androidPlaybackCan = (action) =>
+      isAndroidPlaybackActionAvailable(action) &&
+      !$scope.androidPlaybackCommandPending;
+    $scope.androidPlaybackModeLabel = () => {
+      const labels = {
+        sequential: '顺序播放',
+        'repeat-one': '单曲循环',
+        shuffle: '随机播放',
+      };
+      return labels[$scope.androidPlaybackSnapshot.mode] || '顺序播放';
+    };
+    $scope.androidPlaybackElapsed = () =>
+      formatSecond(
+        Number($scope.androidPlaybackSnapshot.positionMs || 0) / 1000
+      );
+    $scope.androidPlaybackDuration = () =>
+      formatSecond(
+        Number($scope.androidPlaybackSnapshot.durationMs || 0) / 1000
+      );
+    $scope.androidPlaybackSeekValue = () => {
+      if ($scope.androidPlaybackSeekDraft !== null) {
+        return $scope.androidPlaybackSeekDraft;
+      }
+      return Number($scope.androidPlaybackSnapshot.positionMs || 0);
+    };
+
+    function applyAndroidPlaybackSnapshot(snapshot) {
+      if (!androidPlaybackAdapter || !snapshot) return;
+      const revision = Number(snapshot.revision || 0);
+      if (
+        revision &&
+        revision < Number($scope.androidPlaybackSnapshot.revision || 0)
+      ) {
+        return;
+      }
+      const metadata = snapshot.metadata || {};
+      const safeSnapshot = {
+        revision,
+        state: snapshot.state || 'idle',
+        metadata: {
+          title: typeof metadata.title === 'string' ? metadata.title : '',
+          artist: typeof metadata.artist === 'string' ? metadata.artist : '',
+          artworkState:
+            typeof metadata.artworkState === 'string'
+              ? metadata.artworkState
+              : 'bundled-placeholder',
+        },
+        positionMs: Math.max(0, Number(snapshot.positionMs) || 0),
+        durationMs: Math.max(0, Number(snapshot.durationMs) || 0),
+        volumePercent: Math.max(
+          0,
+          Math.min(100, Number(snapshot.volumePercent) || 0)
+        ),
+        muted: snapshot.muted === true,
+        mode: snapshot.mode || 'sequential',
+        actions:
+          snapshot.actions && typeof snapshot.actions === 'object'
+            ? snapshot.actions
+            : {},
+        queue: Array.isArray(snapshot.queue) ? snapshot.queue : [],
+        recovery:
+          snapshot.recovery && typeof snapshot.recovery === 'object'
+            ? snapshot.recovery
+            : { status: 'ready', retryable: false },
+      };
+      $scope.androidPlaybackSnapshot = safeSnapshot;
+      $scope.androidPlaybackQueue = safeSnapshot.queue;
+      $scope.androidPlaybackBusy =
+        !safeSnapshot.revision || safeSnapshot.state === 'resolving';
+      $scope.androidPlaybackCommandPending = '';
+      $scope.androidPlaybackSeekDraft = null;
+      $scope.androidPlaybackSeekUnavailable = false;
+      if (revision > androidPlaybackLastAnnouncementRevision) {
+        androidPlaybackLastAnnouncementRevision = revision;
+      }
+    }
+
+    $scope.applyAndroidPlaybackSnapshot = applyAndroidPlaybackSnapshot;
+
+    function refreshAndroidPlaybackSnapshot() {
+      if (!androidPlaybackAdapter || playControllerDestroyed) return;
+      const snapshot = androidPlaybackAdapter.getPlaybackSnapshot();
+      if (snapshot) {
+        $scope.$evalAsync(() => applyAndroidPlaybackSnapshot(snapshot));
+      }
+      androidPlaybackRefreshTimer = $timeout(
+        refreshAndroidPlaybackSnapshot,
+        350
+      );
+    }
+
+    $scope.sendAndroidPlaybackCommand = (command, payload = {}) => {
+      if (
+        !androidPlaybackAdapter ||
+        $scope.androidPlaybackCommandPending ||
+        !isAndroidPlaybackActionAvailable(command)
+      ) {
+        return Promise.resolve(null);
+      }
+      $scope.androidPlaybackCommandPending = command;
+      return androidPlaybackAdapter
+        .command(command, payload)
+        .then((snapshot) => {
+          $scope.$evalAsync(() => applyAndroidPlaybackSnapshot(snapshot));
+          return snapshot;
+        })
+        .catch(() => {
+          $scope.$evalAsync(() => {
+            $scope.androidPlaybackCommandPending = '';
+          });
+          return null;
+        });
+    };
+
+    $scope.toggleAndroidPlayback = () => {
+      const snapshot = $scope.androidPlaybackSnapshot;
+      return $scope.sendAndroidPlaybackCommand(
+        snapshot.state === 'playing' ? 'pause' : 'play'
+      );
+    };
+    $scope.cycleAndroidPlaybackMode = () => {
+      const order = ['sequential', 'repeat-one', 'shuffle'];
+      const index = order.indexOf($scope.androidPlaybackSnapshot.mode);
+      return $scope.sendAndroidPlaybackCommand('mode', {
+        mode: order[(index + 1) % order.length],
+      });
+    };
+    $scope.adjustAndroidPlaybackVolume = (event) => {
+      const value = Math.max(0, Math.min(100, Number(event.target.value) || 0));
+      return $scope.sendAndroidPlaybackCommand('volume', {
+        volumePercent: value,
+      });
+    };
+    $scope.toggleAndroidPlaybackMute = () =>
+      $scope.sendAndroidPlaybackCommand('mute', {
+        muted: !$scope.androidPlaybackSnapshot.muted,
+      });
+    $scope.previewAndroidSeek = (event) => {
+      $scope.androidPlaybackSeekDraft = Math.max(
+        0,
+        Math.min(
+          Number($scope.androidPlaybackSnapshot.durationMs || 0),
+          Number(event.target.value) || 0
+        )
+      );
+    };
+    $scope.commitAndroidSeek = () => {
+      if (!isAndroidPlaybackActionAvailable('seek')) {
+        $scope.androidPlaybackSeekUnavailable = true;
+        return Promise.resolve(null);
+      }
+      const positionMs = Number($scope.androidPlaybackSeekDraft);
+      if (!Number.isFinite(positionMs)) return Promise.resolve(null);
+      return $scope.sendAndroidPlaybackCommand('seek', { positionMs });
+    };
+    $scope.openAndroidPlayerDetail = (event) => {
+      if (!$scope.androidPlaybackHasCurrent()) return;
+      androidPlaybackReturnFocus = event && event.currentTarget;
+      $scope.androidPlaybackDetailOpen = true;
+    };
+    $scope.closeAndroidPlayerDetail = () => {
+      $scope.androidPlaybackDetailOpen = false;
+      $timeout(() => {
+        if (
+          androidPlaybackReturnFocus &&
+          document.contains(androidPlaybackReturnFocus)
+        ) {
+          androidPlaybackReturnFocus.focus();
+        }
+      });
+    };
+    $scope.handleAndroidPlayerBack = (event) => {
+      if (!$scope.androidPlaybackEnabled) return false;
+      if (!$scope.androidPlaybackDetailOpen) return false;
+      event.preventDefault();
+      $scope.closeAndroidPlayerDetail();
+      return true;
+    };
     $scope.primaryLyricState = {
       state: 'idle',
       trackId: '',
@@ -399,7 +645,6 @@ angular.module('listenone').controller('PlayController', [
     let lastMvPosition = 0;
     const AUDIO_CACHE_STATUS_POLL_MS = 2000;
     let audioCacheStatusPollTimer = null;
-    let playControllerDestroyed = false;
 
     function setPrimaryLyricState(track, state) {
       if (!track || !track.id) return;
@@ -3381,6 +3626,18 @@ angular.module('listenone').controller('PlayController', [
 
     // connect player should run after all addListener function finished
     l1Player.connectPlayer();
+    if (androidPlaybackAdapter) {
+      refreshAndroidPlaybackSnapshot();
+      document.addEventListener('keydown', $scope.handleAndroidPlayerBack);
+      $scope.$on('$destroy', () => {
+        playControllerDestroyed = true;
+        if (androidPlaybackRefreshTimer) {
+          $timeout.cancel(androidPlaybackRefreshTimer);
+          androidPlaybackRefreshTimer = null;
+        }
+        document.removeEventListener('keydown', $scope.handleAndroidPlayerBack);
+      });
+    }
 
     // define keybind
     // description: '播放/暂停',
