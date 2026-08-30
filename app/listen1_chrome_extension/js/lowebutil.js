@@ -241,6 +241,43 @@ const Listen2AndroidHttpAdapter = (() => {
     );
   }
 
+  function mapTypedError(response, fallbackCode) {
+    const safeCode = String((response && response.error) || '')
+      .trim()
+      .toUpperCase();
+    const codeByNativeCode = {
+      CANCELLED: 'android-rpc-cancelled',
+      TIMEOUT: 'android-rpc-timeout',
+      TIMEOUT_ERROR: 'android-rpc-timeout',
+      NETWORK_IO_ERROR: 'android-rpc-network',
+      TLS_ERROR: 'android-rpc-tls',
+      PERMISSION_DENIED: 'android-rpc-permission',
+      LOGIN_REQUIRED: 'android-rpc-permission',
+      INVALID_PART: 'android-rpc-invalid-part',
+      NO_STREAM: 'android-rpc-unavailable-stream',
+      INVALID_STREAM: 'android-rpc-unavailable-stream',
+      EXPIRED_STREAM: 'android-rpc-unavailable-stream',
+      UNSUPPORTED_CODEC: 'android-rpc-unsupported-codec',
+      MALFORMED_PROVIDER_RESPONSE: 'android-rpc-malformed-response',
+      IDENTITY_MISMATCH: 'android-rpc-malformed-response',
+    };
+    const code = codeByNativeCode[safeCode] || fallbackCode;
+    const kind = code.replace(/^android-rpc-/, '');
+    return createError(code, 'Android typed request could not be completed.', {
+      kind,
+      retryable: ![
+        'cancelled',
+        'invalid-part',
+        'permission',
+        'unsupported-codec',
+        'malformed-response',
+      ].includes(kind),
+      safeCode: safeCode || 'UNKNOWN',
+      status:
+        response && Number.isInteger(response.status) ? response.status : 0,
+    });
+  }
+
   function scheduleAngularDigest() {
     if (typeof window === 'undefined' || !window.angular) return;
     try {
@@ -281,6 +318,14 @@ const Listen2AndroidHttpAdapter = (() => {
     scheduleAngularDigestAfterSettlement();
   }
 
+  function settleTypedEntry(entry, value, error) {
+    if (!entry || entry.settled) return;
+    entry.settled = true;
+    clearTimeout(entry.timeoutId);
+    if (error) rejectPending(entry, error);
+    else resolvePending(entry, value);
+  }
+
   function handleResponse(event) {
     const response = normalizeEventData(event);
     if (!isValidLegacyResponse(response) && !isValidTypedResponse(response))
@@ -296,21 +341,20 @@ const Listen2AndroidHttpAdapter = (() => {
         return;
       }
       pending.delete(response.requestId);
-      clearTimeout(entry.timeoutId);
       if (response.terminal !== 'ok') {
-        rejectPending(
+        settleTypedEntry(
           entry,
-          createError(
+          null,
+          mapTypedError(
+            response,
             response.terminal === 'cancelled'
               ? 'android-rpc-cancelled'
-              : 'android-rpc-failed',
-            'Android typed request could not be completed.',
-            { status: response.status, safeCode: response.error }
+              : 'android-rpc-failed'
           )
         );
         return;
       }
-      resolvePending(entry, {
+      settleTypedEntry(entry, {
         status: response.status,
         result: response.result,
       });
@@ -394,8 +438,20 @@ const Listen2AndroidHttpAdapter = (() => {
     }
   }
 
+  function isSafeBvid(value) {
+    return typeof value === 'string' && /^BV[0-9A-Za-z]{6,32}$/.test(value);
+  }
+
   function validateTypedRequest(operation, payload, pageEpoch) {
-    if (operation !== 'bilibili.search') return 'android-rpc-invalid-operation';
+    if (
+      ![
+        'bilibili.search',
+        'bilibili.video.detail',
+        'bilibili.audio.manifest',
+      ].includes(operation)
+    ) {
+      return 'android-rpc-invalid-operation';
+    }
     if (
       !Number.isInteger(pageEpoch) ||
       pageEpoch < 0 ||
@@ -407,40 +463,103 @@ const Listen2AndroidHttpAdapter = (() => {
       return 'android-rpc-invalid-payload';
     }
     const keys = Object.keys(payload).sort();
-    if (keys.length !== 2 || keys[0] !== 'keyword' || keys[1] !== 'page') {
-      return 'android-rpc-invalid-payload';
+    if (operation === 'bilibili.search') {
+      if (keys.length !== 2 || keys[0] !== 'keyword' || keys[1] !== 'page') {
+        return 'android-rpc-invalid-payload';
+      }
+      if (
+        typeof payload.keyword !== 'string' ||
+        !payload.keyword.trim() ||
+        byteLength(payload.keyword.trim()) > MAX_TYPED_KEYWORD_BYTES ||
+        !Number.isInteger(payload.page) ||
+        payload.page < 1 ||
+        payload.page > 1000
+      ) {
+        return 'android-rpc-invalid-payload';
+      }
+      return null;
     }
+    if (operation === 'bilibili.video.detail') {
+      return keys.length === 1 && keys[0] === 'bvid' && isSafeBvid(payload.bvid)
+        ? null
+        : 'android-rpc-invalid-payload';
+    }
+    const explicit = payload.selectionMode === 'explicit';
+    const expected = explicit
+      ? ['bvid', 'cid', 'selectionMode']
+      : ['bvid', 'selectionMode'];
     if (
-      typeof payload.keyword !== 'string' ||
-      !payload.keyword.trim() ||
-      byteLength(payload.keyword.trim()) > MAX_TYPED_KEYWORD_BYTES ||
-      !Number.isInteger(payload.page) ||
-      payload.page < 1 ||
-      payload.page > 1000
+      keys.length !== expected.length ||
+      keys.some((key, index) => key !== expected[index]) ||
+      !isSafeBvid(payload.bvid) ||
+      !['default-first', 'explicit'].includes(payload.selectionMode) ||
+      (explicit && (!Number.isSafeInteger(payload.cid) || payload.cid <= 0))
     ) {
       return 'android-rpc-invalid-payload';
     }
     return null;
   }
 
+  function normalizedTypedPayload(operation, payload) {
+    if (operation === 'bilibili.search') {
+      return { keyword: payload.keyword.trim(), page: payload.page };
+    }
+    if (operation === 'bilibili.video.detail') {
+      return { bvid: payload.bvid };
+    }
+    return payload.selectionMode === 'explicit'
+      ? { bvid: payload.bvid, selectionMode: 'explicit', cid: payload.cid }
+      : { bvid: payload.bvid, selectionMode: 'default-first' };
+  }
+
+  function postCancellation(bridge, requestId, pageEpoch) {
+    try {
+      bridge.postMessage(
+        JSON.stringify({
+          version: TYPED_PROTOCOL_VERSION,
+          operation: 'rpc.cancel',
+          requestId: createRequestId(),
+          pageEpoch,
+          payload: { targetRequestId: requestId, targetPageEpoch: pageEpoch },
+        })
+      );
+    } catch (error) {
+      // Cancellation is best effort after dispatch; local settlement still wins.
+    }
+  }
+
+  function rejectedRequestHandle(error, pageEpoch) {
+    const promise = Promise.reject(error);
+    return {
+      requestId: '',
+      pageEpoch: Number.isInteger(pageEpoch) ? pageEpoch : 0,
+      promise,
+      cancel() {},
+      then: promise.then.bind(promise),
+      catch: promise.catch.bind(promise),
+    };
+  }
+
   function request(operation, payload, options = {}) {
     const bridge = getBridge();
     if (!bridge || !ensureResponseListener(bridge)) {
-      return Promise.reject(
+      return rejectedRequestHandle(
         createError(
           'android-rpc-unavailable',
           'Android typed requests are not supported in this environment.'
-        )
+        ),
+        options.pageEpoch
       );
     }
-    const {pageEpoch} = options;
+    const { pageEpoch } = options;
     const validationError = validateTypedRequest(operation, payload, pageEpoch);
     if (validationError) {
-      return Promise.reject(
+      return rejectedRequestHandle(
         createError(
           validationError,
           'Android typed request was rejected before dispatch.'
-        )
+        ),
+        pageEpoch
       );
     }
     const timeoutMs = Math.min(
@@ -458,36 +577,145 @@ const Listen2AndroidHttpAdapter = (() => {
       operation,
       requestId,
       pageEpoch,
-      payload: { keyword: payload.keyword.trim(), page: payload.page },
+      payload: normalizedTypedPayload(operation, payload),
     });
-    return new Promise((resolve, reject) => {
+    let entry;
+    const promise = new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
-        const entry = pending.get(requestId);
-        if (!entry) return;
+        const timedOutEntry = pending.get(requestId);
+        if (!timedOutEntry) return;
         pending.delete(requestId);
-        rejectPending(
-          entry,
-          createError('android-rpc-timeout', 'Android typed request timed out.')
+        postCancellation(bridge, requestId, pageEpoch);
+        settleTypedEntry(
+          timedOutEntry,
+          null,
+          createError(
+            'android-rpc-timeout',
+            'Android typed request timed out.',
+            {
+              kind: 'timeout',
+              retryable: true,
+              safeCode: 'TIMEOUT',
+              status: 0,
+            }
+          )
         );
       }, timeoutMs);
-      const entry = {
+      entry = {
         resolve,
         reject,
         timeoutId,
         version: TYPED_PROTOCOL_VERSION,
         pageEpoch,
+        settled: false,
       };
       pending.set(requestId, entry);
       try {
         bridge.postMessage(envelope);
       } catch (error) {
         pending.delete(requestId);
-        clearTimeout(timeoutId);
+        settleTypedEntry(
+          entry,
+          null,
+          createError(
+            'android-rpc-post-failed',
+            'Android typed request could not be sent.',
+            {
+              kind: 'post-failed',
+              retryable: true,
+              safeCode: 'POST_FAILED',
+              status: 0,
+            }
+          )
+        );
+      }
+    });
+    const cancel = () => {
+      const current = pending.get(requestId);
+      if (!current) return;
+      // Native sees the matching request identity before local consumers see
+      // cancellation, so a late terminal cannot become visible state.
+      postCancellation(bridge, requestId, pageEpoch);
+      pending.delete(requestId);
+      settleTypedEntry(
+        current,
+        null,
+        createError(
+          'android-rpc-cancelled',
+          'Android typed request was cancelled.',
+          {
+            kind: 'cancelled',
+            retryable: false,
+            safeCode: 'CANCELLED',
+            status: 0,
+          }
+        )
+      );
+    };
+    return {
+      requestId,
+      pageEpoch,
+      promise,
+      cancel,
+      // Promise-like methods retain compatibility for the narrow Phase-1
+      // consumer while new callers use the explicit handle fields above.
+      then: promise.then.bind(promise),
+      catch: promise.catch.bind(promise),
+    };
+  }
+
+  function cancelPageEpoch(pageEpoch) {
+    pending.forEach((entry, requestId) => {
+      if (
+        entry.version === TYPED_PROTOCOL_VERSION &&
+        entry.pageEpoch === pageEpoch
+      ) {
+        postCancellation(responseBridge, requestId, pageEpoch);
+        pending.delete(requestId);
+        settleTypedEntry(
+          entry,
+          null,
+          createError(
+            'android-rpc-cancelled',
+            'Android typed request was cancelled.',
+            {
+              kind: 'cancelled',
+              retryable: false,
+              safeCode: 'CANCELLED',
+              status: 0,
+            }
+          )
+        );
+      }
+    });
+  }
+
+  function teardown() {
+    Array.from(pending.entries()).forEach(([requestId, entry]) => {
+      pending.delete(requestId);
+      if (entry.version === TYPED_PROTOCOL_VERSION) {
+        postCancellation(responseBridge, requestId, entry.pageEpoch);
+        settleTypedEntry(
+          entry,
+          null,
+          createError(
+            'android-rpc-cancelled',
+            'Android typed request was cancelled.',
+            {
+              kind: 'cancelled',
+              retryable: false,
+              safeCode: 'CANCELLED',
+              status: 0,
+            }
+          )
+        );
+      } else {
+        clearTimeout(entry.timeoutId);
         rejectPending(
           entry,
           createError(
-            'android-rpc-post-failed',
-            'Android typed request could not be sent.'
+            'android-http-cancelled',
+            'Android HTTP request was cancelled.'
           )
         );
       }
@@ -562,6 +790,8 @@ const Listen2AndroidHttpAdapter = (() => {
     },
     get,
     request,
+    cancelPageEpoch,
+    teardown,
   };
 })();
 

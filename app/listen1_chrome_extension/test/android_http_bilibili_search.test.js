@@ -397,7 +397,7 @@ async function run() {
     assert.deepStrictEqual(toPlain(result), {
       error: {
         message: 'Bilibili search could not be completed through Android HTTP.',
-        status: 'android-rpc-failed',
+        status: 'android-rpc-network',
       },
       result: [],
       total: 0,

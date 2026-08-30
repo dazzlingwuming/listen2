@@ -322,7 +322,23 @@ const MediaService = {
       };
     }
     const provider = getProviderByName(source);
-    return provider.search(url);
+    // Android providers may return the legacy success facade decorated with a
+    // typed request identity and cancel handle. Return that object unchanged so
+    // a controller can cancel its exact page-epoch operation without reaching
+    // into provider or native globals. Ordinary provider callers keep their
+    // established `.success(callback)` contract.
+    return provider.search(url, options);
+  },
+
+  getVideoContext(track, options = {}) {
+    const provider = getProviderByItemId(track && track.id);
+    if (!provider || typeof provider.get_video_context !== 'function') {
+      return Promise.resolve(null);
+    }
+    // Keep detail/manifest routing inside the provider. Its return value may
+    // be a Promise decorated with requestId/pageEpoch/cancel for Android, or a
+    // regular Promise for Electron and extension paths.
+    return provider.get_video_context(track && track.id, options);
   },
 
   showMyPlaylist() {

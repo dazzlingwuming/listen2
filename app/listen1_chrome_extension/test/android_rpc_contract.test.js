@@ -48,6 +48,9 @@ async function run() {
     { keyword: '  Android Song  ', page: 3 },
     { pageEpoch: 8 }
   );
+  assert.strictEqual(typeof current.cancel, 'function');
+  assert.strictEqual(typeof current.promise.then, 'function');
+  assert.strictEqual(current.pageEpoch, 8);
   assert.strictEqual(nativeBridge.posted.length, 1);
   const request = nativeBridge.posted[0];
   assert.deepStrictEqual(Object.keys(request).sort(), [
@@ -81,10 +84,92 @@ async function run() {
     status: 200,
     result: { source: 'bilibili', total: 1, rows: [] },
   });
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(await current)), {
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(await current.promise)), {
     status: 200,
     result: { source: 'bilibili', total: 1, rows: [] },
   });
+
+  const cancelled = adapter.request(
+    'bilibili.video.detail',
+    { bvid: 'BV1xx411c7mD' },
+    { pageEpoch: 9 }
+  );
+  const cancelledRequest = nativeBridge.posted[1];
+  cancelled.cancel();
+  cancelled.cancel();
+  assert.strictEqual(nativeBridge.posted.length, 3);
+  assert.deepStrictEqual(nativeBridge.posted[2], {
+    version: 2,
+    operation: 'rpc.cancel',
+    requestId: nativeBridge.posted[2].requestId,
+    pageEpoch: 9,
+    payload: {
+      targetRequestId: cancelledRequest.requestId,
+      targetPageEpoch: 9,
+    },
+  });
+  await assert.rejects(
+    cancelled.promise,
+    (error) =>
+      error.code === 'android-rpc-cancelled' && error.retryable === false
+  );
+  nativeBridge.emit({
+    version: 2,
+    terminal: 'ok',
+    requestId: cancelledRequest.requestId,
+    pageEpoch: 9,
+    status: 200,
+    result: { bvid: 'BV1xx411c7mD', pages: [] },
+  });
+
+  const manifest = adapter.request(
+    'bilibili.audio.manifest',
+    { bvid: 'BV1xx411c7mD', selectionMode: 'explicit', cid: 42 },
+    { pageEpoch: 10 }
+  );
+  const manifestRequest = nativeBridge.posted[3];
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(manifestRequest.payload)), {
+    bvid: 'BV1xx411c7mD',
+    selectionMode: 'explicit',
+    cid: 42,
+  });
+  nativeBridge.emit({
+    version: 2,
+    terminal: 'error',
+    requestId: manifestRequest.requestId,
+    pageEpoch: 10,
+    status: 0,
+    error: 'UNSUPPORTED_CODEC',
+  });
+  await assert.rejects(
+    manifest.promise,
+    (error) =>
+      error.code === 'android-rpc-unsupported-codec' &&
+      error.kind === 'unsupported-codec' &&
+      error.message.indexOf('UNSUPPORTED_CODEC') === -1
+  );
+
+  const timedOut = adapter.request(
+    'bilibili.search',
+    { keyword: 'timeout', page: 1 },
+    { pageEpoch: 11, timeoutMs: 1 }
+  );
+  await assert.rejects(
+    timedOut.promise,
+    (error) => error.code === 'android-rpc-timeout' && error.kind === 'timeout'
+  );
+  assert.strictEqual(nativeBridge.posted[5].operation, 'rpc.cancel');
+
+  const teardown = adapter.request(
+    'bilibili.video.detail',
+    { bvid: 'BV1xx411c7mD' },
+    { pageEpoch: 12 }
+  );
+  adapter.teardown();
+  await assert.rejects(
+    teardown.promise,
+    (error) => error.code === 'android-rpc-cancelled'
+  );
 
   await assert.rejects(
     adapter.request(
