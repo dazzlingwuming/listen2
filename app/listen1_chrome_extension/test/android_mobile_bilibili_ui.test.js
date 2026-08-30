@@ -23,6 +23,10 @@ const markup = fs.readFileSync(
   path.join(extensionRoot, 'listen1.html'),
   'utf8'
 );
+const styles = fs.readFileSync(
+  path.join(extensionRoot, 'css', 'redesign.css'),
+  'utf8'
+);
 
 function loadController(source, name, extras = {}) {
   let factory;
@@ -207,6 +211,15 @@ function run() {
     '登录功能将在后续版本提供',
   ].forEach((needle) =>
     assert.ok(markup.includes(needle), `missing ${needle}`)
+  );
+  [
+    '100svh',
+    'safe-area-inset-bottom',
+    'min-height: 48px',
+    'prefers-reduced-motion: reduce',
+    '.bilibili-mobile-search',
+  ].forEach((needle) =>
+    assert.ok(styles.includes(needle), `missing ${needle}`)
   );
   assert.strictEqual(markup.includes('ng-bind-html="song.title"'), false);
   console.log('Android mobile Bilibili UI tests passed');
