@@ -123,8 +123,9 @@ public final class PlaybackQueueEngine {
     public Transition clear(long expectedRevision) {
         Transition validation = validateRevision(expectedRevision);
         if (validation != null) return validation;
-        return accept(state.with(state.revision + 1L, null, Collections.<Occurrence>emptyList(), null,
-                null, null, null, null, null, null, null));
+        Mode restoredMode = state.queueContextActive ? state.modeBeforeQueue : state.mode;
+        return accept(state.with(state.revision + 1L, null, Collections.<Occurrence>emptyList(), restoredMode,
+                state.modeBeforeQueue, false, null, null, null, null, null));
     }
 
     public Transition setMode(long expectedRevision, Mode mode) {
@@ -132,7 +133,7 @@ public final class PlaybackQueueEngine {
         if (validation != null) return validation;
         if (mode == null) return rejected("INVALID_MODE");
         List<Occurrence> freshShuffle = Collections.emptyList();
-        if (mode == Mode.SHUFFLE) freshShuffle = shuffledPlayableExcluding(state.current);
+        if (mode == Mode.SHUFFLE) freshShuffle = shuffledInitialRound(state.current);
         Mode savedMode = state.queueContextActive ? state.modeBeforeQueue : mode;
         return accept(state.with(state.revision + 1L, null, null, mode, savedMode, null, null,
                 freshShuffle, 0, null, null));
@@ -180,6 +181,11 @@ public final class PlaybackQueueEngine {
                 null, null, null));
     }
 
+    /** A terminal media failure remains actionable on the same occurrence; it never auto-skips. */
+    public Transition onTerminalFailure(long expectedRevision) {
+        return retry(expectedRevision);
+    }
+
     private Transition recordTokenWithoutMovement(String transitionToken) {
         long nextRevision = state.revision + 1L;
         return accept(state.with(nextRevision, null, null, null, null, null, null, null, null, null,
@@ -224,7 +230,7 @@ public final class PlaybackQueueEngine {
         List<Occurrence> order = state.shuffleOrder;
         int nextIndex = state.shuffleNextIndex;
         if (nextIndex >= order.size()) {
-            order = shuffledPlayableExcluding(state.current);
+            order = shuffledFullRound(state.current);
             nextIndex = 0;
         }
         if (order.isEmpty()) return null;
@@ -232,7 +238,7 @@ public final class PlaybackQueueEngine {
         return new BaseAdvance(selected, order, nextIndex + 1);
     }
 
-    private List<Occurrence> shuffledPlayableExcluding(Occurrence current) {
+    private List<Occurrence> shuffledInitialRound(Occurrence current) {
         List<Occurrence> playable = new ArrayList<>();
         for (Occurrence occurrence : state.basePlaylist) {
             if (occurrence.isPlayable() && !occurrence.getOccurrenceId().equals(current.getOccurrenceId())) {
@@ -240,6 +246,25 @@ public final class PlaybackQueueEngine {
             }
         }
         fisherYates(playable);
+        return playable;
+    }
+
+    private List<Occurrence> shuffledFullRound(Occurrence current) {
+        List<Occurrence> playable = new ArrayList<>();
+        for (Occurrence occurrence : state.basePlaylist) {
+            if (occurrence.isPlayable()) playable.add(occurrence);
+        }
+        fisherYates(playable);
+        if (playable.size() > 1 && playable.get(0).getOccurrenceId().equals(current.getOccurrenceId())) {
+            for (int index = 1; index < playable.size(); index += 1) {
+                if (!playable.get(index).getOccurrenceId().equals(current.getOccurrenceId())) {
+                    Occurrence first = playable.get(0);
+                    playable.set(0, playable.get(index));
+                    playable.set(index, first);
+                    break;
+                }
+            }
+        }
         return playable;
     }
 

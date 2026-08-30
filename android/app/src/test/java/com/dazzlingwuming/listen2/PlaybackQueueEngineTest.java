@@ -70,6 +70,80 @@ public final class PlaybackQueueEngineTest {
                 trackHandles(queued.getState().getBasePlaylist()));
     }
 
+    @Test
+    public void shuffleUsesPlayableFisherYatesRoundsWithoutBoundaryRepeat() {
+        PlaybackQueueEngine engine = engine(base("zero", "one", "disabled", "three"));
+        PlaybackQueueEngine.Track disabled = new PlaybackQueueEngine.Track("disabled", false);
+        engine = new PlaybackQueueEngine(Arrays.asList(track("zero"), track("one"), disabled,
+                track("three")), 0, PlaybackQueueEngine.Mode.SEQUENTIAL,
+                new PlaybackQueueEngine.IncrementingIdSource("shuffle"), new FixedClock(),
+                new PlaybackQueueEngine.SequenceRandom(42L));
+        assertTrue(engine.setMode(0L, PlaybackQueueEngine.Mode.SHUFFLE).isAccepted());
+
+        PlaybackQueueEngine.Transition first = engine.next(1L, "shuffle-1");
+        PlaybackQueueEngine.Transition second = engine.next(2L, "shuffle-2");
+        assertEquals(Arrays.asList("one", "three"), Arrays.asList(
+                first.getState().getCurrent().getTrackHandle(),
+                second.getState().getCurrent().getTrackHandle()));
+        PlaybackQueueEngine.Transition nextRound = engine.next(3L, "shuffle-3");
+        PlaybackQueueEngine.Transition roundSecond = engine.next(4L, "shuffle-4");
+        PlaybackQueueEngine.Transition roundThird = engine.next(5L, "shuffle-5");
+        assertNotEquals("three", nextRound.getState().getCurrent().getTrackHandle());
+        assertEquals(Arrays.asList("one", "three", "zero"), sorted(Arrays.asList(
+                nextRound.getState().getCurrent().getTrackHandle(),
+                roundSecond.getState().getCurrent().getTrackHandle(),
+                roundThird.getState().getCurrent().getTrackHandle())));
+    }
+
+    @Test
+    public void previousWalksAcceptedQueueHistoryAndNextUsesItsForwardHistory() {
+        PlaybackQueueEngine engine = engine(base("current", "normal-next"));
+        engine.enqueueNext(0L, track("temporary"));
+        engine.next(1L, "queue-next");
+        engine.next(2L, "base-next");
+
+        PlaybackQueueEngine.Transition previous = engine.previous(3L);
+        PlaybackQueueEngine.Transition forward = engine.next(4L, "forward-history");
+
+        assertEquals("temporary", previous.getState().getCurrent().getTrackHandle());
+        assertEquals("normal-next", forward.getState().getCurrent().getTrackHandle());
+        assertEquals(3, forward.getState().getHistory().size());
+    }
+
+    @Test
+    public void repeatOneAndRetryDoNotConsumeQueueAndCheckpointRestoresExactly() {
+        PlaybackQueueEngine engine = engine(base("current", "normal-next"));
+        engine.enqueueNext(0L, track("queued"));
+        engine.setMode(1L, PlaybackQueueEngine.Mode.REPEAT_ONE);
+
+        PlaybackQueueEngine.Transition repeated = engine.onNaturalEnd(2L, "repeat-one-end");
+        PlaybackQueueEngine.Transition retry = engine.retry(3L);
+        assertEquals("current", repeated.getState().getCurrent().getTrackHandle());
+        assertEquals(Arrays.asList("queued"), trackHandles(repeated.getState().getQueue()));
+        assertEquals(Arrays.asList("queued"), trackHandles(retry.getState().getQueue()));
+
+        PlaybackQueueEngine restored = PlaybackQueueEngine.restore(engine.checkpoint(),
+                new PlaybackQueueEngine.IncrementingIdSource("restored"), new FixedClock(),
+                new PlaybackQueueEngine.SequenceRandom(9L));
+        assertEquals(retry.getRevision(), restored.getState().getRevision());
+        assertEquals(PlaybackQueueEngine.Mode.REPEAT_ONE, restored.getState().getMode());
+        assertEquals(Arrays.asList("queued"), trackHandles(restored.getState().getQueue()));
+        assertTrue(restored.next(4L, "repeat-one-end").isIdempotent());
+    }
+
+    @Test
+    public void terminalFailureAndOneItemShuffleKeepTheSelectedOccurrence() {
+        PlaybackQueueEngine engine = engine(base("only"));
+        assertTrue(engine.setMode(0L, PlaybackQueueEngine.Mode.SHUFFLE).isAccepted());
+        PlaybackQueueEngine.Transition shuffled = engine.next(1L, "one-item-shuffle");
+        PlaybackQueueEngine.Transition failed = engine.onTerminalFailure(2L);
+
+        assertEquals("only", shuffled.getState().getCurrent().getTrackHandle());
+        assertEquals("only", failed.getState().getCurrent().getTrackHandle());
+        assertEquals(shuffled.getState().getHistory().size(), failed.getState().getHistory().size());
+        assertTrue(failed.getState().getQueue().isEmpty());
+    }
+
     private static PlaybackQueueEngine engine(List<PlaybackQueueEngine.Track> base) {
         return new PlaybackQueueEngine(base, 0, PlaybackQueueEngine.Mode.SEQUENTIAL,
                 new PlaybackQueueEngine.IncrementingIdSource("test"), new FixedClock(),
@@ -92,6 +166,12 @@ public final class PlaybackQueueEngineTest {
             handles[index] = occurrences.get(index).getTrackHandle();
         }
         return Arrays.asList(handles);
+    }
+
+    private static List<String> sorted(List<String> values) {
+        String[] sorted = values.toArray(new String[0]);
+        Arrays.sort(sorted);
+        return Arrays.asList(sorted);
     }
 
     private static final class FixedClock implements PlaybackQueueEngine.Clock {
