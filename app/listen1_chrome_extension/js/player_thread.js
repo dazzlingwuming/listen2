@@ -36,6 +36,7 @@
       this._media_url_request_tokens = {};
       this._media_resume_positions = {};
       this._playback_watch = null;
+      this._foreground_playback_proof = null;
       this._playback_diagnostics = [];
       this._playback_session = 0;
       this._audio_output_rebuild_session_by_track = {};
@@ -247,6 +248,14 @@
       return 2;
     }
 
+    static get MAX_MEDIA_URL_CANDIDATES() {
+      return 4;
+    }
+
+    static get FOREGROUND_PROGRESS_TIMEOUT_MS() {
+      return 9000;
+    }
+
     static get MAX_PLAYBACK_RECOVERY_ATTEMPTS() {
       return 3;
     }
@@ -401,6 +410,7 @@
       const markProgress = () => {
         if (isCurrentWatch()) {
           const position = this.getPlaybackPosition(howl);
+          this.confirmForegroundProgress(howl, track, position);
           if (Math.abs(position - watch.lastPosition) <= 0.05) {
             return;
           }
@@ -463,6 +473,7 @@
       }
       const now = Date.now();
       const position = this.getPlaybackPosition(watch.howl);
+      this.confirmForegroundProgress(watch.howl, watch.track, position);
       if (
         this.isOutputOnlyRecovery(watch) &&
         now - watch.outputRecoveryLastAt >=
@@ -1403,7 +1414,145 @@
             .map((url) => (typeof url === 'string' ? url.trim() : ''))
             .filter(Boolean)
         ),
-      ];
+      ].slice(0, Player.MAX_MEDIA_URL_CANDIDATES);
+    }
+
+    static getHowlFormatForDescriptor(descriptor = {}) {
+      if (descriptor.platform !== 'bilibili') {
+        return { supported: true, format: 'mp3' };
+      }
+      const mimeType = String(descriptor.mimeType || '').toLowerCase();
+      const codecs = String(descriptor.codecs || '').trim();
+      const supportedFormats = {
+        'audio/mpeg': 'mp3',
+        'audio/mp3': 'mp3',
+        'audio/mp4': 'm4a',
+        'audio/x-m4a': 'm4a',
+        'audio/aac': 'aac',
+        'audio/ogg': 'ogg',
+        'audio/webm': 'webm',
+      };
+      const format = supportedFormats[mimeType];
+      // Desktop's older Bilibili bootstrap contract did not expose MIME data.
+      // Keep that legacy path unchanged; the typed Android descriptor always
+      // supplies MIME/codec and is therefore checked below.
+      if (!mimeType) return { supported: true, format: 'mp3' };
+      if (!format) return { supported: false, format: '' };
+      if (
+        typeof document !== 'undefined' &&
+        document &&
+        typeof document.createElement === 'function'
+      ) {
+        const audio = document.createElement('audio');
+        if (audio && typeof audio.canPlayType === 'function') {
+          const type = codecs ? `${mimeType}; codecs="${codecs}"` : mimeType;
+          if (!audio.canPlayType(type)) return { supported: false, format: '' };
+        }
+      }
+      return { supported: true, format };
+    }
+
+    emitForegroundPlaybackState(state, proof, position = 0, failure) {
+      if (!proof || !proof.trackId) return;
+      playerSendMessage(this.mode, {
+        type: 'BG_PLAYER:FOREGROUND_PLAYBACK_STATE',
+        data: {
+          state,
+          trackId: proof.trackId,
+          selectedCid: proof.selectedCid,
+          requestToken: proof.requestToken,
+          position: Number.isFinite(position) ? Math.max(0, position) : 0,
+          ...(failure ? { failure } : {}),
+        },
+      });
+    }
+
+    clearForegroundPlaybackProof(trackId) {
+      const proof = this._foreground_playback_proof;
+      if (!proof || (trackId && proof.trackId !== trackId)) return;
+      if (proof.timeoutId) clearTimeout(proof.timeoutId);
+      this._foreground_playback_proof = null;
+    }
+
+    isCurrentForegroundPlaybackProof(howl, track, proof) {
+      return Boolean(
+        proof &&
+          this._foreground_playback_proof === proof &&
+          this.currentHowl === howl &&
+          this.currentAudio === track &&
+          track &&
+          track.id === proof.trackId &&
+          this.index === proof.index
+      );
+    }
+
+    beginForegroundPlaybackProof(index, track, descriptor = {}) {
+      if (!track || descriptor.platform !== 'bilibili') return null;
+      this.clearForegroundPlaybackProof();
+      const proof = {
+        index,
+        trackId: track.id,
+        selectedCid: Number(descriptor.selectedCid || descriptor.cid || 0),
+        requestToken: Number(descriptor.requestToken || 0),
+        state: 'resolving',
+        timeoutId: null,
+      };
+      this._foreground_playback_proof = proof;
+      this.emitForegroundPlaybackState('resolving', proof);
+      return proof;
+    }
+
+    armForegroundProgressTimeout(howl, track) {
+      const proof = this._foreground_playback_proof;
+      if (!this.isCurrentForegroundPlaybackProof(howl, track, proof)) return;
+      if (proof.timeoutId) clearTimeout(proof.timeoutId);
+      proof.timeoutId = setTimeout(() => {
+        if (!this.isCurrentForegroundPlaybackProof(howl, track, proof)) return;
+        const position = this.getPlaybackPosition(howl);
+        if (position > 0) {
+          this.confirmForegroundProgress(howl, track, position);
+          return;
+        }
+        const failure = Player.createPlaybackFailure(
+          'foreground-progress',
+          'no-progress',
+          false,
+          1
+        );
+        proof.state = 'error';
+        this.emitForegroundPlaybackState('error', proof, 0, failure);
+        this.handleMediaLoadError(this.index, track, true, failure, howl);
+      }, Player.FOREGROUND_PROGRESS_TIMEOUT_MS);
+    }
+
+    confirmForegroundProgress(howl, track, position) {
+      const proof = this._foreground_playback_proof;
+      if (
+        !this.isCurrentForegroundPlaybackProof(howl, track, proof) ||
+        proof.state === 'playing' ||
+        !Number.isFinite(position) ||
+        position <= 0
+      ) {
+        return false;
+      }
+      if (proof.timeoutId) clearTimeout(proof.timeoutId);
+      proof.timeoutId = null;
+      proof.state = 'playing';
+      this.emitForegroundPlaybackState('playing', proof, position);
+      return true;
+    }
+
+    markForegroundPlaybackPaused(howl, track) {
+      const proof = this._foreground_playback_proof;
+      if (!this.isCurrentForegroundPlaybackProof(howl, track, proof)) return;
+      if (proof.timeoutId) clearTimeout(proof.timeoutId);
+      proof.timeoutId = null;
+      proof.state = 'paused';
+      this.emitForegroundPlaybackState(
+        'paused',
+        proof,
+        this.getPlaybackPosition(howl)
+      );
     }
 
     setMediaRetryState(track, candidates, options = {}) {
@@ -1418,6 +1567,7 @@
         audioCacheKey: options.audioCacheKey || '',
         fromAudioCache: options.fromAudioCache === true,
         localBypassAttempted: options.localBypassAttempted === true,
+        descriptor: options.descriptor || null,
       };
     }
 
@@ -1522,6 +1672,7 @@
     unloadTrackHowl(track) {
       if (track && track.howl === this.currentHowl) {
         this.clearPlaybackWatch();
+        this.clearForegroundPlaybackProof(track.id);
       }
       if (track && track.howl && typeof track.howl.unload === 'function') {
         track.howl.unload();
@@ -1543,6 +1694,7 @@
       }
 
       const retryState = this._media_retry_state[data.id];
+      const proof = this._foreground_playback_proof;
       if (
         retryState &&
         retryState.fromAudioCache &&
@@ -1577,6 +1729,11 @@
           retryState.candidates[retryState.candidateIndex],
           data.id
         );
+        this.beginForegroundPlaybackProof(
+          index,
+          data,
+          retryState.descriptor || {}
+        );
         this.finishLoad(index, playNow);
         return;
       }
@@ -1594,6 +1751,21 @@
       }
 
       this.sendPlaybackFailure('media-load', 'load-failed', false, 1, error);
+      if (proof && proof.trackId === data.id) {
+        proof.state = 'error';
+        this.emitForegroundPlaybackState(
+          'error',
+          proof,
+          this.getPlaybackPosition(sourceHowl),
+          Player.createPlaybackFailure(
+            'media-load',
+            'load-failed',
+            false,
+            1,
+            error
+          )
+        );
+      }
       this.setAudioDisabled(true, index);
       this.sendPlayingEvent('err');
       this.unloadTrackHowl(data);
@@ -1663,15 +1835,56 @@
               return;
             }
             this.clearMediaUrlRetryTimer(track.id);
+            const descriptor = {
+              platform: bootinfo.platform || msg.data.platform || '',
+              mimeType:
+                (bootinfo.audioCacheDescriptor &&
+                  bootinfo.audioCacheDescriptor.mimeType) ||
+                bootinfo.mimeType ||
+                '',
+              codecs:
+                (bootinfo.audioCacheDescriptor &&
+                  bootinfo.audioCacheDescriptor.codecs) ||
+                bootinfo.codecs ||
+                '',
+              selectedCid:
+                (bootinfo.audioCacheDescriptor &&
+                  bootinfo.audioCacheDescriptor.cid) ||
+                0,
+              requestToken,
+            };
+            const howlFormat = Player.getHowlFormatForDescriptor(descriptor);
+            if (!howlFormat.supported) {
+              this.setAudioDisabled(true, msg.data.index);
+              this.sendPlaybackFailure(
+                'media-format',
+                'no-compatible-audio-stream',
+                false,
+                1
+              );
+              this.clearMediaRetryState(track.id);
+              this.invalidateMediaUrlRequest(track.id);
+              return;
+            }
+            this.playlist[index]._foreground_playback_descriptor = {
+              ...descriptor,
+              format: howlFormat.format,
+            };
             this.setMediaRetryState(msg.data, urlCandidates, {
               canForceRefresh:
                 bootinfo.platform === 'bilibili' &&
                 String(msg.data.id || '').startsWith('bitrack_v_'),
               forceRefreshAttempted: options.forceRefresh === true,
               localBypassAttempted: options.localBypassAttempted === true,
+              descriptor: this.playlist[index]._foreground_playback_descriptor,
             });
             this.setMediaURI(urlCandidates[0], msg.data.id);
             this.setAudioDisabled(false, msg.data.index);
+            this.beginForegroundPlaybackProof(
+              msg.data.index,
+              this.playlist[index],
+              this.playlist[index]._foreground_playback_descriptor
+            );
             this.finishLoad(msg.data.index, playNow);
             playerSendMessage(this.mode, msg);
             this.invalidateMediaUrlRequest(track.id);
@@ -1765,6 +1978,7 @@
       if (index !== this.index) {
         this.finishListeningHistory();
         this.clearPlaybackWatch();
+        this.clearForegroundPlaybackProof();
         if (previousTrack) {
           this.clearMediaUrlRetryTimer(previousTrack.id);
           this.invalidateMediaUrlRequest(previousTrack.id);
@@ -1790,7 +2004,10 @@
           self.index === index;
         createdHowl = new Howl({
           src: [self._media_uri_list[data.url || data.id]],
-          format: 'mp3', // bypass Howl checking url extension, issue #1200
+          format:
+            (data._foreground_playback_descriptor &&
+              data._foreground_playback_descriptor.format) ||
+            'mp3', // Preserve the legacy default for non-Bilibili providers.
           volume: 1,
           mute: self.muted,
           html5: true, // Force to HTML5 so that the audio can stream in (best for large files).
@@ -1804,6 +2021,7 @@
               delete self._media_resume_positions[data.id];
             }
             self.beginPlaybackWatch(data.howl, data);
+            self.armForegroundProgressTimeout(data.howl, data);
             self.beginListeningHistory(data);
             prepareAudioAnalysis(self.currentHowl);
             if (navigator.mediaSession) {
@@ -1923,6 +2141,7 @@
               return;
             }
             self.clearPlaybackWatch();
+            self.markForegroundPlaybackPaused(data.howl, data);
             self.pauseListeningHistory();
             if (navigator.mediaSession) {
               navigator.mediaSession.playbackState = 'paused';
@@ -1934,6 +2153,7 @@
               return;
             }
             self.clearPlaybackWatch();
+            self.clearForegroundPlaybackProof(data.id);
             self.finishListeningHistory();
             self.sendPlayingEvent('Stopped');
           },
