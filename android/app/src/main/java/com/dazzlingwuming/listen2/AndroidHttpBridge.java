@@ -36,7 +36,11 @@ final class AndroidHttpBridge {
     private static final int CONNECT_TIMEOUT_MILLIS = 10_000;
     private static final int READ_TIMEOUT_MILLIS = 15_000;
     private static final String ACCEPT_HEADER = "application/json, text/plain, */*";
-    private static final String USER_AGENT = "Listen2Android/2.34";
+    // The native client uses the same browser family as the hosted WebView;
+    // callers still cannot supply or alter this header.
+    private static final String USER_AGENT = "Mozilla/5.0 (Linux; Android 15; Pixel 7) "
+            + "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.219 "
+            + "Mobile Safari/537.36";
 
     private static final long TYPED_DEADLINE_MILLIS = 25_000L;
     private final ThreadPoolExecutor networkExecutor;
@@ -462,7 +466,8 @@ final class AndroidHttpBridge {
         // authenticated access.
         if (request.operation == AndroidRpcContract.Operation.BILIBILI_SEARCH
                 && reply.terminal == AndroidRpcContract.Terminal.ERROR
-                && "PROVIDER_STATUS".equals(reply.errorCode)) {
+                && ("PROVIDER_STATUS".equals(reply.errorCode)
+                        || "BILIBILI_ANONYMOUS_COOKIE_UNAVAILABLE".equals(reply.errorCode))) {
             return executeTypedMetadataOperation(request, key, false);
         }
         return reply;

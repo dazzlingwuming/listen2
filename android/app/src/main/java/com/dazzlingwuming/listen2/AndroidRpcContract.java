@@ -285,9 +285,19 @@ final class AndroidRpcContract {
 
     private static String plainText(String value) {
         if (value == null || value.isEmpty() || value.length() > MAX_TEXT_LENGTH
-                || value.indexOf('<') >= 0 || value.indexOf('>') >= 0
                 || value.indexOf('\u0000') >= 0) return null;
-        return value;
+        // Video-search titles legitimately include this provider-owned emphasis
+        // markup around the matched term. Remove only that exact inert tag;
+        // any other markup remains an invalid provider response.
+        String normalized = value
+                .replaceAll("(?i)<em\\s+class=[\\\"']keyword[\\\"']\\s*>", "")
+                .replaceAll("(?i)</em\\s*>", "");
+        if (normalized.indexOf('<') >= 0 || normalized.indexOf('>') >= 0) return null;
+        return normalized.replace("&amp;", "&")
+                .replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("&quot;", "\"")
+                .replace("&#39;", "'");
     }
 
     private static String normalizeCover(String value) {

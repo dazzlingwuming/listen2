@@ -54,4 +54,22 @@ public final class AndroidRpcContractTest {
                 "manifest", 3, "BV1xx411c7mD", "default-first", 123L));
     }
 
+    @Test
+    public void searchProjectionAllowsOnlyProviderKeywordEmphasisMarkup() throws Exception {
+        AndroidRpcContract.TypedRequest request = new AndroidRpcContract.TypedRequest(
+                "search", 1, AndroidRpcContract.Operation.BILIBILI_SEARCH, "test", 1);
+        String highlighted = "{\"code\":0,\"data\":{\"result\":[{\"bvid\":\"BV1xx411c7mD\","
+                + "\"title\":\"<em class=\\\"keyword\\\">Test</em> &amp; More\","
+                + "\"author\":\"Author\",\"pic\":\"//i0.hdslb.com/test.jpg\"}],\"numResults\":1}}";
+        AndroidRpcContract.ProjectionResult accepted =
+                AndroidRpcContract.projectSearchResponse(request, highlighted);
+        assertTrue(accepted.isValid());
+        assertEquals("Test & More", accepted.result.getJSONArray("rows")
+                .getJSONObject(0).getString("title"));
+
+        String unsafe = highlighted.replace("<em class=\\\"keyword\\\">Test</em>",
+                "<script>Test</script>");
+        assertFalse(AndroidRpcContract.projectSearchResponse(request, unsafe).isValid());
+    }
+
 }
