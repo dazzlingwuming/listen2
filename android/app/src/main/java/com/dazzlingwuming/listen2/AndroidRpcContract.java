@@ -206,38 +206,15 @@ final class AndroidRpcContract {
             }
             JSONArray rows = new JSONArray();
             for (int index = 0; index < results.length(); index += 1) {
-                JSONObject item = results.optJSONObject(index);
-                if (item == null) return ProjectionResult.error("MALFORMED_PROVIDER_RESPONSE");
-                String bvid = item.optString("bvid", "");
-                String title = plainText(item.optString("title", ""));
-                String author = plainText(item.optString("author", ""));
-                if (!isSafeBvid(bvid) || title == null || author == null) {
-                    return ProjectionResult.error("MALFORMED_PROVIDER_RESPONSE");
-                }
-                JSONObject row = new JSONObject();
-                row.put("source", "bilibili");
-                row.put("provider", "bilibili");
-                row.put("id", "bitrack_v_" + bvid);
-                row.put("bvid", bvid);
-                row.put("title", title);
-                row.put("author", author);
-                if (item.opt("mid") instanceof Number
-                        && ((Number) item.opt("mid")).longValue() >= 0) {
-                    row.put("authorId", ((Number) item.opt("mid")).longValue());
-                }
-                row.put("type", "video");
-                row.put("capability", "part-selection-required");
-                String cover = item.optString("pic", "");
-                if (!cover.isEmpty()) {
-                    String normalizedCover = normalizeCover(cover);
-                    if (normalizedCover == null) return ProjectionResult.error("MALFORMED_PROVIDER_RESPONSE");
-                    row.put("cover", normalizedCover);
-                }
-                Object duration = item.opt("duration");
-                if (duration instanceof String && ((String) duration).length() <= 32) {
-                    row.put("duration", duration);
-                }
-                rows.put(row);
+                // Current public search pages can include non-video promotion
+                // rows alongside real videos. They have no usable BVID and
+                // must never become selectable tracks, but one such row must
+                // not discard otherwise valid, independently projected rows.
+                JSONObject row = projectSearchRow(results.optJSONObject(index));
+                if (row != null) rows.put(row);
+            }
+            if (results.length() > 0 && rows.length() == 0) {
+                return ProjectionResult.error("MALFORMED_PROVIDER_RESPONSE");
             }
             int total = data.opt("numResults") instanceof Number
                     ? Math.max(0, ((Number) data.opt("numResults")).intValue()) : rows.length();
@@ -249,6 +226,38 @@ final class AndroidRpcContract {
         } catch (JSONException ignored) {
             return ProjectionResult.error("MALFORMED_PROVIDER_RESPONSE");
         }
+    }
+
+    /** Projects one independently safe, directly playable Bilibili video row. */
+    private static JSONObject projectSearchRow(JSONObject item) throws JSONException {
+        if (item == null) return null;
+        String bvid = item.optString("bvid", "");
+        String title = plainText(item.optString("title", ""));
+        String author = plainText(item.optString("author", ""));
+        if (!isSafeBvid(bvid) || title == null || author == null) return null;
+
+        String cover = item.optString("pic", "");
+        String normalizedCover = cover.isEmpty() ? null : normalizeCover(cover);
+        if (!cover.isEmpty() && normalizedCover == null) return null;
+
+        JSONObject row = new JSONObject();
+        row.put("source", "bilibili");
+        row.put("provider", "bilibili");
+        row.put("id", "bitrack_v_" + bvid);
+        row.put("bvid", bvid);
+        row.put("title", title);
+        row.put("author", author);
+        if (item.opt("mid") instanceof Number && ((Number) item.opt("mid")).longValue() >= 0) {
+            row.put("authorId", ((Number) item.opt("mid")).longValue());
+        }
+        row.put("type", "video");
+        row.put("capability", "part-selection-required");
+        if (normalizedCover != null) row.put("cover", normalizedCover);
+        Object duration = item.opt("duration");
+        if (duration instanceof String && ((String) duration).length() <= 32) {
+            row.put("duration", duration);
+        }
+        return row;
     }
 
     static TypedReply reply(TypedRequest request, Terminal terminal, int status,

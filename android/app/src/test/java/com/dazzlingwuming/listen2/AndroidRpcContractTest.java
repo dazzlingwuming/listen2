@@ -72,4 +72,26 @@ public final class AndroidRpcContractTest {
         assertFalse(AndroidRpcContract.projectSearchResponse(request, unsafe).isValid());
     }
 
+    @Test
+    public void searchProjectionSkipsNonVideoRowsWhileRetainingSafeVideoRows() throws Exception {
+        AndroidRpcContract.TypedRequest request = new AndroidRpcContract.TypedRequest(
+                "search", 1, AndroidRpcContract.Operation.BILIBILI_SEARCH, "live", 1);
+        String mixed = "{\"code\":0,\"data\":{\"result\":["
+                + "{\"bvid\":\"BV1xx411c7mD\",\"title\":\"Safe video\","
+                + "\"author\":\"Author\",\"pic\":\"//i0.hdslb.com/safe.jpg\"},"
+                + "{\"bvid\":\"\",\"title\":\"Provider promotion\","
+                + "\"author\":\"Provider\",\"pic\":\"//i0.hdslb.com/promotion.jpg\"},"
+                + "{\"bvid\":\"not-a-bvid\",\"title\":\"Malformed row\","
+                + "\"author\":\"Provider\"}],\"numResults\":3}}";
+
+        AndroidRpcContract.ProjectionResult projected =
+                AndroidRpcContract.projectSearchResponse(request, mixed);
+
+        assertTrue(projected.isValid());
+        assertEquals(3, projected.result.getInt("total"));
+        assertEquals(1, projected.result.getJSONArray("rows").length());
+        assertEquals("BV1xx411c7mD", projected.result.getJSONArray("rows")
+                .getJSONObject(0).getString("bvid"));
+    }
+
 }
