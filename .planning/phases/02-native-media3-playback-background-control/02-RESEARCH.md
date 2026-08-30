@@ -53,8 +53,8 @@ Keep the product's FIFO play-next and real-history semantics outside Media3's or
 
 | Library | Version | Purpose | Why standard |
 |---|---:|---|---|
-| `androidx.media3:media3-exoplayer` | `1.11.0` | Service-owned audio player and player event source. | The official Media3 release page names this artifact and current stable version. [CITED: https://developer.android.com/jetpack/androidx/releases/media3] |
-| `androidx.media3:media3-session` | `1.11.0` | `MediaSessionService`, system media session, notification/controller integration. | Android's background-playback guide specifies a `MediaSessionService` around the player/session. [CITED: https://developer.android.com/media/media3/session/background-playback] |
+| `androidx.media3:media3-exoplayer` | `1.9.4` | Service-owned audio player and player event source. | This is the newest verified line whose official Google Maven AAR metadata allows the project's current `compileSdk 35`; current stable `1.11.0` requires `minCompileSdk=36`. [CITED: https://developer.android.com/jetpack/androidx/releases/media3] [VERIFIED: Google Maven AAR metadata, 2026-08-31] |
+| `androidx.media3:media3-session` | `1.9.4` | `MediaSessionService`, system media session, notification/controller integration. | Keep all Media3 artifacts on the same API-35-compatible line; Android's background-playback guide specifies a `MediaSessionService` around the player/session. [CITED: https://developer.android.com/media/media3/session/background-playback] [VERIFIED: `.planning/research/STACK.md`] |
 | `androidx.room:room-runtime` + `room-compiler` | `2.8.4` | Durable queue/context/checkpoint records and migration path. | Official Room release notes list `2.8.4`; Room is intended for relational data access. [CITED: https://developer.android.com/jetpack/androidx/releases/room] [CITED: https://developer.android.com/training/data-storage/room] |
 
 ### Supporting
@@ -75,7 +75,7 @@ Keep the product's FIFO play-next and real-history semantics outside Media3's or
 **Installation (Groovy):**
 
 ```groovy
-def media3Version = '1.11.0'
+def media3Version = '1.9.4'
 def roomVersion = '2.8.4'
 implementation "androidx.media3:media3-exoplayer:$media3Version"
 implementation "androidx.media3:media3-session:$media3Version"
@@ -85,7 +85,7 @@ testImplementation "androidx.room:room-testing:$roomVersion"
 implementation 'androidx.datastore:datastore-preferences:1.2.1'
 ```
 
-The artifact/version coordinates and Java-only `annotationProcessor` wiring are confirmed by official Android documentation; keep the first implementation task's dependency-resolution build as the integration check. [CITED: https://developer.android.com/jetpack/androidx/releases/media3] [CITED: https://developer.android.com/jetpack/androidx/releases/room] [CITED: https://developer.android.com/topic/libraries/architecture/datastore]
+The artifact coordinates and Java-only `annotationProcessor` wiring are confirmed by official Android documentation. Media3 `1.9.4` is intentionally below the current stable line: official AAR metadata reports `minCompileSdk=35` for `1.9.4` and `36` for `1.11.0`, while this app compiles against API 35. Keep the first implementation task's dependency-resolution build as the integration check, and reassess the latest Media3 only with an explicitly planned API-36 toolchain upgrade. [CITED: https://developer.android.com/jetpack/androidx/releases/media3] [CITED: https://developer.android.com/jetpack/androidx/releases/room] [CITED: https://developer.android.com/topic/libraries/architecture/datastore] [VERIFIED: Google Maven AAR metadata, 2026-08-31]
 
 ## Package Legitimacy Audit
 
