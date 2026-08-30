@@ -146,6 +146,27 @@ function run() {
   });
   assert.strictEqual(searchScope.bilibiliSearch.state, 'content');
   assert.strictEqual(searchScope.result[0].title, '<unsafe>');
+  searchScope.keywords = 'unavailable';
+  searchScope.submitBilibiliSearch();
+  searchHandles[2].resolve({
+    result: [],
+    total: 0,
+    error: { status: 'android-rpc-provider-status' },
+  });
+  assert.strictEqual(
+    searchScope.bilibiliSearch.state,
+    'error',
+    'provider failures must remain retryable errors rather than empty results'
+  );
+  assert.strictEqual(
+    searchScope.result.length,
+    1,
+    'prior rows remain available after a failed retry'
+  );
+  assert.strictEqual(
+    searchScope.bilibiliSearch.message,
+    '匿名请求暂时被来源拒绝'
+  );
   searchScope.openBilibiliDetail(searchScope.result[0]);
   assert.strictEqual(searchScope.bilibiliDetail.state, 'loading');
   detailHandles[0].resolve({

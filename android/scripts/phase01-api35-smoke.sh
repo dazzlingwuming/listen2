@@ -96,6 +96,10 @@ prepare_cdp() {
   "$ADB" -s "$SERIAL" shell cat /proc/net/unix 2>/dev/null | grep -q "@$socket" || die "debug WebView socket is unavailable" 72
   timeout_run 20 "$ADB" -s "$SERIAL" forward "tcp:$PORT" "localabstract:$socket" || die "CDP forward failed" 72
   FORWARD_CREATED=1
+  "$ADB" -s "$SERIAL" shell uiautomator dump /sdcard/listen2-phase01-window.xml >/dev/null
+  WEBVIEW_TOP_PX="$("$ADB" -s "$SERIAL" exec-out cat /sdcard/listen2-phase01-window.xml | sed -n '/class="android.webkit.WebView"/s/.*bounds="\[[0-9][0-9]*,\([0-9][0-9]*\)\].*/\1/p' | head -n 1)"
+  "$ADB" -s "$SERIAL" shell rm /sdcard/listen2-phase01-window.xml >/dev/null 2>&1 || true
+  [[ "$WEBVIEW_TOP_PX" =~ ^[0-9]+$ ]] || die "could not determine WebView input inset" 72
 }
 write_blocked_evidence() {
   local evidence="$1" reason="$2"; mkdir -p "$(dirname "$evidence")"
@@ -135,10 +139,18 @@ run_live() {
   ORIGINAL_FONT_SCALE="$(device_field 'settings get system font_scale')"; ORIGINAL_ROTATION="$(device_field 'settings get system accelerometer_rotation')"
   prepare_cdp; mkdir -p "$EVIDENCE_DIR"
   set +e
-  PHASE01_GIT_SHA="$GIT_SHA" PHASE01_APK_SHA="$APK_SHA" PHASE01_SERIAL="$SERIAL" PHASE01_API="$API" PHASE01_ABI="$ABI" PHASE01_WEBVIEW="$WEBVIEW" PHASE01_NETWORK="$NETWORK" \
+  PHASE01_GIT_SHA="$GIT_SHA" PHASE01_APK_SHA="$APK_SHA" PHASE01_SERIAL="$SERIAL" PHASE01_API="$API" PHASE01_ABI="$ABI" PHASE01_WEBVIEW="$WEBVIEW" PHASE01_NETWORK="$NETWORK" PHASE01_WEBVIEW_TOP_PX="$WEBVIEW_TOP_PX" \
     node "$ROOT/android/scripts/phase01-webview-smoke.mjs" --run --port "$PORT" --screenshots "$EVIDENCE_DIR" --evidence "$evidence"
   local result=$?; set -e
-  if [[ "$result" != "0" ]]; then [[ -f "$evidence" ]] || write_blocked_evidence "$evidence" "live CDP journey failed or provider was unavailable"; echo "BLOCKED: live provider/device journey was not verified" >&2; return "$result"; fi
+  if [[ "$result" != "0" ]]; then
+    if [[ "$result" == "76" ]]; then
+      write_blocked_evidence "$evidence" "current anonymous Bilibili search was rejected by provider"
+    else
+      write_blocked_evidence "$evidence" "live CDP journey failed or provider was unavailable"
+    fi
+    echo "BLOCKED: live provider/device journey was not verified" >&2
+    return "$result"
+  fi
   "$0" --verify-evidence "$evidence"
 }
 self_test() {

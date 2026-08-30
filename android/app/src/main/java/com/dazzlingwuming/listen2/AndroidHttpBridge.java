@@ -455,6 +455,22 @@ final class AndroidHttpBridge {
         if (request.operation == AndroidRpcContract.Operation.BILIBILI_AUDIO_MANIFEST) {
             return executeTypedManifest(request, key);
         }
+        AndroidRpcContract.TypedReply reply = executeTypedMetadataOperation(request, key, true);
+        // A provider-status response can reject an otherwise valid anonymous
+        // fingerprint. Retry the same closed search operation once without
+        // sending any cookie; this neither broadens the route nor grants
+        // authenticated access.
+        if (request.operation == AndroidRpcContract.Operation.BILIBILI_SEARCH
+                && reply.terminal == AndroidRpcContract.Terminal.ERROR
+                && "PROVIDER_STATUS".equals(reply.errorCode)) {
+            return executeTypedMetadataOperation(request, key, false);
+        }
+        return reply;
+    }
+
+    private AndroidRpcContract.TypedReply executeTypedMetadataOperation(
+            AndroidRpcContract.TypedRequest request, BridgeRequestRegistry.RequestKey key,
+            boolean includeAnonymousCookie) {
         HttpsURLConnection connection = null;
         try {
             java.net.URI uri = request.operation == AndroidRpcContract.Operation.BILIBILI_SEARCH
@@ -467,14 +483,17 @@ final class AndroidHttpBridge {
             }
             connection.setRequestMethod("GET");
             configureConnection(connection, HttpBridgePolicy.RequestRoute.BILIBILI_GET);
-            String cookieHeader = resolveCookieHeader(
-                    HttpBridgePolicy.ValidationResult.valid(uri, HttpBridgePolicy.RequestRoute.BILIBILI_GET),
-                    uri.toASCIIString());
-            if (cookieHeader == null) {
-                return AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.ERROR, 0,
-                        null, "BILIBILI_ANONYMOUS_COOKIE_UNAVAILABLE");
+            if (includeAnonymousCookie) {
+                String cookieHeader = resolveCookieHeader(
+                        HttpBridgePolicy.ValidationResult.valid(
+                                uri, HttpBridgePolicy.RequestRoute.BILIBILI_GET),
+                        uri.toASCIIString());
+                if (cookieHeader == null) {
+                    return AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.ERROR, 0,
+                            null, "BILIBILI_ANONYMOUS_COOKIE_UNAVAILABLE");
+                }
+                connection.setRequestProperty("Cookie", cookieHeader);
             }
-            connection.setRequestProperty("Cookie", cookieHeader);
             int status = connection.getResponseCode();
             if (status >= 300 && status < 400) {
                 return AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.ERROR, status,

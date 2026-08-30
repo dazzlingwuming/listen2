@@ -30,6 +30,7 @@ angular.module('listenone').controller('InstantSearchController', [
             'android-rpc-tls': '无法建立安全连接',
             'android-rpc-timeout': '搜索超时',
             'android-rpc-malformed': '搜索结果暂时无法识别',
+            'android-rpc-provider-status': '匿名请求暂时被来源拒绝',
           };
       return (
         messages[status] ||
@@ -215,6 +216,20 @@ angular.module('listenone').controller('InstantSearchController', [
       consume(
         handle,
         (data) => {
+          if (data && data.error) {
+            if (
+              !settleSearch(
+                epoch,
+                query,
+                $scope.curpage,
+                'error',
+                messageFor(data.error, false)
+              )
+            )
+              return;
+            $scope.result = $scope.bilibiliSearch.priorRows.slice();
+            return;
+          }
           if (!settleSearch(epoch, query, $scope.curpage, 'content')) return;
           const rows = decorate(data && data.result);
           $scope.result = rows;

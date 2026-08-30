@@ -259,6 +259,7 @@ const Listen2AndroidHttpAdapter = (() => {
       EXPIRED_STREAM: 'android-rpc-unavailable-stream',
       UNSUPPORTED_CODEC: 'android-rpc-unsupported-codec',
       MALFORMED_PROVIDER_RESPONSE: 'android-rpc-malformed-response',
+      PROVIDER_STATUS: 'android-rpc-provider-status',
       IDENTITY_MISMATCH: 'android-rpc-malformed-response',
     };
     const code = codeByNativeCode[safeCode] || fallbackCode;

@@ -1998,6 +1998,7 @@ class bilibili {
       'android-rpc-unavailable-stream': 'unavailable-stream',
       'android-rpc-unsupported-codec': 'unsupported-codec',
       'android-rpc-malformed-response': 'malformed-response',
+      'android-rpc-provider-status': 'provider-status',
     };
     const kind = kindByCode[sourceCode] || fallback.kind || 'unavailable';
     const messages = {
@@ -2010,6 +2011,8 @@ class bilibili {
       'unavailable-stream': 'No playable Bilibili audio stream is available.',
       'unsupported-codec': 'This Bilibili audio format is not supported.',
       'malformed-response': 'Bilibili returned an invalid response.',
+      'provider-status':
+        'Bilibili temporarily rejected this anonymous request.',
       unavailable: 'The Bilibili media request failed.',
     };
     return {
