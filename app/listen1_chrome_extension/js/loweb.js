@@ -102,6 +102,23 @@ function getProviderByItemId(itemId) {
   return (PROVIDERS.find((i) => i.id === prefix) || {}).instance;
 }
 
+function getAndroidTypedAdapter() {
+  if (typeof window === 'undefined') return null;
+  const adapter = window.Listen2AndroidHttpAdapter;
+  if (
+    !adapter ||
+    typeof adapter.isAvailable !== 'function' ||
+    typeof adapter.request !== 'function'
+  ) {
+    return null;
+  }
+  try {
+    return adapter.isAvailable() ? adapter : null;
+  } catch (error) {
+    return null;
+  }
+}
+
 /* cache for all playlist request except myplaylist and localmusic */
 const playlistCache = new LRUCache({
   max: 100,
@@ -368,7 +385,10 @@ const MediaService = {
       duration: trackInfo.duration,
       source_url: trackInfo.source_url || trackInfo.sourceUrl || '',
     })}`;
-    return provider.lyric(url);
+    return provider.lyric(url, {
+      pageEpoch: trackInfo.pageEpoch,
+      trackInfo,
+    });
   },
 
   getAudioCacheLookup(track) {
@@ -590,6 +610,47 @@ const MediaService = {
   },
 
   getPersistentLyric(track) {
+    const androidAdapter = getAndroidTypedAdapter();
+    const provider = getProviderByItemId((track && track.id) || '');
+    if (
+      androidAdapter &&
+      provider &&
+      typeof provider.get_android_lyric_identity === 'function'
+    ) {
+      const identity = provider.get_android_lyric_identity(track || {});
+      if (!identity) {
+        return Promise.resolve({
+          ok: false,
+          status: 'invalid-selection',
+          record: null,
+        });
+      }
+      const pageEpoch = Number.isInteger(track && track.pageEpoch)
+        ? track.pageEpoch
+        : 0;
+      const handle = androidAdapter.request('lyric.selection.get', identity, {
+        pageEpoch,
+      });
+      return handle.promise.then(
+        (response) => ({
+          ok: true,
+          status: 'loaded',
+          record: (response && response.result) || null,
+          result: (response && response.result) || null,
+          requestId: handle.requestId,
+          pageEpoch: handle.pageEpoch,
+          cancel: handle.cancel,
+        }),
+        (error) => ({
+          ok: false,
+          status: (error && error.code) || 'android-rpc-failed',
+          record: null,
+          requestId: handle.requestId,
+          pageEpoch: handle.pageEpoch,
+          cancel: handle.cancel,
+        })
+      );
+    }
     const ipcRenderer = getDesktopLocalDataIpcRenderer();
     if (!ipcRenderer || !track || !track.id) {
       return Promise.resolve({
@@ -728,10 +789,14 @@ const MediaService = {
       return Promise.resolve([]);
     }
     return provider.search_lyric_candidates({
+      id: trackInfo.id,
       query,
       title: trackInfo.title,
       artist: trackInfo.artist,
       duration: trackInfo.duration,
+      nativeLyricIdentity: trackInfo.nativeLyricIdentity,
+      lyricIdentity: trackInfo.lyricIdentity,
+      pageEpoch: trackInfo.pageEpoch,
     });
   },
 
@@ -876,6 +941,14 @@ const MediaService = {
     const provider = getProviderByItemId(trackId);
     if (provider && typeof provider.clear_manual_lyric === 'function') {
       return provider.clear_manual_lyric(trackId, trackInfo);
+    }
+    return { ok: false, status: 'unsupported' };
+  },
+
+  setLyricOffset(trackId, offsetMs, trackInfo = {}) {
+    const provider = getProviderByItemId(trackId);
+    if (provider && typeof provider.set_lyric_offset === 'function') {
+      return provider.set_lyric_offset(trackId, offsetMs, trackInfo);
     }
     return { ok: false, status: 'unsupported' };
   },

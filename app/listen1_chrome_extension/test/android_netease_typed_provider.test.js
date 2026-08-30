@@ -174,6 +174,210 @@ async function run() {
     },
   });
 
+  const booted = new Promise((resolve) => {
+    provider.bootstrap_track(
+      { id: 'netrack_42', source: 'netease' },
+      (value) => resolve({ success: value }),
+      (error) => resolve({ error }),
+      { pageEpoch: 10, selectionRevision: 3 }
+    );
+  });
+  assert.strictEqual(bridge.posted[4].operation, 'netease.rendition.default');
+  assert.deepStrictEqual(toPlain(bridge.posted[4].payload), {
+    trackId: '42',
+    selectionRevision: 3,
+  });
+  bridge.emit({
+    version: 2,
+    terminal: 'error',
+    requestId: bridge.posted[4].requestId,
+    pageEpoch: 10,
+    status: 0,
+    error: 'NETEASE_ROUTE_UNAVAILABLE',
+  });
+  assert.deepStrictEqual(toPlain(await booted), {
+    error: {
+      status: 'android-rpc-unavailable-route',
+      message: 'NetEase is unavailable on this Android device.',
+    },
+  });
+
+  const lyric = provider.lyric('/lyric?track_id=netrack_42', {
+    pageEpoch: 11,
+    trackInfo: {
+      id: 'netrack_42',
+      nativeLyricIdentity: {
+        selectionIdentity: 'occurrence-42',
+        selectionRevision: 3,
+        selectionToken: 'selection-42',
+      },
+    },
+  });
+  const lyricResult = new Promise((resolve) => lyric.success(resolve));
+  assert.strictEqual(bridge.posted[5].operation, 'netease.lyric.primary');
+  assert.deepStrictEqual(toPlain(bridge.posted[5].payload), {
+    trackId: '42',
+    selectionIdentity: 'occurrence-42',
+    selectionRevision: 3,
+    selectionToken: 'selection-42',
+  });
+  bridge.emit({
+    version: 2,
+    terminal: 'ok',
+    requestId: bridge.posted[5].requestId,
+    pageEpoch: 11,
+    status: 200,
+    result: { lyric: '[00:00.00]typed lyric', tlyric: '[00:00.00]翻译' },
+  });
+  assert.deepStrictEqual(toPlain(await lyricResult), {
+    lyric: '[00:00.00]typed lyric',
+    tlyric: '[00:00.00]翻译',
+    source: 'netease',
+  });
+
+  const selection = provider.save_manual_lyric(
+    'netrack_42',
+    { id: 'manual-42' },
+    {
+      pageEpoch: 12,
+      nativeLyricIdentity: {
+        selectionIdentity: 'occurrence-42',
+        selectionRevision: 3,
+        selectionToken: 'selection-42',
+      },
+    }
+  );
+  assert.strictEqual(bridge.posted[6].operation, 'lyric.selection.set');
+  assert.deepStrictEqual(toPlain(bridge.posted[6].payload), {
+    trackId: '42',
+    selectionIdentity: 'occurrence-42',
+    selectionRevision: 3,
+    selectionToken: 'selection-42',
+    lyricId: 'manual-42',
+  });
+  bridge.emit({
+    version: 2,
+    terminal: 'ok',
+    requestId: bridge.posted[6].requestId,
+    pageEpoch: 12,
+    status: 200,
+    result: { saved: true },
+  });
+  assert.deepStrictEqual(toPlain(await selection.promise), {
+    ok: true,
+    status: 'saved',
+  });
+
+  const directory = provider.get_playlist('/playlist?list_id=neplaylist_42', {
+    pageEpoch: 13,
+  });
+  const directoryResult = new Promise((resolve) => directory.success(resolve));
+  assert.strictEqual(bridge.posted[7].operation, 'netease.directory.detail');
+  assert.deepStrictEqual(toPlain(bridge.posted[7].payload), { trackId: '42' });
+  bridge.emit({
+    version: 2,
+    terminal: 'ok',
+    requestId: bridge.posted[7].requestId,
+    pageEpoch: 13,
+    status: 200,
+    result: { tracks: [], info: { id: 'neplaylist_42', title: 'Typed list' } },
+  });
+  assert.deepStrictEqual(toPlain(await directoryResult), {
+    tracks: [],
+    info: { id: 'neplaylist_42', title: 'Typed list' },
+  });
+
+  const candidates = provider.search_lyric_candidates({
+    id: 'netrack_42',
+    query: 'typed lyric',
+    pageEpoch: 14,
+    nativeLyricIdentity: {
+      selectionIdentity: 'occurrence-42',
+      selectionRevision: 3,
+      selectionToken: 'selection-42',
+    },
+  });
+  assert.strictEqual(bridge.posted[8].operation, 'netease.lyric.search');
+  assert.deepStrictEqual(toPlain(bridge.posted[8].payload), {
+    trackId: '42',
+    selectionIdentity: 'occurrence-42',
+    selectionRevision: 3,
+    selectionToken: 'selection-42',
+    keyword: 'typed lyric',
+  });
+  bridge.emit({
+    version: 2,
+    terminal: 'ok',
+    requestId: bridge.posted[8].requestId,
+    pageEpoch: 14,
+    status: 200,
+    result: {
+      rows: [
+        {
+          id: 'manual-42',
+          lyric: '[00:00.00]manual',
+          tlyric: '[00:00.00]手动',
+          title: 'Typed song',
+          artist: 'Typed artist',
+        },
+      ],
+    },
+  });
+  assert.deepStrictEqual(toPlain(await candidates.promise), [
+    {
+      id: 'manual-42',
+      lyric: '[00:00.00]manual',
+      tlyric: '[00:00.00]手动',
+      title: 'Typed song',
+      artist: 'Typed artist',
+      source: 'netease',
+    },
+  ]);
+
+  const cleared = provider.clear_manual_lyric('netrack_42', {
+    pageEpoch: 15,
+    nativeLyricIdentity: {
+      selectionIdentity: 'occurrence-42',
+      selectionRevision: 3,
+      selectionToken: 'selection-42',
+    },
+  });
+  assert.strictEqual(bridge.posted[9].operation, 'lyric.selection.clear');
+  cleared.cancel();
+  await assert.rejects(
+    cleared.promise,
+    (error) => error.status === 'android-rpc-cancelled'
+  );
+
+  const offset = provider.set_lyric_offset('netrack_42', 250, {
+    pageEpoch: 16,
+    nativeLyricIdentity: {
+      selectionIdentity: 'occurrence-42',
+      selectionRevision: 3,
+      selectionToken: 'selection-42',
+    },
+  });
+  assert.strictEqual(bridge.posted[11].operation, 'lyric.offset.set');
+  assert.deepStrictEqual(toPlain(bridge.posted[11].payload), {
+    trackId: '42',
+    selectionIdentity: 'occurrence-42',
+    selectionRevision: 3,
+    selectionToken: 'selection-42',
+    offsetMs: 250,
+  });
+  bridge.emit({
+    version: 2,
+    terminal: 'ok',
+    requestId: bridge.posted[11].requestId,
+    pageEpoch: 16,
+    status: 200,
+    result: { saved: true },
+  });
+  assert.deepStrictEqual(toPlain(await offset.promise), {
+    ok: true,
+    status: 'saved',
+  });
+
   console.log('Android typed NetEase provider tests passed');
 }
 

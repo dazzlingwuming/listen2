@@ -151,6 +151,7 @@ const Listen2AndroidHttpAdapter = (() => {
   const MAX_RESPONSE_BODY_LENGTH = 2 * 1024 * 1024;
   const MAX_ERROR_LENGTH = 1024;
   const MAX_TYPED_KEYWORD_BYTES = 256;
+  const MAX_LYRIC_OFFSET_MS = 30000;
   const MAX_PAGE_EPOCH = 2147483647;
   const MAX_PLAYBACK_TEXT_LENGTH = 256;
   const MAX_PLAYBACK_DURATION_MS = 28800000;
@@ -278,6 +279,13 @@ const Listen2AndroidHttpAdapter = (() => {
       MALFORMED_PROVIDER_RESPONSE: 'android-rpc-malformed-response',
       PROVIDER_STATUS: 'android-rpc-provider-status',
       NETEASE_ROUTE_UNAVAILABLE: 'android-rpc-unavailable-route',
+      LYRIC_PERSISTENCE_UNAVAILABLE:
+        'android-rpc-lyric-persistence-unavailable',
+      MEMBERSHIP_REQUIRED: 'android-rpc-permission',
+      ENTITLEMENT_REQUIRED: 'android-rpc-permission',
+      DRM_RESTRICTED: 'android-rpc-permission',
+      REGION_RESTRICTED: 'android-rpc-permission',
+      RATE_LIMIT: 'android-rpc-provider-status',
       IDENTITY_MISMATCH: 'android-rpc-malformed-response',
     };
     const code = providerRejectedHttp
@@ -292,6 +300,8 @@ const Listen2AndroidHttpAdapter = (() => {
         'permission',
         'unsupported-codec',
         'malformed-response',
+        'unavailable-route',
+        'lyric-persistence-unavailable',
       ].includes(kind),
       safeCode: safeCode || 'UNKNOWN',
       status:
@@ -471,6 +481,40 @@ const Listen2AndroidHttpAdapter = (() => {
     return typeof value === 'string' && /^BV[0-9A-Za-z]{6,32}$/.test(value);
   }
 
+  function isSafeProviderTrackId(value) {
+    return typeof value === 'string' && /^[1-9][0-9]{0,17}$/.test(value);
+  }
+
+  function isSafeShortId(value) {
+    return (
+      typeof value === 'string' &&
+      value.length > 0 &&
+      value.length <= 128 &&
+      /^[A-Za-z0-9:._-]+$/.test(value)
+    );
+  }
+
+  function isBoundedRevision(value) {
+    return Number.isSafeInteger(value) && value >= 0 && value <= MAX_PAGE_EPOCH;
+  }
+
+  function hasSafeLyricIdentity(payload) {
+    return (
+      isSafeProviderTrackId(payload.trackId) &&
+      isSafeShortId(payload.selectionIdentity) &&
+      isBoundedRevision(payload.selectionRevision) &&
+      isSafeShortId(payload.selectionToken)
+    );
+  }
+
+  function hasExactlyKeys(payload, expected) {
+    const keys = Object.keys(payload).sort();
+    return (
+      keys.length === expected.length &&
+      keys.every((key, index) => key === expected[index])
+    );
+  }
+
   function validateTypedRequest(operation, payload, pageEpoch) {
     if (
       ![
@@ -478,6 +522,14 @@ const Listen2AndroidHttpAdapter = (() => {
         'bilibili.video.detail',
         'bilibili.audio.manifest',
         'netease.search',
+        'netease.directory.detail',
+        'netease.rendition.default',
+        'netease.lyric.primary',
+        'netease.lyric.search',
+        'lyric.selection.get',
+        'lyric.selection.set',
+        'lyric.selection.clear',
+        'lyric.offset.set',
         'playback.command',
       ].includes(operation)
     ) {
@@ -521,6 +573,71 @@ const Listen2AndroidHttpAdapter = (() => {
         ? null
         : 'android-rpc-invalid-payload';
     }
+    if (operation === 'netease.directory.detail') {
+      return hasExactlyKeys(payload, ['trackId']) &&
+        isSafeProviderTrackId(payload.trackId)
+        ? null
+        : 'android-rpc-invalid-payload';
+    }
+    if (operation === 'netease.rendition.default') {
+      return hasExactlyKeys(payload, ['selectionRevision', 'trackId']) &&
+        isSafeProviderTrackId(payload.trackId) &&
+        isBoundedRevision(payload.selectionRevision)
+        ? null
+        : 'android-rpc-invalid-payload';
+    }
+    const lyricIdentityKeys = [
+      'selectionIdentity',
+      'selectionRevision',
+      'selectionToken',
+      'trackId',
+    ];
+    if (
+      [
+        'netease.lyric.primary',
+        'lyric.selection.get',
+        'lyric.selection.clear',
+      ].includes(operation)
+    ) {
+      return hasExactlyKeys(payload, lyricIdentityKeys) &&
+        hasSafeLyricIdentity(payload)
+        ? null
+        : 'android-rpc-invalid-payload';
+    }
+    if (operation === 'netease.lyric.search') {
+      return hasExactlyKeys(
+        payload,
+        [...lyricIdentityKeys, 'keyword'].sort()
+      ) &&
+        hasSafeLyricIdentity(payload) &&
+        typeof payload.keyword === 'string' &&
+        payload.keyword.trim() &&
+        byteLength(payload.keyword.trim()) <= MAX_TYPED_KEYWORD_BYTES
+        ? null
+        : 'android-rpc-invalid-payload';
+    }
+    if (operation === 'lyric.selection.set') {
+      return hasExactlyKeys(
+        payload,
+        [...lyricIdentityKeys, 'lyricId'].sort()
+      ) &&
+        hasSafeLyricIdentity(payload) &&
+        isSafeShortId(payload.lyricId)
+        ? null
+        : 'android-rpc-invalid-payload';
+    }
+    if (operation === 'lyric.offset.set') {
+      return hasExactlyKeys(
+        payload,
+        [...lyricIdentityKeys, 'offsetMs'].sort()
+      ) &&
+        hasSafeLyricIdentity(payload) &&
+        Number.isSafeInteger(payload.offsetMs) &&
+        payload.offsetMs >= -MAX_LYRIC_OFFSET_MS &&
+        payload.offsetMs <= MAX_LYRIC_OFFSET_MS
+        ? null
+        : 'android-rpc-invalid-payload';
+    }
     const explicit = payload.selectionMode === 'explicit';
     const expected = explicit
       ? ['bvid', 'cid', 'selectionMode']
@@ -550,6 +667,39 @@ const Listen2AndroidHttpAdapter = (() => {
     }
     if (operation === 'bilibili.video.detail') {
       return { bvid: payload.bvid };
+    }
+    if (operation === 'netease.directory.detail') {
+      return { trackId: payload.trackId };
+    }
+    if (operation === 'netease.rendition.default') {
+      return {
+        trackId: payload.trackId,
+        selectionRevision: payload.selectionRevision,
+      };
+    }
+    const lyricIdentity = {
+      trackId: payload.trackId,
+      selectionIdentity: payload.selectionIdentity,
+      selectionRevision: payload.selectionRevision,
+      selectionToken: payload.selectionToken,
+    };
+    if (
+      [
+        'netease.lyric.primary',
+        'lyric.selection.get',
+        'lyric.selection.clear',
+      ].includes(operation)
+    ) {
+      return lyricIdentity;
+    }
+    if (operation === 'netease.lyric.search') {
+      return { ...lyricIdentity, keyword: payload.keyword.trim() };
+    }
+    if (operation === 'lyric.selection.set') {
+      return { ...lyricIdentity, lyricId: payload.lyricId };
+    }
+    if (operation === 'lyric.offset.set') {
+      return { ...lyricIdentity, offsetMs: payload.offsetMs };
     }
     return payload.selectionMode === 'explicit'
       ? { bvid: payload.bvid, selectionMode: 'explicit', cid: payload.cid }
