@@ -196,8 +196,8 @@ final class AndroidHttpBridge {
             return;
         }
         if (!parsed.isValid()) {
-            replyTypedOnMain(view, replyProxy, AndroidRpcContract.reply(
-                    null, AndroidRpcContract.Terminal.ERROR, 0, null, parsed.errorCode));
+            replyTypedOnMain(view, replyProxy,
+                    AndroidRpcContract.errorReply(parsed, parsed.errorCode));
             return;
         }
         if (parsed.request.operation == AndroidRpcContract.Operation.RPC_CANCEL) {

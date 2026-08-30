@@ -168,6 +168,24 @@ public final class MainActivity extends Activity {
         super.onDestroy();
     }
 
+    /** Dispatches the already-sanitized external URI without forwarding WebView state or extras. */
+    boolean launchExternalNavigation(NavigationPolicy.ExternalNavigationDecision decision) {
+        if (decision == null || !decision.isExternal() || decision.getExternalUri() == null) {
+            return false;
+        }
+        Intent external = new Intent(Intent.ACTION_VIEW,
+                Uri.parse(decision.getExternalUri().toASCIIString()));
+        external.addCategory(Intent.CATEGORY_BROWSABLE);
+        if (external.resolveActivity(getPackageManager()) == null) return false;
+        try {
+            startActivity(external);
+            return true;
+        } catch (RuntimeException ignored) {
+            // Missing/disabled system handlers leave the packaged page unchanged.
+            return false;
+        }
+    }
+
     private final class PackagedUiClient extends WebViewClient {
         @Override
         public WebResourceResponse shouldInterceptRequest(
@@ -219,16 +237,7 @@ public final class MainActivity extends Activity {
                 return false;
             }
             if (decision.isExternal()) {
-                Intent external = new Intent(Intent.ACTION_VIEW,
-                        Uri.parse(decision.getExternalUri().toASCIIString()));
-                external.addCategory(Intent.CATEGORY_BROWSABLE);
-                if (external.resolveActivity(getPackageManager()) != null) {
-                    try {
-                        startActivity(external);
-                    } catch (RuntimeException ignored) {
-                        // Missing/disabled system handlers leave the packaged page unchanged.
-                    }
-                }
+                launchExternalNavigation(decision);
             }
             // Block every non-packaged navigation, including file:, content: and intent:.
             return true;

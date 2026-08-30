@@ -77,7 +77,10 @@ final class AndroidRpcContract {
                 return ParseResult.error(requestId, "INVALID_PAGE_EPOCH");
             }
             Operation operation = Operation.fromWireName(object.opt("operation"));
-            if (operation == null) return ParseResult.error(requestId, "UNSUPPORTED_OPERATION");
+            if (operation == null) {
+                return ParseResult.error(requestId, ((Number) epochValue).intValue(),
+                        "UNSUPPORTED_OPERATION");
+            }
             JSONObject payload = object.optJSONObject("payload");
             TypedRequest typed = parsePayload(requestId, ((Number) epochValue).intValue(),
                     operation, payload);
@@ -254,6 +257,11 @@ final class AndroidRpcContract {
                 request == null ? 0 : request.pageEpoch, terminal, status, result, errorCode);
     }
 
+    static TypedReply errorReply(ParseResult parsed, String errorCode) {
+        return new TypedReply(parsed == null ? "" : parsed.requestId,
+                parsed == null ? 0 : parsed.pageEpoch, Terminal.ERROR, 0, null, errorCode);
+    }
+
     private static boolean isValidRequestId(String value) {
         return value != null && !value.isEmpty() && value.length() <= MAX_REQUEST_ID_LENGTH;
     }
@@ -355,10 +363,26 @@ final class AndroidRpcContract {
     static final class ParseResult {
         final TypedRequest request;
         final String errorCode;
-        private ParseResult(TypedRequest request, String errorCode) { this.request = request; this.errorCode = errorCode; }
-        static ParseResult success(TypedRequest request) { return new ParseResult(request, null); }
-        static ParseResult error(String errorCode) { return new ParseResult(null, errorCode); }
-        static ParseResult error(String requestId, String errorCode) { return new ParseResult(null, errorCode); }
+        final String requestId;
+        final int pageEpoch;
+        private ParseResult(TypedRequest request, String requestId, int pageEpoch, String errorCode) {
+            this.request = request;
+            this.requestId = requestId;
+            this.pageEpoch = pageEpoch;
+            this.errorCode = errorCode;
+        }
+        static ParseResult success(TypedRequest request) {
+            return new ParseResult(request, request.requestId, request.pageEpoch, null);
+        }
+        static ParseResult error(String errorCode) {
+            return new ParseResult(null, "", 0, errorCode);
+        }
+        static ParseResult error(String requestId, String errorCode) {
+            return new ParseResult(null, requestId, 0, errorCode);
+        }
+        static ParseResult error(String requestId, int pageEpoch, String errorCode) {
+            return new ParseResult(null, requestId, pageEpoch, errorCode);
+        }
         boolean isValid() { return request != null; }
     }
 
