@@ -171,6 +171,48 @@ async function run() {
     (error) => error.code === 'android-rpc-cancelled'
   );
 
+  const sameEpochFirst = adapter.request(
+    'bilibili.search',
+    { keyword: 'first', page: 1 },
+    { pageEpoch: 13 }
+  );
+  const sameEpochSecond = adapter.request(
+    'bilibili.search',
+    { keyword: 'second', page: 1 },
+    { pageEpoch: 13 }
+  );
+  adapter.cancelPageEpoch(13);
+  await Promise.all([
+    assert.rejects(
+      sameEpochFirst.promise,
+      (error) => error.code === 'android-rpc-cancelled'
+    ),
+    assert.rejects(
+      sameEpochSecond.promise,
+      (error) => error.code === 'android-rpc-cancelled'
+    ),
+  ]);
+
+  const queueRejected = adapter.request(
+    'bilibili.search',
+    { keyword: 'queue', page: 1 },
+    { pageEpoch: 14 }
+  );
+  const queueRequest = nativeBridge.posted[nativeBridge.posted.length - 1];
+  nativeBridge.emit({
+    version: 2,
+    terminal: 'error',
+    requestId: queueRequest.requestId,
+    pageEpoch: 14,
+    status: 0,
+    error: 'QUEUE_FULL',
+  });
+  await assert.rejects(
+    queueRejected.promise,
+    (error) =>
+      error.code === 'android-rpc-failed' && error.safeCode === 'QUEUE_FULL'
+  );
+
   await assert.rejects(
     adapter.request(
       'bilibili.search',

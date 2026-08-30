@@ -346,11 +346,11 @@ async function run() {
           {
             author: 'Android Artist',
             authorId: 9,
-            bvid: 'BV_ANDROID',
+            bvid: 'BV1xx411c7mD',
             capability: 'part-selection-required',
             cover: 'https://android.example/cover.jpg',
             duration: '03:21',
-            id: 'bitrack_v_BV_ANDROID',
+            id: 'bitrack_v_BV1xx411c7mD',
             provider: 'bilibili',
             source: 'bilibili',
             title: 'Android Song',
@@ -369,11 +369,14 @@ async function run() {
     assert.deepStrictEqual(toPlain(result.result[0]), {
       artist: 'Android Artist',
       artist_id: 'biartist_v_9',
+      capability: 'part-selection-required',
       duration: 201,
-      id: 'bitrack_v_BV_ANDROID',
+      id: 'bitrack_v_BV1xx411c7mD',
       img_url: 'https://android.example/cover.jpg',
+      provider: 'bilibili',
+      resultType: 'video',
       source: 'bilibili',
-      source_url: 'https://www.bilibili.com/BV_ANDROID',
+      source_url: 'https://www.bilibili.com/BV1xx411c7mD',
       title: 'Android Song',
     });
   }
@@ -396,7 +399,7 @@ async function run() {
     assert.strictEqual(axiosCalls.length, 0);
     assert.deepStrictEqual(toPlain(result), {
       error: {
-        message: 'Bilibili search could not be completed through Android HTTP.',
+        message: 'Bilibili is unavailable while this device is offline.',
         status: 'android-rpc-network',
       },
       result: [],
