@@ -119,6 +119,126 @@ function getAndroidTypedAdapter() {
   }
 }
 
+const ANDROID_PROVIDER_CAPABILITY_FIELDS = [
+  'search',
+  'directory',
+  'detail',
+  'media',
+  'lyric',
+  'manualLyric',
+  'fallback',
+  'login',
+  'permission',
+];
+
+const ANDROID_UNVERIFIED_PROVIDERS = ['qq', 'kugou', 'kuwo', 'migu', 'taihe'];
+
+function unavailableAndroidCapabilities() {
+  return ANDROID_PROVIDER_CAPABILITY_FIELDS.reduce(
+    (result, field) => ({ ...result, [field]: false }),
+    {}
+  );
+}
+
+function getAndroidProviderCapabilities() {
+  const adapter = getAndroidTypedAdapter();
+  if (!adapter) return null;
+  const empty = unavailableAndroidCapabilities();
+  const matrix = PROVIDERS.reduce(
+    (result, provider) =>
+      provider.hidden ? result : { ...result, [provider.name]: { ...empty } },
+    {}
+  );
+  // Bilibili's typed route was independently verified in Phase 1. Its current
+  // capability is retained without widening any other provider surface.
+  if (matrix.bilibili) {
+    matrix.bilibili = {
+      ...empty,
+      search: true,
+      directory: true,
+      detail: true,
+      media: true,
+    };
+  }
+  let handshake = null;
+  try {
+    handshake =
+      typeof adapter.getProviderCapabilities === 'function'
+        ? adapter.getProviderCapabilities()
+        : null;
+  } catch (error) {
+    handshake = null;
+  }
+  if (handshake && typeof handshake === 'object' && !Array.isArray(handshake)) {
+    const { netease } = handshake;
+    if (netease && typeof netease === 'object' && !Array.isArray(netease)) {
+      matrix.netease = ANDROID_PROVIDER_CAPABILITY_FIELDS.reduce(
+        (result, field) => ({
+          ...result,
+          [field]: netease[field] === true,
+        }),
+        {}
+      );
+    }
+  }
+  // These names are intentionally explicit: no fallback or legacy desktop
+  // provider can become callable merely because Android hosts the page.
+  ANDROID_UNVERIFIED_PROVIDERS.forEach((name) => {
+    if (matrix[name]) matrix[name] = { ...empty };
+  });
+  return matrix;
+}
+
+function androidUnavailableFacade(
+  type,
+  status = 'android-provider-unavailable'
+) {
+  const result = {
+    result: [],
+    total: 0,
+    type: type || '0',
+    error: {
+      status,
+      message: 'This music source is unavailable on this Android device.',
+    },
+  };
+  const promise = Promise.resolve(result);
+  return {
+    requestId: '',
+    pageEpoch: 0,
+    cancel() {},
+    promise,
+    then: promise.then.bind(promise),
+    catch: promise.catch.bind(promise),
+    success(fn) {
+      promise.then(fn);
+    },
+  };
+}
+
+function androidUnavailableLyricFacade() {
+  const promise = Promise.resolve({
+    lyric: '',
+    tlyric: '',
+    error: {
+      status: 'android-provider-unavailable',
+      message:
+        'Lyrics from this music source are unavailable on this Android device.',
+    },
+  });
+  return {
+    requestId: '',
+    pageEpoch: 0,
+    cancel() {},
+    promise,
+    then: promise.then.bind(promise),
+    catch: promise.catch.bind(promise),
+    success(fn) {
+      promise.then(fn);
+    },
+  };
+}
+
 /* cache for all playlist request except myplaylist and localmusic */
 const playlistCache = new LRUCache({
   max: 100,
@@ -303,11 +423,27 @@ setPrototypeOfLocalStorage();
 
 // eslint-disable-next-line no-unused-vars
 const MediaService = {
+  getAndroidProviderCapabilities() {
+    return getAndroidProviderCapabilities();
+  },
   getLoginProviders() {
+    const matrix = getAndroidProviderCapabilities();
+    if (matrix) {
+      return PROVIDERS.filter(
+        (provider) =>
+          !provider.hidden &&
+          matrix[provider.name] &&
+          matrix[provider.name].login
+      );
+    }
     return PROVIDERS.filter((i) => !i.hidden && i.support_login);
   },
   search(source, options) {
     const url = `/search?${queryStringify(options)}`;
+    const matrix = getAndroidProviderCapabilities();
+    if (matrix && (source === 'allmusic' || !matrix[source]?.search)) {
+      return androidUnavailableFacade(options && options.type);
+    }
     if (source === 'allmusic') {
       // search all platform and merge result
       const callbackArray = getAllSearchProviders().map((p) => (fn) => {
@@ -375,6 +511,11 @@ const MediaService = {
 
   getLyric(track_id, album_id, lyric_url, tlyric_url, trackInfo = {}) {
     const provider = getProviderByItemId(track_id);
+    const matrix = getAndroidProviderCapabilities();
+    const source = getProviderNameByItemId(track_id);
+    if (matrix && (!matrix[source] || !matrix[source].lyric)) {
+      return androidUnavailableLyricFacade();
+    }
     const url = `/lyric?${queryStringify({
       track_id,
       album_id,
@@ -966,6 +1107,11 @@ const MediaService = {
 
   getPlaylist(listId, useCache = true) {
     const provider = getProviderByItemId(listId);
+    const matrix = getAndroidProviderCapabilities();
+    const source = getProviderNameByItemId(listId);
+    if (matrix && (!matrix[source] || !matrix[source].directory)) {
+      return androidUnavailableFacade('0');
+    }
     const url = `/playlist?list_id=${listId}`;
     let hit = null;
     if (useCache) {
@@ -1214,6 +1360,17 @@ const MediaService = {
     playerFailCallback,
     bootstrapOptions = {}
   ) {
+    const matrix = getAndroidProviderCapabilities();
+    const androidSource = getProviderNameByItemId(
+      track && track.id ? track.id : ''
+    );
+    if (matrix && (!matrix[androidSource] || !matrix[androidSource].media)) {
+      playerFailCallback({
+        status: 'android-provider-unavailable',
+        message: 'This music source is unavailable on this Android device.',
+      });
+      return;
+    }
     const successCallback = playerSuccessCallback;
     const sound = {};
     function failureCallback(originalError = {}) {
@@ -1286,6 +1443,10 @@ const MediaService = {
   },
 
   login(source, options) {
+    const matrix = getAndroidProviderCapabilities();
+    if (matrix && (!matrix[source] || !matrix[source].login)) {
+      return androidUnavailableFacade('0');
+    }
     const url = `/login?${queryStringify(options)}`;
     const provider = getProviderByName(source);
 
