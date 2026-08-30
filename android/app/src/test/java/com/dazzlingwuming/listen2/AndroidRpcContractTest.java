@@ -10,6 +10,41 @@ import java.util.Map;
 
 public final class AndroidRpcContractTest {
     @Test
+    public void neteaseSearchUsesAClosedPayloadAndNativeOwnedRoute() throws Exception {
+        String raw = "{\"version\":2,\"operation\":\"netease.search\","
+                + "\"requestId\":\"netease-1\",\"pageEpoch\":7,"
+                + "\"payload\":{\"keyword\":\"Listen2\",\"page\":3}}";
+
+        AndroidRpcContract.ParseResult parsed = AndroidRpcContract.parseRequest(raw);
+
+        assertTrue(parsed.isValid());
+        assertEquals(AndroidRpcContract.Operation.NETEASE_SEARCH, parsed.request.operation);
+        assertEquals("https://music.163.com/api/search/get/web?s=Listen2&type=1&offset=40&limit=20",
+                NetEaseProviderClient.buildSearchUri(parsed.request).toASCIIString());
+        assertFalse(AndroidRpcContract.parseRequest(raw.replace("\"page\":3",
+                "\"page\":3,\"url\":\"https://evil.example\"")).isValid());
+        assertFalse(AndroidRpcContract.parseRequest(raw.replace("\"page\":3",
+                "\"page\":3,\"headers\":{}")).isValid());
+    }
+
+    @Test
+    public void neteaseSearchProjectsOnlySafeRowsAndPreservesTypedFailures() throws Exception {
+        AndroidRpcContract.TypedRequest request = AndroidRpcContract.TypedRequest.neteaseSearch(
+                "netease-1", 7, "Listen2", 1);
+        NetEaseResponseMapper.MappingResult mapped = NetEaseResponseMapper.mapSearch(request,
+                "{\"code\":200,\"result\":{\"songCount\":2,\"songs\":["
+                        + "{\"id\":1,\"name\":\"Safe title\",\"artists\":[{\"name\":\"Artist\"}],"
+                        + "\"duration\":1234},{\"id\":\"bad\",\"name\":\"ignored\"}]}}");
+
+        assertTrue(mapped.isValid());
+        assertEquals("netease", mapped.value.getString("source"));
+        assertEquals(1, mapped.value.getJSONArray("rows").length());
+        assertFalse(mapped.value.toString().contains("https://"));
+        assertEquals("RATE_LIMIT", NetEaseResponseMapper.errorForStatus(429));
+        assertEquals("LOGIN_REQUIRED", NetEaseResponseMapper.errorForStatus(401));
+        assertFalse(NetEaseResponseMapper.mapSearch(request, "{\"code\":500}").isValid());
+    }
+    @Test
     public void acceptsOnlyTheExactTypedSearchEnvelopeAndBuildsItsRouteNatively() throws Exception {
         AndroidRpcContract.TypedRequest request = new AndroidRpcContract.TypedRequest(
                 "request-1", 7, AndroidRpcContract.Operation.BILIBILI_SEARCH, "Listen2", 3);

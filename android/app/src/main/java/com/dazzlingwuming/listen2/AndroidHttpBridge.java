@@ -45,6 +45,9 @@ final class AndroidHttpBridge {
     private static final long TYPED_DEADLINE_MILLIS = 25_000L;
     private final ThreadPoolExecutor networkExecutor;
     private final BridgeRequestRegistry typedRequests = new BridgeRequestRegistry();
+    // The v2 NetEase seam is native-owned and intentionally route-unavailable
+    // until an approved provider contract is supplied by a later slice.
+    private final NetEaseProviderClient netEaseProviderClient = new NetEaseProviderClient();
     // Installed by the Activity after it connects to the sole playback service.
     // This remains the existing trusted WebMessage listener, not a second bridge.
     private PlaybackBridgeController playbackController;
@@ -513,6 +516,9 @@ final class AndroidHttpBridge {
 
     private AndroidRpcContract.TypedReply executeTypedOperationOnce(
             AndroidRpcContract.TypedRequest request, BridgeRequestRegistry.RequestKey key) {
+        if (request.operation == AndroidRpcContract.Operation.NETEASE_SEARCH) {
+            return netEaseProviderClient.executeSearch(request);
+        }
         if (request.operation == AndroidRpcContract.Operation.BILIBILI_AUDIO_MANIFEST) {
             return executeTypedManifest(request, key);
         }

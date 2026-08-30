@@ -26,6 +26,7 @@ final class AndroidRpcContract {
     static final String BILIBILI_SEARCH_PATH = "/x/web-interface/search/type";
     static final String BILIBILI_VIDEO_DETAIL_PATH = "/x/web-interface/view";
     static final String BILIBILI_AUDIO_MANIFEST_PATH = "/x/player/playurl";
+    static final String NETEASE_SOURCE = "netease";
     private static final int PAGE_SIZE = 20;
     private static final int MAX_TEXT_LENGTH = 512;
 
@@ -35,6 +36,7 @@ final class AndroidRpcContract {
         BILIBILI_SEARCH("bilibili.search"),
         BILIBILI_VIDEO_DETAIL("bilibili.video.detail"),
         BILIBILI_AUDIO_MANIFEST("bilibili.audio.manifest"),
+        NETEASE_SEARCH("netease.search"),
         PLAYBACK_COMMAND("playback.command"),
         RPC_CANCEL("rpc.cancel");
 
@@ -148,7 +150,7 @@ final class AndroidRpcContract {
     private static TypedRequest parsePayload(String requestId, int pageEpoch, Operation operation,
             JSONObject payload) {
         if (payload == null) return null;
-        if (operation == Operation.BILIBILI_SEARCH) {
+        if (operation == Operation.BILIBILI_SEARCH || operation == Operation.NETEASE_SEARCH) {
             if (!hasExactlyKeys(payload, "keyword", "page")) return null;
             Object keyword = payload.opt("keyword");
             Object page = payload.opt("page");
@@ -427,6 +429,10 @@ final class AndroidRpcContract {
                 String selectionMode, long cid) {
             return new TypedRequest(requestId, pageEpoch, Operation.BILIBILI_AUDIO_MANIFEST,
                     bvid, selectionMode, cid, null, 0);
+        }
+
+        static TypedRequest neteaseSearch(String requestId, int pageEpoch, String keyword, int page) {
+            return new TypedRequest(requestId, pageEpoch, Operation.NETEASE_SEARCH, keyword, page);
         }
 
         static TypedRequest cancel(String requestId, int pageEpoch, String targetRequestId,
