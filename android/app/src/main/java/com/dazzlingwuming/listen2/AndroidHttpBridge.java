@@ -19,7 +19,7 @@ import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -38,7 +38,9 @@ final class AndroidHttpBridge {
     private static final String ACCEPT_HEADER = "application/json, text/plain, */*";
     private static final String USER_AGENT = "Listen2Android/2.34";
 
-    private final ExecutorService networkExecutor;
+    private static final long TYPED_DEADLINE_MILLIS = 25_000L;
+    private final ThreadPoolExecutor networkExecutor;
+    private final BridgeRequestRegistry typedRequests = new BridgeRequestRegistry();
     // Accessed only by the single-threaded network executor. This anonymous
     // value is intentionally not written to CookieManager.
     private String anonymousBilibiliBuvid3;
@@ -80,6 +82,7 @@ final class AndroidHttpBridge {
     }
 
     void destroy(WebView webView) {
+        typedRequests.cancelAll();
         networkExecutor.shutdownNow();
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
             WebViewCompat.removeWebMessageListener(webView, HttpBridgePolicy.JAVASCRIPT_OBJECT_NAME);
@@ -170,12 +173,26 @@ final class AndroidHttpBridge {
                     null, AndroidRpcContract.Terminal.ERROR, 0, null, parsed.errorCode));
             return;
         }
+        BridgeRequestRegistry.RequestKey key = new BridgeRequestRegistry.RequestKey(
+                parsed.request.pageEpoch, parsed.request.requestId);
+        if (typedRequests.register(key) == null) {
+            replyTypedOnMain(view, replyProxy, AndroidRpcContract.reply(parsed.request,
+                    AndroidRpcContract.Terminal.ERROR, 0, null, "DUPLICATE_REQUEST"));
+            return;
+        }
         try {
-            networkExecutor.execute(() -> {
-                AndroidRpcContract.TypedReply reply = executeTypedSearch(parsed.request);
-                replyTypedOnMain(view, replyProxy, reply);
+            Future<?> future = networkExecutor.submit(() -> {
+                AndroidRpcContract.TypedReply reply = executeTypedSearch(parsed.request, key);
+                BridgeRequestRegistry.SettleResult settled = typedRequests.settle(
+                        key, reply.terminal);
+                if (settled == BridgeRequestRegistry.SettleResult.OK
+                        || settled == BridgeRequestRegistry.SettleResult.CANCELLED) {
+                    replyTypedOnMain(view, replyProxy, reply);
+                }
             });
+            typedRequests.attachFuture(key, future);
         } catch (RejectedExecutionException ignored) {
+            typedRequests.settle(key, AndroidRpcContract.Terminal.ERROR);
             replyTypedOnMain(view, replyProxy, AndroidRpcContract.reply(parsed.request,
                     AndroidRpcContract.Terminal.ERROR, 0, null, "BRIDGE_BUSY"));
         }
@@ -345,11 +362,49 @@ final class AndroidHttpBridge {
         }
     }
 
-    private AndroidRpcContract.TypedReply executeTypedSearch(AndroidRpcContract.TypedRequest request) {
+    private AndroidRpcContract.TypedReply executeTypedSearch(
+            AndroidRpcContract.TypedRequest request, BridgeRequestRegistry.RequestKey key) {
+        long startedAt = System.nanoTime();
+        AndroidRpcContract.TypedReply lastReply = null;
+        for (int attempt = 1; attempt <= BridgeRetryPolicy.MAX_ATTEMPTS; attempt += 1) {
+            if (!typedRequests.hasActive(key)) {
+                return AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.CANCELLED, 0,
+                        null, "CANCELLED");
+            }
+            lastReply = executeTypedSearchOnce(request, key);
+            long elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
+            if (elapsed >= TYPED_DEADLINE_MILLIS) {
+                typedRequests.timeout(key);
+                return AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.ERROR, 0,
+                        null, "TIMEOUT");
+            }
+            int retryStatus = "NETWORK_IO_ERROR".equals(lastReply.errorCode)
+                    || "NETWORK_TIMEOUT".equals(lastReply.errorCode) ? 0 : lastReply.status;
+            BridgeRetryPolicy.Decision decision = BridgeRetryPolicy.decide(
+                    attempt, elapsed, TYPED_DEADLINE_MILLIS, !typedRequests.hasActive(key), retryStatus);
+            if (!decision.retry) return lastReply;
+            try {
+                Thread.sleep(decision.delayMillis);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+                return AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.CANCELLED, 0,
+                        null, "CANCELLED");
+            }
+        }
+        return lastReply == null ? AndroidRpcContract.reply(request,
+                AndroidRpcContract.Terminal.ERROR, 0, null, "NETWORK_IO_ERROR") : lastReply;
+    }
+
+    private AndroidRpcContract.TypedReply executeTypedSearchOnce(
+            AndroidRpcContract.TypedRequest request, BridgeRequestRegistry.RequestKey key) {
         HttpsURLConnection connection = null;
         try {
             java.net.URI uri = AndroidRpcContract.buildSearchUri(request);
             connection = (HttpsURLConnection) new URL(uri.toASCIIString()).openConnection();
+            if (!typedRequests.attachConnection(key, connection)) {
+                return AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.CANCELLED, 0,
+                        null, "CANCELLED");
+            }
             connection.setRequestMethod("GET");
             configureConnection(connection, HttpBridgePolicy.RequestRoute.BILIBILI_GET);
             String cookieHeader = resolveCookieHeader(
@@ -389,6 +444,7 @@ final class AndroidHttpBridge {
             return AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.ERROR, 0,
                     null, "NETWORK_IO_ERROR");
         } finally {
+            typedRequests.detachConnection(key, connection);
             if (connection != null) connection.disconnect();
         }
     }
