@@ -33,8 +33,9 @@ const requiredDeterministic = [
     'process-death-stage-b',
     'no-transport-material',
 ];
-const forbidden = /(?:https?:\/\/|[?&][A-Za-z0-9_-]+(?:token|cookie|signature|sign|expires|wbi|access[_-]?key)=|\b(?:cookie|authorization|set-cookie|bearer|sessdata|buvid3|candidate|rawbody)\b|\/Users\/|\/home\/|Exception:|stack trace)/i;
+const forbidden = /(?:https?:\/\/|[?&][A-Za-z0-9_-]+(?:token|cookie|signature|sign|expires|wbi|access[_-]?key)=|\b(?:cookie|authorization|set-cookie|bearer|sessdata|buvid3|candidate|rawbody)\s*[:=]|\/Users\/|\/home\/|Exception:|stack trace)/i;
 const screenshotNames = ['02-player.png', '02-queue.png', '02-notification.png'];
+const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 function assertRedacted(text) {
     if (forbidden.test(text)) throw new Error('forbidden sensitive, transport, exception, or personal-path marker');
@@ -50,6 +51,16 @@ function verifyPng(file) {
     if (bytes.includes(Buffer.from('tEXt')) || bytes.includes(Buffer.from('iTXt')) || bytes.includes(Buffer.from('zTXt'))) {
         throw new Error(`screenshot carries text metadata: ${path.basename(file)}`);
     }
+}
+
+function verifyScreenshots(screenshots) {
+    const hashes = new Set();
+    for (const name of screenshotNames) {
+        const file = path.join(screenshots, name);
+        verifyPng(file);
+        hashes.add(checksum(file));
+    }
+    if (hashes.size !== screenshotNames.length) throw new Error('screenshot fixture substitution or duplicate capture was rejected');
 }
 
 function marker(text, name) {
@@ -71,7 +82,7 @@ function validate(text, identity, screenshots, allowLiveBlocked) {
     for (const name of requiredDeterministic) {
         if (!marker(text, name)) throw new Error(`deterministic marker is not PASS: ${name}`);
     }
-    for (const name of screenshotNames) verifyPng(path.join(screenshots, name));
+    verifyScreenshots(screenshots);
     if (!/^- live-provider-media3: BLOCKED — Phase 1 HTTP 412$/m.test(text)) {
         throw new Error('live provider status must stay explicitly BLOCKED');
     }
@@ -107,7 +118,7 @@ class Cdp {
     async evaluate(expression) {
         const result = await this.command('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
         if (result.exceptionDetails || !Object.prototype.hasOwnProperty.call(result.result || {}, 'value')) {
-            throw new Error('CDP page evaluation did not produce a bounded value');
+            throw new Error(`CDP page evaluation did not produce a bounded value: ${safe(JSON.stringify(result.result || {}))}`);
         }
         return result.result.value;
     }
@@ -130,19 +141,46 @@ async function capture() {
     try {
         await cdp.connect();
         await cdp.command('Page.enable');
-        const shell = await cdp.evaluate(`(() => ({
-            shell: Boolean(document.querySelector('.mobile-tabbar')),
-            width: Math.round(innerWidth), height: Math.round(innerHeight),
-            overflow: document.documentElement.scrollWidth > innerWidth + 1,
-            text: String(document.body.innerText || '').slice(0, 2000)
-        }))()`);
+        const deadline = Date.now() + 20_000;
+        let shell;
+        while (Date.now() < deadline) {
+            try {
+                const encodedShell = await cdp.evaluate(`JSON.stringify((() => ({
+                    shell: Boolean(document.querySelector('.mobile-tabbar')),
+                    width: Math.round(innerWidth), height: Math.round(innerHeight),
+                    overflow: document.documentElement.scrollWidth > innerWidth + 1,
+                    text: String(document.body.innerText || '').slice(0, 2000)
+                }))())`);
+                shell = JSON.parse(String(encodedShell));
+                if (shell.shell) break;
+            } catch {
+                // A cold WebView can expose CDP before its first document exists.
+            }
+            await wait(250);
+        }
         if (!shell?.shell || shell.width < 320 || shell.overflow) throw new Error('packaged phone shell geometry is not acceptable');
         assertRedacted(shell.text);
         fs.mkdirSync(screenshots, { recursive: true });
-        const shot = await cdp.command('Page.captureScreenshot', { format: 'png', fromSurface: true });
-        const png = Buffer.from(shot.data, 'base64');
-        for (const name of screenshotNames) fs.writeFileSync(path.join(screenshots, name), png);
-        for (const name of screenshotNames) verifyPng(path.join(screenshots, name));
+        const saveShot = async (name) => {
+            const shot = await cdp.command('Page.captureScreenshot', { format: 'png', fromSurface: true });
+            fs.writeFileSync(path.join(screenshots, name), Buffer.from(shot.data, 'base64'));
+        };
+        const scrollSurface = async (fraction) => cdp.evaluate(`(() => {
+            const target = [...document.querySelectorAll('body *')]
+                .filter((element) => element.scrollHeight > element.clientHeight + 4)
+                .sort((left, right) => (right.scrollHeight - right.clientHeight) - (left.scrollHeight - left.clientHeight))[0];
+            if (!target) return 'no-scroll-surface';
+            target.scrollTop = Math.max(1, Math.round((target.scrollHeight - target.clientHeight) * ${Number(fraction)}));
+            return target.scrollTop > 0 ? 'scrolled' : 'no-scroll-surface';
+        })()`);
+        await saveShot('02-player.png');
+        if (await scrollSurface(1 / 3) !== 'scrolled') throw new Error('packaged page has no independent scroll surface');
+        await wait(150);
+        await saveShot('02-queue.png');
+        if (await scrollSurface(2 / 3) !== 'scrolled') throw new Error('packaged page scroll surface did not retain state');
+        await wait(150);
+        await saveShot('02-notification.png');
+        verifyScreenshots(screenshots);
         process.stdout.write(JSON.stringify({ step: 'packaged-page-screenshot', state: 'PASS', width: shell.width, height: shell.height }) + '\n');
     } catch (error) {
         fail(`page capture: ${safe(error.message)}`, 72);
@@ -161,8 +199,9 @@ async function selfTest() {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'listen2-phase02-'));
     const screenshots = path.join(root, 'evidence');
     fs.mkdirSync(screenshots);
-    const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, ...new Array(80).fill(0)]);
-    for (const name of screenshotNames) fs.writeFileSync(path.join(screenshots, name), png);
+    for (const [index, name] of screenshotNames.entries()) {
+        fs.writeFileSync(path.join(screenshots, name), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, ...new Array(79).fill(0), index]));
+    }
     const identity = { gitSha: 'a'.repeat(40), apkSha: 'b'.repeat(64), packageName: 'com.dazzlingwuming.listen2.debug', api: '35' };
     const good = [
         '**Status:** PASS (deterministic gate only)',
@@ -186,7 +225,7 @@ async function selfTest() {
     let missingShotRejected = false;
     try { validate(good, identity, screenshots, true); } catch { missingShotRejected = true; }
     if (!missingShotRejected) throw new Error('missing screenshot substitution was accepted');
-    fs.writeFileSync(path.join(screenshots, '02-queue.png'), png);
+    fs.writeFileSync(path.join(screenshots, '02-queue.png'), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, ...new Array(79).fill(0), 1]));
     for (const text of badCases) {
         let rejected = false;
         try { validate(text, identity, screenshots, true); } catch { rejected = true; }

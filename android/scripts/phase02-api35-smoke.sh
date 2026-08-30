@@ -88,11 +88,11 @@ write_evidence() {
         '- queue-order-count: exact duplicate FIFO asserted by installed test' '- mode-history: shuffle mode and cursor/depth asserted by installed test' \
         '- position: restored paused position is within 5 seconds' '- force-stop: PID empty before relaunch' \
         '- relaunch-reconnect: explicit debug Activity and Stage-B controller reconnect passed' \
-        '- transport-scan: snapshot/evidence accepts no URL/header/cookie/candidate/provider-body material' '' \
+        '- transport-scan: snapshot/evidence accepts no transient playback material' '' \
         '## Screenshots' '' \
-        '- evidence/02-player.png: packaged page boundary after clean app launch' \
-        '- evidence/02-queue.png: packaged page boundary after clean app launch' \
-        '- evidence/02-notification.png: packaged page boundary after clean app launch' \
+        '- evidence/02-player.png: first redacted packaged-page context capture after clean app launch' \
+        '- evidence/02-queue.png: second distinct redacted packaged-page context capture after clean app launch' \
+        '- evidence/02-notification.png: third distinct redacted packaged-page context capture after clean app launch' \
         '- Screenshot scope: redacted host/page context only; installed instrumentation is the semantic service/queue/notification proof.' '' \
         '## System surface coverage' '' \
         '- page/session/control: PASS via PlaybackServiceInstrumentationTest and Phase01WebViewInstrumentationTest' \
@@ -132,11 +132,18 @@ self_test() {
     echo 'PASS: harness self-test rejects ambiguity, timeout, drift, substitution, missing artifacts, and redaction canaries'
 }
 verify_evidence() {
-    local evidence="$1" allow_live="${2:-false}" screenshots
+    local evidence="$1" allow_live="${2:-false}" screenshots evidence_git
     prepare
     [[ -f "$APK" ]] || die 'exact debug APK is missing; rebuild before verification' 74
+    evidence_git="$(sed -n 's/^- Git SHA: \([0-9a-f]\{40\}\)$/\1/p' "$evidence" | head -n 1)"
+    [[ "$evidence_git" =~ ^[0-9a-f]{40}$ ]] || die 'evidence has no bounded Git identity' 74
+    git -C "$ROOT" merge-base --is-ancestor "$evidence_git" HEAD || die 'evidence Git identity is not reachable from current HEAD' 74
+    # Evidence and its verifier are committed after the installed APK record.
+    # That documentation-only commit must not invalidate an unchanged APK; any
+    # app/Gradle input change does invalidate it and forces a fresh device run.
+    git -C "$ROOT" diff --quiet "$evidence_git" HEAD -- android/app android/build.gradle android/settings.gradle || die 'Android APK source inputs drifted after evidence recording' 74
     screenshots="$(dirname "$evidence")/evidence"
-    local flags=(--verify-evidence "$evidence" --apk "$APK" --git-sha "$(git -C "$ROOT" rev-parse HEAD)" --api "$API" --package "$PACKAGE" --screenshots "$screenshots")
+    local flags=(--verify-evidence "$evidence" --apk "$APK" --git-sha "$evidence_git" --api "$API" --package "$PACKAGE" --screenshots "$screenshots")
     [[ "$allow_live" == true ]] && flags+=(--allow-live-blocked)
     node "$ROOT/android/scripts/phase02-webview-smoke.mjs" "${flags[@]}"
 }

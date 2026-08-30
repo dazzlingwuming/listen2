@@ -15,8 +15,12 @@ service/system-control classes, runs the Stage-A → force-stop/empty-PID →
 relaunch → Stage-B recovery script, launches a cleared packaged WebView page,
 and writes only allow-listed identity and bounded result fields.
 
-`--verify-evidence PATH --allow-live-blocked` recomputes Git, APK, package, API
-and emulator identity; it requires all deterministic markers and three PNG
+`--verify-evidence PATH --allow-live-blocked` recomputes the recorded Git/APK,
+package, API and emulator identity; it requires the recorded APK source commit
+to be reachable from the current HEAD and rejects any later `android/app` or
+Gradle-input drift. This permits committing the evidence artifact itself without
+pretending that a documentation-only commit rebuilt the APK. It requires all
+deterministic markers and three PNG
 screenshots. It rejects stale hashes, missing markers/screenshots, fixture/live
 substitution, URLs/query values, candidates, headers, cookies, credentials,
 provider bodies, raw exceptions, database rows and personal paths. Screenshot
