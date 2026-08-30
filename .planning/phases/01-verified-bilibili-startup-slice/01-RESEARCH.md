@@ -281,14 +281,14 @@ Retain this bounded-read behavior for each v2 operation and validate parsed DTO 
 | A1 | The exact v2 operation identifiers and DTO class names can be selected by the planner without changing user-visible behavior. | Architecture Pattern 1 | Low; CONTEXT explicitly grants this discretion, but test names/schemas must be frozen before provider migration. |
 | A2 | A public anonymous Bilibili item and current emulator WebView can complete the live smoke at execution time. | Validation / environment | High; provider/CDN/codec availability is external and must be recorded as blocked rather than fabricated. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Which API-35 AVD image and WebView provider version will be used for the timestamped smoke?**
    - What we know: `adb` and the Android emulator executable are installed, but no device was attached during this research. [VERIFIED: local probe 2026-08-30]
-   - Recommendation: The execution plan must create/start one supported API-35 AVD, record its image/ABI and WebView version, and retain a redacted evidence record.
+   - Execution-time disposition: The Phase-1 harness selects or creates one supported API-35 image for the host ABI, verifies and records the exact system image/API/ABI and enabled WebView provider/version, and ties those values to the installed APK evidence. If no supported image or WebView provider can be prepared, the live gate returns `BLOCKED`; deterministic fixtures, JVM/JS tests, instrumentation, APK assembly, or another API level never substitute for it.
 2. **Which currently public Bilibili item remains usable during final smoke?**
    - What we know: Phase decisions require a public anonymous item; provider availability/codec/CDN is external.
-   - Recommendation: Use a previously validated non-sensitive test item at execution time, omit signed URLs from artifacts, and mark the phase externally blocked if it becomes unavailable after fixture tests pass.
+   - Execution-time disposition: The harness selects a current public anonymous Bilibili item that exposes a permitted playable part, records only its bounded BVID/CID/part identity, and proves the same selection through manifest, audio progress, pause/resume, and lyric entry. If no such item is available because of provider/CDN/codec/entitlement conditions, the live gate records an external `BLOCKED` result; it never fabricates success or substitutes fixture/build evidence, and signed URLs remain absent from artifacts.
 
 ## Environment Availability
 
