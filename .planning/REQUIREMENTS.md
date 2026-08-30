@@ -46,11 +46,11 @@ Android 保留共享前端，但 native 只提供窄的、版本化、可取消�
 
 ### 播放/队列（PLAY）
 
-- [ ] **PLAY-001** [T][P][E] Media3 ExoPlayer、MediaSession 和队列由一个 native playback owner 持有；WebView/Howler 只发送 track/part 意图和渲染 snapshot，页面、mini-player 和通知共享同一 PlaybackState。
+- [x] **PLAY-001** [T][P][E] Media3 ExoPlayer、MediaSession 和队列由一个 native playback owner 持有；WebView/Howler 只发送 track/part 意图和渲染 snapshot，页面、mini-player 和通知共享同一 PlaybackState。
 - [ ] **PLAY-002** [T][P][E] native 根据受控 track/part 标识解析真实 MIME、容器、codec、时长和 rendition，按账号权限选择音质/画质并执行有上限的 CDN 候选恢复；MV 在设备/授权/codec 支持时可切分 P、画质、全屏和画中画，不支持时回退音频或显示可操作错误。
-- [ ] **PLAY-003** [T][P][E] 我能使用播放/暂停、seek、进度、时长、音量、静音、上一首和下一首；媒体 URL 失败保留当前曲目上下文并可重试，不错误切歌。
-- [ ] **PLAY-004** [P][E] 我能把曲目加入独立 FIFO play-next 队列并查看来源顺序；队列支持重复项、上移、下移、删除、清空、重启恢复，消费完成后回到原歌单或播放模式。
-- [ ] **PLAY-005** [P][E] shuffle 每轮采用 Fisher–Yates 且不重复可播放曲目，repeat 与上一首真实历史指针在重启后保持；自然结束、快速 next、失败重试不会跳过或重复消费。
+- [x] **PLAY-003** [T][P][E] 我能使用播放/暂停、seek、进度、时长、音量、静音、上一首和下一首；媒体 URL 失败保留当前曲目上下文并可重试，不错误切歌。
+- [x] **PLAY-004** [P][E] 我能把曲目加入独立 FIFO play-next 队列并查看来源顺序；队列支持重复项、上移、下移、删除、清空、重启恢复，消费完成后回到原歌单或播放模式。
+- [x] **PLAY-005** [P][E] shuffle 每轮采用 Fisher–Yates 且不重复可播放曲目，repeat 与上一首真实历史指针在重启后保持；自然结束、快速 next、失败重试不会跳过或重复消费。
 - [ ] **PLAY-006** [T][P][E] 屏幕关闭、Activity 销毁、renderer 被杀或进程回收后，MediaSessionService/合法 mediaPlayback foreground service 继续或可恢复播放；通知/锁屏、audio focus、AUDIO_BECOMING_NOISY、耳机和 Bluetooth/AVRCP 控制与页面一致，无播放时不常驻高耗电服务。
 
 ### 歌词/翻译（LYR）
@@ -185,11 +185,11 @@ Android 保留共享前端，但 native 只提供窄的、版本化、可取消�
 | SRCH-001 | Phase 1 | Pending | query/paging/cancel contract |
 | SRCH-002 | Phase 1 | Pending | directory/detail E2E |
 | SRCH-003 | Phase 1 | Pending | negative/partial result fixture |
-| PLAY-001 | Phase 2 | Pending | sole Media3 owner test |
+| PLAY-001 | Phase 2 | Complete | sole Media3 owner test |
 | PLAY-002 | Phase 9 | Pending | rendition/CDN/MV fixture |
-| PLAY-003 | Phase 2 | Pending | unified PlaybackState test |
-| PLAY-004 | Phase 2 | Pending | FIFO queue persistence |
-| PLAY-005 | Phase 2 | Pending | shuffle/repeat transition |
+| PLAY-003 | Phase 2 | Complete | unified PlaybackState test |
+| PLAY-004 | Phase 2 | Complete | FIFO queue persistence |
+| PLAY-005 | Phase 2 | Complete | shuffle/repeat transition |
 | PLAY-006 | Phase 2 | Pending | service/focus/lockscreen recovery |
 | LYR-001 | Phase 3 | Pending | Bilibili/NetEase lyric fixture |
 | LYR-002 | Phase 3 | Pending | manual/offset persistence |
