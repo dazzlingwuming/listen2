@@ -44,6 +44,41 @@ public final class AndroidRpcContractTest {
         assertEquals("LOGIN_REQUIRED", NetEaseResponseMapper.errorForStatus(401));
         assertFalse(NetEaseResponseMapper.mapSearch(request, "{\"code\":500}").isValid());
     }
+
+    @Test
+    public void everyNeteaseAndLyricOperationHasOnlyItsSemanticPayload() {
+        assertOperation("netease.directory.detail", "{\"trackId\":\"123\"}");
+        assertOperation("netease.rendition.default",
+                "{\"trackId\":\"123\",\"selectionRevision\":4}");
+        assertOperation("netease.lyric.primary", lyricIdentityPayload(""));
+        assertOperation("netease.lyric.search", lyricIdentityPayload(",\"keyword\":\"title\""));
+        assertOperation("lyric.selection.get", lyricIdentityPayload(""));
+        assertOperation("lyric.selection.set", lyricIdentityPayload(",\"lyricId\":\"candidate-1\""));
+        assertOperation("lyric.selection.clear", lyricIdentityPayload(""));
+        assertOperation("lyric.offset.set", lyricIdentityPayload(",\"offsetMs\":500"));
+
+        assertFalse(AndroidRpcContract.parseRequest(request("netease.rendition.default",
+                "{\"trackId\":\"123\",\"selectionRevision\":4,\"quality\":\"lossless\"}"))
+                .isValid());
+        assertFalse(AndroidRpcContract.parseRequest(request("lyric.offset.set",
+                lyricIdentityPayload(",\"offsetMs\":500,\"cookie\":\"no\""))).isValid());
+    }
+
+    private static void assertOperation(String operation, String payload) {
+        AndroidRpcContract.ParseResult parsed = AndroidRpcContract.parseRequest(request(operation, payload));
+        assertTrue(operation, parsed.isValid());
+        assertEquals(operation, parsed.request.operation.wireName);
+    }
+
+    private static String request(String operation, String payload) {
+        return "{\"version\":2,\"operation\":\"" + operation + "\",\"requestId\":\"op-1\","
+                + "\"pageEpoch\":3,\"payload\":" + payload + "}";
+    }
+
+    private static String lyricIdentityPayload(String extra) {
+        return "{\"trackId\":\"123\",\"selectionIdentity\":\"netease:123\","
+                + "\"selectionRevision\":4,\"selectionToken\":\"token-1\"" + extra + "}";
+    }
     @Test
     public void acceptsOnlyTheExactTypedSearchEnvelopeAndBuildsItsRouteNatively() throws Exception {
         AndroidRpcContract.TypedRequest request = new AndroidRpcContract.TypedRequest(

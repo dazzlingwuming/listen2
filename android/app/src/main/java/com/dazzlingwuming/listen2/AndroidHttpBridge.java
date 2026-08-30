@@ -48,6 +48,7 @@ final class AndroidHttpBridge {
     // The v2 NetEase seam is native-owned and intentionally route-unavailable
     // until an approved provider contract is supplied by a later slice.
     private final NetEaseProviderClient netEaseProviderClient = new NetEaseProviderClient();
+    private final LyricPersistencePort lyricPersistencePort = LyricPersistencePort.unavailable();
     // Installed by the Activity after it connects to the sole playback service.
     // This remains the existing trusted WebMessage listener, not a second bridge.
     private PlaybackBridgeController playbackController;
@@ -518,6 +519,19 @@ final class AndroidHttpBridge {
             AndroidRpcContract.TypedRequest request, BridgeRequestRegistry.RequestKey key) {
         if (request.operation == AndroidRpcContract.Operation.NETEASE_SEARCH) {
             return netEaseProviderClient.executeSearch(request);
+        }
+        if (request.operation == AndroidRpcContract.Operation.NETEASE_DIRECTORY_DETAIL
+                || request.operation == AndroidRpcContract.Operation.NETEASE_RENDITION_DEFAULT
+                || request.operation == AndroidRpcContract.Operation.NETEASE_LYRIC_PRIMARY
+                || request.operation == AndroidRpcContract.Operation.NETEASE_LYRIC_SEARCH) {
+            return AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.ERROR, 0,
+                    null, "NETEASE_ROUTE_UNAVAILABLE");
+        }
+        if (request.operation == AndroidRpcContract.Operation.LYRIC_SELECTION_GET
+                || request.operation == AndroidRpcContract.Operation.LYRIC_SELECTION_SET
+                || request.operation == AndroidRpcContract.Operation.LYRIC_SELECTION_CLEAR
+                || request.operation == AndroidRpcContract.Operation.LYRIC_OFFSET_SET) {
+            return lyricPersistencePort.execute(request);
         }
         if (request.operation == AndroidRpcContract.Operation.BILIBILI_AUDIO_MANIFEST) {
             return executeTypedManifest(request, key);

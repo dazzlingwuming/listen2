@@ -81,6 +81,14 @@ public final class HttpBridgePolicyTest {
     }
 
     @Test
+    public void versionOnePolicyCannotBecomeAVersionTwoOperationTransport() {
+        assertError("NETEASE_DETAIL_NOT_V1", "GET",
+                "https://music.163.com/api/song/detail?ids=123", "PATH_NOT_ALLOWED");
+        assertError("NETEASE_LYRIC_NOT_V1", "GET",
+                "https://music.163.com/api/song/lyric?id=123", "PATH_NOT_ALLOWED");
+    }
+
+    @Test
     public void onlyValidBilibiliAnonymousCookieValuesAreReused() {
         String validBuvid3 = "A1b2C3d4E5f6G7h8i9j0infoc";
         assertEquals(validBuvid3, HttpBridgePolicy.extractValidBilibiliBuvid3(

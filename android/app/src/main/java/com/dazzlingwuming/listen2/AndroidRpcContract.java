@@ -37,6 +37,14 @@ final class AndroidRpcContract {
         BILIBILI_VIDEO_DETAIL("bilibili.video.detail"),
         BILIBILI_AUDIO_MANIFEST("bilibili.audio.manifest"),
         NETEASE_SEARCH("netease.search"),
+        NETEASE_DIRECTORY_DETAIL("netease.directory.detail"),
+        NETEASE_RENDITION_DEFAULT("netease.rendition.default"),
+        NETEASE_LYRIC_PRIMARY("netease.lyric.primary"),
+        NETEASE_LYRIC_SEARCH("netease.lyric.search"),
+        LYRIC_SELECTION_GET("lyric.selection.get"),
+        LYRIC_SELECTION_SET("lyric.selection.set"),
+        LYRIC_SELECTION_CLEAR("lyric.selection.clear"),
+        LYRIC_OFFSET_SET("lyric.offset.set"),
         PLAYBACK_COMMAND("playback.command"),
         RPC_CANCEL("rpc.cancel");
 
@@ -180,6 +188,43 @@ final class AndroidRpcContract {
                     (String) bvid, (String) mode, value) == null
                     ? TypedRequest.audioManifest(requestId, pageEpoch, (String) bvid,
                             (String) mode, value) : null;
+        }
+        if (operation == Operation.NETEASE_DIRECTORY_DETAIL) {
+            return hasExactlyKeys(payload, "trackId") && isSafeProviderTrackId(payload.opt("trackId"))
+                    ? TypedRequest.operation(requestId, pageEpoch, operation, payload) : null;
+        }
+        if (operation == Operation.NETEASE_RENDITION_DEFAULT) {
+            return hasExactlyKeys(payload, "trackId", "selectionRevision")
+                    && isSafeProviderTrackId(payload.opt("trackId"))
+                    && isBoundedRevision(payload.opt("selectionRevision"))
+                    ? TypedRequest.operation(requestId, pageEpoch, operation, payload) : null;
+        }
+        if (operation == Operation.NETEASE_LYRIC_PRIMARY
+                || operation == Operation.LYRIC_SELECTION_GET
+                || operation == Operation.LYRIC_SELECTION_CLEAR) {
+            return hasExactlyKeys(payload, "trackId", "selectionIdentity", "selectionRevision",
+                    "selectionToken") && hasSafeLyricIdentity(payload)
+                    ? TypedRequest.operation(requestId, pageEpoch, operation, payload) : null;
+        }
+        if (operation == Operation.NETEASE_LYRIC_SEARCH) {
+            return hasExactlyKeys(payload, "trackId", "selectionIdentity", "selectionRevision",
+                    "selectionToken", "keyword") && hasSafeLyricIdentity(payload)
+                    && isSafeKeyword(payload.opt("keyword"))
+                    ? TypedRequest.operation(requestId, pageEpoch, operation, payload) : null;
+        }
+        if (operation == Operation.LYRIC_SELECTION_SET) {
+            return hasExactlyKeys(payload, "trackId", "selectionIdentity", "selectionRevision",
+                    "selectionToken", "lyricId") && hasSafeLyricIdentity(payload)
+                    && isSafeShortId(payload.opt("lyricId"))
+                    ? TypedRequest.operation(requestId, pageEpoch, operation, payload) : null;
+        }
+        if (operation == Operation.LYRIC_OFFSET_SET) {
+            Object offset = payload.opt("offsetMs");
+            return hasExactlyKeys(payload, "trackId", "selectionIdentity", "selectionRevision",
+                    "selectionToken", "offsetMs") && hasSafeLyricIdentity(payload)
+                    && offset instanceof Number && ((Number) offset).longValue() >= -30_000L
+                    && ((Number) offset).longValue() <= 30_000L
+                    ? TypedRequest.operation(requestId, pageEpoch, operation, payload) : null;
         }
         if (operation == Operation.RPC_CANCEL) {
             if (!hasExactlyKeys(payload, "targetRequestId", "targetPageEpoch")
@@ -348,6 +393,33 @@ final class AndroidRpcContract {
         return "default-first".equals(value) || "explicit".equals(value);
     }
 
+    private static boolean hasSafeLyricIdentity(JSONObject payload) {
+        return isSafeProviderTrackId(payload.opt("trackId"))
+                && isSafeShortId(payload.opt("selectionIdentity"))
+                && isBoundedRevision(payload.opt("selectionRevision"))
+                && isSafeShortId(payload.opt("selectionToken"));
+    }
+
+    private static boolean isSafeProviderTrackId(Object value) {
+        return value instanceof String && ((String) value).matches("[1-9][0-9]{0,17}");
+    }
+
+    private static boolean isSafeShortId(Object value) {
+        if (!(value instanceof String)) return false;
+        String text = (String) value;
+        return !text.isEmpty() && text.length() <= 128 && text.matches("[A-Za-z0-9:._-]+");
+    }
+
+    private static boolean isBoundedRevision(Object value) {
+        return value instanceof Number && ((Number) value).longValue() >= 0L
+                && ((Number) value).longValue() <= Integer.MAX_VALUE;
+    }
+
+    private static boolean isSafeKeyword(Object value) {
+        return value instanceof String && !((String) value).trim().isEmpty()
+                && ((String) value).trim().getBytes(StandardCharsets.UTF_8).length <= MAX_KEYWORD_BYTES;
+    }
+
     private static String plainText(String value) {
         if (value == null || value.isEmpty() || value.length() > MAX_TEXT_LENGTH
                 || value.indexOf('\u0000') >= 0) return null;
@@ -390,6 +462,7 @@ final class AndroidRpcContract {
         final String targetRequestId;
         final int targetPageEpoch;
         final JSONObject playbackPayload;
+        final JSONObject operationPayload;
 
         TypedRequest(String requestId, int pageEpoch, Operation operation, String keyword, int page) {
             this.requestId = requestId;
@@ -403,6 +476,7 @@ final class AndroidRpcContract {
             this.targetRequestId = null;
             this.targetPageEpoch = 0;
             this.playbackPayload = null;
+            this.operationPayload = null;
         }
 
         private TypedRequest(String requestId, int pageEpoch, Operation operation, String bvid,
@@ -418,6 +492,7 @@ final class AndroidRpcContract {
             this.targetRequestId = targetRequestId;
             this.targetPageEpoch = targetPageEpoch;
             this.playbackPayload = null;
+            this.operationPayload = null;
         }
 
         static TypedRequest videoDetail(String requestId, int pageEpoch, String bvid) {
@@ -433,6 +508,11 @@ final class AndroidRpcContract {
 
         static TypedRequest neteaseSearch(String requestId, int pageEpoch, String keyword, int page) {
             return new TypedRequest(requestId, pageEpoch, Operation.NETEASE_SEARCH, keyword, page);
+        }
+
+        static TypedRequest operation(String requestId, int pageEpoch, Operation operation,
+                JSONObject operationPayload) {
+            return new TypedRequest(requestId, pageEpoch, operation, operationPayload);
         }
 
         static TypedRequest cancel(String requestId, int pageEpoch, String targetRequestId,
@@ -457,6 +537,23 @@ final class AndroidRpcContract {
             this.targetRequestId = null;
             this.targetPageEpoch = 0;
             this.playbackPayload = playbackPayload;
+            this.operationPayload = null;
+        }
+
+        private TypedRequest(String requestId, int pageEpoch, Operation operation,
+                JSONObject operationPayload) {
+            this.requestId = requestId;
+            this.pageEpoch = pageEpoch;
+            this.operation = operation;
+            this.keyword = null;
+            this.page = 0;
+            this.bvid = null;
+            this.selectionMode = null;
+            this.cid = 0L;
+            this.targetRequestId = null;
+            this.targetPageEpoch = 0;
+            this.playbackPayload = null;
+            this.operationPayload = operationPayload;
         }
     }
 
