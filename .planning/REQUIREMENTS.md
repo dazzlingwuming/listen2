@@ -172,66 +172,66 @@ Android 保留共享前端，但 native 只提供窄的、版本化、可取消�
 
 | Requirement | Phase | Status | Evidence target |
 | --- | --- | --- | --- |
-| PERF-001 | TBD | Pending | cold-start instrumentation |
-| PERF-002 | TBD | Pending | fixture timing/resource report |
-| PERF-003 | TBD | Pending | process-kill/ANR recovery |
-| UI-001 | TBD | Pending | mobile navigation E2E |
-| UI-002 | TBD | Pending | inset/accessibility test |
-| UI-003 | TBD | Pending | Android-equivalent UX matrix |
-| NET-001 | TBD | Pending | typed bridge/origin policy |
-| NET-002 | TBD | Pending | cancel/timeout/error fixture |
-| NET-003 | TBD | Pending | Bilibili closed-loop E2E |
-| NET-004 | TBD | Pending | NetEase/five-provider matrix |
-| SRCH-001 | TBD | Pending | query/paging/cancel contract |
-| SRCH-002 | TBD | Pending | directory/detail E2E |
-| SRCH-003 | TBD | Pending | negative/partial result fixture |
-| PLAY-001 | TBD | Pending | sole Media3 owner test |
-| PLAY-002 | TBD | Pending | rendition/CDN/MV fixture |
-| PLAY-003 | TBD | Pending | unified PlaybackState test |
-| PLAY-004 | TBD | Pending | FIFO queue persistence |
-| PLAY-005 | TBD | Pending | shuffle/repeat transition |
-| PLAY-006 | TBD | Pending | service/focus/lockscreen recovery |
-| LYR-001 | TBD | Pending | Bilibili/NetEase lyric fixture |
-| LYR-002 | TBD | Pending | manual/offset persistence |
-| LYR-003 | TBD | Pending | stale/error/TalkBack test |
-| LIB-001 | TBD | Pending | source/offline library E2E |
-| LIB-002 | TBD | Pending | playlist CRUD/favorite test |
-| LIB-003 | TBD | Pending | transactional/capability test |
-| AUTH-001 | TBD | Pending | session-state matrix UI |
-| AUTH-002 | TBD | Pending | QR/login provider fixture |
-| AUTH-003 | TBD | Pending | Keystore/refresh/logout test |
-| LOCAL-001 | TBD | Pending | SAF import instrumentation |
-| LOCAL-002 | TBD | Pending | tag/LRC/local playback |
-| LOCAL-003 | TBD | Pending | revoke/path-boundary test |
-| DATA-001 | TBD | Pending | Room/DataStore migration |
-| DATA-002 | TBD | Pending | backup allow-list scan |
-| DATA-003 | TBD | Pending | merge/conflict/rollback |
-| HIST-001 | TBD | Pending | threshold/dedup fixture |
-| HIST-002 | TBD | Pending | lifecycle/annual aggregation |
-| HIST-003 | TBD | Pending | opt-out/export/clear |
-| CACHE-001 | TBD | Pending | atomic/hash/catalog test |
-| CACHE-002 | TBD | Pending | offline/resume/repair |
-| CACHE-003 | TBD | Pending | quota/LRU policy |
-| CACHE-004 | TBD | Pending | cache library/disk-full |
-| FX-001 | TBD | Pending | effect preset device test |
-| FX-002 | TBD | Pending | spectrum/degradation test |
-| FX-003 | TBD | Pending | LUFS/hash/background analysis |
-| AI-001 | TBD | Pending | key settings/Keystore |
-| AI-002 | TBD | Pending | confirmation/no-call test |
-| AI-003 | TBD | Pending | alignment/cache/secret scan |
-| SEC-001 | TBD | Pending | origin/navigation policy |
-| SEC-002 | TBD | Pending | cleartext/WebView config scan |
-| SEC-003 | TBD | Pending | schema/sink negative test |
-| SEC-004 | TBD | Pending | secret/entitlement audit |
-| TEST-001 | TBD | Pending | JS/JVM contract suites |
-| TEST-002 | TBD | Pending | WebView/Media3/storage suite |
-| TEST-003 | TBD | Pending | emulator E2E evidence |
-| TEST-004 | TBD | Pending | accessibility/perf/redaction report |
-| REL-001 | TBD | Pending | reproducible APK/R8 smoke |
-| REL-002 | TBD | Pending | release-like/signature/hash scan |
-| REL-003 | TBD | Pending | parity-ready gate |
+| PERF-001 | Phase 10 | Pending | cold-start instrumentation |
+| PERF-002 | Phase 10 | Pending | fixture timing/resource report |
+| PERF-003 | Phase 10 | Pending | process-kill/ANR recovery |
+| UI-001 | Phase 10 | Pending | mobile navigation E2E |
+| UI-002 | Phase 10 | Pending | inset/accessibility test |
+| UI-003 | Phase 10 | Pending | Android-equivalent UX matrix |
+| NET-001 | Phase 1 | Pending | typed bridge/origin policy |
+| NET-002 | Phase 1 | Pending | cancel/timeout/error fixture |
+| NET-003 | Phase 1 | Pending | Bilibili closed-loop E2E |
+| NET-004 | Phase 3 | Pending | NetEase/five-provider matrix |
+| SRCH-001 | Phase 1 | Pending | query/paging/cancel contract |
+| SRCH-002 | Phase 1 | Pending | directory/detail E2E |
+| SRCH-003 | Phase 1 | Pending | negative/partial result fixture |
+| PLAY-001 | Phase 2 | Pending | sole Media3 owner test |
+| PLAY-002 | Phase 9 | Pending | rendition/CDN/MV fixture |
+| PLAY-003 | Phase 2 | Pending | unified PlaybackState test |
+| PLAY-004 | Phase 2 | Pending | FIFO queue persistence |
+| PLAY-005 | Phase 2 | Pending | shuffle/repeat transition |
+| PLAY-006 | Phase 2 | Pending | service/focus/lockscreen recovery |
+| LYR-001 | Phase 3 | Pending | Bilibili/NetEase lyric fixture |
+| LYR-002 | Phase 3 | Pending | manual/offset persistence |
+| LYR-003 | Phase 3 | Pending | stale/error/TalkBack test |
+| LIB-001 | Phase 4 | Pending | source/offline library E2E |
+| LIB-002 | Phase 4 | Pending | playlist CRUD/favorite test |
+| LIB-003 | Phase 4 | Pending | transactional/capability test |
+| AUTH-001 | Phase 5 | Pending | session-state matrix UI |
+| AUTH-002 | Phase 5 | Pending | QR/login provider fixture |
+| AUTH-003 | Phase 5 | Pending | Keystore/refresh/logout test |
+| LOCAL-001 | Phase 6 | Pending | SAF import instrumentation |
+| LOCAL-002 | Phase 6 | Pending | tag/LRC/local playback |
+| LOCAL-003 | Phase 6 | Pending | revoke/path-boundary test |
+| DATA-001 | Phase 2 | Pending | Room/DataStore migration |
+| DATA-002 | Phase 6 | Pending | backup allow-list scan |
+| DATA-003 | Phase 6 | Pending | merge/conflict/rollback |
+| HIST-001 | Phase 6 | Pending | threshold/dedup fixture |
+| HIST-002 | Phase 6 | Pending | lifecycle/annual aggregation |
+| HIST-003 | Phase 6 | Pending | opt-out/export/clear |
+| CACHE-001 | Phase 8 | Pending | atomic/hash/catalog test |
+| CACHE-002 | Phase 8 | Pending | offline/resume/repair |
+| CACHE-003 | Phase 8 | Pending | quota/LRU policy |
+| CACHE-004 | Phase 8 | Pending | cache library/disk-full |
+| FX-001 | Phase 9 | Pending | effect preset device test |
+| FX-002 | Phase 9 | Pending | spectrum/degradation test |
+| FX-003 | Phase 9 | Pending | LUFS/hash/background analysis |
+| AI-001 | Phase 9 | Pending | key settings/Keystore |
+| AI-002 | Phase 9 | Pending | confirmation/no-call test |
+| AI-003 | Phase 9 | Pending | alignment/cache/secret scan |
+| SEC-001 | Phase 1 | Pending | origin/navigation policy |
+| SEC-002 | Phase 1 | Pending | cleartext/WebView config scan |
+| SEC-003 | Phase 1 | Pending | schema/sink negative test |
+| SEC-004 | Phase 7 | Pending | secret/entitlement audit |
+| TEST-001 | Phase 7 | Pending | JS/JVM contract suites |
+| TEST-002 | Phase 10 | Pending | WebView/Media3/storage suite |
+| TEST-003 | Phase 11 | Pending | emulator E2E evidence |
+| TEST-004 | Phase 11 | Pending | accessibility/perf/redaction report |
+| REL-001 | Phase 11 | Pending | reproducible APK/R8 smoke |
+| REL-002 | Phase 11 | Pending | release-like/signature/hash scan |
+| REL-003 | Phase 11 | Pending | parity-ready gate |
 
-Coverage is self-consistent: 58 requirement checkboxes, 58 unique IDs, 58 traceability rows, 58 Phase=TBD rows and 58 Status=Pending rows; completed requirements are 0/58.
+Coverage is self-consistent: 58 requirement checkboxes, 58 unique IDs, 58 traceability rows, and 58 uniquely assigned roadmap phases; all 58 Status=Pending rows remain incomplete until their implementation and evidence pass.
 
 ## Definition of Done
 
