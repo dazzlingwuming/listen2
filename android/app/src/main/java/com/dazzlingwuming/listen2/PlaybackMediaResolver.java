@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Mints native-only identity for logical Bilibili audio selections. Candidate
+ * Mints native-only identity for logical provider audio selections. Candidate
  * URLs are obtained only from the typed native seam, stay in memory for one
  * occurrence, and never appear in durable or page-facing values.
  */
@@ -21,6 +21,11 @@ public final class PlaybackMediaResolver {
 
     public interface ManifestPort {
         List<String> resolve(Descriptor descriptor);
+
+        /** A source-specific actionable result when no transient candidate can be issued. */
+        default String unavailableStatus() {
+            return "no-safe-candidate";
+        }
     }
 
     public interface HandleSource {
@@ -33,18 +38,18 @@ public final class PlaybackMediaResolver {
 
     public static final class Descriptor {
         private final String source;
-        private final String bvid;
-        private final long cid;
+        private final String providerTrackId;
+        private final long providerPartId;
         private final String title;
         private final String artist;
         private final long durationMs;
         private final String mediaKind;
 
-        public Descriptor(String source, String bvid, long cid, String title, String artist,
+        public Descriptor(String source, String providerTrackId, long providerPartId, String title, String artist,
                 long durationMs, String mediaKind) {
             this.source = source;
-            this.bvid = bvid;
-            this.cid = cid;
+            this.providerTrackId = providerTrackId;
+            this.providerPartId = providerPartId;
             this.title = title;
             this.artist = artist;
             this.durationMs = durationMs;
@@ -52,17 +57,27 @@ public final class PlaybackMediaResolver {
         }
 
         public String getSource() { return source; }
-        public String getBvid() { return bvid; }
-        public long getCid() { return cid; }
+        /** Legacy Bilibili aliases retained for existing native-only callers. */
+        public String getBvid() { return providerTrackId; }
+        public long getCid() { return providerPartId; }
+        public String getProviderTrackId() { return providerTrackId; }
+        public long getProviderPartId() { return providerPartId; }
         public String getTitle() { return title; }
         public String getArtist() { return artist; }
         public long getDurationMs() { return durationMs; }
         public String getMediaKind() { return mediaKind; }
 
         boolean isSafe() {
-            return "bilibili".equals(source) && isBvid(bvid) && cid > 0L && isText(title)
+            return isProviderIdentitySafe() && isText(title)
                     && isText(artist) && durationMs >= 0L && durationMs <= MAX_DURATION_MS
                     && "audio".equals(mediaKind);
+        }
+
+        private boolean isProviderIdentitySafe() {
+            if (providerPartId <= 0L) return false;
+            if ("bilibili".equals(source)) return isBvid(providerTrackId);
+            return "netease".equals(source) && providerTrackId != null
+                    && providerTrackId.matches("[1-9][0-9]{0,17}");
         }
     }
 
@@ -211,7 +226,7 @@ public final class PlaybackMediaResolver {
             if (isSafeCandidate(candidate)) safe.add(candidate);
             if (safe.size() == MAX_CANDIDATES) break;
         }
-        return safe.isEmpty() ? Resolution.failed("no-safe-candidate", true)
+        return safe.isEmpty() ? Resolution.failed(manifest.unavailableStatus(), true)
                 : Resolution.ready(new ArrayList<>(safe));
     }
 
@@ -226,8 +241,9 @@ public final class PlaybackMediaResolver {
             URI uri = new URI(candidate);
             String host = uri.getHost();
             if (!"https".equalsIgnoreCase(uri.getScheme()) || host == null || uri.getUserInfo() != null
-                    || uri.getRawFragment() != null || !(host.equals("bilivideo.com")
-                    || host.endsWith(".bilivideo.com"))) return false;
+                    || uri.getRawFragment() != null || !isSourceCandidateHost(selected.descriptor().getSource(), host)) {
+                return false;
+            }
             long deadline = deadline(uri.getRawQuery());
             return deadline > clock.nowEpochSeconds();
         } catch (URISyntaxException ignored) {
@@ -247,6 +263,14 @@ public final class PlaybackMediaResolver {
 
     private static boolean isBvid(String value) {
         return value != null && value.matches("BV[0-9A-Za-z]{10}");
+    }
+
+    private static boolean isSourceCandidateHost(String source, String host) {
+        if ("bilibili".equals(source)) {
+            return host.equals("bilivideo.com") || host.endsWith(".bilivideo.com");
+        }
+        return "netease".equals(source)
+                && (host.equals("music.163.com") || host.endsWith(".music.163.com"));
     }
     private static boolean isText(String value) {
         return value != null && !value.isEmpty() && value.length() <= MAX_TEXT

@@ -97,7 +97,7 @@ public final class PlaybackBridgePolicy {
         String artist = stringValue(payload.get("artist"));
         Long durationMs = boundedLong(payload.get("durationMs"), MAX_DURATION_MS);
         String mediaKind = stringValue(payload.get("mediaKind"));
-        if (!"bilibili".equals(source) || !isSafeBvid(providerTrackId) || providerPartId == null
+        if (!isValidLogicalIdentity(source, providerTrackId, providerPartId)
                 || !isPlainText(title) || !isPlainText(artist) || durationMs == null
                 || !"audio".equals(mediaKind)) return Result.error("INVALID_PAYLOAD");
 
@@ -323,6 +323,14 @@ public final class PlaybackBridgePolicy {
 
     private static boolean isSafeBvid(String value) {
         return value != null && value.matches("BV[0-9A-Za-z]{6,32}");
+    }
+
+    /** Provider identity remains source-specific even though the page command shape is shared. */
+    private static boolean isValidLogicalIdentity(String source, String providerTrackId, Long providerPartId) {
+        if (providerPartId == null) return false;
+        if ("bilibili".equals(source)) return isSafeBvid(providerTrackId);
+        return "netease".equals(source) && providerTrackId != null
+                && providerTrackId.matches("[1-9][0-9]{0,17}");
     }
 
     private static boolean isPlainText(String value) {

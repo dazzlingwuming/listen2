@@ -69,6 +69,36 @@ public final class PlaybackMediaResolverTest {
         assertTrue(restored.isPaused());
     }
 
+    @Test
+    public void netEaseDefaultResolverKeepsRouteAbsenceActionableAndFixturesInternal() {
+        NetEasePlaybackResolver unavailable = new NetEasePlaybackResolver();
+        PlaybackMediaResolver resolver = new PlaybackMediaResolver(unavailable,
+                new PlaybackMediaResolver.IncrementingHandleSource("netease"), () -> 1_000L);
+        PlaybackMediaResolver.Prepared prepared = resolver.prepare(new PlaybackMediaResolver.Descriptor(
+                "netease", "123456", 1L, "title", "artist", 1_000L, "audio"));
+
+        assertNotNull(prepared);
+        assertTrue(resolver.select(prepared.getTrackHandle(), prepared.getOccurrenceId(), 4L,
+                "replace-current", true).isAccepted());
+        PlaybackMediaResolver.Resolution unavailableResult = resolver.resolveCurrent(
+                prepared.getOccurrenceId(), 4L);
+        assertFalse(unavailableResult.isReady());
+        assertEquals("route-unavailable", unavailableResult.getStatus());
+        assertFalse(unavailableResult.toSnapshotFields().toString().contains("candidate"));
+
+        NetEasePlaybackResolver fixture = NetEasePlaybackResolver.forDeterministicFixture(
+                Collections.singletonList("https://audio.music.163.com/default.mp3?deadline=9999999999"));
+        PlaybackMediaResolver fixtureResolver = new PlaybackMediaResolver(fixture,
+                new PlaybackMediaResolver.IncrementingHandleSource("fixture"), () -> 1_000L);
+        PlaybackMediaResolver.Prepared fixturePrepared = fixtureResolver.prepare(
+                new PlaybackMediaResolver.Descriptor("netease", "123456", 1L, "title", "artist",
+                        1_000L, "audio"));
+        fixtureResolver.select(fixturePrepared.getTrackHandle(), fixturePrepared.getOccurrenceId(), 5L,
+                "replace-current", true);
+
+        assertTrue(fixtureResolver.resolveCurrent(fixturePrepared.getOccurrenceId(), 5L).isReady());
+    }
+
     private static PlaybackMediaResolver resolver(FakeManifest manifest) {
         return new PlaybackMediaResolver(manifest, new PlaybackMediaResolver.IncrementingHandleSource("native"),
                 () -> 1_000L);

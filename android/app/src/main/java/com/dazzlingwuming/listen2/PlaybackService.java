@@ -43,6 +43,9 @@ public final class PlaybackService extends MediaSessionService
     private PlaybackSettingsStore settings;
     private PlaybackCoordinator coordinator;
     private PlaybackMediaResolver resolver;
+    private NetEasePlaybackResolver netEaseResolver;
+    private PlaybackMediaResolver netEaseMediaResolver;
+    private final Map<String, PreparedMedia> preparedMediaByPageHandle = new LinkedHashMap<>();
     private Handler playerHandler;
     private boolean released;
     private long snapshotRevision;
@@ -88,6 +91,10 @@ public final class PlaybackService extends MediaSessionService
                 new PlaybackQueueEngine.SequenceRandom(1L));
         resolver = new PlaybackMediaResolver(descriptor -> java.util.Collections.<String>emptyList(),
                 new PlaybackMediaResolver.IncrementingHandleSource("service"),
+                () -> System.currentTimeMillis() / 1000L);
+        netEaseResolver = new NetEasePlaybackResolver();
+        netEaseMediaResolver = new PlaybackMediaResolver(netEaseResolver,
+                new PlaybackMediaResolver.IncrementingHandleSource("netease-service"),
                 () -> System.currentTimeMillis() / 1000L);
         coordinator = new PlaybackCoordinator(engine, new RoomPersistencePort(checkpointRepository), new ServicePlayerPort(),
                 snapshot -> { }, transitionExecutor, clock);
@@ -150,6 +157,9 @@ public final class PlaybackService extends MediaSessionService
     private void applyPlayerCommand(PlaybackCommand command, PlaybackSnapshot snapshot) {
         if (released || player == null) return;
         switch (command.getType()) {
+            case PREPARE_SELECTION:
+                prepareMedia(command, snapshot);
+                break;
             case PLAY:
                 retainStartedPlaybackService();
                 player.play();
@@ -177,13 +187,60 @@ public final class PlaybackService extends MediaSessionService
                 stopSelf();
                 break;
             case SELECT_PREPARED:
-                player.setPlayWhenReady("playing".equals(snapshot.toMap().get("state")));
+                selectPreparedMedia(command, snapshot);
                 break;
             default:
                 // Other semantic commands are recorded as a native snapshot;
                 // coordinator/media projection performs their transport work.
                 break;
         }
+    }
+
+    /** Logical page selections are paired with native-only resolver handles before selection. */
+    private void prepareMedia(PlaybackCommand command, PlaybackSnapshot snapshot) {
+        PlaybackSnapshot.PreparedSelection pagePrepared = snapshot.getPreparedSelection();
+        if (pagePrepared == null) return;
+        Map<String, Object> payload = command.getPayload();
+        String source = string(payload.get("source"));
+        String providerTrackId = string(payload.get("providerTrackId"));
+        long providerPartId = number(payload.get("providerPartId"));
+        PlaybackMediaResolver.Descriptor descriptor = new PlaybackMediaResolver.Descriptor(source,
+                providerTrackId, providerPartId, string(payload.get("title")), string(payload.get("artist")),
+                number(payload.get("durationMs")), string(payload.get("mediaKind")));
+        PlaybackMediaResolver activeResolver = "netease".equals(source) ? netEaseMediaResolver : resolver;
+        PlaybackMediaResolver.Prepared nativePrepared = activeResolver.prepare(descriptor);
+        if (nativePrepared == null) return;
+        preparedMediaByPageHandle.put(pagePrepared.getTrackHandle(), new PreparedMedia(activeResolver,
+                nativePrepared, pagePrepared.getOccurrenceId()));
+    }
+
+    /** Candidate transport is consumed here only, on the Media3 service lane, and never copied to a snapshot. */
+    private void selectPreparedMedia(PlaybackCommand command, PlaybackSnapshot snapshot) {
+        String pageTrackHandle = string(command.getPayload().get("trackHandle"));
+        String occurrenceId = string(command.getPayload().get("occurrenceId"));
+        PreparedMedia preparedMedia = preparedMediaByPageHandle.remove(pageTrackHandle);
+        if (preparedMedia == null || occurrenceId == null || !occurrenceId.equals(preparedMedia.pageOccurrenceId)) {
+            publishPlayerSnapshot("stale-selection");
+            return;
+        }
+        PlaybackMediaResolver.Selection selected = preparedMedia.resolver.select(
+                preparedMedia.nativePrepared.getTrackHandle(), preparedMedia.nativePrepared.getOccurrenceId(),
+                command.getExpectedRevision(), "replace-current", "playing".equals(snapshot.toMap().get("state")));
+        if (!selected.isAccepted()) {
+            publishPlayerSnapshot("stale-selection");
+            return;
+        }
+        PlaybackMediaResolver.Resolution resolution = preparedMedia.resolver.resolveCurrent(
+                preparedMedia.nativePrepared.getOccurrenceId(), command.getExpectedRevision());
+        if (!resolution.isReady() || resolution.candidates().isEmpty()) {
+            publishPlayerSnapshot(resolution.getStatus());
+            return;
+        }
+        MediaMetadata mediaMetadata = new MediaMetadata.Builder().setTitle("Listen2").build();
+        player.setMediaItem(new MediaItem.Builder().setMediaId(occurrenceId)
+                .setUri(resolution.candidates().get(0)).setMediaMetadata(mediaMetadata).build());
+        player.prepare();
+        player.setPlayWhenReady(selected.isPlayWhenReady());
     }
 
     /** A bound page is disposable; active audio must also retain a started service lifecycle. */
@@ -317,6 +374,23 @@ public final class PlaybackService extends MediaSessionService
 
     private static long number(Object value) {
         return value instanceof Number ? ((Number) value).longValue() : 0L;
+    }
+
+    private static String string(Object value) {
+        return value instanceof String ? (String) value : "";
+    }
+
+    private static final class PreparedMedia {
+        final PlaybackMediaResolver resolver;
+        final PlaybackMediaResolver.Prepared nativePrepared;
+        final String pageOccurrenceId;
+
+        PreparedMedia(PlaybackMediaResolver resolver, PlaybackMediaResolver.Prepared nativePrepared,
+                String pageOccurrenceId) {
+            this.resolver = resolver;
+            this.nativePrepared = nativePrepared;
+            this.pageOccurrenceId = pageOccurrenceId;
+        }
     }
 
     private static PlaybackSnapshot initialSnapshot() {
