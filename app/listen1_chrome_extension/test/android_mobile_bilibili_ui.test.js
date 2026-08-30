@@ -96,6 +96,25 @@ function createHandle() {
   };
 }
 
+function createTimeout() {
+  const pending = [];
+  const cancelled = new Set();
+  const timeout = (callback) => {
+    const token = { callback };
+    pending.push(token);
+    return token;
+  };
+  timeout.cancel = (token) => {
+    if (token) cancelled.add(token);
+  };
+  timeout.runActive = () => {
+    pending.splice(0).forEach((token) => {
+      if (!cancelled.has(token)) token.callback();
+    });
+  };
+  return timeout;
+}
+
 function run() {
   const searchHandles = [];
   const detailHandles = [];
@@ -123,8 +142,9 @@ function run() {
       window: { Listen2AndroidHttpAdapter: { isAvailable: () => true } },
     }
   );
+  const searchTimeout = createTimeout();
   const searchScope = createScope();
-  searchFactory(searchScope, () => {}, { $broadcast() {} });
+  searchFactory(searchScope, searchTimeout, { $broadcast() {} });
   assert.strictEqual(searchScope.bilibiliSearch.state, 'idle');
   searchScope.submitBilibiliSearch();
   assert.strictEqual(searchHandles.length, 0, 'empty input stays local');
@@ -186,6 +206,20 @@ function run() {
     searchScope.result.length,
     1,
     'a late cancelled reply must not replace prior visible rows'
+  );
+  searchScope.keywords = 'timeout-request';
+  searchScope.submitBilibiliSearch();
+  const timedOutSearch = searchHandles[4];
+  searchTimeout.runActive();
+  assert.strictEqual(searchScope.bilibiliSearch.state, 'timeout');
+  timedOutSearch.resolve({
+    result: [{ id: 'late-timeout-result', source: 'bilibili' }],
+    total: 1,
+  });
+  assert.strictEqual(
+    searchScope.bilibiliSearch.state,
+    'timeout',
+    'a late reply must not replace the configured timeout terminal state'
   );
   searchScope.openBilibiliDetail(searchScope.result[0]);
   assert.strictEqual(searchScope.bilibiliDetail.state, 'loading');
