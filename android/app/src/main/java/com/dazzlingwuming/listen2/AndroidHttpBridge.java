@@ -45,6 +45,8 @@ final class AndroidHttpBridge {
     // value is intentionally not written to CookieManager.
     private String anonymousBilibiliBuvid3;
     private boolean bilibiliFingerprintAttempted;
+    // Listener callbacks run on the WebView main thread; workers only observe the registry state.
+    private int pageGeneration;
 
     private AndroidHttpBridge() {
         ThreadFactory threadFactory = new ThreadFactory() {
@@ -89,6 +91,13 @@ final class AndroidHttpBridge {
         }
     }
 
+    /** Invalidates all outstanding page work while keeping this one bridge available to the new page. */
+    void onPageStarted() {
+        if (typedRequests.isDestroyed()) return;
+        pageGeneration += 1;
+        typedRequests.cancelForPageTransition();
+    }
+
     private final class Listener implements WebViewCompat.WebMessageListener {
         @Override
         public void onPostMessage(
@@ -97,6 +106,7 @@ final class AndroidHttpBridge {
                 Uri sourceOrigin,
                 boolean isMainFrame,
                 JavaScriptReplyProxy replyProxy) {
+            if (typedRequests.isDestroyed()) return;
             if (isTypedProtocol(message == null ? null : message.getData())) {
                 handleTypedRequest(view, message == null ? null : message.getData(), sourceOrigin,
                         isMainFrame, replyProxy);
@@ -124,20 +134,36 @@ final class AndroidHttpBridge {
                 return;
             }
 
+            // Version-1 compatibility calls have no page epoch. Namespace their request IDs by
+            // the native page generation so a reload cannot collide with or receive an old reply.
+            BridgeRequestRegistry.RequestKey key = new BridgeRequestRegistry.RequestKey(
+                    -pageGeneration, parsed.requestId);
+            if (typedRequests.register(key) == null) {
+                replyOnMain(view, replyProxy, BridgeReply.error(parsed.requestId, 0, "BRIDGE_BUSY"));
+                return;
+            }
             try {
-                networkExecutor.execute(() -> {
+                Future<?> future = networkExecutor.submit(() -> {
                     String cookieHeader = resolveCookieHeader(validation, parsed.url);
                     if (validation.getRoute() == HttpBridgePolicy.RequestRoute.BILIBILI_GET
                             && cookieHeader == null) {
-                        replyOnMain(view, replyProxy, BridgeReply.error(
-                                parsed.requestId, 0, "BILIBILI_ANONYMOUS_COOKIE_UNAVAILABLE"));
+                        if (typedRequests.settle(key, AndroidRpcContract.Terminal.ERROR)
+                                == BridgeRequestRegistry.SettleResult.OK) {
+                            replyOnMain(view, replyProxy, BridgeReply.error(
+                                    parsed.requestId, 0, "BILIBILI_ANONYMOUS_COOKIE_UNAVAILABLE"));
+                        }
                         return;
                     }
-                    BridgeReply reply = executeRequest(parsed.requestId, validation, cookieHeader);
-                    replyOnMain(view, replyProxy, reply);
+                    BridgeReply reply = executeRequest(parsed.requestId, validation, cookieHeader, key);
+                    if (typedRequests.settle(key, AndroidRpcContract.Terminal.ERROR)
+                            == BridgeRequestRegistry.SettleResult.OK) {
+                        replyOnMain(view, replyProxy, reply);
+                    }
                 });
+                typedRequests.attachFuture(key, future);
             } catch (RejectedExecutionException ignored) {
                 replyOnMain(view, replyProxy, BridgeReply.error(parsed.requestId, 0, "BRIDGE_BUSY"));
+                typedRequests.settle(key, AndroidRpcContract.Terminal.ERROR);
             }
         }
     }
@@ -159,6 +185,7 @@ final class AndroidHttpBridge {
             Uri sourceOrigin,
             boolean isMainFrame,
             JavaScriptReplyProxy replyProxy) {
+        if (typedRequests.isDestroyed()) return;
         AndroidRpcContract.ParseResult parsed = AndroidRpcContract.parseRequest(rawMessage);
         if (!HttpBridgePolicy.isTrustedSourceOrigin(
                 sourceOrigin == null ? null : sourceOrigin.getScheme(),
@@ -341,15 +368,19 @@ final class AndroidHttpBridge {
         }
     }
 
-    private static BridgeReply executeRequest(
+    private BridgeReply executeRequest(
             String requestId,
             HttpBridgePolicy.ValidationResult validation,
-            String cookieHeader) {
+            String cookieHeader,
+            BridgeRequestRegistry.RequestKey key) {
         HttpsURLConnection connection = null;
         try {
             String url = validation.getUri().toASCIIString();
             HttpBridgePolicy.RequestRoute route = validation.getRoute();
             connection = (HttpsURLConnection) new URL(url).openConnection();
+            if (!typedRequests.attachConnection(key, connection)) {
+                return BridgeReply.error(requestId, 0, "CANCELLED");
+            }
             connection.setRequestMethod(route.getMethod());
             configureConnection(connection, route);
             if (cookieHeader != null && !cookieHeader.isEmpty()) {
@@ -380,6 +411,7 @@ final class AndroidHttpBridge {
             return BridgeReply.error(requestId, 0, "NETWORK_IO_ERROR");
         } finally {
             if (connection != null) {
+                typedRequests.detachConnection(key, connection);
                 connection.disconnect();
             }
         }

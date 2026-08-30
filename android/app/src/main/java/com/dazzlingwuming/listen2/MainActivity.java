@@ -11,6 +11,7 @@ import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.view.WindowInsets;
 import android.webkit.CookieManager;
 import android.webkit.WebResourceRequest;
@@ -40,6 +41,7 @@ public final class MainActivity extends Activity {
     private TextView loadingMessage;
     private WebViewAssetLoader assetLoader;
     private AndroidHttpBridge httpBridge;
+    private boolean navigationInProgress;
 
     @Override
     @SuppressLint("SetJavaScriptEnabled")
@@ -124,6 +126,14 @@ public final class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
+        if (webView != null && navigationInProgress) {
+            // Cancelling a navigation must not affect foreground audio, which is owned by the page.
+            webView.stopLoading();
+            if (httpBridge != null) httpBridge.onPageStarted();
+            navigationInProgress = false;
+            if (loadingView != null) loadingView.setVisibility(View.GONE);
+            return;
+        }
         if (webView != null && webView.canGoBack()) {
             webView.goBack();
         } else {
@@ -133,14 +143,28 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
-        if (webView != null) {
+        WebView retiringWebView = webView;
+        webView = null;
+        navigationInProgress = false;
+        if (retiringWebView != null) {
+            retiringWebView.stopLoading();
             if (httpBridge != null) {
-                httpBridge.destroy(webView);
+                httpBridge.destroy(retiringWebView);
                 httpBridge = null;
             }
-            webView.destroy();
-            webView = null;
+            // Detach callback owners before destroying the renderer. Late bridge posts are inert.
+            retiringWebView.setWebViewClient(null);
+            retiringWebView.setWebChromeClient(null);
+            retiringWebView.clearHistory();
+            retiringWebView.removeAllViews();
+            ViewParent parent = retiringWebView.getParent();
+            if (parent instanceof ViewGroup) {
+                ((ViewGroup) parent).removeView(retiringWebView);
+            }
+            retiringWebView.destroy();
         }
+        loadingView = null;
+        loadingMessage = null;
         super.onDestroy();
     }
 
@@ -153,17 +177,27 @@ public final class MainActivity extends Activity {
 
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-            return handleNavigation(request.getUrl().toString());
+            return handleNavigation(request.getUrl().toString(), request.isForMainFrame());
         }
 
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, String url) {
-            return handleNavigation(url);
+            return handleNavigation(url, true);
+        }
+
+        @Override
+        public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+            navigationInProgress = true;
+            if (httpBridge != null) httpBridge.onPageStarted();
+            if (NavigationPolicy.isPackagedAssetUrl(url) && loadingView != null) {
+                loadingView.setVisibility(View.VISIBLE);
+            }
         }
 
         @Override
         public void onPageCommitVisible(WebView view, String url) {
             if (NavigationPolicy.isPackagedAssetUrl(url) && loadingView != null) {
+                navigationInProgress = false;
                 loadingView.setVisibility(View.GONE);
             }
         }
@@ -176,15 +210,24 @@ public final class MainActivity extends Activity {
             }
         }
 
-        private boolean handleNavigation(String url) {
-            if (NavigationPolicy.isPackagedAssetUrl(url)) {
+        private boolean handleNavigation(String url, boolean isMainFrame) {
+            // Iframes never receive bridge authority and are not an alternate in-app surface.
+            if (!isMainFrame) return true;
+            NavigationPolicy.ExternalNavigationDecision decision =
+                    NavigationPolicy.decideNavigation(url);
+            if (decision.isPackaged()) {
                 return false;
             }
-            if (NavigationPolicy.isApprovedExternalUrl(url)) {
-                Intent external = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+            if (decision.isExternal()) {
+                Intent external = new Intent(Intent.ACTION_VIEW,
+                        Uri.parse(decision.getExternalUri().toASCIIString()));
                 external.addCategory(Intent.CATEGORY_BROWSABLE);
                 if (external.resolveActivity(getPackageManager()) != null) {
-                    startActivity(external);
+                    try {
+                        startActivity(external);
+                    } catch (RuntimeException ignored) {
+                        // Missing/disabled system handlers leave the packaged page unchanged.
+                    }
                 }
             }
             // Block every non-packaged navigation, including file:, content: and intent:.

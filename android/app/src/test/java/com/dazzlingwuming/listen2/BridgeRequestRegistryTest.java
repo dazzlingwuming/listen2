@@ -52,6 +52,25 @@ public final class BridgeRequestRegistryTest {
     }
 
     @Test
+    public void pageTransitionCancelsAndForgetsOldCallsWithoutClosingNewPageAuthority() {
+        BridgeRequestRegistry registry = new BridgeRequestRegistry();
+        BridgeRequestRegistry.RequestKey oldKey = new BridgeRequestRegistry.RequestKey(1, "old");
+        FakeFuture oldFuture = new FakeFuture();
+        registry.register(oldKey);
+        registry.attachFuture(oldKey, oldFuture);
+
+        assertEquals(1, registry.cancelForPageTransition());
+        assertTrue(oldFuture.cancelled);
+        assertEquals(BridgeRequestRegistry.SettleResult.NOT_FOUND,
+                registry.settle(oldKey, AndroidRpcContract.Terminal.OK));
+        assertFalse(registry.isDestroyed());
+
+        BridgeRequestRegistry.RequestKey newKey = new BridgeRequestRegistry.RequestKey(1, "old");
+        assertTrue(registry.register(newKey) != null);
+        assertTrue(registry.hasActive(newKey));
+    }
+
+    @Test
     public void retryDecisionsAreBoundedAndCancellationAwareWithoutSleeping() {
         assertEquals(BridgeRetryPolicy.Decision.retryAfter(50),
                 BridgeRetryPolicy.decide(1, 0, 200, false, 503));

@@ -145,6 +145,25 @@ final class BridgeRequestRegistry {
         return cancelled;
     }
 
+    /**
+     * A top-level page transition has a new authority generation. Cancel and forget every
+     * old handle without permanently closing the bridge, so a freshly committed packaged page
+     * can safely reuse its own request and epoch identifiers.
+     */
+    synchronized int cancelForPageTransition() {
+        if (destroyed) return 0;
+        int cancelled = 0;
+        for (CallHandle handle : handles.values()) {
+            if (!handle.terminal) {
+                handle.terminal = true;
+                handle.cancelTransport();
+                cancelled += 1;
+            }
+        }
+        handles.clear();
+        return cancelled;
+    }
+
     synchronized boolean hasActive(RequestKey key) {
         CallHandle handle = handles.get(key);
         return handle != null && !handle.terminal && !destroyed;
