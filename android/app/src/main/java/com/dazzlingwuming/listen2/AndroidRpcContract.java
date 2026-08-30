@@ -22,13 +22,18 @@ final class AndroidRpcContract {
     static final int MAX_PAGE = 1000;
     static final int MAX_RESULT_ROWS = 50;
     static final String BILIBILI_SEARCH_PATH = "/x/web-interface/search/type";
+    static final String BILIBILI_VIDEO_DETAIL_PATH = "/x/web-interface/view";
+    static final String BILIBILI_AUDIO_MANIFEST_PATH = "/x/player/playurl";
     private static final int PAGE_SIZE = 20;
     private static final int MAX_TEXT_LENGTH = 512;
 
     enum Terminal { OK, CANCELLED, ERROR }
 
     enum Operation {
-        BILIBILI_SEARCH("bilibili.search");
+        BILIBILI_SEARCH("bilibili.search"),
+        BILIBILI_VIDEO_DETAIL("bilibili.video.detail"),
+        BILIBILI_AUDIO_MANIFEST("bilibili.audio.manifest"),
+        RPC_CANCEL("rpc.cancel");
 
         final String wireName;
 
@@ -74,22 +79,10 @@ final class AndroidRpcContract {
             Operation operation = Operation.fromWireName(object.opt("operation"));
             if (operation == null) return ParseResult.error(requestId, "UNSUPPORTED_OPERATION");
             JSONObject payload = object.optJSONObject("payload");
-            if (payload == null || !hasExactlyKeys(payload, "keyword", "page")) {
-                return ParseResult.error(requestId, "INVALID_PAYLOAD");
-            }
-            Object keywordValue = payload.opt("keyword");
-            Object pageValue = payload.opt("page");
-            if (!(keywordValue instanceof String) || !(pageValue instanceof Number)) {
-                return ParseResult.error(requestId, "INVALID_PAYLOAD");
-            }
-            String keyword = ((String) keywordValue).trim();
-            int page = ((Number) pageValue).intValue();
-            String validation = validateInput(requestId, ((Number) epochValue).intValue(),
-                    operation, keyword, page);
-            return validation == null
-                    ? ParseResult.success(new TypedRequest(requestId, ((Number) epochValue).intValue(),
-                            operation, keyword, page))
-                    : ParseResult.error(requestId, validation);
+            TypedRequest typed = parsePayload(requestId, ((Number) epochValue).intValue(),
+                    operation, payload);
+            return typed == null ? ParseResult.error(requestId, "INVALID_PAYLOAD")
+                    : ParseResult.success(typed);
         } catch (JSONException ignored) {
             return ParseResult.error("INVALID_JSON");
         }
@@ -106,6 +99,25 @@ final class AndroidRpcContract {
                 BILIBILI_SEARCH_PATH, query, null);
     }
 
+    static URI buildVideoDetailUri(TypedRequest request) throws URISyntaxException {
+        if (request == null || request.operation != Operation.BILIBILI_VIDEO_DETAIL) {
+            throw new URISyntaxException("", "Unsupported operation");
+        }
+        return new URI("https", null, HttpBridgePolicy.BILIBILI_API_HOST, -1,
+                BILIBILI_VIDEO_DETAIL_PATH, "bvid=" + request.bvid, null);
+    }
+
+    static URI buildAudioManifestUri(TypedRequest request) throws URISyntaxException {
+        if (request == null || request.operation != Operation.BILIBILI_AUDIO_MANIFEST) {
+            throw new URISyntaxException("", "Unsupported operation");
+        }
+        long selectedCid = request.cid;
+        if (selectedCid <= 0) throw new URISyntaxException("", "CID required before route build");
+        String query = "fnval=16&fnver=0&fourk=1&bvid=" + request.bvid + "&cid=" + selectedCid;
+        return new URI("https", null, HttpBridgePolicy.BILIBILI_API_HOST, -1,
+                BILIBILI_AUDIO_MANIFEST_PATH, query, null);
+    }
+
     /** Android-free validation hook for deterministic JVM boundary tests. */
     static String validateInput(String requestId, int pageEpoch, Operation operation,
             String keyword, int page) {
@@ -115,6 +127,62 @@ final class AndroidRpcContract {
         if (keyword == null || keyword.trim().isEmpty()
                 || keyword.trim().getBytes(StandardCharsets.UTF_8).length > MAX_KEYWORD_BYTES
                 || page < 1 || page > MAX_PAGE) return "INVALID_PAYLOAD";
+        return null;
+    }
+
+    static String validateManifestInput(String requestId, int pageEpoch, String bvid,
+            String selectionMode, long cid) {
+        if (!isValidRequestId(requestId)) return "INVALID_REQUEST_ID";
+        if (pageEpoch < 0) return "INVALID_PAGE_EPOCH";
+        if (!isSafeBvid(bvid) || !isSelectionMode(selectionMode)) return "INVALID_PAYLOAD";
+        if ("explicit".equals(selectionMode)) return cid > 0 ? null : "INVALID_PAYLOAD";
+        return cid == 0 ? null : "INVALID_PAYLOAD";
+    }
+
+    private static TypedRequest parsePayload(String requestId, int pageEpoch, Operation operation,
+            JSONObject payload) {
+        if (payload == null) return null;
+        if (operation == Operation.BILIBILI_SEARCH) {
+            if (!hasExactlyKeys(payload, "keyword", "page")) return null;
+            Object keyword = payload.opt("keyword");
+            Object page = payload.opt("page");
+            if (!(keyword instanceof String) || !(page instanceof Number)) return null;
+            String normalized = ((String) keyword).trim();
+            return validateInput(requestId, pageEpoch, operation, normalized,
+                    ((Number) page).intValue()) == null
+                    ? new TypedRequest(requestId, pageEpoch, operation, normalized,
+                            ((Number) page).intValue()) : null;
+        }
+        if (operation == Operation.BILIBILI_VIDEO_DETAIL) {
+            if (!hasExactlyKeys(payload, "bvid") || !(payload.opt("bvid") instanceof String)) return null;
+            String bvid = (String) payload.opt("bvid");
+            return isValidRequestId(requestId) && pageEpoch >= 0 && isSafeBvid(bvid)
+                    ? TypedRequest.videoDetail(requestId, pageEpoch, bvid) : null;
+        }
+        if (operation == Operation.BILIBILI_AUDIO_MANIFEST) {
+            Object bvid = payload.opt("bvid");
+            Object mode = payload.opt("selectionMode");
+            Object cid = payload.opt("cid");
+            if (!(bvid instanceof String) || !(mode instanceof String)) return null;
+            long value = cid instanceof Number ? ((Number) cid).longValue() : 0L;
+            boolean expectedKeys = "explicit".equals(mode)
+                    ? hasExactlyKeys(payload, "bvid", "selectionMode", "cid")
+                    : hasExactlyKeys(payload, "bvid", "selectionMode");
+            return expectedKeys && validateManifestInput(requestId, pageEpoch,
+                    (String) bvid, (String) mode, value) == null
+                    ? TypedRequest.audioManifest(requestId, pageEpoch, (String) bvid,
+                            (String) mode, value) : null;
+        }
+        if (operation == Operation.RPC_CANCEL) {
+            if (!hasExactlyKeys(payload, "targetRequestId", "targetPageEpoch")
+                    || !(payload.opt("targetRequestId") instanceof String)
+                    || !(payload.opt("targetPageEpoch") instanceof Number)) return null;
+            String targetId = (String) payload.opt("targetRequestId");
+            int targetEpoch = ((Number) payload.opt("targetPageEpoch")).intValue();
+            return isValidRequestId(requestId) && pageEpoch >= 0 && isValidRequestId(targetId)
+                    && targetEpoch >= 0
+                    ? TypedRequest.cancel(requestId, pageEpoch, targetId, targetEpoch) : null;
+        }
         return null;
     }
 
@@ -199,8 +267,12 @@ final class AndroidRpcContract {
         return true;
     }
 
-    private static boolean isSafeBvid(String value) {
+    static boolean isSafeBvid(String value) {
         return value != null && value.matches("BV[0-9A-Za-z]{6,32}");
+    }
+
+    private static boolean isSelectionMode(String value) {
+        return "default-first".equals(value) || "explicit".equals(value);
     }
 
     private static String plainText(String value) {
@@ -229,6 +301,11 @@ final class AndroidRpcContract {
         final Operation operation;
         final String keyword;
         final int page;
+        final String bvid;
+        final String selectionMode;
+        final long cid;
+        final String targetRequestId;
+        final int targetPageEpoch;
 
         TypedRequest(String requestId, int pageEpoch, Operation operation, String keyword, int page) {
             this.requestId = requestId;
@@ -236,6 +313,42 @@ final class AndroidRpcContract {
             this.operation = operation;
             this.keyword = keyword;
             this.page = page;
+            this.bvid = null;
+            this.selectionMode = null;
+            this.cid = 0L;
+            this.targetRequestId = null;
+            this.targetPageEpoch = 0;
+        }
+
+        private TypedRequest(String requestId, int pageEpoch, Operation operation, String bvid,
+                String selectionMode, long cid, String targetRequestId, int targetPageEpoch) {
+            this.requestId = requestId;
+            this.pageEpoch = pageEpoch;
+            this.operation = operation;
+            this.keyword = null;
+            this.page = 0;
+            this.bvid = bvid;
+            this.selectionMode = selectionMode;
+            this.cid = cid;
+            this.targetRequestId = targetRequestId;
+            this.targetPageEpoch = targetPageEpoch;
+        }
+
+        static TypedRequest videoDetail(String requestId, int pageEpoch, String bvid) {
+            return new TypedRequest(requestId, pageEpoch, Operation.BILIBILI_VIDEO_DETAIL,
+                    bvid, null, 0L, null, 0);
+        }
+
+        static TypedRequest audioManifest(String requestId, int pageEpoch, String bvid,
+                String selectionMode, long cid) {
+            return new TypedRequest(requestId, pageEpoch, Operation.BILIBILI_AUDIO_MANIFEST,
+                    bvid, selectionMode, cid, null, 0);
+        }
+
+        static TypedRequest cancel(String requestId, int pageEpoch, String targetRequestId,
+                int targetPageEpoch) {
+            return new TypedRequest(requestId, pageEpoch, Operation.RPC_CANCEL,
+                    null, null, 0L, targetRequestId, targetPageEpoch);
         }
     }
 

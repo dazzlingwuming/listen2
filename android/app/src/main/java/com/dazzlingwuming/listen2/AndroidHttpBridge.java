@@ -173,6 +173,20 @@ final class AndroidHttpBridge {
                     null, AndroidRpcContract.Terminal.ERROR, 0, null, parsed.errorCode));
             return;
         }
+        if (parsed.request.operation == AndroidRpcContract.Operation.RPC_CANCEL) {
+            BridgeRequestRegistry.SettleResult result = typedRequests.cancel(
+                    new BridgeRequestRegistry.RequestKey(parsed.request.targetPageEpoch,
+                            parsed.request.targetRequestId));
+            JSONObject acknowledgement = new JSONObject();
+            try {
+                acknowledgement.put("cancelled", result == BridgeRequestRegistry.SettleResult.CANCELLED);
+            } catch (JSONException impossible) {
+                throw new IllegalStateException(impossible);
+            }
+            replyTypedOnMain(view, replyProxy, AndroidRpcContract.reply(parsed.request,
+                    AndroidRpcContract.Terminal.OK, 0, acknowledgement, null));
+            return;
+        }
         BridgeRequestRegistry.RequestKey key = new BridgeRequestRegistry.RequestKey(
                 parsed.request.pageEpoch, parsed.request.requestId);
         if (typedRequests.register(key) == null) {
@@ -180,9 +194,18 @@ final class AndroidHttpBridge {
                     AndroidRpcContract.Terminal.ERROR, 0, null, "DUPLICATE_REQUEST"));
             return;
         }
+        typedRequests.attachTerminalListener(key, result -> {
+            if (!typedRequests.canPostReplies()) return;
+            AndroidRpcContract.TypedReply terminal = result == BridgeRequestRegistry.SettleResult.CANCELLED
+                    ? AndroidRpcContract.reply(parsed.request, AndroidRpcContract.Terminal.CANCELLED,
+                            0, null, "CANCELLED")
+                    : AndroidRpcContract.reply(parsed.request, AndroidRpcContract.Terminal.ERROR,
+                            0, null, "TIMEOUT");
+            replyTypedOnMain(view, replyProxy, terminal);
+        });
         try {
             Future<?> future = networkExecutor.submit(() -> {
-                AndroidRpcContract.TypedReply reply = executeTypedSearch(parsed.request, key);
+                AndroidRpcContract.TypedReply reply = executeTypedOperation(parsed.request, key);
                 BridgeRequestRegistry.SettleResult settled = typedRequests.settle(
                         key, reply.terminal);
                 if (settled == BridgeRequestRegistry.SettleResult.OK
@@ -362,7 +385,7 @@ final class AndroidHttpBridge {
         }
     }
 
-    private AndroidRpcContract.TypedReply executeTypedSearch(
+    private AndroidRpcContract.TypedReply executeTypedOperation(
             AndroidRpcContract.TypedRequest request, BridgeRequestRegistry.RequestKey key) {
         long startedAt = System.nanoTime();
         AndroidRpcContract.TypedReply lastReply = null;
@@ -371,7 +394,7 @@ final class AndroidHttpBridge {
                 return AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.CANCELLED, 0,
                         null, "CANCELLED");
             }
-            lastReply = executeTypedSearchOnce(request, key);
+            lastReply = executeTypedOperationOnce(request, key);
             long elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
             if (elapsed >= TYPED_DEADLINE_MILLIS) {
                 typedRequests.timeout(key);
@@ -395,11 +418,16 @@ final class AndroidHttpBridge {
                 AndroidRpcContract.Terminal.ERROR, 0, null, "NETWORK_IO_ERROR") : lastReply;
     }
 
-    private AndroidRpcContract.TypedReply executeTypedSearchOnce(
+    private AndroidRpcContract.TypedReply executeTypedOperationOnce(
             AndroidRpcContract.TypedRequest request, BridgeRequestRegistry.RequestKey key) {
+        if (request.operation == AndroidRpcContract.Operation.BILIBILI_AUDIO_MANIFEST) {
+            return executeTypedManifest(request, key);
+        }
         HttpsURLConnection connection = null;
         try {
-            java.net.URI uri = AndroidRpcContract.buildSearchUri(request);
+            java.net.URI uri = request.operation == AndroidRpcContract.Operation.BILIBILI_SEARCH
+                    ? AndroidRpcContract.buildSearchUri(request)
+                    : AndroidRpcContract.buildVideoDetailUri(request);
             connection = (HttpsURLConnection) new URL(uri.toASCIIString()).openConnection();
             if (!typedRequests.attachConnection(key, connection)) {
                 return AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.CANCELLED, 0,
@@ -420,17 +448,24 @@ final class AndroidHttpBridge {
                 return AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.ERROR, status,
                         null, "REDIRECT_NOT_ALLOWED");
             }
-            if (status < 200 || status >= 300
-                    || connection.getContentLengthLong() > HttpBridgePolicy.MAX_RESPONSE_BYTES) {
+            if (connection.getContentLengthLong() > HttpBridgePolicy.MAX_RESPONSE_BYTES) {
                 return AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.ERROR, status,
-                        null, status >= 200 ? "RESPONSE_TOO_LARGE" : "HTTP_STATUS");
+                        null, "RESPONSE_TOO_LARGE");
+            }
+            if (status < 200 || status >= 300) {
+                return AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.ERROR, status,
+                        null, "HTTP_STATUS");
             }
             try (InputStream input = connection.getInputStream()) {
-                AndroidRpcContract.ProjectionResult projection = AndroidRpcContract.projectSearchResponse(
-                        request, readBoundedUtf8(input, HttpBridgePolicy.MAX_RESPONSE_BYTES));
+                BilibiliResponseMapper.MappingResult projection = request.operation
+                        == AndroidRpcContract.Operation.BILIBILI_SEARCH
+                        ? BilibiliResponseMapper.mapSearch(request,
+                                readBoundedUtf8(input, HttpBridgePolicy.MAX_RESPONSE_BYTES))
+                        : BilibiliResponseMapper.mapVideoDetail(request,
+                                readBoundedUtf8(input, HttpBridgePolicy.MAX_RESPONSE_BYTES));
                 return projection.isValid()
                         ? AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.OK, status,
-                                projection.result, null)
+                                projection.value, null)
                         : AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.ERROR, status,
                                 null, projection.errorCode);
             }
@@ -443,6 +478,83 @@ final class AndroidHttpBridge {
         } catch (IOException | RuntimeException | java.net.URISyntaxException ignored) {
             return AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.ERROR, 0,
                     null, "NETWORK_IO_ERROR");
+        } finally {
+            typedRequests.detachConnection(key, connection);
+            if (connection != null) connection.disconnect();
+        }
+    }
+
+    private AndroidRpcContract.TypedReply executeTypedManifest(
+            AndroidRpcContract.TypedRequest request, BridgeRequestRegistry.RequestKey key) {
+        try {
+            AndroidRpcContract.TypedRequest detailRequest = AndroidRpcContract.TypedRequest.videoDetail(
+                    request.requestId, request.pageEpoch, request.bvid);
+            RawTypedBody detail = fetchTypedBody(detailRequest, key,
+                    AndroidRpcContract.buildVideoDetailUri(detailRequest));
+            if (!detail.isSuccess()) return detail.toReply(request);
+            BilibiliResponseMapper.MappingResult detailProjection = BilibiliResponseMapper.mapVideoDetail(
+                    detailRequest, detail.body);
+            if (!detailProjection.isValid()) return AndroidRpcContract.reply(request,
+                    AndroidRpcContract.Terminal.ERROR, detail.status, null, detailProjection.errorCode);
+            long cid = "default-first".equals(request.selectionMode)
+                    ? detailProjection.value.getJSONArray("pages").getJSONObject(0).getLong("cid")
+                    : request.cid;
+            if (cid <= 0 || ("explicit".equals(request.selectionMode)
+                    && !hasCid(detailProjection.value.getJSONArray("pages"), cid))) {
+                return AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.ERROR, detail.status,
+                        null, "INVALID_PART");
+            }
+            AndroidRpcContract.TypedRequest selected = AndroidRpcContract.TypedRequest.audioManifest(
+                    request.requestId, request.pageEpoch, request.bvid, request.selectionMode, cid);
+            RawTypedBody manifest = fetchTypedBody(selected, key,
+                    AndroidRpcContract.buildAudioManifestUri(selected));
+            if (!manifest.isSuccess()) return manifest.toReply(request);
+            BilibiliResponseMapper.MappingResult mapped = BilibiliResponseMapper.mapAudioManifest(
+                    selected, detail.body, manifest.body);
+            return mapped.isValid() ? AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.OK,
+                    manifest.status, mapped.value, null) : AndroidRpcContract.reply(request,
+                    AndroidRpcContract.Terminal.ERROR, manifest.status, null, mapped.errorCode);
+        } catch (JSONException | java.net.URISyntaxException ignored) {
+            return AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.ERROR, 0,
+                    null, "MALFORMED_PROVIDER_RESPONSE");
+        }
+    }
+
+    private static boolean hasCid(org.json.JSONArray pages, long cid) throws JSONException {
+        for (int index = 0; index < pages.length(); index += 1) {
+            if (pages.getJSONObject(index).getLong("cid") == cid) return true;
+        }
+        return false;
+    }
+
+    private RawTypedBody fetchTypedBody(AndroidRpcContract.TypedRequest request,
+            BridgeRequestRegistry.RequestKey key, java.net.URI uri) {
+        HttpsURLConnection connection = null;
+        try {
+            connection = (HttpsURLConnection) new URL(uri.toASCIIString()).openConnection();
+            if (!typedRequests.attachConnection(key, connection)) return RawTypedBody.error("CANCELLED");
+            connection.setRequestMethod("GET");
+            configureConnection(connection, HttpBridgePolicy.RequestRoute.BILIBILI_GET);
+            String cookieHeader = resolveCookieHeader(HttpBridgePolicy.ValidationResult.valid(
+                    uri, HttpBridgePolicy.RequestRoute.BILIBILI_GET), uri.toASCIIString());
+            if (cookieHeader == null) return RawTypedBody.error("BILIBILI_ANONYMOUS_COOKIE_UNAVAILABLE");
+            connection.setRequestProperty("Cookie", cookieHeader);
+            int status = connection.getResponseCode();
+            if (status >= 300 && status < 400) return RawTypedBody.error(status, "REDIRECT_NOT_ALLOWED");
+            if (status < 200 || status >= 300) return RawTypedBody.error(status, "HTTP_STATUS");
+            if (connection.getContentLengthLong() > HttpBridgePolicy.MAX_RESPONSE_BYTES) {
+                return RawTypedBody.error(status, "RESPONSE_TOO_LARGE");
+            }
+            try (InputStream input = connection.getInputStream()) {
+                return RawTypedBody.success(status,
+                        readBoundedUtf8(input, HttpBridgePolicy.MAX_RESPONSE_BYTES));
+            }
+        } catch (ResponseTooLargeException ignored) {
+            return RawTypedBody.error("RESPONSE_TOO_LARGE");
+        } catch (SocketTimeoutException ignored) {
+            return RawTypedBody.error("NETWORK_TIMEOUT");
+        } catch (IOException | RuntimeException ignored) {
+            return RawTypedBody.error("NETWORK_IO_ERROR");
         } finally {
             typedRequests.detachConnection(key, connection);
             if (connection != null) connection.disconnect();
@@ -522,6 +634,37 @@ final class AndroidHttpBridge {
 
         static ParsedRequest error(String requestId, String errorCode) {
             return new ParsedRequest(requestId, null, null, errorCode);
+        }
+    }
+
+    private static final class RawTypedBody {
+        final int status;
+        final String body;
+        final String errorCode;
+
+        private RawTypedBody(int status, String body, String errorCode) {
+            this.status = status;
+            this.body = body;
+            this.errorCode = errorCode;
+        }
+
+        static RawTypedBody success(int status, String body) {
+            return new RawTypedBody(status, body, null);
+        }
+
+        static RawTypedBody error(String errorCode) {
+            return new RawTypedBody(0, null, errorCode);
+        }
+
+        static RawTypedBody error(int status, String errorCode) {
+            return new RawTypedBody(status, null, errorCode);
+        }
+
+        boolean isSuccess() { return errorCode == null; }
+
+        AndroidRpcContract.TypedReply toReply(AndroidRpcContract.TypedRequest request) {
+            return AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.ERROR,
+                    status, null, errorCode);
         }
     }
 

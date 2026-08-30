@@ -37,4 +37,21 @@ public final class AndroidRpcContractTest {
                 "https://api.bilibili.com.evil.example/x/web-interface/search/type").isValid());
     }
 
+    @Test
+    public void detailAndManifestHaveClosedPayloadsAndNativeRoutes() throws Exception {
+        AndroidRpcContract.TypedRequest detail = AndroidRpcContract.TypedRequest.videoDetail(
+                "detail", 3, "BV1xx411c7mD");
+        assertEquals("https://api.bilibili.com/x/web-interface/view?bvid=BV1xx411c7mD",
+                AndroidRpcContract.buildVideoDetailUri(detail).toASCIIString());
+
+        AndroidRpcContract.TypedRequest explicit = AndroidRpcContract.TypedRequest.audioManifest(
+                "manifest", 3, "BV1xx411c7mD", "explicit", 123L);
+        assertTrue(AndroidRpcContract.buildAudioManifestUri(explicit).toASCIIString()
+                .contains("bvid=BV1xx411c7mD&cid=123"));
+        assertEquals("INVALID_PAYLOAD", AndroidRpcContract.validateManifestInput(
+                "manifest", 3, "BV1xx411c7mD", "explicit", 0L));
+        assertEquals("INVALID_PAYLOAD", AndroidRpcContract.validateManifestInput(
+                "manifest", 3, "BV1xx411c7mD", "default-first", 123L));
+    }
+
 }

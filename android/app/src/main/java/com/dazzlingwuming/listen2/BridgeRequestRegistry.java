@@ -46,11 +46,16 @@ final class BridgeRequestRegistry {
         private boolean terminal;
         private Future<?> future;
         private HttpsURLConnection connection;
+        private TerminalListener terminalListener;
 
         private void cancelTransport() {
             if (future != null) future.cancel(true);
             if (connection != null) connection.disconnect();
         }
+    }
+
+    interface TerminalListener {
+        void onTerminal(SettleResult result);
     }
 
     private final Map<RequestKey, CallHandle> handles = new HashMap<>();
@@ -83,6 +88,13 @@ final class BridgeRequestRegistry {
         return true;
     }
 
+    synchronized boolean attachTerminalListener(RequestKey key, TerminalListener listener) {
+        CallHandle handle = handles.get(key);
+        if (handle == null || handle.terminal || destroyed) return false;
+        handle.terminalListener = listener;
+        return true;
+    }
+
     synchronized void detachConnection(RequestKey key, HttpsURLConnection connection) {
         CallHandle handle = handles.get(key);
         if (handle != null && handle.connection == connection) handle.connection = null;
@@ -95,6 +107,7 @@ final class BridgeRequestRegistry {
         if (handle.terminal) return SettleResult.ALREADY_SETTLED;
         handle.terminal = true;
         handle.cancelTransport();
+        notifyListener(handle, SettleResult.CANCELLED);
         return SettleResult.CANCELLED;
     }
 
@@ -105,6 +118,7 @@ final class BridgeRequestRegistry {
         if (handle.terminal) return SettleResult.ALREADY_SETTLED;
         handle.terminal = true;
         handle.cancelTransport();
+        notifyListener(handle, SettleResult.TIMEOUT);
         return SettleResult.TIMEOUT;
     }
 
@@ -139,4 +153,8 @@ final class BridgeRequestRegistry {
     synchronized boolean isDestroyed() { return destroyed; }
 
     synchronized boolean canPostReplies() { return !destroyed; }
+
+    private void notifyListener(CallHandle handle, SettleResult result) {
+        if (!destroyed && handle.terminalListener != null) handle.terminalListener.onTerminal(result);
+    }
 }
