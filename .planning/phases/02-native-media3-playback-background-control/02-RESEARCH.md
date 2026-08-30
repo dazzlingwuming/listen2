@@ -62,7 +62,7 @@ Keep the product's FIFO play-next and real-history semantics outside Media3's or
 | Library | Version | Purpose | When to use |
 |---|---:|---|---|
 | `androidx.room:room-testing` | `2.8.4` | Device migration verification from exported historical schemas. | Add with the initial schema, before any production database version ships. [CITED: https://developer.android.com/training/data-storage/room/migrating-db-versions] |
-| `androidx.datastore:datastore-preferences` | `1.2.1` | Small, non-sensitive settings only (for example, preferred volume/mute and UI preference). | Use through one application-scoped Java adapter; never put queue, playlist, session secrets, or media metadata here. [CITED: https://developer.android.com/topic/libraries/architecture/datastore] |
+| Android platform `SharedPreferences` behind `PlaybackSettingsStore` | platform API | Exactly `volumePercent` (integer 0–100) and `muted` (boolean), using one application-scoped named file. | Resolved choice: avoid a new DataStore dependency in this Java-only phase; the wrapper exposes a migration seam and rejects lists, metadata, transport data, and secrets. [VERIFIED: DATA-001 permits an equivalent settings store] |
 
 ### Alternatives Considered
 
@@ -82,10 +82,9 @@ implementation "androidx.media3:media3-session:$media3Version"
 implementation "androidx.room:room-runtime:$roomVersion"
 annotationProcessor "androidx.room:room-compiler:$roomVersion"
 testImplementation "androidx.room:room-testing:$roomVersion"
-implementation 'androidx.datastore:datastore-preferences:1.2.1'
 ```
 
-The artifact coordinates and Java-only `annotationProcessor` wiring are confirmed by official Android documentation. Media3 `1.9.4` is intentionally below the current stable line: official AAR metadata reports `minCompileSdk=35` for `1.9.4` and `36` for `1.11.0`, while this app compiles against API 35. Keep the first implementation task's dependency-resolution build as the integration check, and reassess the latest Media3 only with an explicitly planned API-36 toolchain upgrade. [CITED: https://developer.android.com/jetpack/androidx/releases/media3] [CITED: https://developer.android.com/jetpack/androidx/releases/room] [CITED: https://developer.android.com/topic/libraries/architecture/datastore] [VERIFIED: Google Maven AAR metadata, 2026-08-31]
+The artifact coordinates and Java-only `annotationProcessor` wiring are confirmed by official Android documentation. Media3 `1.9.4` is intentionally below the current stable line: official AAR metadata reports `minCompileSdk=35` for `1.9.4` and `36` for `1.11.0`, while this app compiles against API 35. Keep the first implementation task's dependency-resolution build as the integration check, and reassess the latest Media3 only with an explicitly planned API-36 toolchain upgrade. Phase 2 adds no DataStore artifact: `PlaybackSettingsStore` wraps one platform `SharedPreferences` file for bounded volume/mute only. [CITED: https://developer.android.com/jetpack/androidx/releases/media3] [CITED: https://developer.android.com/jetpack/androidx/releases/room] [VERIFIED: Google Maven AAR metadata, 2026-08-31]
 
 ## Package Legitimacy Audit
 
@@ -93,7 +92,7 @@ The artifact coordinates and Java-only `annotationProcessor` wiring are confirme
 |---|---|---|---|
 | Media3 ExoPlayer/session | Official AndroidX Media3 release page | Officially documented | Approved. [CITED: https://developer.android.com/jetpack/androidx/releases/media3] |
 | Room runtime/compiler/testing | Official AndroidX Room release page | Officially documented | Approved. [CITED: https://developer.android.com/jetpack/androidx/releases/room] |
-| DataStore Preferences | Official Android DataStore guide | Officially documented | Approved. [CITED: https://developer.android.com/topic/libraries/architecture/datastore] |
+| DataStore Preferences | Official Android DataStore guide | Officially documented but not selected | Deferred: Phase 2 uses the platform settings wrapper permitted by DATA-001 and introduces no DataStore package. |
 
 The GSD package-legitimacy seam accepts only npm, PyPI, and crates, not Maven coordinates; its invocation for this Maven-only phase fails by contract. Use Gradle resolution plus the official AndroidX coordinates above in the first implementation task. [VERIFIED: gsd-tools package-legitimacy usage output, 2026-08-31]
 
@@ -138,7 +137,7 @@ android/app/src/main/java/com/dazzlingwuming/listen2/
 ├── PlaybackCheckpointRepository.java     # Room read/write boundary
 ├── Listen2Database.java                  # Room composition root/version/migrations
 ├── playback/                             # Room entities/DAOs/migrations only
-└── PlaybackSettingsStore.java             # one small non-sensitive DataStore adapter
+└── PlaybackSettingsStore.java             # one bounded application-scoped SharedPreferences adapter
 
 android/app/src/test/java/com/dazzlingwuming/listen2/
 ├── PlaybackQueueEngineTest.java
@@ -192,7 +191,7 @@ Add a new playback operation family to the Phase 1 versioned RPC bridge, not a s
 | Background player, lock screen/media-button discovery, notification synchronization | Custom `Service` + `MediaSessionCompat` notification plumbing | Media3 `MediaSessionService` and `MediaSession` | The supported component already models controllers, service lifecycle, and media notification updates. [CITED: https://developer.android.com/media/media3/session/background-playback] |
 | Decode/seek/buffer/audio-focus integration | WebView audio shim or bespoke `AudioTrack` player | Media3 ExoPlayer with audio attributes/focus handling | ExoPlayer is the Media3 player; Android guidance advises letting it manage focus when configured to do so. [CITED: https://developer.android.com/media/media3/session/control-playback] [CITED: https://developer.android.com/media/optimize/audio-focus] |
 | SQL schema/migration checking | Ad hoc JSON checkpoints or destructive database reset | Room entities/DAOs/migrations/exported schemas + migration tests | Room has a defined migration test path; destructive reset loses durable queue/library state. [CITED: https://developer.android.com/training/data-storage/room/migrating-db-versions] |
-| Small setting consistency | Multiple `SharedPreferences`/DataStore instances | One application-scoped DataStore adapter | Multiple instances for one DataStore file can break its consistency contract. [CITED: https://developer.android.com/topic/libraries/architecture/datastore] |
+| Small setting consistency | Scattered preference access or multiple files | One application-scoped `PlaybackSettingsStore` over one named `SharedPreferences` file | Phase 2 has only bounded volume/mute settings; the wrapper keeps a later DataStore migration local and rejects relational or sensitive values. |
 
 ## Common Pitfalls
 
@@ -272,23 +271,17 @@ The transaction-before-projection ordering is the phase recommendation needed to
 | # | Claim | Section | Risk if wrong |
 |---|---|---|---|
 | A1 | One semantic queue coordinator can atomically persist a transition before projecting it to Media3. | Architecture Pattern 2 | Needs implementation proof under concurrent controller/player callbacks. |
-| A2 | A Java-friendly single-instance DataStore adapter can be added without introducing a Kotlin framework migration. | Standard Stack | Gradle/API wiring may need a small Java façade or a documented equivalent settings store. |
+| A2 | The platform settings wrapper is sufficient for the exact Phase-2 `volumePercent` and `muted` values. | Resolved Questions | RESOLVED — no DataStore dependency; tests reject every other key/value shape. |
 | A3 | The proposed file/class names and snapshot schema are appropriate. | File Map / Protocol | Planner must refine names and fields without changing security/ownership boundaries. |
 | A4 | The player can re-resolve every restored public item via the Phase 1 descriptor route without storing signed URLs. | Restore pattern | Live provider expiry/authorization needs fixture plus emulator proof. |
 
-## Open Questions
+## Resolved Questions
 
-1. **Which exact non-secret small settings must exist in Phase 2?**
-   - What we know: queues, history, checkpoints, library/lyrics/cache/SAF records require Room; DataStore is for small settings. [CITED: https://developer.android.com/topic/libraries/architecture/datastore]
-   - Recommendation: limit Phase 2 DataStore to user playback preferences and keep the persistence adapter behind an interface. [ASSUMED]
+1. **Small settings store — RESOLVED.** Phase 2 adds no DataStore dependency. `PlaybackSettingsStore` is one application-scoped wrapper over one named platform `SharedPreferences` file and accepts exactly `volumePercent` (integer 0–100) and `muted` (boolean). Queue, mode, history, checkpoint, metadata, provider identity, lists, transport data, and secrets remain in Room or transient memory. The wrapper is the migration seam if a later phase has enough small settings to justify DataStore.
 
-2. **Which notification actions and artwork source can be rendered without new provider/network privileges?**
-   - What we know: Media3 notification derives metadata/session state; Phase 1 returns bounded descriptor fields but does not establish native artwork caching. [CITED: https://developer.android.com/media/media3/session/background-playback] [VERIFIED: .planning/phases/01-verified-bilibili-startup-slice/01-CONTEXT.md:39-49]
-   - Recommendation: ship standard previous/play-pause/next controls and safe text metadata first; make artwork loading bounded and non-blocking. [ASSUMED]
+2. **Notification actions and artwork — RESOLVED.** Use the standard Media3 session notification. Expose play/pause for an active occurrence and previous/next only when the native snapshot advertises those actions; do not add custom notification seek, volume, or mute buttons. Lock-screen/system timeline seek is available only through the session when duration and seekability are known. Phase 2 notification, lock screen, page, and mini-player use sanitized title/artist/source plus the same bundled neutral artwork placeholder. No page/provider artwork URL, bitmap, fetch request, candidate, or header crosses the playback bridge. A later bounded artwork owner may replace the placeholder through a separately planned contract.
 
-3. **How is an actual process-death/resumption test induced on the target emulator while foreground playback is active?**
-   - What we know: current tests cover WebView teardown and API-35 instrumentation, not Media3 recovery. [VERIFIED: .planning/phases/01-verified-bilibili-startup-slice/01-05-SUMMARY.md:37-55]
-   - Recommendation: add an explicit instrumentation recipe that records service state, checkpoint revision, process kill/relaunch, and restored semantic queue result. [ASSUMED]
+3. **Process-death induction — RESOLVED.** Use a two-stage host-driven API-35 recipe. Stage A instrumentation seeds a deterministic current occurrence, duplicate FIFO queue, mode, accepted history cursor, and nonzero position, waits for a committed checkpoint, and reports only checkpoint revision plus bounded semantic assertions. The host runs `adb shell am force-stop com.dazzlingwuming.listen2.debug`, verifies `pidof` is empty, relaunches with `adb shell am start -W -S -n com.dazzlingwuming.listen2.debug/.MainActivity`, waits for page/controller reconnect, and runs Stage B instrumentation. Stage B asserts a paused/actionable restore of the same occurrence, queue order, mode, history cursor, a position within five seconds of the Stage-A checkpoint, and a revision not older than Stage A; Room/snapshot/evidence scans must find no signed candidate or transport material. The host command owns cleanup and fails on any missing stage or identity mismatch.
 
 ## Environment Availability
 
