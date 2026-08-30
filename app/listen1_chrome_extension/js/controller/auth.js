@@ -7,8 +7,20 @@ angular.module('listenone').controller('AuthController', [
   '$scope',
   '$timeout',
   ($scope, $timeout) => {
+    const isAndroidTyped = () =>
+      Boolean(
+        typeof isElectron === 'function' &&
+          !isElectron() &&
+          window.Listen2AndroidHttpAdapter &&
+          window.Listen2AndroidHttpAdapter.isAvailable &&
+          window.Listen2AndroidHttpAdapter.isAvailable()
+      );
     $scope.loginProgress = false;
     $scope.loginType = 'email';
+    $scope.androidAccountState = {
+      available: !isAndroidTyped(),
+      message: '登录功能将在后续版本提供',
+    };
     $scope.loginSourceList = MediaService.getLoginProviders().map(
       (i) => i.name
     );
@@ -30,6 +42,13 @@ angular.module('listenone').controller('AuthController', [
       scheduleIdle();
     };
     $scope.refreshAuthStatus = () => {
+      if (isAndroidTyped()) {
+        $scope.androidAccountState = {
+          available: false,
+          message: '登录功能将在后续版本提供',
+        };
+        return;
+      }
       const refresh = () => {
         $scope.loginSourceList.map((source) =>
           MediaService.getUser(source).success((data) => {
