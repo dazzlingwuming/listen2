@@ -54,7 +54,7 @@ android {
         javaCompileOptions {
             annotationProcessorOptions {
                 arguments += [
-                    'room.schemaLocation': "$projectDir/schemas",
+                    'room.schemaLocation': "$rootDir/schemas",
                 ]
             }
         }
@@ -86,6 +86,9 @@ android {
         main {
             assets.srcDir(generatedAssetsDirectory)
         }
+        androidTest {
+            assets.srcDir("$rootDir/schemas")
+        }
     }
 }
 
@@ -109,4 +112,5 @@ dependencies {
     // production API unchanged while exercising the same JSON schemas locally.
     testImplementation 'org.json:json:20240303'
     androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation "androidx.room:room-testing:$roomVersion"
 }
