@@ -28,11 +28,20 @@ public final class PlaybackSnapshot {
     private final List<QueueOccurrence> queue;
     private final PreparedSelection preparedSelection;
     private final RecoveryStatus recoveryStatus;
+    private final LyricContext lyricContext;
 
     public PlaybackSnapshot(int version, long pageEpoch, long revision, State state,
             Metadata metadata, long positionMs, long durationMs, int volumePercent, boolean muted,
             Mode mode, ActionAvailability actionAvailability, List<QueueOccurrence> queue,
             PreparedSelection preparedSelection, RecoveryStatus recoveryStatus) {
+        this(version, pageEpoch, revision, state, metadata, positionMs, durationMs, volumePercent, muted,
+                mode, actionAvailability, queue, preparedSelection, recoveryStatus, LyricContext.unavailable());
+    }
+
+    public PlaybackSnapshot(int version, long pageEpoch, long revision, State state,
+            Metadata metadata, long positionMs, long durationMs, int volumePercent, boolean muted,
+            Mode mode, ActionAvailability actionAvailability, List<QueueOccurrence> queue,
+            PreparedSelection preparedSelection, RecoveryStatus recoveryStatus, LyricContext lyricContext) {
         this.version = version;
         this.pageEpoch = pageEpoch;
         this.revision = revision;
@@ -47,6 +56,7 @@ public final class PlaybackSnapshot {
         this.queue = Collections.unmodifiableList(new ArrayList<>(queue));
         this.preparedSelection = preparedSelection;
         this.recoveryStatus = recoveryStatus;
+        this.lyricContext = lyricContext == null ? LyricContext.unavailable() : lyricContext;
     }
 
     public long getRevision() {
@@ -59,6 +69,10 @@ public final class PlaybackSnapshot {
 
     public PreparedSelection getPreparedSelection() {
         return preparedSelection;
+    }
+
+    public LyricContext getLyricContext() {
+        return lyricContext;
     }
 
     public Map<String, Object> toMap() {
@@ -79,6 +93,7 @@ public final class PlaybackSnapshot {
         result.put("queue", Collections.unmodifiableList(queueRows));
         if (preparedSelection != null) result.put("prepared", preparedSelection.toMap());
         result.put("recovery", recoveryStatus.toMap());
+        result.put("lyric", lyricContext.toMap());
         return Collections.unmodifiableMap(result);
     }
 
@@ -207,6 +222,55 @@ public final class PlaybackSnapshot {
             Map<String, Object> value = new LinkedHashMap<>();
             value.put("status", status);
             value.put("retryable", retryable);
+            return Collections.unmodifiableMap(value);
+        }
+    }
+
+    /** Bounded identity and Media3-only timing context consumed by the packaged lyric renderer. */
+    public static final class LyricContext {
+        private final String source;
+        private final String providerTrackId;
+        private final long providerPartId;
+        private final String trackHandle;
+        private final String occurrenceId;
+        private final long selectionGeneration;
+        private final long playbackRevision;
+        private final String capability;
+        private final String state;
+
+        public LyricContext(String source, String providerTrackId, long providerPartId, String trackHandle,
+                String occurrenceId, long selectionGeneration, long playbackRevision, String capability,
+                String state) {
+            this.source = source;
+            this.providerTrackId = providerTrackId;
+            this.providerPartId = providerPartId;
+            this.trackHandle = trackHandle;
+            this.occurrenceId = occurrenceId;
+            this.selectionGeneration = selectionGeneration;
+            this.playbackRevision = playbackRevision;
+            this.capability = capability;
+            this.state = state;
+        }
+
+        static LyricContext unavailable() {
+            return new LyricContext("", "", 0L, "", "", 0L, 0L, "unavailable", "idle");
+        }
+
+        public boolean isAvailable() {
+            return !"unavailable".equals(capability) && !source.isEmpty() && !occurrenceId.isEmpty();
+        }
+
+        Map<String, Object> toMap() {
+            Map<String, Object> value = new LinkedHashMap<>();
+            value.put("source", source);
+            value.put("providerTrackId", providerTrackId);
+            value.put("providerPartId", providerPartId);
+            value.put("trackHandle", trackHandle);
+            value.put("occurrenceId", occurrenceId);
+            value.put("selectionGeneration", selectionGeneration);
+            value.put("playbackRevision", playbackRevision);
+            value.put("capability", capability);
+            value.put("state", state);
             return Collections.unmodifiableMap(value);
         }
     }

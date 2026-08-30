@@ -46,6 +46,18 @@ public final class PlaybackService extends MediaSessionService
     private NetEasePlaybackResolver netEaseResolver;
     private PlaybackMediaResolver netEaseMediaResolver;
     private final Map<String, PreparedMedia> preparedMediaByPageHandle = new LinkedHashMap<>();
+    private LyricClockProjection.Identity currentLyricIdentity;
+    private LyricClockProjection.Projection lyricProjection;
+    private volatile boolean rendererAttached;
+    private boolean cadenceScheduled;
+    private final Runnable foregroundCadence = new Runnable() {
+        @Override public void run() {
+            cadenceScheduled = false;
+            if (shouldPublishForegroundCadence(rendererAttached, latestPageSnapshot)) {
+                publishPlayerSnapshot("ready", LyricClockProjection.Event.CADENCE);
+            }
+        }
+    };
     private Handler playerHandler;
     private boolean released;
     private long snapshotRevision;
@@ -104,19 +116,21 @@ public final class PlaybackService extends MediaSessionService
                 if (playbackState == Player.STATE_ENDED && coordinator != null) {
                     coordinator.onNaturalEnd(coordinatorRevision(), "player-ended-" + System.nanoTime());
                 }
-                publishPlayerSnapshot(playbackState == Player.STATE_ENDED ? "ended" : "ready");
+                publishPlayerSnapshot(playbackState == Player.STATE_ENDED ? "ended" : "ready",
+                        playbackState == Player.STATE_ENDED ? LyricClockProjection.Event.ERROR
+                                : LyricClockProjection.Event.STATE);
             }
 
             @Override
             public void onIsPlayingChanged(boolean isPlaying) {
                 if (isPlaying) retainStartedPlaybackService();
-                publishPlayerSnapshot(isPlaying ? "playing" : "interrupted");
+                publishPlayerSnapshot(isPlaying ? "playing" : "interrupted", LyricClockProjection.Event.STATE);
             }
 
             @Override
             public void onPositionDiscontinuity(Player.PositionInfo oldPosition,
                     Player.PositionInfo newPosition, int reason) {
-                publishPlayerSnapshot("ready");
+                publishPlayerSnapshot("ready", LyricClockProjection.Event.SEEK);
             }
         });
     }
@@ -156,6 +170,7 @@ public final class PlaybackService extends MediaSessionService
     /** ExoPlayer and MediaSession are main-looper confined even though semantic transitions serialize elsewhere. */
     private void applyPlayerCommand(PlaybackCommand command, PlaybackSnapshot snapshot) {
         if (released || player == null) return;
+        rendererAttached = true;
         switch (command.getType()) {
             case PREPARE_SELECTION:
                 prepareMedia(command, snapshot);
@@ -182,7 +197,7 @@ public final class PlaybackService extends MediaSessionService
             case CLEAR:
                 player.stop();
                 player.clearMediaItems();
-                publishPlayerSnapshot("idle");
+                publishPlayerSnapshot("idle", LyricClockProjection.Event.ERROR);
                 stopForeground(STOP_FOREGROUND_REMOVE);
                 stopSelf();
                 break;
@@ -220,20 +235,24 @@ public final class PlaybackService extends MediaSessionService
         String occurrenceId = string(command.getPayload().get("occurrenceId"));
         PreparedMedia preparedMedia = preparedMediaByPageHandle.remove(pageTrackHandle);
         if (preparedMedia == null || occurrenceId == null || !occurrenceId.equals(preparedMedia.pageOccurrenceId)) {
-            publishPlayerSnapshot("stale-selection");
+            publishPlayerSnapshot("stale-selection", LyricClockProjection.Event.ERROR);
             return;
         }
         PlaybackMediaResolver.Selection selected = preparedMedia.resolver.select(
                 preparedMedia.nativePrepared.getTrackHandle(), preparedMedia.nativePrepared.getOccurrenceId(),
                 command.getExpectedRevision(), "replace-current", "playing".equals(snapshot.toMap().get("state")));
         if (!selected.isAccepted()) {
-            publishPlayerSnapshot("stale-selection");
+            publishPlayerSnapshot("stale-selection", LyricClockProjection.Event.ERROR);
             return;
         }
+        PlaybackMediaResolver.Descriptor descriptor = preparedMedia.nativePrepared.descriptor();
+        currentLyricIdentity = new LyricClockProjection.Identity(descriptor.getSource(),
+                descriptor.getProviderTrackId(), descriptor.getProviderPartId(), pageTrackHandle, occurrenceId,
+                snapshot.getRevision());
         PlaybackMediaResolver.Resolution resolution = preparedMedia.resolver.resolveCurrent(
                 preparedMedia.nativePrepared.getOccurrenceId(), command.getExpectedRevision());
         if (!resolution.isReady() || resolution.candidates().isEmpty()) {
-            publishPlayerSnapshot(resolution.getStatus());
+            publishPlayerSnapshot(resolution.getStatus(), LyricClockProjection.Event.ERROR);
             return;
         }
         MediaMetadata mediaMetadata = new MediaMetadata.Builder().setTitle("Listen2").build();
@@ -254,7 +273,9 @@ public final class PlaybackService extends MediaSessionService
 
     @Override
     public void rendererDetached() {
-        // Renderer lifecycle intentionally has no audio-side effect.
+        rendererAttached = false;
+        if (playerHandler != null) playerHandler.removeCallbacks(foregroundCadence);
+        cadenceScheduled = false;
     }
 
     @Override
@@ -273,6 +294,7 @@ public final class PlaybackService extends MediaSessionService
         if (released) return;
         released = true;
         if (player != null) {
+            if (playerHandler != null) playerHandler.removeCallbacks(foregroundCadence);
             player.clearMediaItems();
             player.release();
             player = null;
@@ -303,6 +325,10 @@ public final class PlaybackService extends MediaSessionService
 
     /** Player callbacks are the only authority for operational state after a command is accepted. */
     private synchronized void publishPlayerSnapshot(String recoveryCode) {
+        publishPlayerSnapshot(recoveryCode, LyricClockProjection.Event.STATE);
+    }
+
+    private synchronized void publishPlayerSnapshot(String recoveryCode, LyricClockProjection.Event event) {
         if (released || player == null) return;
         PlaybackSnapshot previous = latestPageSnapshot;
         Map<String, Object> prior = previous.toMap();
@@ -315,10 +341,30 @@ public final class PlaybackService extends MediaSessionService
         else if (player.getPlaybackState() == Player.STATE_IDLE) state = PlaybackSnapshot.State.IDLE;
         else if (player.getPlaybackState() == Player.STATE_BUFFERING) state = PlaybackSnapshot.State.RESOLVING;
         else state = PlaybackSnapshot.State.PAUSED;
+        PlaybackSnapshot.LyricContext lyric = previous.getLyricContext();
+        if (currentLyricIdentity != null) {
+            lyricProjection = LyricClockProjection.project(lyricProjection, currentLyricIdentity, revision,
+                    position, duration, state, "available", event);
+            lyric = lyricProjection.toLyricContext();
+        }
         latestPageSnapshot = new PlaybackSnapshot(1, number(prior.get("pageEpoch")), revision, state,
                 metadata(prior, duration), position, duration, settings.getVolumePercent(), settings.isMuted(),
                 mode(prior.get("mode")), actions(duration), previous.getQueue(), previous.getPreparedSelection(),
-                new PlaybackSnapshot.RecoveryStatus(recoveryCode, "interrupted".equals(recoveryCode)));
+                new PlaybackSnapshot.RecoveryStatus(recoveryCode, "interrupted".equals(recoveryCode)), lyric);
+        scheduleForegroundCadence();
+    }
+
+    private void scheduleForegroundCadence() {
+        if (cadenceScheduled || playerHandler == null
+                || !shouldPublishForegroundCadence(rendererAttached, latestPageSnapshot)) return;
+        cadenceScheduled = true;
+        playerHandler.postDelayed(foregroundCadence, 500L);
+    }
+
+    static boolean shouldPublishForegroundCadence(boolean rendererAttached, PlaybackSnapshot snapshot) {
+        if (!rendererAttached || snapshot == null || !snapshot.getLyricContext().isAvailable()) return false;
+        Object state = snapshot.toMap().get("state");
+        return "playing".equals(state) || "resolving".equals(state);
     }
 
     /** Rebuilds a paused/actionable semantic projection after process death; transport never survives it. */
