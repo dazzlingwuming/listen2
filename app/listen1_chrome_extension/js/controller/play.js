@@ -343,6 +343,11 @@ angular.module('listenone').controller('PlayController', [
       if (revision > androidPlaybackLastAnnouncementRevision) {
         androidPlaybackLastAnnouncementRevision = revision;
       }
+      // The Android renderer may display state, but its page player never owns
+      // lyric time. Consume only the facade's accepted Media3 projection.
+      if (typeof $scope.syncAndroidLyricClock === 'function') {
+        $scope.syncAndroidLyricClock();
+      }
     }
 
     $scope.applyAndroidPlaybackSnapshot = applyAndroidPlaybackSnapshot;
@@ -854,6 +859,8 @@ angular.module('listenone').controller('PlayController', [
     let manualLyricResolveToken = 0;
     let manualLyricSelectionToken = 0;
     let lyricTranslationRequestToken = 0;
+    let nativeLyricRequestIdentity = null;
+    let activeNativeLyricIdentity = null;
     let bilibiliMvPlayer = null;
     let lastMvPosition = 0;
     const AUDIO_CACHE_STATUS_POLL_MS = 2000;
@@ -867,6 +874,86 @@ angular.module('listenone').controller('PlayController', [
         token: lyricRequestToken,
       };
     }
+
+    function getNativeLyricIdentity() {
+      if (
+        !androidPlaybackAdapter ||
+        !l1Player ||
+        typeof l1Player.getNativeLyricSnapshot !== 'function'
+      ) {
+        return null;
+      }
+      const snapshot = l1Player.getNativeLyricSnapshot();
+      if (
+        !snapshot ||
+        !snapshot.pageEpoch ||
+        !snapshot.trackHandle ||
+        !snapshot.occurrenceId ||
+        !snapshot.source ||
+        !Number.isSafeInteger(Number(snapshot.selectionGeneration)) ||
+        !Number.isSafeInteger(Number(snapshot.playbackRevision))
+      ) {
+        return null;
+      }
+      return snapshot;
+    }
+
+    function isSameNativeLyricSelection(left, right) {
+      return Boolean(
+        left &&
+          right &&
+          left.pageEpoch === right.pageEpoch &&
+          left.source === right.source &&
+          left.trackHandle === right.trackHandle &&
+          left.occurrenceId === right.occurrenceId &&
+          Number(left.selectionGeneration) === Number(right.selectionGeneration)
+      );
+    }
+
+    function isCurrentNativeLyricIdentity(identity) {
+      const current = getNativeLyricIdentity();
+      return Boolean(
+        identity &&
+          current &&
+          isSameNativeLyricSelection(identity, current) &&
+          Number(identity.playbackRevision) === Number(current.playbackRevision)
+      );
+    }
+
+    function syncAndroidLyricClock() {
+      const snapshot = getNativeLyricIdentity();
+      if (!snapshot) return;
+      if (!isSameNativeLyricSelection(activeNativeLyricIdentity, snapshot)) {
+        activeNativeLyricIdentity = snapshot;
+        nativeLyricRequestIdentity = null;
+        lyricRequestToken += 1;
+        $scope.lyricLineNumber = -1;
+        $scope.lyricLineNumberTrans = -1;
+        const track = $scope.currentPlaying;
+        if (track && track.id) {
+          setPrimaryLyricState(track, 'loading');
+        }
+      }
+      if (!Array.isArray($scope.lyricArray) || !$scope.lyricArray.length) {
+        return;
+      }
+      const currentMs =
+        Math.max(0, Number(snapshot.positionMs) || 0) +
+        (Number($scope.lyricOffsetMs) || 0);
+      let activeOriginal = null;
+      let activeTranslation = null;
+      $scope.lyricArray.forEach((line) => {
+        if (currentMs < Number(line.seconds || 0)) return;
+        if (line.translationFlag === true) activeTranslation = line;
+        else activeOriginal = line;
+      });
+      $scope.lyricLineNumber = activeOriginal ? activeOriginal.lineNumber : -1;
+      $scope.lyricLineNumberTrans = activeTranslation
+        ? activeTranslation.lineNumber
+        : -1;
+    }
+
+    $scope.syncAndroidLyricClock = syncAndroidLyricClock;
 
     function isCurrentPrimaryLyricState(track, requestToken) {
       return (
@@ -3015,7 +3102,10 @@ angular.module('listenone').controller('PlayController', [
       return (
         requestToken === lyricRequestToken &&
         $scope.currentPlaying &&
-        $scope.currentPlaying.id === track.id
+        $scope.currentPlaying.id === track.id &&
+        (!androidPlaybackAdapter ||
+          (nativeLyricRequestIdentity &&
+            isCurrentNativeLyricIdentity(nativeLyricRequestIdentity)))
       );
     }
 
@@ -3026,7 +3116,15 @@ angular.module('listenone').controller('PlayController', [
           track.album_id,
           track.lyric_url,
           track.tlyric_url,
-          track
+          {
+            ...track,
+            pageEpoch:
+              (nativeLyricRequestIdentity &&
+                nativeLyricRequestIdentity.pageEpoch) ||
+              track.pageEpoch,
+            nativeLyricIdentity: nativeLyricRequestIdentity,
+            lyricIdentity: nativeLyricRequestIdentity,
+          }
         ).success((result) => resolve(result || { lyric: '' }));
       });
     }
@@ -3084,7 +3182,16 @@ angular.module('listenone').controller('PlayController', [
       $scope.lyricTranslationLookupPending = false;
       lyricRequestToken += 1;
       const requestToken = lyricRequestToken;
-      resetLyricDisplay();
+      nativeLyricRequestIdentity = androidPlaybackAdapter
+        ? getNativeLyricIdentity()
+        : null;
+      if (androidPlaybackAdapter && !nativeLyricRequestIdentity) {
+        setPrimaryLyricState(track, 'unavailable');
+        return;
+      }
+      // Keep current readable lyrics while a current native request settles;
+      // only the accepted identity may replace them.
+      if (!androidPlaybackAdapter) resetLyricDisplay();
       setPrimaryLyricState(track, 'loading');
       if (!isElectron()) {
         getProviderLyric(track)

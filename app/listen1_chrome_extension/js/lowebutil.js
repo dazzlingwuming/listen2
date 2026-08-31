@@ -978,8 +978,10 @@ const Listen2AndroidHttpAdapter = (() => {
             'source',
             'title',
           ]) &&
-          payload.source === 'bilibili' &&
-          isSafeBvid(payload.providerTrackId) &&
+          ['bilibili', 'netease'].includes(payload.source) &&
+          (payload.source === 'bilibili'
+            ? isSafeBvid(payload.providerTrackId)
+            : isSafeProviderTrackId(payload.providerTrackId)) &&
           isPositiveSafeInteger(payload.providerPartId) &&
           isPlainPlaybackText(payload.title) &&
           isPlainPlaybackText(payload.artist) &&
@@ -1278,7 +1280,16 @@ const Listen2AndroidHttpAdapter = (() => {
   }
 
   function normalizeSelection(selection) {
-    const expected = [
+    const semanticFields = [
+      'artist',
+      'durationMs',
+      'mediaKind',
+      'providerPartId',
+      'providerTrackId',
+      'source',
+      'title',
+    ];
+    const legacyBilibiliFields = [
       'artist',
       'bvid',
       'cid',
@@ -1287,20 +1298,22 @@ const Listen2AndroidHttpAdapter = (() => {
       'source',
       'title',
     ];
+    const fields = selection && Object.keys(selection).sort();
+    const hasExactFields = (expected) =>
+      fields &&
+      fields.length === expected.length &&
+      expected.every((key) => fields.includes(key));
     if (
       !selection ||
       typeof selection !== 'object' ||
       Array.isArray(selection) ||
-      Object.keys(selection).length !== expected.length ||
-      !expected.every((key) =>
-        Object.prototype.hasOwnProperty.call(selection, key)
-      )
+      (!hasExactFields(semanticFields) && !hasExactFields(legacyBilibiliFields))
     )
       return null;
     const payload = {
       source: selection.source,
-      providerTrackId: selection.bvid,
-      providerPartId: selection.cid,
+      providerTrackId: selection.providerTrackId || selection.bvid,
+      providerPartId: selection.providerPartId || selection.cid,
       title:
         typeof selection.title === 'string'
           ? selection.title.trim()

@@ -13,11 +13,11 @@
   let nativeCurrentTrack = null;
   let nativeSelectedTrackId = '';
   const nativePageEpoch = Math.floor(Date.now() % 2147483647);
+  let nativeLyricSnapshot = null;
   let l1Player;
 
   const nativeTrackSelection = (track) => {
     const id = String(track && track.id ? track.id : '');
-    const parts = /^bitrack_v_(BV[0-9A-Za-z]{6,32})-(\d+)$/.exec(id);
     const title =
       typeof (track && track.title) === 'string' ? track.title.trim() : '';
     const artist =
@@ -26,28 +26,74 @@
       0,
       Math.round(Number(track && track.duration) * 1000) || 0
     );
-    if (
-      !parts ||
-      !title ||
-      !artist ||
-      title.length > 256 ||
-      artist.length > 256
-    )
+    if (!title || !artist || title.length > 256 || artist.length > 256) {
       return null;
-    return {
-      source: 'bilibili',
-      bvid: parts[1],
-      cid: Number(parts[2]),
-      title,
-      artist,
-      durationMs,
-      mediaKind: 'audio',
-    };
+    }
+    const bilibili = /^bitrack_v_(BV[0-9A-Za-z]{6,32})-(\d+)$/.exec(id);
+    if (bilibili) {
+      return {
+        source: 'bilibili',
+        providerTrackId: bilibili[1],
+        providerPartId: Number(bilibili[2]),
+        title,
+        artist,
+        durationMs,
+        mediaKind: 'audio',
+      };
+    }
+    const netease = /^netrack_([1-9][0-9]{0,17})$/.exec(id);
+    if (netease) {
+      return {
+        source: 'netease',
+        providerTrackId: netease[1],
+        // The bridge requires an explicit positive part identity even for
+        // single-part tracks; native owns all later rendition choices.
+        providerPartId: 1,
+        title,
+        artist,
+        durationMs,
+        mediaKind: 'audio',
+      };
+    }
+    return null;
   };
 
   const nativeCommand = (command, payload) => {
     if (!androidPlayback) return Promise.resolve();
     return androidPlayback.command(command, payload).catch(() => null);
+  };
+
+  const lyricSafeNativeSnapshot = (snapshot) => {
+    const lyric = snapshot && snapshot.lyric;
+    if (!snapshot || !lyric || typeof lyric !== 'object') return null;
+    const string = (value, limit = 256) => {
+      const text = typeof value === 'string' ? value : '';
+      return text.length <= limit ? text : '';
+    };
+    const integer = (value) =>
+      Number.isSafeInteger(Number(value)) && Number(value) >= 0
+        ? Number(value)
+        : 0;
+    const trackHandle = string(lyric.trackHandle);
+    const occurrenceId = string(lyric.occurrenceId);
+    const source = string(lyric.source, 32);
+    if (!trackHandle || !occurrenceId || !source) return null;
+    return Object.freeze({
+      pageEpoch: nativePageEpoch,
+      revision: integer(snapshot.revision),
+      positionMs: integer(snapshot.positionMs),
+      durationMs: integer(snapshot.durationMs),
+      state: string(snapshot.state, 32),
+      source,
+      providerTrackId: string(lyric.providerTrackId),
+      providerPartId: integer(lyric.providerPartId),
+      trackHandle,
+      occurrenceId,
+      selectionGeneration: integer(lyric.selectionGeneration),
+      playbackRevision: integer(lyric.playbackRevision),
+      capability: string(lyric.capability, 64),
+      lyricState: string(lyric.state, 64),
+    });
   };
 
   const nativeSelect = (track, action, playWhenReady) => {
@@ -71,6 +117,7 @@
 
   const syncNativeSnapshot = (snapshot) => {
     if (!snapshot || !androidPlayback) return;
+    nativeLyricSnapshot = lyricSafeNativeSnapshot(snapshot);
     const playing = {
       id: nativeCurrentTrack ? nativeCurrentTrack.id : '',
       title: snapshot.metadata.title,
@@ -102,6 +149,12 @@
       loop_mode: myPlayer.loop_mode,
       playing: myPlayer.playing,
       playNextQueue: [],
+    },
+    isNativePlayback() {
+      return androidPlayback !== null;
+    },
+    getNativeLyricSnapshot() {
+      return nativeLyricSnapshot;
     },
     play() {
       if (androidPlayback) {

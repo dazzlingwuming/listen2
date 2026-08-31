@@ -159,8 +159,8 @@ async function run() {
   const prepared = calls.find((call) => call.kind === 'prepare');
   assert.deepStrictEqual(JSON.parse(JSON.stringify(prepared.payload)), {
     source: 'bilibili',
-    bvid: 'BV1xx411c7mD',
-    cid: 42,
+    providerTrackId: 'BV1xx411c7mD',
+    providerPartId: 42,
     title: 'Song',
     artist: 'Artist',
     durationMs: 120000,
