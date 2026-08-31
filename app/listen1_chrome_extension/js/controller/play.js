@@ -135,6 +135,46 @@ function decorateLyricCandidate(candidate) {
   };
 }
 
+function classifyNativeLyricState(input) {
+  const value = input || {};
+  if (value.identityAccepted !== true) return 'stale';
+  const terminal = String(value.terminalStatus || '');
+  if (
+    [
+      'no-lyric',
+      'provider-refusal',
+      'timeout',
+      'cancelled',
+      'schema-error',
+    ].includes(terminal)
+  ) {
+    return terminal;
+  }
+  const lines = Math.max(0, Number(value.lineCount) || 0);
+  const timedLines = Math.max(0, Number(value.timedLineCount) || 0);
+  if (!lines) return 'no-lyric';
+  const durationMs = Math.max(0, Number(value.durationMs) || 0);
+  const matchedDurationMs = Math.max(0, Number(value.matchedDurationMs) || 0);
+  const mismatchTolerance = Math.max(10000, durationMs * 0.1);
+  if (
+    durationMs > 0 &&
+    matchedDurationMs > 0 &&
+    Math.abs(durationMs - matchedDurationMs) > mismatchTolerance
+  ) {
+    return 'duration-mismatch';
+  }
+  if (timedLines >= 3 && timedLines / lines >= 0.6) return 'synchronized';
+  return timedLines > 0 ? 'insufficient-timestamp' : 'text-only';
+}
+
+function normalizeLyricTerminalStatus(value) {
+  const status = String(value || '');
+  if (/cancel/i.test(status)) return 'cancelled';
+  if (/timeout/i.test(status)) return 'timeout';
+  if (/refus|denied|entitlement/i.test(status)) return 'provider-refusal';
+  return status;
+}
+
 function compareLyricCandidates(left, right) {
   const scoreDifference =
     Number(right.matchScore || 0) - Number(left.matchScore || 0);
@@ -2636,14 +2676,43 @@ angular.module('listenone').controller('PlayController', [
 
     function applyLyricResult(track, result) {
       if (!$scope.currentPlaying || $scope.currentPlaying.id !== track.id) {
-        return;
+        return false;
       }
       const safeResult = result || {};
-      resetLyricDisplay();
-      if (!safeResult.lyric) {
-        setPrimaryLyricState(track, 'unavailable');
-        return;
+      const lyricArray = safeResult.lyric
+        ? parseLyric(safeResult.lyric, safeResult.tlyric)
+        : [];
+      const originalLines = lyricArray.filter(
+        (line) => line.translationFlag !== true
+      );
+      const timedOriginalLines = originalLines.filter(
+        (line) => Number(line.seconds) > 0 || Number(line.seconds) === 0
+      );
+      const terminalStatus = String(safeResult.status || safeResult.code || '');
+      const classified = classifyNativeLyricState({
+        lineCount: originalLines.length || (safeResult.lyric ? 1 : 0),
+        timedLineCount: timedOriginalLines.length,
+        durationMs: androidPlaybackAdapter
+          ? Number((getNativeLyricIdentity() || {}).durationMs)
+          : Math.round(Number(track.duration || 0) * 1000),
+        matchedDurationMs: Math.round(
+          Number(safeResult.matchedDuration || safeResult.duration || 0) * 1000
+        ),
+        identityAccepted:
+          !androidPlaybackAdapter ||
+          (nativeLyricRequestIdentity &&
+            isCurrentNativeLyricIdentity(nativeLyricRequestIdentity)),
+        terminalStatus: normalizeLyricTerminalStatus(terminalStatus),
+      });
+      if (
+        !['synchronized', 'text-only', 'insufficient-timestamp'].includes(
+          classified
+        )
+      ) {
+        if (classified !== 'stale') setPrimaryLyricState(track, classified);
+        return false;
       }
+      resetLyricDisplay();
       $scope.currentLyricResult = { ...safeResult };
       $scope.lyricSource = safeResult.source || track.source || '';
       $scope.lyricMatchedTrack = [
@@ -2652,7 +2721,7 @@ angular.module('listenone').controller('PlayController', [
       ]
         .filter(Boolean)
         .join(' · ');
-      $scope.lyricArray = parseLyric(safeResult.lyric, safeResult.tlyric);
+      $scope.lyricArray = lyricArray;
       $scope.hasLyricTranslation = $scope.lyricArray.some(
         (line) =>
           line.translationFlag === true &&
@@ -2670,7 +2739,8 @@ angular.module('listenone').controller('PlayController', [
         (safeResult.machineTranslated
           ? safeResult.translationProvider || 'DeepSeek'
           : '');
-      setPrimaryLyricState(track, 'content');
+      setPrimaryLyricState(track, classified);
+      return true;
     }
 
     function lyricResultToCandidate(track, result) {

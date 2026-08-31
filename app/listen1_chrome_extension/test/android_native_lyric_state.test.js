@@ -20,6 +20,19 @@ const playSource = fs.readFileSync(
   'utf8'
 );
 
+function topLevelFunctionSource(name) {
+  const start = playSource.indexOf(`function ${name}(`);
+  assert.notStrictEqual(start, -1, `${name} should exist`);
+  const bodyStart = playSource.indexOf('{', start);
+  let depth = 0;
+  for (let index = bodyStart; index < playSource.length; index += 1) {
+    if (playSource[index] === '{') depth += 1;
+    if (playSource[index] === '}') depth -= 1;
+    if (depth === 0) return playSource.slice(start, index + 1);
+  }
+  throw new Error(`Unable to parse ${name}`);
+}
+
 const snapshot = {
   revision: 18,
   state: 'paused',
@@ -121,5 +134,63 @@ assert.doesNotMatch(
     playSource.indexOf('function syncAndroidLyricClock') + 5000
   ),
   /l1Player\.status\.playing\.pos/
+);
+const classifyNativeLyricState = vm.runInThisContext(
+  `(${topLevelFunctionSource('classifyNativeLyricState')})`
+);
+assert.strictEqual(
+  classifyNativeLyricState({
+    lineCount: 4,
+    timedLineCount: 3,
+    durationMs: 180000,
+    matchedDurationMs: 180000,
+    identityAccepted: true,
+  }),
+  'synchronized'
+);
+assert.strictEqual(
+  classifyNativeLyricState({
+    lineCount: 4,
+    timedLineCount: 2,
+    durationMs: 180000,
+    matchedDurationMs: 180000,
+    identityAccepted: true,
+  }),
+  'insufficient-timestamp'
+);
+assert.strictEqual(
+  classifyNativeLyricState({
+    lineCount: 3,
+    timedLineCount: 3,
+    durationMs: 180000,
+    matchedDurationMs: 150000,
+    identityAccepted: true,
+  }),
+  'duration-mismatch'
+);
+[
+  'no-lyric',
+  'provider-refusal',
+  'timeout',
+  'cancelled',
+  'schema-error',
+].forEach((status) => {
+  assert.strictEqual(
+    classifyNativeLyricState({
+      terminalStatus: status,
+      identityAccepted: true,
+    }),
+    status
+  );
+});
+assert.strictEqual(
+  classifyNativeLyricState({
+    lineCount: 3,
+    timedLineCount: 3,
+    durationMs: 180000,
+    matchedDurationMs: 180000,
+    identityAccepted: false,
+  }),
+  'stale'
 );
 console.log('android native lyric state tests passed');
