@@ -33,9 +33,40 @@ public final class LyricPersistenceInstrumentationTest {
             assertEquals("idempotent", repository.execute(offset).status);
             assertEquals("stale", repository.execute(intent(LyricPersistencePort.Operation.SET, 1L,
                     "stale", "source-2", 0L)).status);
-            assertEquals("not-found", repository.execute(new LyricPersistencePort.Intent(
+            LyricPersistencePort.Intent otherSet = new LyricPersistencePort.Intent(
+                    LyricPersistencePort.Operation.SET, "netease", "1001", "part-2", "identity-1",
+                    0L, "other-set", "source-other", 0L);
+            assertEquals("accepted", repository.execute(otherSet).status);
+            assertEquals("accepted", repository.execute(intent(LyricPersistencePort.Operation.SET, 2L,
+                    "other-set", "source-2", 0L)).status);
+            assertEquals("accepted", repository.execute(intent(LyricPersistencePort.Operation.CLEAR, 3L,
+                    "clear-1", null, 0L)).status);
+            assertEquals("automatic", repository.execute(
+                    intent(LyricPersistencePort.Operation.GET, 4L, "get-after-clear", null, 0L)).mode);
+            assertEquals("manual", repository.execute(new LyricPersistencePort.Intent(
                     LyricPersistencePort.Operation.GET, "netease", "1001", "part-2", "identity-1",
-                    0L, "other", null, 0L)).status);
+                    1L, "other-get", null, 0L)).mode);
+        } finally {
+            database.close();
+        }
+    }
+
+    @Test
+    public void invalidAndCorruptRecordsCannotResurrect() {
+        Listen2Database database = Room.inMemoryDatabaseBuilder(
+                InstrumentationRegistry.getInstrumentation().getTargetContext(), Listen2Database.class)
+                .allowMainThreadQueries().build();
+        try {
+            LyricRepository repository = new LyricRepository(database);
+            assertEquals("invalid", repository.execute(intent(LyricPersistencePort.Operation.OFFSET, 0L,
+                    "bad-offset", null, 250L)).status);
+            database.lyricDao().upsert(new com.dazzlingwuming.listen2.data.LyricRecord.Entity(
+                    "netease", "1001", "", "identity-1", "manual", null, 0, 0L, null, null,
+                    0L, 1L, "corrupt", 1L));
+            assertEquals("invalid", repository.execute(intent(LyricPersistencePort.Operation.GET, 0L,
+                    "get-corrupt", null, 0L)).status);
+            assertEquals("not-found", repository.execute(intent(LyricPersistencePort.Operation.GET, 0L,
+                    "get-after-corrupt", null, 0L)).status);
         } finally {
             database.close();
         }

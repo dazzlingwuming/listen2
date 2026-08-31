@@ -34,7 +34,7 @@ public final class LyricRepository implements LyricPersistencePort, AutoCloseabl
 
     @Override
     public Result execute(Intent intent) {
-        if (!isValidIntent(intent)) return Result.error("INVALID_LYRIC_INTENT");
+        if (validationError(intent) != null) return Result.error("INVALID_LYRIC_INTENT");
         final Result[] result = new Result[1];
         database.runInTransaction(() -> result[0] = executeInTransaction(intent));
         return result[0] == null ? Result.error("LYRIC_PERSISTENCE_UNAVAILABLE") : result[0];
@@ -100,22 +100,27 @@ public final class LyricRepository implements LyricPersistencePort, AutoCloseabl
                 entity.mode, entity.selectedSourceId, entity.offsetMs);
     }
 
-    private static boolean isValidIntent(Intent intent) {
+    static String validationError(Intent intent) {
         if (intent == null || intent.operation == null || !safeId(intent.source) || !safeId(intent.providerTrackId)
                 || !safeId(intent.lyricRevision) || !safeId(intent.transitionToken)
-                || intent.expectedRevision < 0L || intent.expectedRevision > Integer.MAX_VALUE) return false;
-        if (intent.providerPartId != null && !intent.providerPartId.isEmpty() && !safeId(intent.providerPartId)) {
-            return false;
+                || intent.expectedRevision < 0L || intent.expectedRevision > Integer.MAX_VALUE) {
+            return "INVALID_LYRIC_INTENT";
         }
-        if (intent.operation == Operation.SET && !safeId(intent.selectedSourceId)) return false;
-        return intent.operation != Operation.OFFSET || (intent.offsetMs >= MIN_OFFSET_MS
-                && intent.offsetMs <= MAX_OFFSET_MS && intent.offsetMs % OFFSET_STEP_MS == 0L);
+        if (intent.providerPartId != null && !intent.providerPartId.isEmpty() && !safeId(intent.providerPartId)) {
+            return "INVALID_LYRIC_INTENT";
+        }
+        if (intent.operation == Operation.SET && !safeId(intent.selectedSourceId)) return "INVALID_LYRIC_INTENT";
+        if (intent.operation == Operation.OFFSET && (intent.offsetMs < MIN_OFFSET_MS
+                || intent.offsetMs > MAX_OFFSET_MS || intent.offsetMs % OFFSET_STEP_MS != 0L)) {
+            return "INVALID_LYRIC_INTENT";
+        }
+        return null;
     }
 
     /** Stores provider-authorized semantic lyric content without any transport material. */
     public Result persistAuthorizedContent(Intent intent, String originalText, String translationText,
             int matchQuality, long matchedAtMs) {
-        if (!isValidIntent(intent) || !isValidContent(originalText, translationText)
+        if (validationError(intent) != null || !isValidContent(originalText, translationText)
                 || matchQuality < 0 || matchQuality > 100 || matchedAtMs < 0L) {
             return Result.error("INVALID_LYRIC_CONTENT");
         }
@@ -152,7 +157,7 @@ public final class LyricRepository implements LyricPersistencePort, AutoCloseabl
                 && entity.matchQuality >= 0 && entity.matchQuality <= 100 && entity.matchedAtMs >= 0L;
     }
 
-    private static boolean isValidContent(String originalText, String translationText) {
+    static boolean isValidContent(String originalText, String translationText) {
         int originalBytes = byteLength(originalText);
         int translationBytes = byteLength(translationText);
         return originalBytes <= MAX_SINGLE_TEXT_BYTES && translationBytes <= MAX_SINGLE_TEXT_BYTES
