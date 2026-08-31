@@ -1,0 +1,41 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-08-31T00:26:07.092Z",
+  "phase": "03",
+  "phase_name": "NetEase Lyrics & Provider Contract",
+  "phase_dir": ".planning/phases/03-netease-lyrics-provider-contract",
+  "plan": 5,
+  "task": 3,
+  "total_tasks": 3,
+  "status": "paused",
+  "completed_tasks": [
+    {"id": 1, "name": "Bind Android lyrics to the accepted native Media3 clock", "status": "done", "commit": "638fe51"},
+    {"id": 2, "name": "Classify lyric degradation without blocking audio", "status": "done", "commit": "328da4a"},
+    {"id": 3, "name": "Transact manual lyric choices and offset", "status": "done", "commit": "6112e79"}
+  ],
+  "remaining_tasks": [
+    {"id": 4, "name": "Write 03-05-SUMMARY.md", "status": "not_started"},
+    {"id": 5, "name": "Rebaseline current main and build one whole-product Android blueprint APK before resuming granular phase gates", "status": "not_started"}
+  ],
+  "blockers": [
+    {"description": "Bilibili live search returns five rows but all bounded public detail requests terminate as detail=error.", "type": "external", "workaround": "Diagnose after cooldown with one bounded redacted attempt; do not guess CID or hammer the provider."},
+    {"description": "No approved and verified native NetEase detail/default-rendition/primary-lyric route is available.", "type": "external", "workaround": "Keep route-unavailable truthful; do not substitute fixtures for live playback."},
+    {"description": "ROADMAP.md and STATE.md progress counts are stale and under-report completed Phase 2/3 work.", "type": "technical", "workaround": "Reconcile from git commits and SUMMARY files before using the counters."}
+  ],
+  "async_jobs": [],
+  "human_actions_pending": [
+    {"action": "Next session should prioritize a usable whole-product blueprint APK for user review.", "context": "The user rejected the prior micro-plan/micro-CI cadence and wants visible desktop-parity coverage first.", "blocking": true}
+  ],
+  "decisions": [
+    {"decision": "Stop the current long-running phased execution.", "rationale": "The workflow was consuming excessive time and tokens before producing a whole-product APK for user comparison.", "phase": "03"},
+    {"decision": "On resume, rebaseline against the then-current main branch and original mobile behavior before more implementation.", "rationale": "Android must reflect the newest desktop feature set and phone interaction model.", "phase": "project"},
+    {"decision": "Build broad phone-visible capability coverage and an installable blueprint before strict per-capability evidence hardening.", "rationale": "The user needs to evaluate the overall product difference first.", "phase": "project"},
+    {"decision": "Keep one native Media3 playback owner and the existing closed RPC/Room security boundaries.", "rationale": "These foundations are already implemented and API35-tested; replacing them would discard useful work.", "phase": "02-03"}
+  ],
+  "uncommitted_files": [
+    ".planning/phases/01-verified-bilibili-startup-slice/01-API35-EVIDENCE.md",
+    ".planning/phases/01-verified-bilibili-startup-slice/evidence/"
+  ],
+  "next_action": "Read docs/android-progress-handoff-2026-08-31.md, inspect git status/log and latest main, then create a concise user-visible desktop-vs-Android feature matrix and whole-product blueprint scope before changing code.",
+  "context_notes": "Do not automatically continue Plan 03-06. Phase 03-05 code tasks are committed and pushed, but its SUMMARY is missing. The user explicitly wants breadth-first product completion and an APK before another long validation program."
+}
