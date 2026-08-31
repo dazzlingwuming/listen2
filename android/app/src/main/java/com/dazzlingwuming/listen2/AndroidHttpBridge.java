@@ -48,7 +48,7 @@ final class AndroidHttpBridge {
     // The v2 NetEase seam is native-owned and intentionally route-unavailable
     // until an approved provider contract is supplied by a later slice.
     private final NetEaseProviderClient netEaseProviderClient = new NetEaseProviderClient();
-    private final LyricPersistencePort lyricPersistencePort = LyricPersistencePort.unavailable();
+    private LyricPersistencePort lyricPersistencePort = LyricPersistencePort.unavailable();
     // Installed by the Activity after it connects to the sole playback service.
     // This remains the existing trusted WebMessage listener, not a second bridge.
     private PlaybackBridgeController playbackController;
@@ -113,6 +113,10 @@ final class AndroidHttpBridge {
 
     void setPlaybackController(PlaybackBridgeController controller) {
         playbackController = controller;
+    }
+
+    void setLyricPersistencePort(LyricPersistencePort port) {
+        lyricPersistencePort = port == null ? LyricPersistencePort.unavailable() : port;
     }
 
     private final class Listener implements WebViewCompat.WebMessageListener {
@@ -531,7 +535,7 @@ final class AndroidHttpBridge {
                 || request.operation == AndroidRpcContract.Operation.LYRIC_SELECTION_SET
                 || request.operation == AndroidRpcContract.Operation.LYRIC_SELECTION_CLEAR
                 || request.operation == AndroidRpcContract.Operation.LYRIC_OFFSET_SET) {
-            return lyricPersistencePort.execute(request);
+            return executeLyricPersistence(request);
         }
         if (request.operation == AndroidRpcContract.Operation.BILIBILI_AUDIO_MANIFEST) {
             return executeTypedManifest(request, key);
@@ -545,6 +549,55 @@ final class AndroidHttpBridge {
             return executeTypedMetadataOperation(request, key, false);
         }
         return reply;
+    }
+
+    /** Converts the closed RPC payload into semantic-only durable lyric state. */
+    private AndroidRpcContract.TypedReply executeLyricPersistence(
+            AndroidRpcContract.TypedRequest request) {
+        JSONObject payload = request.operationPayload;
+        if (payload == null) return AndroidRpcContract.reply(request,
+                AndroidRpcContract.Terminal.ERROR, 0, null, "INVALID_LYRIC_INTENT");
+        try {
+            LyricPersistencePort.Operation operation;
+            String selectedSourceId = null;
+            long offsetMs = 0L;
+            if (request.operation == AndroidRpcContract.Operation.LYRIC_SELECTION_GET) {
+                operation = LyricPersistencePort.Operation.GET;
+            } else if (request.operation == AndroidRpcContract.Operation.LYRIC_SELECTION_SET) {
+                operation = LyricPersistencePort.Operation.SET;
+                selectedSourceId = payload.getString("lyricId");
+            } else if (request.operation == AndroidRpcContract.Operation.LYRIC_SELECTION_CLEAR) {
+                operation = LyricPersistencePort.Operation.CLEAR;
+            } else if (request.operation == AndroidRpcContract.Operation.LYRIC_OFFSET_SET) {
+                operation = LyricPersistencePort.Operation.OFFSET;
+                offsetMs = payload.getLong("offsetMs");
+            } else {
+                return AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.ERROR, 0, null,
+                        "INVALID_LYRIC_INTENT");
+            }
+            // Phase 3's closed lyric operations are NetEase-only. The opaque selection identity
+            // is the durable lyric revision; it never carries candidates or provider bodies.
+            LyricPersistencePort.Result result = lyricPersistencePort.execute(
+                    new LyricPersistencePort.Intent(operation, AndroidRpcContract.NETEASE_SOURCE,
+                            payload.getString("trackId"), "", payload.getString("selectionIdentity"),
+                            payload.getLong("selectionRevision"), payload.getString("selectionToken"),
+                            selectedSourceId, offsetMs));
+            if (result.errorCode != null && !"STALE_REVISION".equals(result.errorCode)) {
+                return AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.ERROR, 0, null,
+                        result.errorCode);
+            }
+            JSONObject projected = new JSONObject();
+            projected.put("status", result.status);
+            projected.put("revision", result.revision);
+            if (result.mode != null) projected.put("mode", result.mode);
+            if (result.selectedSourceId != null) projected.put("lyricId", result.selectedSourceId);
+            projected.put("offsetMs", result.offsetMs);
+            if (result.errorCode != null) projected.put("conflict", result.errorCode);
+            return AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.OK, 0, projected, null);
+        } catch (JSONException ignored) {
+            return AndroidRpcContract.reply(request, AndroidRpcContract.Terminal.ERROR, 0, null,
+                    "INVALID_LYRIC_INTENT");
+        }
     }
 
     static boolean shouldRetryWithoutAnonymousCookie(

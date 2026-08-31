@@ -1,0 +1,850 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 2,
+    "identityHash": "c97288862afc0793e6764944d27e5c61",
+    "entities": [
+      {
+        "tableName": "playback_checkpoint",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`checkpointId` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `transitionToken` TEXT NOT NULL, `baseContextId` TEXT NOT NULL, `currentOccurrenceId` TEXT NOT NULL, `baseCurrentOccurrenceId` TEXT NOT NULL, `mode` TEXT NOT NULL, `modeBeforeQueue` TEXT NOT NULL, `queueContextActive` INTEGER NOT NULL, `historyCursor` INTEGER NOT NULL, `shuffleNextIndex` INTEGER NOT NULL, `positionMs` INTEGER NOT NULL, `updatedAtMs` INTEGER NOT NULL, PRIMARY KEY(`checkpointId`), FOREIGN KEY(`currentOccurrenceId`) REFERENCES `playback_occurrences`(`occurrenceId`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`baseCurrentOccurrenceId`) REFERENCES `playback_occurrences`(`occurrenceId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "checkpointId",
+            "columnName": "checkpointId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "transitionToken",
+            "columnName": "transitionToken",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "baseContextId",
+            "columnName": "baseContextId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currentOccurrenceId",
+            "columnName": "currentOccurrenceId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "baseCurrentOccurrenceId",
+            "columnName": "baseCurrentOccurrenceId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mode",
+            "columnName": "mode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "modeBeforeQueue",
+            "columnName": "modeBeforeQueue",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "queueContextActive",
+            "columnName": "queueContextActive",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "historyCursor",
+            "columnName": "historyCursor",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "shuffleNextIndex",
+            "columnName": "shuffleNextIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "positionMs",
+            "columnName": "positionMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtMs",
+            "columnName": "updatedAtMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "checkpointId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_playback_checkpoint_currentOccurrenceId",
+            "unique": false,
+            "columnNames": [
+              "currentOccurrenceId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_playback_checkpoint_currentOccurrenceId` ON `${TABLE_NAME}` (`currentOccurrenceId`)"
+          },
+          {
+            "name": "index_playback_checkpoint_baseCurrentOccurrenceId",
+            "unique": false,
+            "columnNames": [
+              "baseCurrentOccurrenceId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_playback_checkpoint_baseCurrentOccurrenceId` ON `${TABLE_NAME}` (`baseCurrentOccurrenceId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "playback_occurrences",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "currentOccurrenceId"
+            ],
+            "referencedColumns": [
+              "occurrenceId"
+            ]
+          },
+          {
+            "table": "playback_occurrences",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "baseCurrentOccurrenceId"
+            ],
+            "referencedColumns": [
+              "occurrenceId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "playback_occurrences",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`occurrenceId` TEXT NOT NULL, `trackHandle` TEXT NOT NULL, `source` TEXT NOT NULL, `providerTrackId` TEXT NOT NULL, `providerPartId` INTEGER NOT NULL, `role` TEXT NOT NULL, `ordinal` INTEGER NOT NULL, `playable` INTEGER NOT NULL, PRIMARY KEY(`occurrenceId`))",
+        "fields": [
+          {
+            "fieldPath": "occurrenceId",
+            "columnName": "occurrenceId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "trackHandle",
+            "columnName": "trackHandle",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "providerTrackId",
+            "columnName": "providerTrackId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "providerPartId",
+            "columnName": "providerPartId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "role",
+            "columnName": "role",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ordinal",
+            "columnName": "ordinal",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "playable",
+            "columnName": "playable",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "occurrenceId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_playback_occurrences_role_ordinal",
+            "unique": false,
+            "columnNames": [
+              "role",
+              "ordinal"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_playback_occurrences_role_ordinal` ON `${TABLE_NAME}` (`role`, `ordinal`)"
+          },
+          {
+            "name": "index_playback_occurrences_trackHandle",
+            "unique": false,
+            "columnNames": [
+              "trackHandle"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_playback_occurrences_trackHandle` ON `${TABLE_NAME}` (`trackHandle`)"
+          },
+          {
+            "name": "index_playback_occurrences_source_providerTrackId_providerPartId",
+            "unique": false,
+            "columnNames": [
+              "source",
+              "providerTrackId",
+              "providerPartId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_playback_occurrences_source_providerTrackId_providerPartId` ON `${TABLE_NAME}` (`source`, `providerTrackId`, `providerPartId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "playback_history",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`ordinal` INTEGER NOT NULL, `occurrenceId` TEXT NOT NULL, `acceptedAtMs` INTEGER NOT NULL, PRIMARY KEY(`ordinal`), FOREIGN KEY(`occurrenceId`) REFERENCES `playback_occurrences`(`occurrenceId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "ordinal",
+            "columnName": "ordinal",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "occurrenceId",
+            "columnName": "occurrenceId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "acceptedAtMs",
+            "columnName": "acceptedAtMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "ordinal"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_playback_history_occurrenceId",
+            "unique": false,
+            "columnNames": [
+              "occurrenceId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_playback_history_occurrenceId` ON `${TABLE_NAME}` (`occurrenceId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "playback_occurrences",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "occurrenceId"
+            ],
+            "referencedColumns": [
+              "occurrenceId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "playback_shuffle_order",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`ordinal` INTEGER NOT NULL, `occurrenceId` TEXT NOT NULL, PRIMARY KEY(`ordinal`), FOREIGN KEY(`occurrenceId`) REFERENCES `playback_occurrences`(`occurrenceId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "ordinal",
+            "columnName": "ordinal",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "occurrenceId",
+            "columnName": "occurrenceId",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "ordinal"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_playback_shuffle_order_occurrenceId",
+            "unique": false,
+            "columnNames": [
+              "occurrenceId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_playback_shuffle_order_occurrenceId` ON `${TABLE_NAME}` (`occurrenceId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "playback_occurrences",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "occurrenceId"
+            ],
+            "referencedColumns": [
+              "occurrenceId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "accepted_transition_tokens",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`transitionToken` TEXT NOT NULL, `acceptedRevision` INTEGER NOT NULL, PRIMARY KEY(`transitionToken`))",
+        "fields": [
+          {
+            "fieldPath": "transitionToken",
+            "columnName": "transitionToken",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "acceptedRevision",
+            "columnName": "acceptedRevision",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "transitionToken"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_accepted_transition_tokens_acceptedRevision",
+            "unique": false,
+            "columnNames": [
+              "acceptedRevision"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_accepted_transition_tokens_acceptedRevision` ON `${TABLE_NAME}` (`acceptedRevision`)"
+          }
+        ]
+      },
+      {
+        "tableName": "playlists",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`playlistId` TEXT NOT NULL, `name` TEXT NOT NULL, `ordinal` INTEGER NOT NULL, `createdAtMs` INTEGER NOT NULL, `updatedAtMs` INTEGER NOT NULL, PRIMARY KEY(`playlistId`))",
+        "fields": [
+          {
+            "fieldPath": "playlistId",
+            "columnName": "playlistId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ordinal",
+            "columnName": "ordinal",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtMs",
+            "columnName": "createdAtMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtMs",
+            "columnName": "updatedAtMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "playlistId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_playlists_ordinal",
+            "unique": false,
+            "columnNames": [
+              "ordinal"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_playlists_ordinal` ON `${TABLE_NAME}` (`ordinal`)"
+          }
+        ]
+      },
+      {
+        "tableName": "playlist_tracks",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`playlistId` TEXT NOT NULL, `ordinal` INTEGER NOT NULL, `source` TEXT NOT NULL, `providerTrackId` TEXT NOT NULL, PRIMARY KEY(`playlistId`, `ordinal`), FOREIGN KEY(`playlistId`) REFERENCES `playlists`(`playlistId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "playlistId",
+            "columnName": "playlistId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ordinal",
+            "columnName": "ordinal",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "providerTrackId",
+            "columnName": "providerTrackId",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "playlistId",
+            "ordinal"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_playlist_tracks_playlistId",
+            "unique": false,
+            "columnNames": [
+              "playlistId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_playlist_tracks_playlistId` ON `${TABLE_NAME}` (`playlistId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "playlists",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "playlistId"
+            ],
+            "referencedColumns": [
+              "playlistId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "favorites",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`favoriteId` TEXT NOT NULL, `source` TEXT NOT NULL, `providerTrackId` TEXT NOT NULL, `addedAtMs` INTEGER NOT NULL, PRIMARY KEY(`favoriteId`))",
+        "fields": [
+          {
+            "fieldPath": "favoriteId",
+            "columnName": "favoriteId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "providerTrackId",
+            "columnName": "providerTrackId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "addedAtMs",
+            "columnName": "addedAtMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "favoriteId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_favorites_source_providerTrackId",
+            "unique": true,
+            "columnNames": [
+              "source",
+              "providerTrackId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_favorites_source_providerTrackId` ON `${TABLE_NAME}` (`source`, `providerTrackId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "lyric_metadata",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`lyricId` TEXT NOT NULL, `source` TEXT NOT NULL, `providerTrackId` TEXT NOT NULL, `language` TEXT NOT NULL, `updatedAtMs` INTEGER NOT NULL, PRIMARY KEY(`lyricId`))",
+        "fields": [
+          {
+            "fieldPath": "lyricId",
+            "columnName": "lyricId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "providerTrackId",
+            "columnName": "providerTrackId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "language",
+            "columnName": "language",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtMs",
+            "columnName": "updatedAtMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "lyricId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_lyric_metadata_source_providerTrackId",
+            "unique": false,
+            "columnNames": [
+              "source",
+              "providerTrackId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_lyric_metadata_source_providerTrackId` ON `${TABLE_NAME}` (`source`, `providerTrackId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "lyric_records",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`source` TEXT NOT NULL, `providerTrackId` TEXT NOT NULL, `providerPartId` TEXT NOT NULL, `lyricRevision` TEXT NOT NULL, `mode` TEXT NOT NULL, `selectedSourceId` TEXT, `matchQuality` INTEGER NOT NULL, `matchedAtMs` INTEGER NOT NULL, `originalText` TEXT, `translationText` TEXT, `offsetMs` INTEGER NOT NULL, `semanticRevision` INTEGER NOT NULL, `transitionToken` TEXT NOT NULL, `updatedAtMs` INTEGER NOT NULL, PRIMARY KEY(`source`, `providerTrackId`, `providerPartId`, `lyricRevision`))",
+        "fields": [
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "providerTrackId",
+            "columnName": "providerTrackId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "providerPartId",
+            "columnName": "providerPartId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lyricRevision",
+            "columnName": "lyricRevision",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mode",
+            "columnName": "mode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "selectedSourceId",
+            "columnName": "selectedSourceId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "matchQuality",
+            "columnName": "matchQuality",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "matchedAtMs",
+            "columnName": "matchedAtMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "originalText",
+            "columnName": "originalText",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "translationText",
+            "columnName": "translationText",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "offsetMs",
+            "columnName": "offsetMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "semanticRevision",
+            "columnName": "semanticRevision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "transitionToken",
+            "columnName": "transitionToken",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtMs",
+            "columnName": "updatedAtMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "source",
+            "providerTrackId",
+            "providerPartId",
+            "lyricRevision"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_lyric_records_source_providerTrackId",
+            "unique": false,
+            "columnNames": [
+              "source",
+              "providerTrackId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_lyric_records_source_providerTrackId` ON `${TABLE_NAME}` (`source`, `providerTrackId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "listening_history",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`entryId` TEXT NOT NULL, `source` TEXT NOT NULL, `providerTrackId` TEXT NOT NULL, `listenedAtMs` INTEGER NOT NULL, `listenedDurationMs` INTEGER NOT NULL, PRIMARY KEY(`entryId`))",
+        "fields": [
+          {
+            "fieldPath": "entryId",
+            "columnName": "entryId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "providerTrackId",
+            "columnName": "providerTrackId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "listenedAtMs",
+            "columnName": "listenedAtMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "listenedDurationMs",
+            "columnName": "listenedDurationMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "entryId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_listening_history_source_providerTrackId",
+            "unique": false,
+            "columnNames": [
+              "source",
+              "providerTrackId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_listening_history_source_providerTrackId` ON `${TABLE_NAME}` (`source`, `providerTrackId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "cache_catalog",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`cacheId` TEXT NOT NULL, `source` TEXT NOT NULL, `providerTrackId` TEXT NOT NULL, `contentKey` TEXT NOT NULL, `byteCount` INTEGER NOT NULL, `updatedAtMs` INTEGER NOT NULL, PRIMARY KEY(`cacheId`))",
+        "fields": [
+          {
+            "fieldPath": "cacheId",
+            "columnName": "cacheId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "providerTrackId",
+            "columnName": "providerTrackId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contentKey",
+            "columnName": "contentKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "byteCount",
+            "columnName": "byteCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtMs",
+            "columnName": "updatedAtMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "cacheId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_cache_catalog_source_providerTrackId",
+            "unique": true,
+            "columnNames": [
+              "source",
+              "providerTrackId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_cache_catalog_source_providerTrackId` ON `${TABLE_NAME}` (`source`, `providerTrackId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "saf_references",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`referenceId` TEXT NOT NULL, `treeReference` TEXT NOT NULL, `documentReference` TEXT NOT NULL, `updatedAtMs` INTEGER NOT NULL, PRIMARY KEY(`referenceId`))",
+        "fields": [
+          {
+            "fieldPath": "referenceId",
+            "columnName": "referenceId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "treeReference",
+            "columnName": "treeReference",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "documentReference",
+            "columnName": "documentReference",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtMs",
+            "columnName": "updatedAtMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "referenceId"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'c97288862afc0793e6764944d27e5c61')"
+    ]
+  }
+}

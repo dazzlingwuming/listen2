@@ -30,6 +30,8 @@ import android.widget.TextView;
 
 import androidx.webkit.WebViewAssetLoader;
 
+import com.dazzlingwuming.listen2.data.LyricRepository;
+
 /**
  * A deliberately narrow Android host for the browser-compatible Listen1 UI.
  *
@@ -46,6 +48,7 @@ public final class MainActivity extends Activity {
     private WebViewAssetLoader assetLoader;
     private AndroidHttpBridge httpBridge;
     private PlaybackBridgeController playbackController;
+    private LyricRepository lyricRepository;
     private boolean playbackServiceBound;
     private boolean navigationInProgress;
 
@@ -81,6 +84,8 @@ public final class MainActivity extends Activity {
         webView = new WebView(this);
         configureWebView(webView);
         httpBridge = AndroidHttpBridge.install(webView);
+        lyricRepository = LyricRepository.open(getApplicationContext());
+        if (httpBridge != null) httpBridge.setLyricPersistencePort(lyricRepository);
         connectPlaybackService();
         root.addView(webView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -216,6 +221,10 @@ public final class MainActivity extends Activity {
                 ((ViewGroup) parent).removeView(retiringWebView);
             }
             retiringWebView.destroy();
+        }
+        if (lyricRepository != null) {
+            lyricRepository.close();
+            lyricRepository = null;
         }
         loadingView = null;
         loadingMessage = null;
