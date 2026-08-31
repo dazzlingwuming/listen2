@@ -19,6 +19,7 @@ const playSource = fs.readFileSync(
   path.join(root, 'js/controller/play.js'),
   'utf8'
 );
+const htmlSource = fs.readFileSync(path.join(root, 'listen1.html'), 'utf8');
 
 function topLevelFunctionSource(name) {
   const start = playSource.indexOf(`function ${name}(`);
@@ -193,4 +194,12 @@ assert.strictEqual(
   }),
   'stale'
 );
+assert.match(playSource, /function canUseManualLyric\(track\)/);
+assert.match(playSource, /function getCurrentLyricTrack\(track\)/);
+assert.match(playSource, /nativeManualLyricPending/);
+assert.match(playSource, /nativeManualLyricClearPending/);
+assert.match(playSource, /nativeLyricOffsetPending/);
+assert.match(playSource, /MediaService\.setLyricOffset/);
+assert.match(htmlSource, /adjustLyricOffset\(-500\)/);
+assert.match(htmlSource, /adjustLyricOffset\(500\)/);
 console.log('android native lyric state tests passed');

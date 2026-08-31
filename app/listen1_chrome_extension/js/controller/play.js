@@ -901,6 +901,9 @@ angular.module('listenone').controller('PlayController', [
     let lyricTranslationRequestToken = 0;
     let nativeLyricRequestIdentity = null;
     let activeNativeLyricIdentity = null;
+    let nativeLyricOffsetPending = null;
+    let nativeManualLyricPending = null;
+    let nativeManualLyricClearPending = null;
     let bilibiliMvPlayer = null;
     let lastMvPosition = 0;
     const AUDIO_CACHE_STATUS_POLL_MS = 2000;
@@ -938,6 +941,34 @@ angular.module('listenone').controller('PlayController', [
       return snapshot;
     }
 
+    function getCurrentLyricTrack(track) {
+      const snapshot = getNativeLyricIdentity();
+      if (!androidPlaybackAdapter || !snapshot) return track;
+      return {
+        ...track,
+        pageEpoch: snapshot.pageEpoch,
+        nativeLyricIdentity: {
+          selectionIdentity: snapshot.trackHandle,
+          selectionRevision: snapshot.selectionGeneration,
+          selectionToken: snapshot.occurrenceId,
+        },
+      };
+    }
+
+    function canUseManualLyric(track) {
+      if (!track || !track.id) return false;
+      if (!androidPlaybackAdapter) {
+        // eslint-disable-next-line no-use-before-define
+        return isBilibiliTrack(track);
+      }
+      const snapshot = getNativeLyricIdentity();
+      return Boolean(
+        snapshot &&
+          snapshot.source === track.source &&
+          String(snapshot.capability || '').includes('manual')
+      );
+    }
+
     function isSameNativeLyricSelection(left, right) {
       return Boolean(
         left &&
@@ -973,6 +1004,46 @@ angular.module('listenone').controller('PlayController', [
         if (track && track.id) {
           setPrimaryLyricState(track, 'loading');
         }
+      }
+      if (
+        nativeLyricOffsetPending &&
+        isSameNativeLyricSelection(
+          nativeLyricOffsetPending.identity,
+          snapshot
+        ) &&
+        Number(snapshot.playbackRevision) >
+          Number(nativeLyricOffsetPending.revision)
+      ) {
+        $scope.lyricOffsetMs = nativeLyricOffsetPending.offsetMs;
+        nativeLyricOffsetPending = null;
+      }
+      if (
+        nativeManualLyricPending &&
+        isSameNativeLyricSelection(
+          nativeManualLyricPending.identity,
+          snapshot
+        ) &&
+        Number(snapshot.playbackRevision) >
+          Number(nativeManualLyricPending.revision)
+      ) {
+        const pending = nativeManualLyricPending;
+        nativeManualLyricPending = null;
+        // eslint-disable-next-line no-use-before-define
+        applyLyricResult(pending.track, pending.result);
+      }
+      if (
+        nativeManualLyricClearPending &&
+        isSameNativeLyricSelection(
+          nativeManualLyricClearPending.identity,
+          snapshot
+        ) &&
+        Number(snapshot.playbackRevision) >
+          Number(nativeManualLyricClearPending.revision)
+      ) {
+        const pending = nativeManualLyricClearPending;
+        nativeManualLyricClearPending = null;
+        // eslint-disable-next-line no-use-before-define
+        requestTrackLyric(pending.track);
       }
       if (!Array.isArray($scope.lyricArray) || !$scope.lyricArray.length) {
         return;
@@ -1774,34 +1845,49 @@ angular.module('listenone').controller('PlayController', [
     }
 
     $scope.adjustLyricOffset = (deltaMs) => {
-      const trackId =
-        $scope.currentPlaying && $scope.currentPlaying.id
-          ? $scope.currentPlaying.id
-          : '';
-      if (!trackId.startsWith('bitrack_')) {
+      const track = $scope.currentPlaying;
+      if (!track || !track.id || !canUseManualLyric(track)) {
         return;
       }
-      $scope.lyricOffsetMs = Math.max(
-        -MAX_LYRIC_OFFSET_MS,
-        Math.min(
-          MAX_LYRIC_OFFSET_MS,
-          $scope.lyricOffsetMs + Number(deltaMs || 0)
-        )
+      const step = Number(deltaMs || 0);
+      if (!Number.isFinite(step) || step === 0) return;
+      if (!androidPlaybackAdapter) {
+        $scope.lyricOffsetMs = Math.max(
+          -MAX_LYRIC_OFFSET_MS,
+          Math.min(MAX_LYRIC_OFFSET_MS, $scope.lyricOffsetMs + step)
+        );
+        $scope.lyricLineNumber = -1;
+        $scope.lyricLineNumberTrans = -1;
+        saveTrackLyricOffset(track.id, $scope.lyricOffsetMs);
+        return;
+      }
+      if (nativeLyricOffsetPending) return;
+      const identity = getNativeLyricIdentity();
+      const offsetMs = Math.max(
+        -10000,
+        Math.min(10000, (Number($scope.lyricOffsetMs) || 0) + step)
       );
-      $scope.lyricLineNumber = -1;
-      $scope.lyricLineNumberTrans = -1;
-      saveTrackLyricOffset(trackId, $scope.lyricOffsetMs);
+      const result = MediaService.setLyricOffset(
+        track.id,
+        offsetMs,
+        getCurrentLyricTrack(track)
+      );
+      if (!result || !result.promise) return;
+      const pending = {
+        identity,
+        offsetMs,
+        revision: identity.playbackRevision,
+      };
+      nativeLyricOffsetPending = pending;
+      result.promise.catch(() => {
+        if (nativeLyricOffsetPending === pending)
+          nativeLyricOffsetPending = null;
+      });
     };
 
     $scope.resetLyricOffset = () => {
-      const trackId =
-        $scope.currentPlaying && $scope.currentPlaying.id
-          ? $scope.currentPlaying.id
-          : '';
-      $scope.lyricOffsetMs = 0;
-      $scope.lyricLineNumber = -1;
-      $scope.lyricLineNumberTrans = -1;
-      saveTrackLyricOffset(trackId, 0);
+      const current = $scope.lyricOffsetMs;
+      if (current !== 0) $scope.adjustLyricOffset(-current);
     };
 
     $scope.lyricOffsetLabel = () => {
@@ -2883,7 +2969,12 @@ angular.module('listenone').controller('PlayController', [
     }
 
     function saveManualLyricOrNotify(track, candidate) {
-      const result = MediaService.saveManualLyric(track.id, candidate, track);
+      const result = MediaService.saveManualLyric(
+        track.id,
+        candidate,
+        getCurrentLyricTrack(track)
+      );
+      if (result && result.promise) return result.promise;
       if (!result || result.ok !== true) {
         notyf.warning(getLyricStorageFailureMessage(result));
         return false;
@@ -2903,11 +2994,10 @@ angular.module('listenone').controller('PlayController', [
         'manual-selection'
       );
       if (!isElectron()) {
-        return Promise.resolve(
-          saveManualLyricOrNotify(track, candidate)
-            ? { ok: true, record: null }
-            : { ok: false }
-        );
+        const saved = saveManualLyricOrNotify(track, candidate);
+        return saved && typeof saved.then === 'function'
+          ? saved.then((response) => ({ ...response, record: null }))
+          : Promise.resolve(saved ? { ok: true, record: null } : { ok: false });
       }
       return MediaService.putPersistentLyric(
         track,
@@ -2934,7 +3024,11 @@ angular.module('listenone').controller('PlayController', [
     }
 
     function clearManualLyricOrNotify(track) {
-      const result = MediaService.clearManualLyric(track.id, track);
+      const result = MediaService.clearManualLyric(
+        track.id,
+        getCurrentLyricTrack(track)
+      );
+      if (result && result.promise) return result.promise;
       if (!result || result.ok !== true) {
         notyf.warning(getLyricStorageFailureMessage(result));
         return false;
@@ -3355,7 +3449,7 @@ angular.module('listenone').controller('PlayController', [
 
     $scope.openLyricPicker = () => {
       const track = $scope.currentPlaying;
-      if (!isBilibiliTrack(track)) {
+      if (!canUseManualLyric(track)) {
         return;
       }
       const isNewTrack = $scope.lyricPickerTrackId !== track.id;
@@ -3443,7 +3537,7 @@ angular.module('listenone').controller('PlayController', [
     $scope.searchLyricCandidates = () => {
       const track = $scope.currentPlaying;
       const query = String($scope.lyricSearch.query || '').trim();
-      if (!isBilibiliTrack(track) || !query) {
+      if (!canUseManualLyric(track) || !query) {
         $scope.lyricSearchResults = [];
         $scope.lyricSearchState = 'empty';
         $scope.lyricSearchPending = false;
@@ -3452,6 +3546,8 @@ angular.module('listenone').controller('PlayController', [
       lyricSearchToken += 1;
       const searchToken = lyricSearchToken;
       const trackId = track.id;
+      const identity = getNativeLyricIdentity();
+      const lyricTrack = getCurrentLyricTrack(track);
       const candidatesById = new Map();
       let completedRequests = 0;
       let failedRequests = 0;
@@ -3460,8 +3556,8 @@ angular.module('listenone').controller('PlayController', [
       $scope.lyricSearchPending = true;
 
       const requests = [
-        () => MediaService.searchLyricCandidates(track, query),
-        () => MediaService.searchSupplementalLyricCandidates(track, query),
+        () => MediaService.searchLyricCandidates(lyricTrack, query),
+        () => MediaService.searchSupplementalLyricCandidates(lyricTrack, query),
       ];
       const settleRequest = (results, failed) => {
         completedRequests += 1;
@@ -3482,7 +3578,8 @@ angular.module('listenone').controller('PlayController', [
           if (
             searchToken !== lyricSearchToken ||
             !$scope.currentPlaying ||
-            $scope.currentPlaying.id !== trackId
+            $scope.currentPlaying.id !== trackId ||
+            (androidPlaybackAdapter && !isCurrentNativeLyricIdentity(identity))
           ) {
             return;
           }
@@ -3509,7 +3606,7 @@ angular.module('listenone').controller('PlayController', [
 
     $scope.chooseLyricCandidate = (candidate) => {
       const track = $scope.currentPlaying;
-      if (!isBilibiliTrack(track) || !candidate || !candidate.lyric) {
+      if (!canUseManualLyric(track) || !candidate || !candidate.lyric) {
         return;
       }
       const selectedCandidate = decorateLyricCandidate(candidate);
@@ -3520,6 +3617,7 @@ angular.module('listenone').controller('PlayController', [
           $scope.currentLyricResult.lyricCacheRevision) ||
           0
       );
+      const identity = getNativeLyricIdentity();
       persistManualLyric(
         track,
         selectedCandidate,
@@ -3534,10 +3632,16 @@ angular.module('listenone').controller('PlayController', [
             notyf.warning(getLyricStorageFailureMessage(persisted));
             return Promise.resolve(null);
           }
+          if (
+            androidPlaybackAdapter &&
+            !isCurrentNativeLyricIdentity(identity)
+          ) {
+            return Promise.resolve(null);
+          }
           manualLyricResolveToken += 1;
           const resolveToken = manualLyricResolveToken;
           lyricRequestToken += 1;
-          applyLyricResult(track, {
+          const manualResult = {
             lyric: selectedCandidate.lyric,
             tlyric: selectedCandidate.tlyric || '',
             source: 'manual-selection',
@@ -3550,7 +3654,17 @@ angular.module('listenone').controller('PlayController', [
             lyricCacheRevision:
               (persisted.record && persisted.record.revision) || 0,
             lyricCacheMode: 'manual',
-          });
+          };
+          if (androidPlaybackAdapter) {
+            nativeManualLyricPending = {
+              identity,
+              revision: identity.playbackRevision,
+              track,
+              result: manualResult,
+            };
+          } else {
+            applyLyricResult(track, manualResult);
+          }
           $scope.closeLyricPicker();
           if (selectedCandidate.hasTranslation) return Promise.resolve(null);
           $scope.lyricTranslationLookupPending = true;
@@ -3616,12 +3730,13 @@ angular.module('listenone').controller('PlayController', [
 
     $scope.restoreAutoLyric = () => {
       const track = $scope.currentPlaying;
-      if (!isBilibiliTrack(track)) {
+      if (!canUseManualLyric(track)) {
         return;
       }
       manualLyricResolveToken += 1;
       manualLyricSelectionToken += 1;
       $scope.lyricTranslationLookupPending = false;
+      const nativeIdentity = getNativeLyricIdentity();
       const clearResult = isElectron()
         ? MediaService.clearPersistentLyric(
             track,
@@ -3631,11 +3746,16 @@ angular.module('listenone').controller('PlayController', [
                 0
             )
           )
-        : Promise.resolve(
-            clearManualLyricOrNotify(track)
-              ? { ok: true }
-              : { ok: false, status: 'request-failed' }
-          );
+        : (() => {
+            const cleared = clearManualLyricOrNotify(track);
+            return cleared && typeof cleared.then === 'function'
+              ? cleared
+              : Promise.resolve(
+                  cleared
+                    ? { ok: true }
+                    : { ok: false, status: 'request-failed' }
+                );
+          })();
       clearResult.then((response) => {
         if (!response || response.ok !== true) {
           notyf.warning(getLyricStorageFailureMessage(response));
@@ -3648,7 +3768,15 @@ angular.module('listenone').controller('PlayController', [
         }
         $scope.$evalAsync(() => {
           $scope.closeLyricPicker();
-          requestTrackLyric(track);
+          if (androidPlaybackAdapter) {
+            nativeManualLyricClearPending = {
+              identity: nativeIdentity,
+              revision: nativeIdentity.playbackRevision,
+              track,
+            };
+          } else {
+            requestTrackLyric(track);
+          }
         });
       });
     };
