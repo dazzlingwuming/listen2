@@ -64,18 +64,27 @@ public final class PlaybackEntities {
         @NonNull public final String source;
         @NonNull public final String providerTrackId;
         public final long providerPartId;
+        @NonNull public final String title;
+        @NonNull public final String artist;
+        public final long durationMs;
+        @NonNull public final String mediaKind;
         @NonNull public final String role;
         public final int ordinal;
         public final boolean playable;
 
         public OccurrenceEntity(@NonNull String occurrenceId, @NonNull String trackHandle,
                 @NonNull String source, @NonNull String providerTrackId, long providerPartId,
+                @NonNull String title, @NonNull String artist, long durationMs, @NonNull String mediaKind,
                 @NonNull String role, int ordinal, boolean playable) {
             this.occurrenceId = occurrenceId;
             this.trackHandle = trackHandle;
             this.source = source;
             this.providerTrackId = providerTrackId;
             this.providerPartId = providerPartId;
+            this.title = title;
+            this.artist = artist;
+            this.durationMs = durationMs;
+            this.mediaKind = mediaKind;
             this.role = role;
             this.ordinal = ordinal;
             this.playable = playable;

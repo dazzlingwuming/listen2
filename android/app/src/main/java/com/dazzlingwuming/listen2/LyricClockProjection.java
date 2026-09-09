@@ -31,6 +31,8 @@ public final class LyricClockProjection {
                     && providerPartId == other.providerPartId && occurrenceId.equals(other.occurrenceId)
                     && selectionGeneration == other.selectionGeneration;
         }
+
+        String getSource() { return source; }
     }
 
     public static final class Projection {
@@ -86,8 +88,12 @@ public final class LyricClockProjection {
         boolean sourceValid = "bilibili".equals(source) && providerTrackId != null
                 && providerTrackId.matches("BV[0-9A-Za-z]{6,32}")
                 || "netease".equals(source) && providerTrackId != null
-                && providerTrackId.matches("[1-9][0-9]{0,17}");
-        return sourceValid && providerPartId > 0L && selectionGeneration >= 0L
+                && providerTrackId.matches("[1-9][0-9]{0,17}")
+                || "local".equals(source) && providerTrackId != null
+                && providerTrackId.matches("local\\.track\\.[a-f0-9]{64}")
+                && providerPartId == 1L;
+        return sourceValid && ("local".equals(source) ? providerPartId == 1L : providerPartId > 0L)
+                && selectionGeneration >= 0L
                 && isOpaque(trackHandle) && isOpaque(occurrenceId);
     }
 

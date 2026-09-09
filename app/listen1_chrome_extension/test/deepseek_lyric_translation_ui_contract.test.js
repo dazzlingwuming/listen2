@@ -128,14 +128,14 @@ assert.strictEqual(
 assert.strictEqual(
   (htmlSource.match(/ng-click="saveMachineTranslationStyle\(\)"/g) || [])
     .length,
-  2,
-  'classic and modern settings need a save action next to the style editor'
+  3,
+  'classic, modern, and Android settings need a save action next to the style editor'
 );
 assert.strictEqual(
   (htmlSource.match(/ng-click="saveMachineTranslationApiKey\(\)"/g) || [])
     .length,
-  2,
-  'API key save must remain a separate action in both settings layouts'
+  3,
+  'API key save must remain a separate action in classic, modern, and Android settings'
 );
 assert.doesNotMatch(htmlSource, /ng-click="saveMachineTranslationConfig\(\)"/);
 const styleSaveHandler = playSource.slice(

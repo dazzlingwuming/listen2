@@ -79,8 +79,10 @@ public final class PlaybackCheckpointRepository {
         PlaybackEntities.CheckpointEntity checkpoint = dao.getCheckpoint();
         if (checkpoint == null) return RestoredState.empty();
         List<String> occurrences = new ArrayList<>();
+        List<OccurrenceState> occurrenceStates = new ArrayList<>();
         for (PlaybackEntities.OccurrenceEntity occurrence : dao.getOccurrences()) {
             occurrences.add(occurrence.occurrenceId);
+            occurrenceStates.add(OccurrenceState.fromEntity(occurrence));
         }
         List<String> queue = new ArrayList<>();
         for (PlaybackEntities.OccurrenceEntity occurrence : dao.getQueueOccurrences()) {
@@ -94,7 +96,18 @@ public final class PlaybackCheckpointRepository {
                 checkpoint.currentOccurrenceId, checkpoint.baseCurrentOccurrenceId, occurrences, queue, history,
                 shuffle, checkpoint.positionMs, PlaybackQueueEngine.Mode.valueOf(checkpoint.mode),
                 PlaybackQueueEngine.Mode.valueOf(checkpoint.modeBeforeQueue), checkpoint.historyCursor,
-                checkpoint.queueContextActive, checkpoint.shuffleNextIndex);
+                checkpoint.queueContextActive, checkpoint.shuffleNextIndex, occurrenceStates);
+    }
+
+    /** Clears a stopped session atomically so it cannot reappear after process death. */
+    public void clear() {
+        database.runInTransaction(() -> {
+            dao.deletePlaybackHistory();
+            dao.deleteShuffleOrder();
+            dao.deleteCheckpoint();
+            dao.deletePlaybackOccurrences();
+            dao.deleteTransitionTokens();
+        });
     }
 
     public static final class Result {
@@ -256,39 +269,78 @@ public final class PlaybackCheckpointRepository {
         private final String source;
         private final String providerTrackId;
         private final long providerPartId;
+        private final String title;
+        private final String artist;
+        private final long durationMs;
+        private final String mediaKind;
         private final String role;
         private final int ordinal;
         private final boolean playable;
 
         public OccurrenceState(@NonNull String occurrenceId, @NonNull String trackHandle, @NonNull String role,
                 int ordinal, boolean playable) {
-            this(occurrenceId, trackHandle, "bilibili", trackHandle, 1L, role, ordinal, playable);
+            // Compatibility only for the original queue-engine test seam. All
+            // service writes use the full source-qualified constructor below.
+            this(occurrenceId, trackHandle, "bilibili", "BV1xx411c7mD", 1L,
+                    "Listen2", "Listen2", 0L, "audio", role, ordinal, playable);
         }
 
         public OccurrenceState(@NonNull String occurrenceId, @NonNull String trackHandle, @NonNull String source,
                 @NonNull String providerTrackId, long providerPartId, @NonNull String role, int ordinal,
                 boolean playable) {
+            this(occurrenceId, trackHandle, source, providerTrackId, providerPartId,
+                    "Listen2", "Listen2", 0L, "audio", role, ordinal, playable);
+        }
+
+        public OccurrenceState(@NonNull String occurrenceId, @NonNull String trackHandle, @NonNull String source,
+                @NonNull String providerTrackId, long providerPartId, @NonNull String title,
+                @NonNull String artist, long durationMs, @NonNull String mediaKind, @NonNull String role,
+                int ordinal, boolean playable) {
             this.occurrenceId = occurrenceId;
             this.trackHandle = trackHandle;
             this.source = source;
             this.providerTrackId = providerTrackId;
             this.providerPartId = providerPartId;
+            this.title = title;
+            this.artist = artist;
+            this.durationMs = durationMs;
+            this.mediaKind = mediaKind;
             this.role = role;
             this.ordinal = ordinal;
             this.playable = playable;
         }
 
-        private boolean isSafe() {
-            return isLogicalId(occurrenceId) && isLogicalId(trackHandle) && "bilibili".equals(source)
-                    && isLogicalId(providerTrackId) && providerPartId > 0L
+        boolean isSafe() {
+            return isLogicalId(occurrenceId) && isLogicalId(trackHandle) && isSafeProviderIdentity(source,
+                    providerTrackId, providerPartId) && isText(title) && isText(artist)
+                    && durationMs >= 0L && durationMs <= MAX_POSITION_MS && "audio".equals(mediaKind)
                     && ("base".equals(role) || "queue".equals(role) || "shuffle".equals(role))
                     && ordinal >= 0;
         }
 
         private PlaybackEntities.OccurrenceEntity toEntity() {
             return new PlaybackEntities.OccurrenceEntity(occurrenceId, trackHandle, source, providerTrackId,
-                    providerPartId, role, ordinal, playable);
+                    providerPartId, title, artist, durationMs, mediaKind, role, ordinal, playable);
         }
+
+        private static OccurrenceState fromEntity(PlaybackEntities.OccurrenceEntity entity) {
+            return new OccurrenceState(entity.occurrenceId, entity.trackHandle, entity.source,
+                    entity.providerTrackId, entity.providerPartId, entity.title, entity.artist,
+                    entity.durationMs, entity.mediaKind, entity.role, entity.ordinal, entity.playable);
+        }
+
+        public String getOccurrenceId() { return occurrenceId; }
+        public String getTrackHandle() { return trackHandle; }
+        public String getSource() { return source; }
+        public String getProviderTrackId() { return providerTrackId; }
+        public long getProviderPartId() { return providerPartId; }
+        public String getTitle() { return title; }
+        public String getArtist() { return artist; }
+        public long getDurationMs() { return durationMs; }
+        public String getMediaKind() { return mediaKind; }
+        public String getRole() { return role; }
+        public int getOrdinal() { return ordinal; }
+        public boolean isPlayable() { return playable; }
     }
 
     public static final class HistoryState {
@@ -326,6 +378,7 @@ public final class PlaybackCheckpointRepository {
         private final int historyCursor;
         private final boolean queueContextActive;
         private final int shuffleNextIndex;
+        private final List<OccurrenceState> occurrenceStates;
 
         RestoredState(long revision, String baseContextId, String currentOccurrenceId,
                 String baseCurrentOccurrenceId, List<String> occurrenceIds, List<String> queueOccurrenceIds,
@@ -334,7 +387,7 @@ public final class PlaybackCheckpointRepository {
                 PlaybackQueueEngine.Mode modeBeforeQueue, int historyCursor, boolean queueContextActive) {
             this(revision, baseContextId, currentOccurrenceId, baseCurrentOccurrenceId, occurrenceIds,
                     queueOccurrenceIds, historyOccurrenceIds, shuffleOccurrenceIds, positionMs, mode,
-                    modeBeforeQueue, historyCursor, queueContextActive, 0);
+                    modeBeforeQueue, historyCursor, queueContextActive, 0, Collections.<OccurrenceState>emptyList());
         }
 
         RestoredState(long revision, String baseContextId, String currentOccurrenceId,
@@ -342,6 +395,17 @@ public final class PlaybackCheckpointRepository {
                 List<String> historyOccurrenceIds, List<String> shuffleOccurrenceIds, long positionMs,
                 PlaybackQueueEngine.Mode mode, PlaybackQueueEngine.Mode modeBeforeQueue, int historyCursor,
                 boolean queueContextActive, int shuffleNextIndex) {
+            this(revision, baseContextId, currentOccurrenceId, baseCurrentOccurrenceId, occurrenceIds,
+                    queueOccurrenceIds, historyOccurrenceIds, shuffleOccurrenceIds, positionMs, mode,
+                    modeBeforeQueue, historyCursor, queueContextActive, shuffleNextIndex,
+                    Collections.<OccurrenceState>emptyList());
+        }
+
+        RestoredState(long revision, String baseContextId, String currentOccurrenceId,
+                String baseCurrentOccurrenceId, List<String> occurrenceIds, List<String> queueOccurrenceIds,
+                List<String> historyOccurrenceIds, List<String> shuffleOccurrenceIds, long positionMs,
+                PlaybackQueueEngine.Mode mode, PlaybackQueueEngine.Mode modeBeforeQueue, int historyCursor,
+                boolean queueContextActive, int shuffleNextIndex, List<OccurrenceState> occurrenceStates) {
             this.revision = revision;
             this.baseContextId = baseContextId;
             this.currentOccurrenceId = currentOccurrenceId;
@@ -356,6 +420,7 @@ public final class PlaybackCheckpointRepository {
             this.historyCursor = historyCursor;
             this.queueContextActive = queueContextActive;
             this.shuffleNextIndex = shuffleNextIndex;
+            this.occurrenceStates = Collections.unmodifiableList(new ArrayList<>(occurrenceStates));
         }
 
         static RestoredState empty() {
@@ -378,6 +443,32 @@ public final class PlaybackCheckpointRepository {
         public int getHistoryCursor() { return historyCursor; }
         public boolean isQueueContextActive() { return queueContextActive; }
         public int getShuffleNextIndex() { return shuffleNextIndex; }
+        public List<OccurrenceState> getOccurrenceStates() { return occurrenceStates; }
+
+        public OccurrenceState getOccurrenceState(String occurrenceId) {
+            if (occurrenceId == null) return null;
+            for (OccurrenceState occurrence : occurrenceStates) {
+                if (occurrenceId.equals(occurrence.occurrenceId)) return occurrence;
+            }
+            return null;
+        }
+    }
+
+    private static boolean isSafeProviderIdentity(String source, String providerTrackId, long providerPartId) {
+        if ("bilibili".equals(source)) {
+            return providerTrackId != null && ((providerPartId > 0L
+                    && providerTrackId.matches("BV[0-9A-Za-z]{6,32}"))
+                    || (providerPartId == 1L && providerTrackId.matches("[1-9][0-9]{0,17}")));
+        }
+        if ("netease".equals(source)) return providerPartId > 0L && providerTrackId != null
+                && providerTrackId.matches("[1-9][0-9]{0,17}");
+        return "local".equals(source) && providerPartId == 1L && providerTrackId != null
+                && providerTrackId.matches("local\\.track\\.[a-f0-9]{64}");
+    }
+
+    private static boolean isText(String value) {
+        return value != null && !value.isEmpty() && value.length() <= 256 && value.indexOf('\u0000') < 0
+                && value.indexOf('<') < 0 && value.indexOf('>') < 0;
     }
 
     private static boolean isLogicalId(String value) {

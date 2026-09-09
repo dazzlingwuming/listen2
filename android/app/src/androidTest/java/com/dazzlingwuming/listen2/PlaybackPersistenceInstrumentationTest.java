@@ -76,6 +76,46 @@ public final class PlaybackPersistenceInstrumentationTest {
     }
 
     @Test
+    public void restoresExactProviderDescriptorsWithoutAnyTransportFields() {
+        Listen2Database database = Room.inMemoryDatabaseBuilder(
+                InstrumentationRegistry.getInstrumentation().getTargetContext(), Listen2Database.class)
+                .allowMainThreadQueries()
+                .build();
+        try {
+            PlaybackCheckpointRepository repository = new PlaybackCheckpointRepository(database);
+            PlaybackCheckpointRepository.DurableState state = new PlaybackCheckpointRepository.DurableState(
+                    1L, "semantic-token-1", "semantic-context-1", "occ-bili", "occ-bili",
+                    PlaybackQueueEngine.Mode.REPEAT_ALL, PlaybackQueueEngine.Mode.REPEAT_ALL, false, 0, 12_345L,
+                    Arrays.asList(
+                            occurrence("occ-bili", "track-bili", "bilibili", "BV1xx411c7mD", 7L,
+                                    "Bili title", "Bili artist", 120_000L, 0),
+                            occurrence("occ-netease", "track-netease", "netease", "123456", 1L,
+                                    "NetEase title", "NetEase artist", 180_000L, 1),
+                            occurrence("occ-local", "track-local", "local", localTrackId(), 1L,
+                                    "Local title", "Local artist", 240_000L, 2)),
+                    Arrays.asList(new PlaybackCheckpointRepository.HistoryState(0, "occ-bili", 1L)));
+            assertEquals(PlaybackCheckpointRepository.Status.ACCEPTED,
+                    repository.applyTransition(0L, state).getStatus());
+
+            PlaybackCheckpointRepository.RestoredState restored = repository.restore();
+            PlaybackCheckpointRepository.OccurrenceState netease = restored.getOccurrenceState("occ-netease");
+            PlaybackCheckpointRepository.OccurrenceState local = restored.getOccurrenceState("occ-local");
+            assertEquals("bilibili", restored.getOccurrenceState("occ-bili").getSource());
+            assertEquals("123456", netease.getProviderTrackId());
+            assertEquals(1L, netease.getProviderPartId());
+            assertEquals("NetEase title", netease.getTitle());
+            assertEquals("NetEase artist", netease.getArtist());
+            assertEquals(180_000L, netease.getDurationMs());
+            assertEquals("audio", netease.getMediaKind());
+            assertEquals(localTrackId(), local.getProviderTrackId());
+            assertEquals(12_345L, restored.getPositionMs());
+            assertEquals(PlaybackQueueEngine.Mode.REPEAT_ALL, restored.getMode());
+        } finally {
+            database.close();
+        }
+    }
+
+    @Test
     public void settingsAreSmallAndApplicationScoped() {
         PlaybackSettingsStore settings = new PlaybackSettingsStore(
                 InstrumentationRegistry.getInstrumentation().getTargetContext());
@@ -104,5 +144,16 @@ public final class PlaybackPersistenceInstrumentationTest {
                         new PlaybackCheckpointRepository.HistoryState(0, "occ-base-1", 100L),
                         new PlaybackCheckpointRepository.HistoryState(1, "occ-queue-1", 200L)),
                 Arrays.asList("occ-base-1"), 1);
+    }
+
+    private static PlaybackCheckpointRepository.OccurrenceState occurrence(String occurrenceId, String trackHandle,
+            String source, String providerTrackId, long providerPartId, String title, String artist,
+            long durationMs, int ordinal) {
+        return new PlaybackCheckpointRepository.OccurrenceState(occurrenceId, trackHandle, source,
+                providerTrackId, providerPartId, title, artist, durationMs, "audio", "queue", ordinal, true);
+    }
+
+    private static String localTrackId() {
+        return "local.track.0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
     }
 }

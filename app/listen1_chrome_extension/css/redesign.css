@@ -63,6 +63,424 @@
   transition: background-color 220ms ease, color 220ms ease;
 }
 
+/* Android whole-product blueprint. These entries are content, not a second
+ * navigation model: all actions route through existing Angular controllers or
+ * present an explicit capability gap. */
+.modern-body .mobile-product-surface,
+.modern-body .mobile-product-sheet {
+  display: none;
+}
+
+@media screen and (max-width: 760px) {
+  .modern-body .mobile-product-surface {
+    display: grid;
+    gap: 14px;
+    min-width: 0;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 18px 16px 12px;
+    border-bottom: 1px solid var(--ui-border);
+    background: var(--ui-bg);
+  }
+
+  .modern-body .mobile-product-surface h1,
+  .modern-body .mobile-product-sheet h2,
+  .modern-body .mobile-product-sheet h3,
+  .modern-body .mobile-product-surface p,
+  .modern-body .mobile-product-sheet p {
+    min-width: 0;
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .modern-body .mobile-product-surface h1 {
+    font-size: clamp(22px, 7vw, 30px);
+    font-weight: 760;
+    letter-spacing: -0.035em;
+    line-height: 1.18;
+  }
+
+  .modern-body .mobile-product-kicker {
+    color: var(--ui-accent);
+    font-size: 12px;
+    font-weight: 760;
+    letter-spacing: 0.08em;
+  }
+
+  .modern-body .mobile-product-intro,
+  .modern-body .mobile-product-list small,
+  .modern-body .mobile-product-grid small,
+  .modern-body .mobile-product-sheet p {
+    color: var(--ui-muted);
+    font-size: 14px;
+    line-height: 1.55;
+  }
+
+  .modern-body .mobile-product-hero-actions,
+  .modern-body .mobile-product-status-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .modern-body .mobile-product-hero-actions button,
+  .modern-body .mobile-product-sheet-content button {
+    min-width: 48px;
+    min-height: 48px;
+    box-sizing: border-box;
+    padding: 10px 14px;
+    border: 1px solid var(--ui-border-strong);
+    border-radius: 14px;
+    background: var(--ui-surface);
+    color: var(--ui-text);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .modern-body .mobile-product-primary {
+    border-color: var(--ui-accent) !important;
+    background: var(--ui-accent) !important;
+    color: #fff !important;
+  }
+
+  .modern-body .mobile-product-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .modern-body .mobile-product-grid button,
+  .modern-body .mobile-product-list button {
+    min-width: 0;
+    min-height: 72px;
+    box-sizing: border-box;
+    border: 1px solid var(--ui-border);
+    border-radius: 15px;
+    background: var(--ui-surface);
+    color: var(--ui-text);
+    font: inherit;
+    text-align: left;
+  }
+
+  .modern-body .mobile-product-grid button {
+    display: grid;
+    gap: 4px;
+    padding: 12px;
+  }
+
+  .modern-body .mobile-product-grid strong,
+  .modern-body .mobile-product-list strong {
+    font-size: 14px;
+    line-height: 1.35;
+  }
+
+  .modern-body .mobile-product-grid small,
+  .modern-body .mobile-product-list small {
+    display: block;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  .modern-body .mobile-product-status-row span {
+    min-height: 32px;
+    box-sizing: border-box;
+    padding: 7px 10px;
+    border: 1px solid var(--ui-border);
+    border-radius: 999px;
+    color: var(--ui-muted);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .modern-body .mobile-product-status-row .mobile-product-status-good {
+    border-color: rgba(93, 214, 199, 0.5);
+    color: var(--ui-mint);
+  }
+
+  .modern-body .mobile-product-list {
+    display: grid;
+    gap: 8px;
+  }
+
+  .modern-body .mobile-product-list button {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 24px;
+    align-items: center;
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .modern-body .mobile-product-list button > span {
+    min-width: 0;
+  }
+
+  .modern-body .mobile-product-list b {
+    color: var(--ui-accent);
+    font-size: 24px;
+    font-weight: 400;
+    text-align: center;
+  }
+
+  .modern-body .mobile-product-sheet {
+    position: fixed;
+    z-index: 280;
+    inset: 0;
+    width: 100%;
+    height: 100svh;
+    min-width: 0;
+    box-sizing: border-box;
+    background: var(--ui-bg);
+    color: var(--ui-text);
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+      env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  }
+
+  .modern-body .mobile-product-sheet header {
+    display: grid;
+    min-height: 64px;
+    grid-template-columns: 48px minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--ui-border);
+  }
+
+  .modern-body .mobile-product-sheet header button {
+    width: 48px;
+    height: 48px;
+    padding: 0;
+    border: 1px solid var(--ui-border);
+    border-radius: 14px;
+    background: var(--ui-surface);
+    color: var(--ui-text);
+    font-size: 28px;
+    line-height: 1;
+  }
+
+  .modern-body .mobile-product-sheet header p {
+    color: var(--ui-muted);
+    font-size: 12px;
+  }
+
+  .modern-body .mobile-product-sheet h2 {
+    font-size: 19px;
+    line-height: 1.25;
+  }
+
+  .modern-body .mobile-product-sheet-content {
+    display: grid;
+    gap: 16px;
+    min-width: 0;
+    height: calc(100svh - 80px - env(safe-area-inset-top, 0px));
+    box-sizing: border-box;
+    padding: 20px 16px calc(24px + env(safe-area-inset-bottom, 0px));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .modern-body .mobile-product-sheet-content section {
+    display: grid;
+    gap: 12px;
+    align-content: start;
+    padding: 16px;
+    border: 1px solid var(--ui-border);
+    border-radius: 16px;
+    background: var(--ui-surface);
+  }
+
+  .modern-body .mobile-product-data-list {
+    display: grid;
+    gap: 5px;
+    max-height: 220px;
+    padding: 10px;
+    overflow-y: auto;
+    border: 1px solid var(--ui-border);
+    border-radius: 12px;
+    background: var(--ui-surface-soft);
+  }
+
+  .modern-body .mobile-product-data-list p {
+    padding-bottom: 5px;
+    border-bottom: 1px solid var(--ui-border);
+  }
+
+  .modern-body .mobile-product-home-list button,
+  .modern-body .mobile-product-now-playing,
+  .modern-body .mobile-product-playlist-row,
+  .modern-body .mobile-product-track-row {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .modern-body .mobile-product-home-list button,
+  .modern-body .mobile-product-now-playing {
+    width: 100%;
+    min-height: 48px;
+    padding: 10px 12px;
+    border: 1px solid var(--ui-border);
+    border-radius: 12px;
+    background: var(--ui-surface-soft);
+    color: var(--ui-text);
+    font: inherit;
+    text-align: left;
+  }
+
+  .modern-body .mobile-product-home-list button span,
+  .modern-body .mobile-product-now-playing span,
+  .modern-body .mobile-product-playlist-row > span,
+  .modern-body .mobile-product-track-row > span {
+    display: grid;
+    min-width: 0;
+    gap: 2px;
+  }
+
+  .modern-body .mobile-product-home-list button span,
+  .modern-body .mobile-product-now-playing strong,
+  .modern-body .mobile-product-playlist-row strong,
+  .modern-body .mobile-product-track-row strong {
+    overflow: hidden;
+    font-size: 14px;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .modern-body .mobile-product-home-list button small,
+  .modern-body .mobile-product-now-playing small,
+  .modern-body .mobile-product-playlist-row small,
+  .modern-body .mobile-product-track-row small,
+  .modern-body .mobile-product-compact-note {
+    color: var(--ui-muted);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .modern-body .mobile-product-now-playing b {
+    color: var(--ui-accent);
+    font-size: 24px;
+    font-weight: 400;
+  }
+
+  .modern-body .mobile-product-inline-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .modern-body .mobile-product-inline-actions button,
+  .modern-body .mobile-product-playlist-row button,
+  .modern-body .mobile-product-track-row button {
+    min-height: 48px;
+  }
+
+  .modern-body .mobile-product-playlist-row,
+  .modern-body .mobile-product-track-row {
+    flex-wrap: wrap;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--ui-border);
+  }
+
+  .modern-body .mobile-product-playlist-row > span,
+  .modern-body .mobile-product-track-row > span {
+    flex: 1 1 132px;
+  }
+
+  .modern-body .mobile-product-editor {
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid var(--ui-border-strong);
+    border-radius: 12px;
+    background: var(--ui-bg);
+  }
+
+  .modern-body .mobile-product-danger {
+    border-color: rgba(217, 75, 92, 0.75) !important;
+    color: #ffd8dc !important;
+  }
+
+  .modern-body .mobile-product-field {
+    display: grid;
+    gap: 6px;
+    color: var(--ui-muted);
+    font-size: 13px;
+    line-height: 1.4;
+  }
+
+  .modern-body .mobile-product-field input {
+    width: 100%;
+    min-height: 48px;
+    box-sizing: border-box;
+    padding: 8px 12px;
+    border: 1px solid var(--ui-border-strong);
+    border-radius: 12px;
+    background: var(--ui-bg);
+    color: var(--ui-text);
+    font: inherit;
+  }
+
+  .modern-body .mobile-product-confirm {
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid rgba(217, 75, 92, 0.55);
+    border-radius: 12px;
+    background: rgba(217, 75, 92, 0.1);
+  }
+
+  .modern-body .mobile-product-loading {
+    color: var(--ui-muted);
+    font-size: 14px;
+  }
+
+  .modern-body .mobile-product-sheet h3 {
+    font-size: 17px;
+    line-height: 1.35;
+  }
+
+  .modern-body .mobile-product-unavailable {
+    padding: 12px;
+    border-left: 3px solid #d9a441;
+    border-radius: 10px;
+    background: rgba(217, 164, 65, 0.1);
+    color: var(--ui-text) !important;
+  }
+
+  .modern-body .mobile-library-hub-capabilities {
+    margin: 2px 0 8px;
+  }
+
+  .modern-body .mobile-product-surface button:focus-visible,
+  .modern-body .mobile-product-sheet button:focus-visible,
+  .modern-body .mobile-library-hub-capabilities button:focus-visible {
+    outline: 3px solid var(--ui-accent);
+    outline-offset: 2px;
+  }
+}
+
+@media screen and (max-width: 359px) {
+  .modern-body .mobile-product-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .modern-body .mobile-product-hero-actions button {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modern-body .mobile-product-surface *,
+  .modern-body .mobile-product-sheet * {
+    animation-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 /* Native Android playback is a separate renderer surface. It is deliberately
  * hidden outside the trusted phone capability so desktop/browser dock rules
  * keep their existing geometry and interactions. */

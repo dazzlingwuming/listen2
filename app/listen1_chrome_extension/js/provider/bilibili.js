@@ -691,6 +691,7 @@ class bilibili {
             page: Number(page.page),
             part: page.part,
             duration: this.parse_duration(page.duration),
+            capability: 'playable',
           }));
         if (pages.length !== result.pages.length) {
           throw this.create_android_provider_failure({
@@ -711,6 +712,7 @@ class bilibili {
           duration: selected.duration,
           pageEpoch: handle.pageEpoch,
           pages,
+          parts: pages,
           partTitle: selected.part,
           resolvedTrackId: `bitrack_v_${idParts.bvid}-${selected.cid}`,
           videoTitle: typeof result.title === 'string' ? result.title : '',
@@ -1713,6 +1715,97 @@ class bilibili {
   }
 
   static resolve_lyric(options) {
+    const androidHttp = this.get_android_typed_adapter();
+    if (androidHttp && this.get_video_id_parts(options.trackId)) {
+      return this.get_video_context(options.trackId, {
+        pageEpoch: Number.isInteger(options.pageEpoch) ? options.pageEpoch : 0,
+      })
+        .then((context) => {
+          const title = String(
+            options.title || context.partTitle || context.videoTitle || ''
+          ).trim();
+          const artist = String(options.artist || context.artist || '').trim();
+          const durationSeconds = Math.round(
+            this.parse_duration(context.duration || options.duration)
+          );
+          if (
+            !context.bvid ||
+            !context.cid ||
+            !title ||
+            !artist ||
+            !durationSeconds
+          ) {
+            const invalid = new Error(
+              'Android Bilibili lyric identity is incomplete.'
+            );
+            invalid.code = 'android-rpc-invalid-payload';
+            throw invalid;
+          }
+          const selectionIdentity = String(options.trackId);
+          const selectionRevision =
+            Number.isSafeInteger(options.selectionRevision) &&
+            options.selectionRevision >= 0 &&
+            options.selectionRevision <= 2147483647
+              ? options.selectionRevision
+              : 0;
+          const selectionToken = `bili.${context.bvid}.${context.cid}`;
+          const handle = androidHttp.request(
+            'bilibili.lyric.primary',
+            {
+              bvid: context.bvid,
+              cid: Number(context.cid),
+              title,
+              artist,
+              durationSeconds,
+              selectionIdentity,
+              selectionRevision,
+              selectionToken,
+            },
+            {
+              pageEpoch: Number.isInteger(options.pageEpoch)
+                ? options.pageEpoch
+                : 0,
+            }
+          );
+          return handle.promise.then((response) => {
+            const result = response && response.result;
+            if (
+              !result ||
+              typeof result.lyric !== 'string' ||
+              result.selectionIdentity !== selectionIdentity ||
+              result.selectionRevision !== selectionRevision ||
+              result.selectionToken !== selectionToken
+            ) {
+              const malformed = new Error(
+                'Android Bilibili lyric response was invalid.'
+              );
+              malformed.code = 'android-rpc-malformed-response';
+              throw malformed;
+            }
+            return {
+              lyric: result.lyric,
+              tlyric: typeof result.tlyric === 'string' ? result.tlyric : '',
+              source: typeof result.source === 'string' ? result.source : '',
+              matchedTitle:
+                typeof result.matchedTitle === 'string'
+                  ? result.matchedTitle
+                  : '',
+              matchedArtist:
+                typeof result.matchedArtist === 'string'
+                  ? result.matchedArtist
+                  : '',
+              matchedDuration:
+                Number(result.matchedDurationSeconds) || durationSeconds,
+              matchScore: Number(result.matchScorePercent) || 0,
+            };
+          });
+        })
+        .catch((error) => ({
+          lyric: '',
+          tlyric: '',
+          error: this.create_android_provider_failure(error),
+        }));
+    }
     const manualLyric = this.get_manual_lyric(options.trackId, options);
     if (manualLyric) {
       if (this.has_meaningful_lyric(manualLyric.tlyric)) {
@@ -2119,7 +2212,58 @@ class bilibili {
     if (offset === undefined) {
       offset = 0;
     }
-    const page = offset / 20 + 1;
+    const page = Math.max(1, Math.floor(Number(offset) / 20) + 1);
+    const androidHttp = this.get_android_typed_adapter();
+    if (androidHttp) {
+      const handle = androidHttp.request(
+        'bilibili.directory.page',
+        { page },
+        { pageEpoch: 0 }
+      );
+      return {
+        requestId: handle.requestId,
+        pageEpoch: handle.pageEpoch,
+        cancel: handle.cancel,
+        success: (fn) => {
+          handle.promise.then(
+            (response) => {
+              const value = response && response.result;
+              const rows = value && Array.isArray(value.rows) ? value.rows : [];
+              const result = rows
+                .filter(
+                  (row) =>
+                    row &&
+                    row.source === 'bilibili' &&
+                    typeof row.id === 'string' &&
+                    /^biplaylist_[1-9][0-9]{0,17}$/.test(row.id) &&
+                    typeof row.title === 'string'
+                )
+                .map((row) => ({
+                  cover_img_url: typeof row.cover === 'string' ? row.cover : '',
+                  title: row.title,
+                  id: row.id,
+                  source_url: `https://www.bilibili.com/audio/am${row.providerPlaylistId}`,
+                }));
+              fn({
+                result,
+                ...(result.length !== rows.length
+                  ? {
+                      error: this.create_android_search_failure({
+                        code: 'android-rpc-malformed-response',
+                      }),
+                    }
+                  : {}),
+              });
+            },
+            (error) =>
+              fn({
+                result: [],
+                error: this.create_android_search_failure(error),
+              })
+          );
+        },
+      };
+    }
     const target_url = `https://www.bilibili.com/audio/music-service-c/web/menu/hit?ps=20&pn=${page}`;
     return {
       success: (fn) => {
@@ -2141,6 +2285,93 @@ class bilibili {
 
   static bi_get_playlist(url) {
     const list_id = getParameterByName('list_id', url).split('_').pop();
+    const androidHttp = this.get_android_typed_adapter();
+    if (androidHttp) {
+      const handle = androidHttp.request(
+        'bilibili.directory.detail',
+        { playlistId: list_id },
+        { pageEpoch: 0 }
+      );
+      return {
+        requestId: handle.requestId,
+        pageEpoch: handle.pageEpoch,
+        cancel: handle.cancel,
+        success: (fn) => {
+          handle.promise.then(
+            (response) => {
+              const value = response && response.result;
+              const sourceInfo = value && value.info;
+              const rows =
+                value && Array.isArray(value.tracks) ? value.tracks : [];
+              if (
+                !sourceInfo ||
+                sourceInfo.id !== `biplaylist_${list_id}` ||
+                typeof sourceInfo.title !== 'string'
+              ) {
+                fn({
+                  info: {},
+                  tracks: [],
+                  error: this.create_android_search_failure({
+                    code: 'android-rpc-malformed-response',
+                  }),
+                });
+                return;
+              }
+              const tracks = rows
+                .filter(
+                  (row) =>
+                    row &&
+                    row.source === 'bilibili' &&
+                    typeof row.id === 'string' &&
+                    /^bitrack_[1-9][0-9]{0,17}$/.test(row.id) &&
+                    typeof row.title === 'string' &&
+                    typeof row.artist === 'string' &&
+                    Number.isSafeInteger(row.duration) &&
+                    row.duration > 0
+                )
+                .map((row) => ({
+                  id: row.id,
+                  title: row.title,
+                  artist: row.artist,
+                  artist_id:
+                    typeof row.artistId === 'string' ? row.artistId : '',
+                  capability:
+                    row.capability === 'playable' ? 'playable' : 'unavailable',
+                  source: 'bilibili',
+                  source_url: `https://www.bilibili.com/audio/au${row.providerTrackId}`,
+                  img_url: typeof row.cover === 'string' ? row.cover : '',
+                  duration: this.parse_duration(row.duration),
+                }));
+              fn({
+                info: {
+                  cover_img_url:
+                    typeof sourceInfo.cover === 'string'
+                      ? sourceInfo.cover
+                      : '',
+                  title: sourceInfo.title,
+                  id: sourceInfo.id,
+                  source_url: `https://www.bilibili.com/audio/am${list_id}`,
+                },
+                tracks,
+                ...(tracks.length !== rows.length
+                  ? {
+                      error: this.create_android_search_failure({
+                        code: 'android-rpc-malformed-response',
+                      }),
+                    }
+                  : {}),
+              });
+            },
+            (error) =>
+              fn({
+                info: {},
+                tracks: [],
+                error: this.create_android_search_failure(error),
+              })
+          );
+        },
+      };
+    }
     const target_url = `https://www.bilibili.com/audio/music-service-c/web/menu/info?sid=${list_id}`;
     return {
       success: (fn) => {
@@ -2518,118 +2749,6 @@ class bilibili {
     });
   }
 
-  static get_android_video_media_manifest(track, options = {}) {
-    const idParts = this.get_video_id_parts(track && track.id);
-    const androidHttp = this.get_android_typed_adapter();
-    if (!idParts || !androidHttp) {
-      return Promise.reject(
-        this.create_android_provider_failure({
-          code: 'android-rpc-unavailable-stream',
-        })
-      );
-    }
-    const pageEpoch = Number.isInteger(options.pageEpoch)
-      ? options.pageEpoch
-      : 0;
-    const detailRequest = this.get_video_context(track.id, { pageEpoch });
-    let cancel =
-      typeof detailRequest.cancel === 'function'
-        ? detailRequest.cancel
-        : () => {};
-    const promise = detailRequest.then((context) => {
-      if (!context || context.bvid !== idParts.bvid || !context.cid) {
-        throw this.create_android_provider_failure({
-          code: 'android-rpc-invalid-part',
-        });
-      }
-      const manifestHandle = androidHttp.request(
-        'bilibili.audio.manifest',
-        {
-          bvid: context.bvid,
-          selectionMode: 'explicit',
-          cid: context.cid,
-        },
-        { pageEpoch }
-      );
-      cancel = manifestHandle.cancel;
-      return manifestHandle.promise.then((response) => {
-        const result = response && response.result;
-        const candidates =
-          result && Array.isArray(result.candidates) ? result.candidates : [];
-        const isSafeCandidate = (value) => {
-          if (typeof value !== 'string' || value.length > 2048) return false;
-          try {
-            const parsed = new URL(value);
-            return (
-              parsed.protocol === 'https:' &&
-              parsed.hostname &&
-              (parsed.hostname === 'bilivideo.com' ||
-                parsed.hostname.endsWith('.bilivideo.com')) &&
-              !parsed.username &&
-              !parsed.password &&
-              !parsed.hash
-            );
-          } catch (error) {
-            return false;
-          }
-        };
-        const uniqueCandidates = candidates.filter(
-          (candidate, index) =>
-            isSafeCandidate(candidate) &&
-            candidates.indexOf(candidate) === index
-        );
-        if (
-          !result ||
-          result.bvid !== context.bvid ||
-          Number(result.cid) !== context.cid ||
-          !Number.isFinite(Number(result.duration)) ||
-          Number(result.duration) <= 0 ||
-          typeof result.mime !== 'string' ||
-          typeof result.codec !== 'string' ||
-          uniqueCandidates.length === 0 ||
-          uniqueCandidates.length !== candidates.length ||
-          candidates.length > 4
-        ) {
-          throw this.create_android_provider_failure({
-            code: 'android-rpc-malformed-response',
-          });
-        }
-        if (
-          this.get_can_play_type('audio', {
-            mimeType: result.mime,
-            codecs: result.codec,
-          }) === ''
-        ) {
-          throw this.create_android_provider_failure({
-            code: 'android-rpc-unsupported-codec',
-          });
-        }
-        return {
-          context,
-          manifest: {
-            bvid: context.bvid,
-            cid: context.cid,
-            duration: Number(result.duration),
-            mimeType: result.mime,
-            codecs: result.codec,
-            bitrate: Number.isFinite(Number(result.bitrate))
-              ? Number(result.bitrate)
-              : 0,
-            expiry: Number.isFinite(Number(result.expiry))
-              ? Number(result.expiry)
-              : 0,
-            label: typeof result.quality === 'string' ? result.quality : '',
-            urlCandidates: uniqueCandidates,
-          },
-        };
-      });
-    });
-    promise.pageEpoch = pageEpoch;
-    promise.requestId = detailRequest.requestId || '';
-    promise.cancel = () => cancel();
-    return promise;
-  }
-
   static bootstrap_android_video_track(track, success, failure, options = {}) {
     let finished = false;
     const settleSuccess = (value) => {
@@ -2642,18 +2761,27 @@ class bilibili {
       finished = true;
       failure(this.create_media_failure(error, { stage: 'manifest' }));
     };
-    const request = this.get_android_video_media_manifest(track, options);
+    const idParts = this.get_video_id_parts(track && track.id);
+    if (!idParts) {
+      settleFailure(
+        this.create_android_provider_failure({
+          code: 'android-rpc-invalid-part',
+        })
+      );
+      return null;
+    }
+    // Android validates the selected part as metadata only. The subsequent
+    // logical selection reaches Media3 as BVID/CID; a page never requests or
+    // sees a signed CDN candidate, codec, expiry, header, or cookie.
+    const request = this.get_video_context(track.id, options);
     request.then(
-      ({ manifest }) =>
+      (context) =>
         settleSuccess({
-          url: manifest.urlCandidates[0],
-          urlCandidates: manifest.urlCandidates,
-          bitrate: manifest.label,
-          duration: manifest.duration,
+          nativePlayback: true,
+          bvid: context.bvid,
+          cid: context.cid,
+          duration: context.duration,
           platform: 'bilibili',
-          mimeType: manifest.mimeType,
-          codecs: manifest.codecs,
-          expiry: manifest.expiry,
         }),
       settleFailure
     );

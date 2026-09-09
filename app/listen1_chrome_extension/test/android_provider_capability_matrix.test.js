@@ -22,6 +22,31 @@ function provider(name, calls) {
 
 function createContext() {
   const calls = [];
+  const androidAdapter = {
+    capabilities: null,
+    listeners: [],
+    isAvailable() {
+      return true;
+    },
+    getProviderCapabilities() {
+      return this.capabilities;
+    },
+    startProviderCapabilities() {
+      return Promise.resolve(this.capabilities);
+    },
+    refreshProviderCapabilities() {
+      return Promise.resolve(this.capabilities);
+    },
+    onProviderCapabilities(listener) {
+      this.listeners.push(listener);
+      return () => {
+        this.listeners = this.listeners.filter((item) => item !== listener);
+      };
+    },
+    request() {
+      throw new Error('An unavailable provider cannot post an Android RPC.');
+    },
+  };
   const context = {
     URL,
     URLSearchParams,
@@ -43,16 +68,7 @@ function createContext() {
       setObject() {},
     },
     window: {
-      Listen2AndroidHttpAdapter: {
-        isAvailable() {
-          return true;
-        },
-        request() {
-          throw new Error(
-            'An unavailable provider cannot post an Android RPC.'
-          );
-        },
-      },
+      Listen2AndroidHttpAdapter: androidAdapter,
     },
   };
   [
@@ -77,14 +93,14 @@ function createContext() {
       filename: 'loweb.js',
     }
   );
-  return { calls, mediaService: context.MediaServiceForTest };
+  return { calls, androidAdapter, mediaService: context.MediaServiceForTest };
 }
 
 async function run() {
-  const { calls, mediaService } = createContext();
+  const { calls, androidAdapter, mediaService } = createContext();
   const matrix = mediaService.getAndroidProviderCapabilities();
-  assert.strictEqual(matrix.bilibili.search, true);
-  assert.strictEqual(matrix.bilibili.media, true);
+  assert.strictEqual(matrix.bilibili.search, false);
+  assert.strictEqual(matrix.bilibili.media, false);
   assert.strictEqual(matrix.netease.search, false);
   ['qq', 'kugou', 'kuwo', 'migu', 'taihe'].forEach((name) => {
     [
@@ -122,6 +138,36 @@ async function run() {
     })
   );
   assert.deepStrictEqual(calls, []);
+
+  androidAdapter.capabilities = {
+    version: 1,
+    bilibili: {
+      search: true,
+      directory: true,
+      detail: true,
+      media: true,
+      lyric: false,
+      manualLyric: false,
+      fallback: false,
+      login: false,
+      permission: false,
+    },
+    netease: {
+      search: false,
+      directory: false,
+      detail: false,
+      media: false,
+      lyric: false,
+      manualLyric: false,
+      fallback: false,
+      login: false,
+      permission: false,
+    },
+  };
+  const refreshed = await mediaService.startAndroidProviderCapabilities();
+  assert.strictEqual(refreshed.bilibili.search, true);
+  assert.strictEqual(refreshed.bilibili.media, true);
+  assert.strictEqual(refreshed.netease.media, false);
 
   console.log('Android provider capability matrix tests passed');
 }

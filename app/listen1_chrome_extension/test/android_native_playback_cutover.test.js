@@ -141,6 +141,18 @@ async function run() {
   player.movePlayNextQueueEntry('occ-native', 0);
   player.clearPlayNextQueue();
 
+  const localTrack = {
+    id: 'local.track.0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    source: 'local',
+    title: 'Local song',
+    artist: 'Local artist',
+    durationMs: 180000,
+  };
+  player.addTrack(localTrack);
+  player.playById(localTrack.id);
+  await Promise.resolve();
+  await Promise.resolve();
+
   assert.strictEqual(
     howlCount,
     0,
@@ -168,6 +180,42 @@ async function run() {
   });
   assert.ok(!Object.prototype.hasOwnProperty.call(prepared.payload, 'url'));
   assert.ok(!Object.prototype.hasOwnProperty.call(prepared.payload, 'headers'));
+  const legacyTrack = {
+    id: 'bitrack_9001',
+    source: 'bilibili',
+    title: 'Legacy Bilibili audio',
+    artist: 'Legacy artist',
+    duration: 185,
+  };
+  player.addTrack(legacyTrack);
+  player.playById(legacyTrack.id);
+  await Promise.resolve();
+  await Promise.resolve();
+  const legacyPrepared = calls.find(
+    (call) => call.kind === 'prepare' && call.payload.providerTrackId === '9001'
+  );
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(legacyPrepared.payload)), {
+    source: 'bilibili',
+    providerTrackId: '9001',
+    providerPartId: 1,
+    title: 'Legacy Bilibili audio',
+    artist: 'Legacy artist',
+    durationMs: 185000,
+    mediaKind: 'audio',
+  });
+  const localPrepared = calls.find(
+    (call) =>
+      call.kind === 'prepare' && call.payload.providerTrackId === localTrack.id
+  );
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(localPrepared.payload)), {
+    source: 'local',
+    providerTrackId: localTrack.id,
+    providerPartId: 1,
+    title: 'Local song',
+    artist: 'Local artist',
+    durationMs: 180000,
+    mediaKind: 'audio',
+  });
   assert.deepStrictEqual(
     calls.filter((call) => call.kind === 'command').map((call) => call.command),
     [

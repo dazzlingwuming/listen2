@@ -93,11 +93,13 @@ function getAllSearchProviders() {
 }
 
 function getProviderNameByItemId(itemId) {
+  if (String(itemId || '').startsWith('local.track.')) return 'localmusic';
   const prefix = itemId.slice(0, 2);
   return (PROVIDERS.find((i) => i.id === prefix) || {}).name;
 }
 
 function getProviderByItemId(itemId) {
+  if (String(itemId || '').startsWith('local.track.')) return localmusic;
   const prefix = itemId.slice(0, 2);
   return (PROVIDERS.find((i) => i.id === prefix) || {}).instance;
 }
@@ -117,6 +119,30 @@ function getAndroidTypedAdapter() {
   } catch (error) {
     return null;
   }
+}
+
+function getAndroidDeepSeekAdapter() {
+  const adapter = getAndroidTypedAdapter();
+  return adapter && adapter.deepSeek ? adapter.deepSeek : null;
+}
+
+function mapAndroidDeepSeekStatus(status, styleHint) {
+  const value = status || {};
+  const config = {
+    provider: value.provider || 'deepseek',
+    model: value.model || 'deepseek-v4-flash',
+    targetLanguage: value.targetLanguage || 'zh-CN',
+    hasApiKey: value.hasApiKey === true,
+    secureStorageAvailable: value.secureStorageAvailable === true,
+    nativeClientAvailable: value.nativeClientAvailable === true,
+    errorCode: value.errorCode || '',
+    ...(styleHint === undefined ? {} : { styleHint }),
+  };
+  return {
+    ok: value.ok === true,
+    status: value.status || 'request-failed',
+    config,
+  };
 }
 
 const ANDROID_PROVIDER_CAPABILITY_FIELDS = [
@@ -149,17 +175,6 @@ function getAndroidProviderCapabilities() {
       provider.hidden ? result : { ...result, [provider.name]: { ...empty } },
     {}
   );
-  // Bilibili's typed route was independently verified in Phase 1. Its current
-  // capability is retained without widening any other provider surface.
-  if (matrix.bilibili) {
-    matrix.bilibili = {
-      ...empty,
-      search: true,
-      directory: true,
-      detail: true,
-      media: true,
-    };
-  }
   let handshake = null;
   try {
     handshake =
@@ -170,23 +185,67 @@ function getAndroidProviderCapabilities() {
     handshake = null;
   }
   if (handshake && typeof handshake === 'object' && !Array.isArray(handshake)) {
-    const { netease } = handshake;
-    if (netease && typeof netease === 'object' && !Array.isArray(netease)) {
-      matrix.netease = ANDROID_PROVIDER_CAPABILITY_FIELDS.reduce(
+    ['bilibili', 'netease'].forEach((name) => {
+      const provider = handshake[name];
+      if (
+        !provider ||
+        typeof provider !== 'object' ||
+        Array.isArray(provider)
+      ) {
+        return;
+      }
+      matrix[name] = ANDROID_PROVIDER_CAPABILITY_FIELDS.reduce(
         (result, field) => ({
           ...result,
-          [field]: netease[field] === true,
+          [field]: provider[field] === true,
         }),
         {}
       );
-    }
+    });
   }
   // These names are intentionally explicit: no fallback or legacy desktop
   // provider can become callable merely because Android hosts the page.
   ANDROID_UNVERIFIED_PROVIDERS.forEach((name) => {
     if (matrix[name]) matrix[name] = { ...empty };
   });
+  matrix.deepSeekTranslation = Boolean(
+    handshake && handshake.deepSeekTranslation === true
+  );
   return matrix;
+}
+
+function startAndroidProviderCapabilities(options) {
+  const adapter = getAndroidTypedAdapter();
+  if (!adapter || typeof adapter.startProviderCapabilities !== 'function') {
+    return Promise.resolve(getAndroidProviderCapabilities());
+  }
+  // The adapter only caches an exact native handshake and schedules Angular
+  // after settlement. Recompute the UI-facing matrix from that cache.
+  return adapter
+    .startProviderCapabilities(options)
+    .then(() => getAndroidProviderCapabilities());
+}
+
+function refreshAndroidProviderCapabilities(options) {
+  const adapter = getAndroidTypedAdapter();
+  if (!adapter || typeof adapter.refreshProviderCapabilities !== 'function') {
+    return Promise.resolve(getAndroidProviderCapabilities());
+  }
+  return adapter
+    .refreshProviderCapabilities(options)
+    .then(() => getAndroidProviderCapabilities());
+}
+
+function onAndroidProviderCapabilities(listener) {
+  const adapter = getAndroidTypedAdapter();
+  if (!adapter || typeof adapter.onProviderCapabilities !== 'function') {
+    return () => {};
+  }
+  return adapter.onProviderCapabilities(() => {
+    if (typeof listener === 'function') {
+      listener(getAndroidProviderCapabilities());
+    }
+  });
 }
 
 function androidUnavailableFacade(
@@ -295,6 +354,77 @@ function getBilibiliVideoCacheIdentity(track) {
     bvid: match[1],
     cid: Number(match[2] || 0),
   };
+}
+
+function getAndroidMediaDownloadAdapter() {
+  if (typeof window === 'undefined') return null;
+  const adapter = window.Listen2AndroidHttpAdapter;
+  return adapter &&
+    typeof adapter.isAvailable === 'function' &&
+    adapter.isAvailable() &&
+    adapter.mediaDownload
+    ? adapter
+    : null;
+}
+
+function createAndroidMediaDownloadDescriptor(track) {
+  if (!track || typeof track !== 'object') return null;
+  const source = String(track.source || '');
+  let providerTrackId = '';
+  let providerPartId = 0;
+  if (source === 'bilibili') {
+    const identity = getBilibiliVideoCacheIdentity(track);
+    if (!identity) return null;
+    providerTrackId = identity.kind === 'audio' ? identity.sid : identity.bvid;
+    providerPartId = identity.kind === 'audio' ? 1 : Number(identity.cid || 0);
+  } else if (source === 'netease') {
+    const match = /^(?:netrack_|netease_)?([1-9][0-9]{0,17})$/.exec(
+      String(track.providerTrackId || track.id || '')
+    );
+    if (!match) return null;
+    [, providerTrackId] = match;
+    providerPartId = 1;
+  } else {
+    return null;
+  }
+  const title = String(track.title || '').trim();
+  const artist = String(track.artist || '').trim();
+  const fromMs = Number(track.durationMs);
+  const durationMs = Number.isSafeInteger(fromMs)
+    ? fromMs
+    : Math.round(Number(track.duration || 0) * 1000);
+  if (
+    !title ||
+    !artist ||
+    title.length > 256 ||
+    artist.length > 256 ||
+    // eslint-disable-next-line no-control-regex
+    /[\u0000<>]/.test(title) ||
+    // eslint-disable-next-line no-control-regex
+    /[\u0000<>]/.test(artist) ||
+    !Number.isSafeInteger(providerPartId) ||
+    providerPartId <= 0 ||
+    !Number.isSafeInteger(durationMs) ||
+    durationMs < 0 ||
+    durationMs > 28800000
+  ) {
+    return null;
+  }
+  return {
+    source,
+    providerTrackId: String(providerTrackId),
+    providerPartId,
+    title,
+    artist,
+    durationMs,
+    mediaKind: 'audio',
+  };
+}
+
+function createAndroidMediaDownloadOperationId() {
+  return `download-${Date.now().toString(36)}-${Math.random()
+    .toString(36)
+    .slice(2, 12)}`;
 }
 
 function getAudioCachePlayableTrack(entry) {
@@ -419,12 +549,60 @@ function getLyricCacheIdentity(track) {
   return { trackId, canonicalKey: trackId };
 }
 
+function getAndroidLyricContentIdentity(track) {
+  const id = String((track && track.id) || '');
+  const source = String((track && track.source) || '');
+  let providerTrackId = '';
+  let providerPartId = 0;
+  if (source === 'local' && /^local\.track\.[a-f0-9]{64}$/.test(id)) {
+    providerTrackId = id;
+  } else if (source === 'netease') {
+    const match = /^netrack_([1-9][0-9]{0,17})$/.exec(id);
+    if (!match) return null;
+    [, providerTrackId] = match;
+  } else if (source === 'bilibili') {
+    const video = /^bitrack_v_(BV[0-9A-Za-z]{10})-([1-9][0-9]{0,18})$/.exec(id);
+    const audio = /^bitrack_([1-9][0-9]{0,17})$/.exec(id);
+    if (video) {
+      const [, videoTrackId, videoPartId] = video;
+      providerTrackId = videoTrackId;
+      providerPartId = Number(videoPartId);
+    } else if (audio) {
+      [, providerTrackId] = audio;
+    } else {
+      return null;
+    }
+  } else {
+    return null;
+  }
+  if (!Number.isSafeInteger(providerPartId)) return null;
+  return {
+    source,
+    providerTrackId,
+    providerPartId,
+    lyricRevision: 'content.v1',
+  };
+}
+
 setPrototypeOfLocalStorage();
 
 // eslint-disable-next-line no-unused-vars
 const MediaService = {
   getAndroidProviderCapabilities() {
     return getAndroidProviderCapabilities();
+  },
+  getAndroidDeepSeekTranslationCapability() {
+    const matrix = getAndroidProviderCapabilities();
+    return Boolean(matrix && matrix.deepSeekTranslation === true);
+  },
+  startAndroidProviderCapabilities(options) {
+    return startAndroidProviderCapabilities(options);
+  },
+  refreshAndroidProviderCapabilities(options) {
+    return refreshAndroidProviderCapabilities(options);
+  },
+  onAndroidProviderCapabilities(listener) {
+    return onAndroidProviderCapabilities(listener);
   },
   getLoginProviders() {
     const matrix = getAndroidProviderCapabilities();
@@ -609,6 +787,64 @@ const MediaService = {
     });
   },
 
+  /** Android accepts a descriptor only; native resolves the short-lived candidate itself. */
+  downloadAndroidTrack(track, options = {}) {
+    const adapter = getAndroidMediaDownloadAdapter();
+    const descriptor = createAndroidMediaDownloadDescriptor(track);
+    const retention = ['temporary', 'playlist', 'download'].includes(
+      options.retention
+    )
+      ? options.retention
+      : 'download';
+    if (!adapter || !descriptor) {
+      return Promise.resolve({ status: 'invalid-input' });
+    }
+    const operationId =
+      typeof options.operationId === 'string' &&
+      /^[A-Za-z0-9._-]{1,96}$/.test(options.operationId)
+        ? options.operationId
+        : createAndroidMediaDownloadOperationId();
+    const handle = adapter.mediaDownload.start(
+      operationId,
+      descriptor,
+      retention,
+      {
+        pageEpoch: Number.isInteger(options.pageEpoch) ? options.pageEpoch : 0,
+      }
+    );
+    return handle && handle.promise ? handle.promise : Promise.resolve(handle);
+  },
+
+  getAndroidMediaDownloadStatus(operationId, options = {}) {
+    const adapter = getAndroidMediaDownloadAdapter();
+    if (!adapter) return Promise.resolve({ status: 'unavailable' });
+    const handle = adapter.mediaDownload.status(operationId, options);
+    return handle && handle.promise ? handle.promise : Promise.resolve(handle);
+  },
+
+  cancelAndroidMediaDownload(operationId, options = {}) {
+    const adapter = getAndroidMediaDownloadAdapter();
+    if (!adapter) return Promise.resolve({ status: 'unavailable' });
+    const handle = adapter.mediaDownload.cancel(operationId, options);
+    return handle && handle.promise ? handle.promise : Promise.resolve(handle);
+  },
+
+  deleteAndroidMediaDownload(track, options = {}) {
+    const adapter = getAndroidMediaDownloadAdapter();
+    const descriptor = createAndroidMediaDownloadDescriptor(track);
+    if (!adapter || !descriptor)
+      return Promise.resolve({ status: 'invalid-input' });
+    const handle = adapter.mediaDownload.delete(descriptor, options);
+    return handle && handle.promise ? handle.promise : Promise.resolve(handle);
+  },
+
+  cleanupAndroidMediaDownloads(options = {}) {
+    const adapter = getAndroidMediaDownloadAdapter();
+    if (!adapter) return Promise.resolve({ status: 'unavailable' });
+    const handle = adapter.mediaDownload.cleanup(options);
+    return handle && handle.promise ? handle.promise : Promise.resolve(handle);
+  },
+
   invalidateAudioCache(cacheKey) {
     const ipcRenderer = getDesktopLocalDataIpcRenderer();
     if (!ipcRenderer || !cacheKey) {
@@ -752,13 +988,8 @@ const MediaService = {
 
   getPersistentLyric(track) {
     const androidAdapter = getAndroidTypedAdapter();
-    const provider = getProviderByItemId((track && track.id) || '');
-    if (
-      androidAdapter &&
-      provider &&
-      typeof provider.get_android_lyric_identity === 'function'
-    ) {
-      const identity = provider.get_android_lyric_identity(track || {});
+    if (androidAdapter) {
+      const identity = getAndroidLyricContentIdentity(track || {});
       if (!identity) {
         return Promise.resolve({
           ok: false,
@@ -769,19 +1000,41 @@ const MediaService = {
       const pageEpoch = Number.isInteger(track && track.pageEpoch)
         ? track.pageEpoch
         : 0;
-      const handle = androidAdapter.request('lyric.selection.get', identity, {
-        pageEpoch,
-      });
+      const handle = androidAdapter.request(
+        'lyric.content.get',
+        {
+          ...identity,
+          expectedRevision: 0,
+          transitionToken: 'read.v1',
+        },
+        { pageEpoch }
+      );
       return handle.promise.then(
-        (response) => ({
-          ok: true,
-          status: 'loaded',
-          record: (response && response.result) || null,
-          result: (response && response.result) || null,
-          requestId: handle.requestId,
-          pageEpoch: handle.pageEpoch,
-          cancel: handle.cancel,
-        }),
+        (response) => {
+          const content = response && response.result;
+          const found = content && content.status === 'found';
+          const revision = found ? Number(content.revision || 0) : 0;
+          return {
+            ok: true,
+            status: found ? 'loaded' : 'not-found',
+            record: found ? { revision } : null,
+            result: found
+              ? {
+                  lyric: content.originalText,
+                  tlyric: content.translationText || '',
+                  source: identity.source,
+                  machineTranslated: Boolean(content.translationText),
+                  machineTranslationProvider: content.translationText
+                    ? 'deepseek'
+                    : '',
+                  lyricCacheRevision: revision,
+                }
+              : null,
+            requestId: handle.requestId,
+            pageEpoch: handle.pageEpoch,
+            cancel: handle.cancel,
+          };
+        },
         (error) => ({
           ok: false,
           status: (error && error.code) || 'android-rpc-failed',
@@ -831,6 +1084,69 @@ const MediaService = {
   },
 
   putPersistentLyric(track, result, mode, expectedRevision = 0) {
+    const androidAdapter = getAndroidTypedAdapter();
+    const androidIdentity = getAndroidLyricContentIdentity(track || {});
+    if (
+      androidAdapter &&
+      androidIdentity &&
+      result &&
+      String(result.lyric || '').trim() &&
+      String(result.tlyric || '').trim()
+    ) {
+      const pageEpoch = Number.isInteger(track && track.pageEpoch)
+        ? track.pageEpoch
+        : 0;
+      const write = (allowRetry) => {
+        const read = androidAdapter.request(
+          'lyric.content.get',
+          {
+            ...androidIdentity,
+            expectedRevision: 0,
+            transitionToken: 'read.v1',
+          },
+          { pageEpoch }
+        );
+        return read.promise.then((readResponse) => {
+          const current = readResponse && readResponse.result;
+          const revision =
+            current && current.status === 'found'
+              ? Number(current.revision || 0)
+              : 0;
+          const token = `put.${Date.now().toString(36)}.${Math.random()
+            .toString(36)
+            .slice(2, 10)}`;
+          const put = androidAdapter.request(
+            'lyric.content.put',
+            {
+              ...androidIdentity,
+              expectedRevision: revision,
+              transitionToken: token,
+              originalText: result.lyric,
+              translationText: result.tlyric,
+            },
+            { pageEpoch }
+          );
+          return put.promise.then((writeResponse) => {
+            const stored = writeResponse && writeResponse.result;
+            if (stored && stored.conflict === 'STALE_REVISION' && allowRetry) {
+              return write(false);
+            }
+            return {
+              ok: Boolean(stored && !stored.conflict),
+              status: (stored && stored.status) || 'request-failed',
+              record: stored
+                ? { revision: Number(stored.revision || 0), mode }
+                : null,
+            };
+          });
+        });
+      };
+      return write(true).catch(() => ({
+        ok: false,
+        status: 'android-rpc-failed',
+        record: null,
+      }));
+    }
     const ipcRenderer = getDesktopLocalDataIpcRenderer();
     if (!ipcRenderer || !track || !track.id || !result || !result.lyric) {
       return Promise.resolve({ ok: false, status: 'unsupported' });
@@ -986,35 +1302,78 @@ const MediaService = {
 
   getMachineTranslationConfig() {
     const ipcRenderer = getMachineTranslationIpcRenderer();
-    if (!ipcRenderer) {
+    if (ipcRenderer) {
+      return ipcRenderer.invoke('machine-translation:get-config');
+    }
+    const deepSeek = getAndroidDeepSeekAdapter();
+    if (!deepSeek || typeof deepSeek.status !== 'function') {
       return Promise.resolve({
         ok: false,
         status: 'unsupported',
       });
     }
-    return ipcRenderer.invoke('machine-translation:get-config');
+    const handle = deepSeek.status({ pageEpoch: 0 });
+    return handle.promise.then((status) => mapAndroidDeepSeekStatus(status));
   },
 
   setMachineTranslationConfig(config) {
     const ipcRenderer = getMachineTranslationIpcRenderer();
-    if (!ipcRenderer) {
+    if (ipcRenderer) {
+      return ipcRenderer.invoke('machine-translation:set-config', config || {});
+    }
+    const deepSeek = getAndroidDeepSeekAdapter();
+    if (!deepSeek) {
       return Promise.resolve({
         ok: false,
         status: 'unsupported',
       });
     }
-    return ipcRenderer.invoke('machine-translation:set-config', config || {});
+    const next = config || {};
+    if (next.clearApiKey === true && typeof deepSeek.delete === 'function') {
+      return deepSeek
+        .delete({ pageEpoch: 0 })
+        .promise.then((status) => mapAndroidDeepSeekStatus(status));
+    }
+    if (
+      typeof next.apiKey === 'string' &&
+      next.apiKey.trim() &&
+      typeof deepSeek.configure === 'function'
+    ) {
+      return deepSeek
+        .configure(next.apiKey.trim(), { pageEpoch: 0 })
+        .promise.then((status) => mapAndroidDeepSeekStatus(status));
+    }
+    // Style hints stay in the current WebView scope on Android. They are not
+    // credentials and are intentionally not written to localStorage/native vault.
+    if (Object.prototype.hasOwnProperty.call(next, 'styleHint')) {
+      return this.getMachineTranslationConfig().then((response) =>
+        response && response.config
+          ? {
+              ...response,
+              config: {
+                ...response.config,
+                styleHint: String(next.styleHint || ''),
+              },
+            }
+          : response
+      );
+    }
+    return Promise.resolve({ ok: false, status: 'invalid-config' });
   },
 
   testMachineTranslationConfig() {
     const ipcRenderer = getMachineTranslationIpcRenderer();
-    if (!ipcRenderer) {
+    if (ipcRenderer) {
+      return ipcRenderer.invoke('machine-translation:test');
+    }
+    const deepSeek = getAndroidDeepSeekAdapter();
+    if (!deepSeek || typeof deepSeek.test !== 'function') {
       return Promise.resolve({
         ok: false,
         status: 'unsupported',
       });
     }
-    return ipcRenderer.invoke('machine-translation:test');
+    return deepSeek.test({ pageEpoch: 0 }).promise;
   },
 
   machineTranslateLyricCandidate(
@@ -1024,10 +1383,93 @@ const MediaService = {
     options = {}
   ) {
     const ipcRenderer = getMachineTranslationIpcRenderer();
-    if (!ipcRenderer || !candidate || !candidate.lyric) {
+    const deepSeek = getAndroidDeepSeekAdapter();
+    if (!candidate || !candidate.lyric) {
       return Promise.resolve({
         ...candidate,
-        machineTranslationStatus: ipcRenderer ? 'empty-lyric' : 'unsupported',
+        machineTranslationStatus:
+          ipcRenderer || deepSeek ? 'empty-lyric' : 'unsupported',
+      });
+    }
+    if (!ipcRenderer && deepSeek) {
+      const consent = options && options.consent;
+      const validConsent =
+        consent &&
+        consent.lyrics === true &&
+        consent.title === true &&
+        consent.artist === true &&
+        consent.possibleCost === true &&
+        consent.cancellation === true &&
+        consent.failureImpact === true &&
+        Number.isSafeInteger(consent.acceptedAtEpochMs) &&
+        consent.acceptedAtEpochMs > 0;
+      if (!validConsent || typeof deepSeek.translate !== 'function') {
+        return Promise.resolve({
+          ...candidate,
+          machineTranslationStatus: validConsent
+            ? 'unsupported'
+            : 'consent-required',
+        });
+      }
+      const track = trackInfo || {};
+      const handle = deepSeek.translate(
+        {
+          lyric: candidate.lyric,
+          title: candidate.title || track.title || '',
+          artist: candidate.artist || track.artist || '',
+          styleHint: String(
+            options.styleHint === undefined ? '' : options.styleHint
+          ),
+          consent: { ...consent },
+        },
+        {
+          pageEpoch: Number.isInteger(track.pageEpoch) ? track.pageEpoch : 0,
+          timeoutMs: options.timeoutMs,
+        }
+      );
+      const translated = handle.promise
+        .then((response) => {
+          if (
+            !response ||
+            response.ok !== true ||
+            !String(response.tlyric || '').trim()
+          ) {
+            return {
+              ...candidate,
+              machineTranslationStatus:
+                (response && response.status) || 'request-failed',
+            };
+          }
+          return {
+            ...candidate,
+            tlyric: response.tlyric,
+            translationProvider: response.provider || 'deepseek',
+            translationEnriched: false,
+            machineTranslated: true,
+            machineTranslationProvider: response.provider || 'deepseek',
+            machineTranslationTarget: response.targetLanguage || 'zh-CN',
+            machineTranslationCached: false,
+            machineTranslationLineCount: Number(response.lineCount || 0),
+            machineTranslationPromptFingerprint:
+              response.promptFingerprint || '',
+            machineTranslationStatus: 'translated',
+          };
+        })
+        .catch((error) => ({
+          ...candidate,
+          machineTranslationStatus:
+            error && error.safeCode === 'CANCELLED'
+              ? 'cancelled'
+              : 'request-failed',
+        }));
+      translated.cancel = handle.cancel;
+      translated.requestId = handle.requestId;
+      return translated;
+    }
+    if (!ipcRenderer) {
+      return Promise.resolve({
+        ...candidate,
+        machineTranslationStatus: 'unsupported',
       });
     }
     const lyricIdentity = getLyricCacheIdentity(trackInfo || {});

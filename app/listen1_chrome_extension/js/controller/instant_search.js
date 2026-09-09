@@ -64,7 +64,11 @@ angular.module('listenone').controller('InstantSearchController', [
     sourceList.forEach((item) => {
       $scope.originpagelog[item.name] = 1;
     });
-    $scope.sourceList = sourceList.filter((item) => item.searchable !== false);
+    $scope.sourceList = sourceList.filter(
+      (item) =>
+        item.searchable !== false &&
+        (!isAndroidTyped() || ['netease', 'bilibili'].includes(item.name))
+    );
     $scope.tab = sourceList[0].name;
     $scope.keywords = '';
     $scope.loading = false;
@@ -369,6 +373,17 @@ angular.module('listenone').controller('InstantSearchController', [
       $scope.cancelBilibiliDetail();
       $scope.bilibiliDetail.state = 'idle';
     };
+    $scope.$on('android:search-back', (event, searchBack) => {
+      if (
+        !searchBack ||
+        typeof searchBack !== 'object' ||
+        $scope.bilibiliDetail.state === 'idle'
+      ) {
+        return;
+      }
+      $scope.backFromBilibiliDetail();
+      searchBack.handled = true;
+    });
     $scope.changeSourceTab = (newTab) => {
       $scope.cancelBilibiliSearch();
       $scope.tab = newTab;
@@ -392,7 +407,8 @@ angular.module('listenone').controller('InstantSearchController', [
     $scope.enterEvent = (event) => {
       const keycode = window.event ? event.keyCode : event.which;
       if (keycode === 13) {
-        if (isAndroidTyped()) startBilibiliSearch(1);
+        if (isAndroidTyped() && $scope.tab === 'bilibili')
+          startBilibiliSearch(1);
         else legacySearch();
       }
     };

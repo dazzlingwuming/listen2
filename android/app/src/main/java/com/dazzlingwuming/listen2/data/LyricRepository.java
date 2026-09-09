@@ -22,7 +22,8 @@ public final class LyricRepository implements LyricPersistencePort, AutoCloseabl
     public static LyricRepository open(Context context) {
         Listen2Database database = Room.databaseBuilder(context.getApplicationContext(),
                         Listen2Database.class, "listen2.db")
-                .addMigrations(Listen2Database.MIGRATION_1_2)
+                .addMigrations(Listen2Database.MIGRATION_1_2, Listen2Database.MIGRATION_2_3,
+                        Listen2Database.MIGRATION_3_4, Listen2Database.MIGRATION_4_5)
                 .build();
         return new LyricRepository(database);
     }
@@ -118,6 +119,31 @@ public final class LyricRepository implements LyricPersistencePort, AutoCloseabl
     }
 
     /** Stores provider-authorized semantic lyric content without any transport material. */
+    @Override
+    public ContentResult readContent(Intent intent) {
+        if (validationError(intent) != null) return ContentResult.error("INVALID_LYRIC_INTENT");
+        LyricRecord.Entity current = dao.get(intent.source, intent.providerTrackId,
+                normalizedPart(intent.providerPartId), intent.lyricRevision);
+        if (current == null) return ContentResult.notFound();
+        if (!isStoredRecordValid(current)) {
+            dao.delete(intent.source, intent.providerTrackId, normalizedPart(intent.providerPartId),
+                    intent.lyricRevision);
+            return ContentResult.error("CORRUPT_LYRIC_RECORD");
+        }
+        if (current.originalText == null || current.originalText.isEmpty()) {
+            return ContentResult.notFound();
+        }
+        return ContentResult.found(current.semanticRevision, current.originalText,
+                current.translationText == null ? "" : current.translationText);
+    }
+
+    @Override
+    public Result persistContent(Intent intent, String originalText, String translationText,
+            int matchQuality, long matchedAtMs) {
+        return persistAuthorizedContent(intent, originalText, translationText, matchQuality,
+                matchedAtMs);
+    }
+
     public Result persistAuthorizedContent(Intent intent, String originalText, String translationText,
             int matchQuality, long matchedAtMs) {
         if (validationError(intent) != null || !isValidContent(originalText, translationText)

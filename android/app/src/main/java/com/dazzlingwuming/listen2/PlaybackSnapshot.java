@@ -1,5 +1,7 @@
 package com.dazzlingwuming.listen2;
 
+import com.dazzlingwuming.listen2.provider.AdvancedPlaybackCapabilities;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -29,19 +31,31 @@ public final class PlaybackSnapshot {
     private final PreparedSelection preparedSelection;
     private final RecoveryStatus recoveryStatus;
     private final LyricContext lyricContext;
+    private final AdvancedPlaybackCapabilities advancedCapabilities;
 
     public PlaybackSnapshot(int version, long pageEpoch, long revision, State state,
             Metadata metadata, long positionMs, long durationMs, int volumePercent, boolean muted,
             Mode mode, ActionAvailability actionAvailability, List<QueueOccurrence> queue,
             PreparedSelection preparedSelection, RecoveryStatus recoveryStatus) {
         this(version, pageEpoch, revision, state, metadata, positionMs, durationMs, volumePercent, muted,
-                mode, actionAvailability, queue, preparedSelection, recoveryStatus, LyricContext.unavailable());
+                mode, actionAvailability, queue, preparedSelection, recoveryStatus, LyricContext.unavailable(),
+                AdvancedPlaybackCapabilities.unavailable());
     }
 
     public PlaybackSnapshot(int version, long pageEpoch, long revision, State state,
             Metadata metadata, long positionMs, long durationMs, int volumePercent, boolean muted,
             Mode mode, ActionAvailability actionAvailability, List<QueueOccurrence> queue,
             PreparedSelection preparedSelection, RecoveryStatus recoveryStatus, LyricContext lyricContext) {
+        this(version, pageEpoch, revision, state, metadata, positionMs, durationMs, volumePercent, muted,
+                mode, actionAvailability, queue, preparedSelection, recoveryStatus, lyricContext,
+                AdvancedPlaybackCapabilities.unavailable());
+    }
+
+    public PlaybackSnapshot(int version, long pageEpoch, long revision, State state,
+            Metadata metadata, long positionMs, long durationMs, int volumePercent, boolean muted,
+            Mode mode, ActionAvailability actionAvailability, List<QueueOccurrence> queue,
+            PreparedSelection preparedSelection, RecoveryStatus recoveryStatus, LyricContext lyricContext,
+            AdvancedPlaybackCapabilities advancedCapabilities) {
         this.version = version;
         this.pageEpoch = pageEpoch;
         this.revision = revision;
@@ -57,10 +71,52 @@ public final class PlaybackSnapshot {
         this.preparedSelection = preparedSelection;
         this.recoveryStatus = recoveryStatus;
         this.lyricContext = lyricContext == null ? LyricContext.unavailable() : lyricContext;
+        this.advancedCapabilities = advancedCapabilities == null
+                ? AdvancedPlaybackCapabilities.unavailable() : advancedCapabilities;
     }
 
     public long getRevision() {
         return revision;
+    }
+
+    public long getPageEpoch() {
+        return pageEpoch;
+    }
+
+    public State getState() {
+        return state;
+    }
+
+    public Metadata getMetadata() {
+        return metadata;
+    }
+
+    public long getPositionMs() {
+        return positionMs;
+    }
+
+    public long getDurationMs() {
+        return durationMs;
+    }
+
+    public int getVolumePercent() {
+        return volumePercent;
+    }
+
+    public boolean isMuted() {
+        return muted;
+    }
+
+    public Mode getMode() {
+        return mode;
+    }
+
+    public ActionAvailability getActionAvailability() {
+        return actionAvailability;
+    }
+
+    public RecoveryStatus getRecoveryStatus() {
+        return recoveryStatus;
     }
 
     public List<QueueOccurrence> getQueue() {
@@ -73,6 +129,16 @@ public final class PlaybackSnapshot {
 
     public LyricContext getLyricContext() {
         return lyricContext;
+    }
+
+    public AdvancedPlaybackCapabilities getAdvancedCapabilities() {
+        return advancedCapabilities;
+    }
+
+    PlaybackSnapshot withPageEpoch(long nextPageEpoch) {
+        return new PlaybackSnapshot(version, nextPageEpoch, revision, state, metadata, positionMs, durationMs,
+                volumePercent, muted, mode, actionAvailability, queue, preparedSelection, recoveryStatus,
+                lyricContext, advancedCapabilities);
     }
 
     public Map<String, Object> toMap() {
@@ -94,6 +160,7 @@ public final class PlaybackSnapshot {
         if (preparedSelection != null) result.put("prepared", preparedSelection.toMap());
         result.put("recovery", recoveryStatus.toMap());
         result.put("lyric", lyricContext.toMap());
+        result.put("advancedPlayback", advancedCapabilities.toMap());
         assertPageSafe(result);
         return Collections.unmodifiableMap(result);
     }
@@ -109,6 +176,22 @@ public final class PlaybackSnapshot {
             this.artist = artist;
             this.durationMs = durationMs;
             this.artworkState = artworkState;
+        }
+
+        public String getTitle() {
+            return title;
+        }
+
+        public String getArtist() {
+            return artist;
+        }
+
+        public long getDurationMs() {
+            return durationMs;
+        }
+
+        public String getArtworkState() {
+            return artworkState;
         }
 
         Map<String, Object> toMap() {
@@ -137,6 +220,30 @@ public final class PlaybackSnapshot {
             this.next = next;
             this.seek = seek;
             this.retry = retry;
+        }
+
+        public boolean canPlay() {
+            return play;
+        }
+
+        public boolean canPause() {
+            return pause;
+        }
+
+        public boolean canPrevious() {
+            return previous;
+        }
+
+        public boolean canNext() {
+            return next;
+        }
+
+        public boolean canSeek() {
+            return seek;
+        }
+
+        public boolean canRetry() {
+            return retry;
         }
 
         Map<String, Object> toMap() {
@@ -217,6 +324,14 @@ public final class PlaybackSnapshot {
         public RecoveryStatus(String status, boolean retryable) {
             this.status = status;
             this.retryable = retryable;
+        }
+
+        public String getStatus() {
+            return status;
+        }
+
+        public boolean isRetryable() {
+            return retryable;
         }
 
         Map<String, Object> toMap() {

@@ -378,6 +378,25 @@ async function run() {
     status: 'saved',
   });
 
+  const playlistSearch = provider.search(
+    '/search?keywords=playlist&curpage=1&type=1',
+    { pageEpoch: 17 }
+  );
+  assert.strictEqual(playlistSearch.pageEpoch, 17);
+  assert.deepStrictEqual(toPlain(await playlistSearch.promise), {
+    result: [],
+    total: 0,
+    type: '1',
+    error: {
+      status: 'android-provider-unavailable',
+      message: 'NetEase playlist search is unavailable on this Android device.',
+    },
+  });
+  assert.strictEqual(
+    bridge.posted[bridge.posted.length - 1].operation,
+    'lyric.offset.set'
+  );
+
   console.log('Android typed NetEase provider tests passed');
 }
 

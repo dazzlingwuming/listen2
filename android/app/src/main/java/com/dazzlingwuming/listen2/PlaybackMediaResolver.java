@@ -26,6 +26,15 @@ public final class PlaybackMediaResolver {
         default String unavailableStatus() {
             return "no-safe-candidate";
         }
+
+        /**
+         * Local SAF media is accepted only when the source-specific native
+         * resolver has already rechecked the catalog grant and returned this
+         * exact URI. A generic content-authority allow-list would be too broad.
+         */
+        default boolean isAuthorizedLocalUri(Descriptor descriptor, URI uri) {
+            return false;
+        }
     }
 
     public interface HandleSource {
@@ -34,6 +43,15 @@ public final class PlaybackMediaResolver {
 
     public interface Clock {
         long nowEpochSeconds();
+    }
+
+    /**
+     * Optional native cache hand-off. A cache implementation receives a
+     * validated transient provider URI and may return its own app-private
+     * content URI; neither value has a page-facing representation.
+     */
+    public interface CacheUriPort {
+        URI issue(Descriptor descriptor, URI validatedCandidate);
     }
 
     public static final class Descriptor {
@@ -74,8 +92,16 @@ public final class PlaybackMediaResolver {
         }
 
         private boolean isProviderIdentitySafe() {
+            if ("local".equals(source)) {
+                return providerPartId == 1L && providerTrackId != null
+                        && providerTrackId.matches("local\\.track\\.[a-f0-9]{64}");
+            }
             if (providerPartId <= 0L) return false;
-            if ("bilibili".equals(source)) return isBvid(providerTrackId);
+            if ("bilibili".equals(source)) {
+                return isBvid(providerTrackId)
+                        || (providerPartId == 1L && providerTrackId != null
+                        && providerTrackId.matches("[1-9][0-9]{0,17}"));
+            }
             return "netease".equals(source) && providerTrackId != null
                     && providerTrackId.matches("[1-9][0-9]{0,17}");
         }
@@ -132,24 +158,29 @@ public final class PlaybackMediaResolver {
         private final boolean paused;
         private final String status;
         private final List<String> candidates;
+        private final List<URI> mediaUris;
 
-        private Resolution(boolean ready, boolean paused, String status, List<String> candidates) {
+        private Resolution(boolean ready, boolean paused, String status, List<String> candidates,
+                List<URI> mediaUris) {
             this.ready = ready;
             this.paused = paused;
             this.status = status;
             this.candidates = Collections.unmodifiableList(new ArrayList<>(candidates));
+            this.mediaUris = Collections.unmodifiableList(new ArrayList<>(mediaUris));
         }
-        static Resolution ready(List<String> candidates) {
-            return new Resolution(true, false, "ready", candidates);
+        static Resolution ready(List<String> candidates, List<URI> mediaUris) {
+            return new Resolution(true, false, "ready", candidates, mediaUris);
         }
         static Resolution failed(String status, boolean paused) {
-            return new Resolution(false, paused, status, Collections.<String>emptyList());
+            return new Resolution(false, paused, status, Collections.<String>emptyList(),
+                    Collections.<URI>emptyList());
         }
         public boolean isReady() { return ready; }
         public boolean isPaused() { return paused; }
         public String getStatus() { return status; }
         public int getCandidateCount() { return candidates.size(); }
         List<String> candidates() { return candidates; }
+        List<URI> mediaUris() { return mediaUris; }
         public Map<String, Object> toSnapshotFields() {
             Map<String, Object> values = new LinkedHashMap<>();
             values.put("status", status);
@@ -168,15 +199,23 @@ public final class PlaybackMediaResolver {
     private final ManifestPort manifest;
     private final HandleSource handles;
     private final Clock clock;
+    private final CacheUriPort cacheUris;
     private final Map<String, Prepared> preparedByTrack = new LinkedHashMap<>();
     private Prepared selected;
     private long selectedRevision = -1L;
 
     public PlaybackMediaResolver(ManifestPort manifest, HandleSource handles, Clock clock) {
+        this(manifest, handles, clock, (descriptor, candidate) -> candidate);
+    }
+
+    public PlaybackMediaResolver(ManifestPort manifest, HandleSource handles, Clock clock,
+            CacheUriPort cacheUris) {
         if (manifest == null || handles == null || clock == null) throw new IllegalArgumentException("ports required");
+        if (cacheUris == null) throw new IllegalArgumentException("cache port required");
         this.manifest = manifest;
         this.handles = handles;
         this.clock = clock;
+        this.cacheUris = cacheUris;
     }
 
     public Prepared prepare(Descriptor descriptor) {
@@ -222,12 +261,29 @@ public final class PlaybackMediaResolver {
         }
         if (raw == null) return Resolution.failed("manifest-unavailable", true);
         LinkedHashSet<String> safe = new LinkedHashSet<>();
+        List<URI> mediaUris = new ArrayList<>();
         for (String candidate : raw) {
-            if (isSafeCandidate(candidate)) safe.add(candidate);
+            if (isSafeCandidate(candidate) && safe.add(candidate)) {
+                URI issued = issueMediaUri(descriptor, candidate);
+                if (issued == null) {
+                    safe.remove(candidate);
+                } else {
+                    mediaUris.add(issued);
+                }
+            }
             if (safe.size() == MAX_CANDIDATES) break;
         }
         return safe.isEmpty() ? Resolution.failed(manifest.unavailableStatus(), true)
-                : Resolution.ready(new ArrayList<>(safe));
+                : Resolution.ready(new ArrayList<>(safe), mediaUris);
+    }
+
+    private URI issueMediaUri(Descriptor descriptor, String candidate) {
+        try {
+            URI issued = cacheUris.issue(descriptor, new URI(candidate));
+            return isSafeIssuedMediaUri(descriptor, issued) ? issued : null;
+        } catch (RuntimeException | URISyntaxException ignored) {
+            return null;
+        }
     }
 
     private boolean isCurrent(String occurrenceId, long expectedRevision) {
@@ -239,11 +295,20 @@ public final class PlaybackMediaResolver {
         if (candidate == null || candidate.length() > 2048) return false;
         try {
             URI uri = new URI(candidate);
+            if ("local".equals(selected.descriptor().getSource())) {
+                return manifest.isAuthorizedLocalUri(selected.descriptor(), uri);
+            }
             String host = uri.getHost();
             if (!"https".equalsIgnoreCase(uri.getScheme()) || host == null || uri.getUserInfo() != null
                     || uri.getRawFragment() != null || !isSourceCandidateHost(selected.descriptor().getSource(), host)) {
                 return false;
             }
+            // NetEase signs CDN URLs through the provider response/path and does
+            // not consistently emit Bilibili's `deadline` query parameter. The
+            // candidate is still native-only and has already passed the exact
+            // HTTPS CDN host allowlist above; a fresh native rendition request
+            // is used whenever playback resolves or retries.
+            if ("netease".equals(selected.descriptor().getSource())) return true;
             long deadline = deadline(uri.getRawQuery());
             return deadline > clock.nowEpochSeconds();
         } catch (URISyntaxException ignored) {
@@ -262,7 +327,7 @@ public final class PlaybackMediaResolver {
     }
 
     private static boolean isBvid(String value) {
-        return value != null && value.matches("BV[0-9A-Za-z]{10}");
+        return value != null && value.matches("BV[0-9A-Za-z]{6,32}");
     }
 
     private static boolean isSourceCandidateHost(String source, String host) {
@@ -270,8 +335,25 @@ public final class PlaybackMediaResolver {
             return host.equals("bilivideo.com") || host.endsWith(".bilivideo.com");
         }
         return "netease".equals(source)
-                && (host.equals("music.163.com") || host.endsWith(".music.163.com"));
+                && (host.equals("music.163.com") || host.endsWith(".music.163.com")
+                        || host.equals("music.126.net") || host.endsWith(".music.126.net"));
     }
+
+    private boolean isSafeIssuedMediaUri(Descriptor descriptor, URI uri) {
+        if (descriptor == null || uri == null || uri.getUserInfo() != null || uri.getRawFragment() != null) {
+            return false;
+        }
+        if ("https".equalsIgnoreCase(uri.getScheme())) {
+            return uri.getHost() != null && isSourceCandidateHost(descriptor.getSource(), uri.getHost());
+        }
+        if ("local".equals(descriptor.getSource())) {
+            return manifest.isAuthorizedLocalUri(descriptor, uri);
+        }
+        return "content".equalsIgnoreCase(uri.getScheme())
+                && "com.dazzlingwuming.listen2.cache".equals(uri.getAuthority())
+                && uri.getRawQuery() == null && uri.getPath() != null && uri.getPath().matches("/[A-Za-z0-9._-]{1,128}");
+    }
+
     private static boolean isText(String value) {
         return value != null && !value.isEmpty() && value.length() <= MAX_TEXT
                 && value.indexOf('\u0000') < 0 && value.indexOf('<') < 0 && value.indexOf('>') < 0;

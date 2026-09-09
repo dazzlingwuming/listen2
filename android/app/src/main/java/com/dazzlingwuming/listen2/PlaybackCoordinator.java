@@ -1,6 +1,8 @@
 package com.dazzlingwuming.listen2;
 
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
 
 /**
  * The only transition lane between page/session/player callbacks and the
@@ -161,9 +163,16 @@ public final class PlaybackCoordinator {
     }
 
     private Result execute(TransitionCall call, String token, boolean project) {
-        Result[] result = new Result[1];
-        serialExecutor.execute(() -> result[0] = executeOnLane(call, token, project));
-        return result[0] == null ? rejected() : result[0];
+        FutureTask<Result> task = new FutureTask<>(() -> executeOnLane(call, token, project));
+        try {
+            serialExecutor.execute(task);
+            return task.get();
+        } catch (InterruptedException ignored) {
+            Thread.currentThread().interrupt();
+            return rejected();
+        } catch (ExecutionException | RuntimeException ignored) {
+            return rejected();
+        }
     }
 
     private Result executeOnLane(TransitionCall call, String token, boolean project) {

@@ -151,14 +151,46 @@ const Listen2AndroidHttpAdapter = (() => {
   const MAX_RESPONSE_BODY_LENGTH = 2 * 1024 * 1024;
   const MAX_ERROR_LENGTH = 1024;
   const MAX_TYPED_KEYWORD_BYTES = 256;
+  const MAX_DEEPSEEK_LYRIC_BYTES = 64 * 1024;
+  const MAX_DEEPSEEK_METADATA_BYTES = 256;
+  const MAX_DEEPSEEK_STYLE_BYTES = 1200;
+  const MAX_DEEPSEEK_KEY_BYTES = 512;
+  const MAX_PERSISTENT_LYRIC_BYTES = 256 * 1024;
   const MAX_LYRIC_OFFSET_MS = 30000;
   const MAX_PAGE_EPOCH = 2147483647;
   const MAX_PLAYBACK_TEXT_LENGTH = 256;
   const MAX_PLAYBACK_DURATION_MS = 28800000;
+  const MAX_MEDIA_DOWNLOAD_OPERATION_ID_LENGTH = 96;
   const PLAYBACK_SNAPSHOT_VERSION = 1;
+  const PROVIDER_CAPABILITY_VERSION = 1;
+  const PROVIDER_CAPABILITY_FIELDS = [
+    'search',
+    'directory',
+    'detail',
+    'media',
+    'lyric',
+    'manualLyric',
+    'fallback',
+    'login',
+    'permission',
+  ];
+  const ACCOUNT_STATUSES = new Set([
+    'idle',
+    'waiting',
+    'scanned',
+    'authenticated',
+    'expired',
+    'cancelled',
+    'error',
+    'unavailable',
+  ]);
+  const MAX_ACCOUNT_QR_URL_LENGTH = 2048;
   const pending = new Map();
   let requestSequence = 0;
   let responseBridge = null;
+  let verifiedProviderCapabilities = null;
+  let providerCapabilityRefresh = null;
+  const providerCapabilityListeners = new Set();
   const playback = {
     pageEpoch: null,
     revision: 0,
@@ -266,6 +298,7 @@ const Listen2AndroidHttpAdapter = (() => {
     const codeByNativeCode = {
       CANCELLED: 'android-rpc-cancelled',
       TIMEOUT: 'android-rpc-timeout',
+      NETWORK_TIMEOUT: 'android-rpc-timeout',
       TIMEOUT_ERROR: 'android-rpc-timeout',
       NETWORK_IO_ERROR: 'android-rpc-network',
       TLS_ERROR: 'android-rpc-tls',
@@ -277,10 +310,20 @@ const Listen2AndroidHttpAdapter = (() => {
       EXPIRED_STREAM: 'android-rpc-unavailable-stream',
       UNSUPPORTED_CODEC: 'android-rpc-unsupported-codec',
       MALFORMED_PROVIDER_RESPONSE: 'android-rpc-malformed-response',
+      RESPONSE_TOO_LARGE: 'android-rpc-malformed-response',
       PROVIDER_STATUS: 'android-rpc-provider-status',
       NETEASE_ROUTE_UNAVAILABLE: 'android-rpc-unavailable-route',
+      ROUTE_NOT_ALLOWED: 'android-rpc-unavailable-route',
+      REDIRECT_NOT_ALLOWED: 'android-rpc-unavailable-route',
       LYRIC_PERSISTENCE_UNAVAILABLE:
         'android-rpc-lyric-persistence-unavailable',
+      LOCAL_DATA_UNAVAILABLE: 'android-rpc-local-data-unavailable',
+      UNSUPPORTED_LOCAL_ACTION: 'android-rpc-local-data-unavailable',
+      LOCAL_DATA_CORRUPT: 'android-rpc-local-data-unavailable',
+      PLATFORM_ACTION_UNAVAILABLE: 'android-rpc-local-data-unavailable',
+      LOCAL_LYRIC_UNAVAILABLE: 'android-rpc-local-lyric-unavailable',
+      MEDIA_DOWNLOAD_UNAVAILABLE: 'android-rpc-media-download-unavailable',
+      MEDIA_DOWNLOAD_FAILED: 'android-rpc-media-download-unavailable',
       MEMBERSHIP_REQUIRED: 'android-rpc-permission',
       ENTITLEMENT_REQUIRED: 'android-rpc-permission',
       DRM_RESTRICTED: 'android-rpc-permission',
@@ -302,6 +345,8 @@ const Listen2AndroidHttpAdapter = (() => {
         'malformed-response',
         'unavailable-route',
         'lyric-persistence-unavailable',
+        'local-data-unavailable',
+        'local-lyric-unavailable',
       ].includes(kind),
       safeCode: safeCode || 'UNKNOWN',
       status:
@@ -485,6 +530,59 @@ const Listen2AndroidHttpAdapter = (() => {
     return typeof value === 'string' && /^[1-9][0-9]{0,17}$/.test(value);
   }
 
+  function isSafeMediaDownloadOperationId(value) {
+    return (
+      typeof value === 'string' &&
+      value.length > 0 &&
+      value.length <= MAX_MEDIA_DOWNLOAD_OPERATION_ID_LENGTH &&
+      /^[A-Za-z0-9._-]+$/.test(value)
+    );
+  }
+
+  function isSafeMediaDownloadRetention(value) {
+    return ['temporary', 'playlist', 'download'].includes(value);
+  }
+
+  function isSafeMediaDownloadText(value) {
+    return (
+      typeof value === 'string' &&
+      value.length > 0 &&
+      value.length <= MAX_PLAYBACK_TEXT_LENGTH &&
+      // eslint-disable-next-line no-control-regex
+      !/[\u0000<>]/.test(value)
+    );
+  }
+
+  function isSafeMediaDownloadDescriptor(value) {
+    if (
+      // This exact-shape helper is declared with response normalizers below.
+      // eslint-disable-next-line no-use-before-define
+      !isExactObject(value, [
+        'artist',
+        'durationMs',
+        'mediaKind',
+        'providerPartId',
+        'providerTrackId',
+        'source',
+        'title',
+      ])
+    )
+      return false;
+    return (
+      ((value.source === 'bilibili' && isSafeBvid(value.providerTrackId)) ||
+        (value.source === 'netease' &&
+          isSafeProviderTrackId(value.providerTrackId))) &&
+      Number.isSafeInteger(value.providerPartId) &&
+      value.providerPartId > 0 &&
+      isSafeMediaDownloadText(value.title) &&
+      isSafeMediaDownloadText(value.artist) &&
+      Number.isSafeInteger(value.durationMs) &&
+      value.durationMs >= 0 &&
+      value.durationMs <= MAX_PLAYBACK_DURATION_MS &&
+      value.mediaKind === 'audio'
+    );
+  }
+
   function isSafeShortId(value) {
     return (
       typeof value === 'string' &&
@@ -519,8 +617,24 @@ const Listen2AndroidHttpAdapter = (() => {
     if (
       ![
         'bilibili.search',
+        'bilibili.directory.page',
+        'bilibili.directory.detail',
         'bilibili.video.detail',
-        'bilibili.audio.manifest',
+        'bilibili.lyric.primary',
+        'bilibili.account.status',
+        'bilibili.account.qr.begin',
+        'bilibili.account.qr.poll',
+        'bilibili.account.qr.cancel',
+        'bilibili.account.logout',
+        'provider.capabilities',
+        'media.download.start',
+        'media.download.status',
+        'media.download.cancel',
+        'media.download.delete',
+        'media.download.cleanup',
+        'local.data.query',
+        'local.data.command',
+        'local.lyric.primary',
         'netease.search',
         'netease.directory.detail',
         'netease.rendition.default',
@@ -530,6 +644,13 @@ const Listen2AndroidHttpAdapter = (() => {
         'lyric.selection.set',
         'lyric.selection.clear',
         'lyric.offset.set',
+        'lyric.content.get',
+        'lyric.content.put',
+        'deepseek.translation.status',
+        'deepseek.translation.configure',
+        'deepseek.translation.test',
+        'deepseek.translation.delete',
+        'deepseek.translation.translate',
         'playback.command',
       ].includes(operation)
     ) {
@@ -545,13 +666,189 @@ const Listen2AndroidHttpAdapter = (() => {
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
       return 'android-rpc-invalid-payload';
     }
+    const keys = Object.keys(payload).sort();
     if (operation === 'playback.command') {
       // eslint-disable-next-line no-use-before-define
       return validatePlaybackEnvelope(payload)
         ? null
         : 'android-rpc-invalid-payload';
     }
-    const keys = Object.keys(payload).sort();
+    if (
+      [
+        'deepseek.translation.status',
+        'deepseek.translation.test',
+        'deepseek.translation.delete',
+      ].includes(operation)
+    ) {
+      return keys.length === 0 ? null : 'android-rpc-invalid-payload';
+    }
+    if (operation === 'deepseek.translation.configure') {
+      return keys.length === 1 &&
+        keys[0] === 'apiKey' &&
+        typeof payload.apiKey === 'string' &&
+        payload.apiKey.trim() &&
+        byteLength(payload.apiKey.trim()) <= MAX_DEEPSEEK_KEY_BYTES &&
+        // eslint-disable-next-line no-control-regex
+        !/[\u0000-\u001f\u007f]/.test(payload.apiKey)
+        ? null
+        : 'android-rpc-invalid-payload';
+    }
+    if (operation === 'deepseek.translation.translate') {
+      const consentKeys = [
+        'acceptedAtEpochMs',
+        'artist',
+        'cancellation',
+        'failureImpact',
+        'lyrics',
+        'possibleCost',
+        'title',
+      ];
+      const { consent } = payload;
+      if (
+        keys.length !== 5 ||
+        !['artist', 'consent', 'lyric', 'styleHint', 'title'].every((key) =>
+          keys.includes(key)
+        ) ||
+        typeof payload.lyric !== 'string' ||
+        typeof payload.title !== 'string' ||
+        typeof payload.artist !== 'string' ||
+        typeof payload.styleHint !== 'string' ||
+        byteLength(payload.lyric) > MAX_DEEPSEEK_LYRIC_BYTES ||
+        byteLength(payload.title) > MAX_DEEPSEEK_METADATA_BYTES ||
+        byteLength(payload.artist) > MAX_DEEPSEEK_METADATA_BYTES ||
+        byteLength(payload.styleHint) > MAX_DEEPSEEK_STYLE_BYTES ||
+        !consent ||
+        typeof consent !== 'object' ||
+        Array.isArray(consent) ||
+        !hasExactlyKeys(consent, consentKeys) ||
+        ![
+          'lyrics',
+          'title',
+          'artist',
+          'possibleCost',
+          'cancellation',
+          'failureImpact',
+        ].every(
+          (key) => typeof consent[key] === 'boolean' && consent[key] === true
+        ) ||
+        !Number.isSafeInteger(consent.acceptedAtEpochMs) ||
+        consent.acceptedAtEpochMs <= 0
+      ) {
+        return 'android-rpc-invalid-payload';
+      }
+      return null;
+    }
+    if (['local.data.query', 'local.data.command'].includes(operation)) {
+      // eslint-disable-next-line no-use-before-define
+      return validateLocalDataRequest(operation, payload)
+        ? null
+        : 'android-rpc-invalid-payload';
+    }
+    if (operation === 'local.lyric.primary') {
+      return hasExactlyKeys(payload, ['localTrackId']) &&
+        /^local\.track\.[a-f0-9]{64}$/.test(payload.localTrackId)
+        ? null
+        : 'android-rpc-invalid-payload';
+    }
+    if (['lyric.content.get', 'lyric.content.put'].includes(operation)) {
+      const identityKeys = [
+        'expectedRevision',
+        'lyricRevision',
+        'providerPartId',
+        'providerTrackId',
+        'source',
+        'transitionToken',
+      ];
+      const expectedKeys =
+        operation === 'lyric.content.put'
+          ? [...identityKeys, 'originalText', 'translationText'].sort()
+          : identityKeys;
+      const safeTrackId =
+        (payload.source === 'bilibili' &&
+          (/^BV[0-9A-Za-z]{10}$/.test(payload.providerTrackId) ||
+            /^[1-9][0-9]{0,17}$/.test(payload.providerTrackId))) ||
+        (payload.source === 'netease' &&
+          /^[1-9][0-9]{0,17}$/.test(payload.providerTrackId)) ||
+        (payload.source === 'local' &&
+          /^local\.track\.[a-f0-9]{64}$/.test(payload.providerTrackId));
+      if (
+        !hasExactlyKeys(payload, expectedKeys) ||
+        !safeTrackId ||
+        !Number.isSafeInteger(payload.providerPartId) ||
+        payload.providerPartId < 0 ||
+        !isSafeShortId(payload.lyricRevision) ||
+        !isBoundedRevision(payload.expectedRevision) ||
+        !isSafeShortId(payload.transitionToken)
+      ) {
+        return 'android-rpc-invalid-payload';
+      }
+      if (operation === 'lyric.content.put') {
+        if (
+          typeof payload.originalText !== 'string' ||
+          !payload.originalText.trim() ||
+          typeof payload.translationText !== 'string' ||
+          !payload.translationText.trim() ||
+          byteLength(payload.originalText) > MAX_PERSISTENT_LYRIC_BYTES ||
+          byteLength(payload.translationText) > MAX_PERSISTENT_LYRIC_BYTES ||
+          // eslint-disable-next-line no-control-regex
+          /\u0000/.test(payload.originalText) ||
+          // eslint-disable-next-line no-control-regex
+          /\u0000/.test(payload.translationText)
+        ) {
+          return 'android-rpc-invalid-payload';
+        }
+      }
+      return null;
+    }
+    if (operation === 'media.download.start') {
+      return hasExactlyKeys(payload, [
+        'descriptor',
+        'operationId',
+        'retention',
+      ]) &&
+        isSafeMediaDownloadOperationId(payload.operationId) &&
+        isSafeMediaDownloadRetention(payload.retention) &&
+        isSafeMediaDownloadDescriptor(payload.descriptor)
+        ? null
+        : 'android-rpc-invalid-payload';
+    }
+    if (
+      ['media.download.status', 'media.download.cancel'].includes(operation)
+    ) {
+      return hasExactlyKeys(payload, ['operationId']) &&
+        isSafeMediaDownloadOperationId(payload.operationId)
+        ? null
+        : 'android-rpc-invalid-payload';
+    }
+    if (operation === 'media.download.delete') {
+      return hasExactlyKeys(payload, ['descriptor']) &&
+        isSafeMediaDownloadDescriptor(payload.descriptor)
+        ? null
+        : 'android-rpc-invalid-payload';
+    }
+    if (operation === 'media.download.cleanup') {
+      return keys.length === 0 ? null : 'android-rpc-invalid-payload';
+    }
+    if (
+      [
+        'provider.capabilities',
+        'bilibili.account.status',
+        'bilibili.account.qr.begin',
+        'bilibili.account.logout',
+      ].includes(operation)
+    ) {
+      return keys.length === 0 ? null : 'android-rpc-invalid-payload';
+    }
+    if (
+      ['bilibili.account.qr.poll', 'bilibili.account.qr.cancel'].includes(
+        operation
+      )
+    ) {
+      return hasExactlyKeys(payload, ['sessionId']) &&
+        isSafeShortId(payload.sessionId)
+        ? null
+        : 'android-rpc-invalid-payload';
+    }
     if (operation === 'bilibili.search' || operation === 'netease.search') {
       if (keys.length !== 2 || keys[0] !== 'keyword' || keys[1] !== 'page') {
         return 'android-rpc-invalid-payload';
@@ -570,6 +867,52 @@ const Listen2AndroidHttpAdapter = (() => {
     }
     if (operation === 'bilibili.video.detail') {
       return keys.length === 1 && keys[0] === 'bvid' && isSafeBvid(payload.bvid)
+        ? null
+        : 'android-rpc-invalid-payload';
+    }
+    if (operation === 'bilibili.directory.page') {
+      return hasExactlyKeys(payload, ['page']) &&
+        Number.isInteger(payload.page) &&
+        payload.page >= 1 &&
+        payload.page <= 1000
+        ? null
+        : 'android-rpc-invalid-payload';
+    }
+    if (operation === 'bilibili.directory.detail') {
+      return hasExactlyKeys(payload, ['playlistId']) &&
+        typeof payload.playlistId === 'string' &&
+        /^[1-9][0-9]{0,17}$/.test(payload.playlistId)
+        ? null
+        : 'android-rpc-invalid-payload';
+    }
+    if (operation === 'bilibili.lyric.primary') {
+      const semanticText = (value) =>
+        typeof value === 'string' &&
+        value.trim() === value &&
+        value.length > 0 &&
+        byteLength(value) <= MAX_TYPED_KEYWORD_BYTES &&
+        !/[\r\n<>]/.test(value);
+      return hasExactlyKeys(payload, [
+        'artist',
+        'bvid',
+        'cid',
+        'durationSeconds',
+        'selectionIdentity',
+        'selectionRevision',
+        'selectionToken',
+        'title',
+      ]) &&
+        isSafeBvid(payload.bvid) &&
+        Number.isSafeInteger(payload.cid) &&
+        payload.cid > 0 &&
+        semanticText(payload.title) &&
+        semanticText(payload.artist) &&
+        Number.isSafeInteger(payload.durationSeconds) &&
+        payload.durationSeconds > 0 &&
+        payload.durationSeconds <= MAX_PLAYBACK_DURATION_MS / 1000 &&
+        isSafeShortId(payload.selectionIdentity) &&
+        isBoundedRevision(payload.selectionRevision) &&
+        isSafeShortId(payload.selectionToken)
         ? null
         : 'android-rpc-invalid-payload';
     }
@@ -638,20 +981,7 @@ const Listen2AndroidHttpAdapter = (() => {
         ? null
         : 'android-rpc-invalid-payload';
     }
-    const explicit = payload.selectionMode === 'explicit';
-    const expected = explicit
-      ? ['bvid', 'cid', 'selectionMode']
-      : ['bvid', 'selectionMode'];
-    if (
-      keys.length !== expected.length ||
-      keys.some((key, index) => key !== expected[index]) ||
-      !isSafeBvid(payload.bvid) ||
-      !['default-first', 'explicit'].includes(payload.selectionMode) ||
-      (explicit && (!Number.isSafeInteger(payload.cid) || payload.cid <= 0))
-    ) {
-      return 'android-rpc-invalid-payload';
-    }
-    return null;
+    return 'android-rpc-invalid-operation';
   }
 
   function normalizedTypedPayload(operation, payload) {
@@ -662,11 +992,110 @@ const Listen2AndroidHttpAdapter = (() => {
         payload: { ...payload.payload },
       };
     }
+    if (
+      [
+        'deepseek.translation.status',
+        'deepseek.translation.test',
+        'deepseek.translation.delete',
+      ].includes(operation)
+    ) {
+      return {};
+    }
+    if (operation === 'deepseek.translation.configure') {
+      return { apiKey: payload.apiKey.trim() };
+    }
+    if (operation === 'deepseek.translation.translate') {
+      return {
+        lyric: payload.lyric,
+        title: payload.title,
+        artist: payload.artist,
+        styleHint: payload.styleHint,
+        consent: { ...payload.consent },
+      };
+    }
+    if (
+      [
+        'provider.capabilities',
+        'bilibili.account.status',
+        'bilibili.account.qr.begin',
+        'bilibili.account.logout',
+      ].includes(operation)
+    ) {
+      return {};
+    }
+    if (
+      ['bilibili.account.qr.poll', 'bilibili.account.qr.cancel'].includes(
+        operation
+      )
+    ) {
+      return { sessionId: payload.sessionId };
+    }
+    if (['local.data.query', 'local.data.command'].includes(operation)) {
+      return {
+        action: payload.action,
+        // The recursive clone helper is declared with payload normalizers below.
+        // eslint-disable-next-line no-use-before-define
+        payload: cloneLocalDataPayload(payload.payload),
+      };
+    }
+    if (operation === 'local.lyric.primary') {
+      return { localTrackId: payload.localTrackId };
+    }
+    if (['lyric.content.get', 'lyric.content.put'].includes(operation)) {
+      return {
+        source: payload.source,
+        providerTrackId: payload.providerTrackId,
+        providerPartId: payload.providerPartId,
+        lyricRevision: payload.lyricRevision,
+        expectedRevision: payload.expectedRevision,
+        transitionToken: payload.transitionToken,
+        ...(operation === 'lyric.content.put'
+          ? {
+              originalText: payload.originalText,
+              translationText: payload.translationText,
+            }
+          : {}),
+      };
+    }
+    if (operation === 'media.download.start') {
+      return {
+        operationId: payload.operationId,
+        retention: payload.retention,
+        descriptor: { ...payload.descriptor },
+      };
+    }
+    if (
+      ['media.download.status', 'media.download.cancel'].includes(operation)
+    ) {
+      return { operationId: payload.operationId };
+    }
+    if (operation === 'media.download.delete') {
+      return { descriptor: { ...payload.descriptor } };
+    }
+    if (operation === 'media.download.cleanup') return {};
     if (operation === 'bilibili.search' || operation === 'netease.search') {
       return { keyword: payload.keyword.trim(), page: payload.page };
     }
     if (operation === 'bilibili.video.detail') {
       return { bvid: payload.bvid };
+    }
+    if (operation === 'bilibili.directory.page') {
+      return { page: payload.page };
+    }
+    if (operation === 'bilibili.directory.detail') {
+      return { playlistId: payload.playlistId };
+    }
+    if (operation === 'bilibili.lyric.primary') {
+      return {
+        bvid: payload.bvid,
+        cid: payload.cid,
+        title: payload.title,
+        artist: payload.artist,
+        durationSeconds: payload.durationSeconds,
+        selectionIdentity: payload.selectionIdentity,
+        selectionRevision: payload.selectionRevision,
+        selectionToken: payload.selectionToken,
+      };
     }
     if (operation === 'netease.directory.detail') {
       return { trackId: payload.trackId };
@@ -701,9 +1130,7 @@ const Listen2AndroidHttpAdapter = (() => {
     if (operation === 'lyric.offset.set') {
       return { ...lyricIdentity, offsetMs: payload.offsetMs };
     }
-    return payload.selectionMode === 'explicit'
-      ? { bvid: payload.bvid, selectionMode: 'explicit', cid: payload.cid }
-      : { bvid: payload.bvid, selectionMode: 'default-first' };
+    return {};
   }
 
   function postCancellation(bridge, requestId, pageEpoch) {
@@ -858,6 +1285,1121 @@ const Listen2AndroidHttpAdapter = (() => {
     };
   }
 
+  function typedRequestOptions(options = {}) {
+    return {
+      pageEpoch: Number.isInteger(options.pageEpoch) ? options.pageEpoch : 0,
+      ...(Number.isFinite(options.timeoutMs)
+        ? { timeoutMs: options.timeoutMs }
+        : {}),
+    };
+  }
+
+  function isExactObject(value, expectedKeys) {
+    return (
+      value &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      hasExactlyKeys(value, [...expectedKeys].sort())
+    );
+  }
+
+  function normalizeProviderCapabilities(result) {
+    const topLevelKeys =
+      result && typeof result === 'object' && !Array.isArray(result)
+        ? Object.keys(result).sort()
+        : [];
+    const requiredTopLevelKeys = ['bilibili', 'netease', 'version'];
+    const hasValidTopLevel =
+      topLevelKeys.length === requiredTopLevelKeys.length ||
+      (topLevelKeys.length === requiredTopLevelKeys.length + 1 &&
+        topLevelKeys.includes('deepSeekTranslation'));
+    if (
+      !hasValidTopLevel ||
+      !requiredTopLevelKeys.every((key) => topLevelKeys.includes(key)) ||
+      result.version !== PROVIDER_CAPABILITY_VERSION ||
+      (topLevelKeys.includes('deepSeekTranslation') &&
+        typeof result.deepSeekTranslation !== 'boolean')
+    ) {
+      return null;
+    }
+    const normalizeProvider = (value) => {
+      if (!isExactObject(value, PROVIDER_CAPABILITY_FIELDS)) return null;
+      if (
+        !PROVIDER_CAPABILITY_FIELDS.every(
+          (field) => typeof value[field] === 'boolean'
+        )
+      )
+        return null;
+      const normalized = PROVIDER_CAPABILITY_FIELDS.reduce(
+        (projected, field) => ({
+          ...projected,
+          [field]: value[field] === true,
+        }),
+        {}
+      );
+      return Object.freeze(normalized);
+    };
+    const bilibili = normalizeProvider(result.bilibili);
+    const netease = normalizeProvider(result.netease);
+    return bilibili && netease
+      ? Object.freeze({
+          version: PROVIDER_CAPABILITY_VERSION,
+          bilibili,
+          netease,
+          deepSeekTranslation: result.deepSeekTranslation === true,
+        })
+      : null;
+  }
+
+  function notifyProviderCapabilityListeners() {
+    providerCapabilityListeners.forEach((listener) => {
+      try {
+        listener(verifiedProviderCapabilities);
+      } catch (error) {
+        // Capability observers are optional UI consumers and cannot affect RPC.
+      }
+    });
+    scheduleAngularDigest();
+  }
+
+  function getProviderCapabilities() {
+    // This is deliberately synchronous and cache-only. A caller must use the
+    // explicit start/refresh methods before treating an Android capability true.
+    return verifiedProviderCapabilities;
+  }
+
+  function getDeepSeekTranslationCapability() {
+    return Boolean(
+      verifiedProviderCapabilities &&
+        verifiedProviderCapabilities.deepSeekTranslation === true
+    );
+  }
+
+  function refreshProviderCapabilities(options = {}) {
+    if (providerCapabilityRefresh) return providerCapabilityRefresh;
+    // A failed revalidation must not leave an old true capability actionable.
+    verifiedProviderCapabilities = null;
+    const handle = request(
+      'provider.capabilities',
+      {},
+      typedRequestOptions(options)
+    );
+    const refresh = handle.promise
+      .then(({ result }) => {
+        const normalized = normalizeProviderCapabilities(result);
+        if (!normalized) {
+          throw createError(
+            'android-rpc-malformed-response',
+            'Android provider capabilities were malformed.'
+          );
+        }
+        verifiedProviderCapabilities = normalized;
+        notifyProviderCapabilityListeners();
+        return normalized;
+      })
+      .catch((error) => {
+        // Remain unavailable; a native failure can never become a capability.
+        verifiedProviderCapabilities = null;
+        notifyProviderCapabilityListeners();
+        throw error;
+      })
+      .finally(() => {
+        if (providerCapabilityRefresh === refresh) {
+          providerCapabilityRefresh = null;
+        }
+      });
+    providerCapabilityRefresh = refresh;
+    notifyProviderCapabilityListeners();
+    return refresh;
+  }
+
+  function startProviderCapabilities(options = {}) {
+    return verifiedProviderCapabilities
+      ? Promise.resolve(verifiedProviderCapabilities)
+      : refreshProviderCapabilities(options);
+  }
+
+  function onProviderCapabilities(listener) {
+    if (typeof listener !== 'function') return () => {};
+    providerCapabilityListeners.add(listener);
+    return () => providerCapabilityListeners.delete(listener);
+  }
+
+  function isSafeQrUrl(value) {
+    if (typeof value !== 'string' || value.length > MAX_ACCOUNT_QR_URL_LENGTH) {
+      return false;
+    }
+    try {
+      const url = new URL(value);
+      const queryKeys = Array.from(url.searchParams.keys());
+      const qrKeys = url.searchParams.getAll('qrcode_key');
+      const navhide = url.searchParams.getAll('navhide');
+      return (
+        url.protocol === 'https:' &&
+        url.hostname === 'passport.bilibili.com' &&
+        !url.port &&
+        !url.username &&
+        !url.password &&
+        !url.hash &&
+        url.pathname === '/h5-app/passport/login/scan' &&
+        queryKeys.length === qrKeys.length + navhide.length &&
+        qrKeys.length === 1 &&
+        /^[A-Za-z0-9_-]{1,256}$/.test(qrKeys[0]) &&
+        navhide.length <= 1 &&
+        (navhide.length === 0 || ['0', '1'].includes(navhide[0]))
+      );
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function normalizeAccountPublicState(result) {
+    if (
+      !isExactObject(result, [
+        'expiresAtEpochMs',
+        'qrUrl',
+        'sessionId',
+        'status',
+      ]) ||
+      !ACCOUNT_STATUSES.has(result.status) ||
+      typeof result.sessionId !== 'string' ||
+      !Number.isSafeInteger(result.expiresAtEpochMs) ||
+      result.expiresAtEpochMs < 0 ||
+      typeof result.qrUrl !== 'string'
+    ) {
+      throw createError(
+        'android-rpc-malformed-response',
+        'Android account state was malformed.'
+      );
+    }
+    const pendingQr = ['waiting', 'scanned'].includes(result.status);
+    if (
+      (result.sessionId !== '' && !isSafeShortId(result.sessionId)) ||
+      (pendingQr && !result.sessionId) ||
+      (pendingQr && !isSafeQrUrl(result.qrUrl)) ||
+      (!pendingQr && result.qrUrl !== '')
+    ) {
+      throw createError(
+        'android-rpc-malformed-response',
+        'Android account state was malformed.'
+      );
+    }
+    return Object.freeze({
+      sessionId: pendingQr ? result.sessionId : '',
+      status: result.status,
+      expiresAtEpochMs: pendingQr ? result.expiresAtEpochMs : 0,
+      qrUrl: pendingQr ? result.qrUrl : '',
+    });
+  }
+
+  function projectTypedHandle(handle, project) {
+    const promise = handle.promise.then(({ result }) => project(result));
+    return {
+      requestId: handle.requestId,
+      pageEpoch: handle.pageEpoch,
+      cancel: handle.cancel,
+      promise,
+      then: promise.then.bind(promise),
+      catch: promise.catch.bind(promise),
+    };
+  }
+
+  const DEEPSEEK_STATUS_FIELDS = [
+    'errorCode',
+    'hasApiKey',
+    'model',
+    'nativeClientAvailable',
+    'provider',
+    'secureStorageAvailable',
+    'status',
+    'targetLanguage',
+  ];
+
+  function normalizeDeepSeekStatus(result) {
+    if (!result || typeof result !== 'object' || Array.isArray(result)) {
+      throw createError(
+        'android-rpc-deepseek-unavailable',
+        'Android DeepSeek status was malformed.'
+      );
+    }
+    if (result.ok !== false && result.ok !== true) {
+      throw createError(
+        'android-rpc-deepseek-unavailable',
+        'Android DeepSeek status was malformed.'
+      );
+    }
+    const hasMetadata = DEEPSEEK_STATUS_FIELDS.every((key) =>
+      Object.prototype.hasOwnProperty.call(result, key)
+    );
+    if (!hasMetadata) {
+      return Object.freeze({
+        ok: false,
+        status:
+          typeof result.status === 'string' ? result.status : 'unavailable',
+        provider: 'deepseek',
+        model: 'deepseek-v4-flash',
+        targetLanguage: 'zh-CN',
+        secureStorageAvailable: false,
+        hasApiKey: false,
+        nativeClientAvailable: false,
+        errorCode: result.status || 'native-capability-unavailable',
+      });
+    }
+    if (
+      typeof result.status !== 'string' ||
+      typeof result.provider !== 'string' ||
+      typeof result.model !== 'string' ||
+      typeof result.targetLanguage !== 'string' ||
+      typeof result.secureStorageAvailable !== 'boolean' ||
+      typeof result.hasApiKey !== 'boolean' ||
+      typeof result.nativeClientAvailable !== 'boolean' ||
+      (result.errorCode !== null && typeof result.errorCode !== 'string')
+    ) {
+      throw createError(
+        'android-rpc-deepseek-unavailable',
+        'Android DeepSeek status was malformed.'
+      );
+    }
+    return Object.freeze({
+      ok: result.ok === true,
+      status: result.status,
+      provider: result.provider,
+      model: result.model,
+      targetLanguage: result.targetLanguage,
+      secureStorageAvailable: result.secureStorageAvailable,
+      hasApiKey: result.hasApiKey,
+      nativeClientAvailable: result.nativeClientAvailable,
+      errorCode: result.errorCode,
+    });
+  }
+
+  function normalizeDeepSeekTest(result) {
+    if (
+      !result ||
+      typeof result !== 'object' ||
+      Array.isArray(result) ||
+      typeof result.ok !== 'boolean' ||
+      typeof result.status !== 'string' ||
+      !Number.isSafeInteger(result.httpStatus) ||
+      result.httpStatus < 0 ||
+      result.httpStatus > 999 ||
+      typeof result.retryable !== 'boolean'
+    ) {
+      throw createError(
+        'android-rpc-deepseek-unavailable',
+        'Android DeepSeek test result was malformed.'
+      );
+    }
+    return Object.freeze({
+      ok: result.ok,
+      status: result.status,
+      httpStatus: result.httpStatus,
+      retryable: result.retryable,
+    });
+  }
+
+  function normalizeDeepSeekTranslation(result) {
+    if (
+      !result ||
+      typeof result !== 'object' ||
+      Array.isArray(result) ||
+      typeof result.ok !== 'boolean' ||
+      typeof result.status !== 'string' ||
+      !Number.isSafeInteger(result.httpStatus) ||
+      result.httpStatus < 0 ||
+      result.httpStatus > 999 ||
+      typeof result.retryable !== 'boolean'
+    ) {
+      throw createError(
+        'android-rpc-deepseek-unavailable',
+        'Android DeepSeek translation result was malformed.'
+      );
+    }
+    if (!result.ok) {
+      return Object.freeze({
+        ok: false,
+        status: result.status,
+        httpStatus: result.httpStatus,
+        retryable: result.retryable,
+      });
+    }
+    const expected = [
+      'completionTokens',
+      'lineCount',
+      'model',
+      'promptFingerprint',
+      'promptTokens',
+      'promptVersion',
+      'provider',
+      'targetLanguage',
+      'tlyric',
+      'totalTokens',
+    ];
+    if (
+      !expected.every((key) =>
+        Object.prototype.hasOwnProperty.call(result, key)
+      ) ||
+      typeof result.tlyric !== 'string' ||
+      !result.tlyric.trim() ||
+      typeof result.provider !== 'string' ||
+      typeof result.model !== 'string' ||
+      typeof result.promptVersion !== 'string' ||
+      typeof result.promptFingerprint !== 'string' ||
+      typeof result.targetLanguage !== 'string' ||
+      !Number.isSafeInteger(result.lineCount) ||
+      result.lineCount <= 0 ||
+      !Number.isSafeInteger(result.promptTokens) ||
+      !Number.isSafeInteger(result.completionTokens) ||
+      !Number.isSafeInteger(result.totalTokens)
+    ) {
+      throw createError(
+        'android-rpc-deepseek-unavailable',
+        'Android DeepSeek translation result was malformed.'
+      );
+    }
+    return Object.freeze({
+      ok: true,
+      status: result.status,
+      httpStatus: result.httpStatus,
+      retryable: result.retryable,
+      tlyric: result.tlyric,
+      provider: result.provider,
+      model: result.model,
+      promptVersion: result.promptVersion,
+      promptFingerprint: result.promptFingerprint,
+      targetLanguage: result.targetLanguage,
+      lineCount: result.lineCount,
+      promptTokens: result.promptTokens,
+      completionTokens: result.completionTokens,
+      totalTokens: result.totalTokens,
+    });
+  }
+
+  function requestDeepSeek(operation, payload, project, options) {
+    return projectTypedHandle(
+      request(operation, payload, typedRequestOptions(options)),
+      project
+    );
+  }
+
+  const deepSeek = Object.freeze({
+    status(options) {
+      return requestDeepSeek(
+        'deepseek.translation.status',
+        {},
+        normalizeDeepSeekStatus,
+        options
+      );
+    },
+    configure(apiKey, options) {
+      return requestDeepSeek(
+        'deepseek.translation.configure',
+        { apiKey },
+        normalizeDeepSeekStatus,
+        options
+      );
+    },
+    test(options) {
+      return requestDeepSeek(
+        'deepseek.translation.test',
+        {},
+        normalizeDeepSeekTest,
+        options
+      );
+    },
+    delete(options) {
+      return requestDeepSeek(
+        'deepseek.translation.delete',
+        {},
+        normalizeDeepSeekStatus,
+        options
+      );
+    },
+    translate(payload, options) {
+      return requestDeepSeek(
+        'deepseek.translation.translate',
+        payload,
+        normalizeDeepSeekTranslation,
+        options
+      );
+    },
+  });
+
+  function requestAccountState(operation, payload, options) {
+    return projectTypedHandle(
+      request(operation, payload, typedRequestOptions(options)),
+      normalizeAccountPublicState
+    );
+  }
+
+  const account = Object.freeze({
+    status(options) {
+      return requestAccountState('bilibili.account.status', {}, options);
+    },
+    qrBegin(options) {
+      return requestAccountState('bilibili.account.qr.begin', {}, options);
+    },
+    begin(options) {
+      return requestAccountState('bilibili.account.qr.begin', {}, options);
+    },
+    poll(sessionId, options) {
+      return requestAccountState(
+        'bilibili.account.qr.poll',
+        { sessionId },
+        options
+      );
+    },
+    cancel(sessionId, options) {
+      return requestAccountState(
+        'bilibili.account.qr.cancel',
+        { sessionId },
+        options
+      );
+    },
+    logout(options) {
+      return requestAccountState('bilibili.account.logout', {}, options);
+    },
+  });
+
+  const LOCAL_DATA_QUERY_ACTIONS = new Set([
+    'capabilities',
+    'playlists',
+    'favorites',
+    'saf',
+    'localTracks',
+    'historyAnnual',
+    'cache',
+    'settings',
+    'backup.fileStatus',
+    'backup.preview',
+  ]);
+  const LOCAL_DATA_COMMAND_ACTIONS = new Set([
+    'playlist.create',
+    'playlist.replace',
+    'playlist.delete',
+    'playlist.reorder',
+    'favorite.set',
+    'history.enable',
+    'history.ingest',
+    'history.clear',
+    'localTracks.refresh',
+    'localTracks.repair',
+    'cache.refresh',
+    'cache.capacity',
+    'cache.directory',
+    'settings.update',
+    'backup.import',
+    'backup.export',
+    'backup.import.pick',
+    'saf.pickAudio',
+    'saf.pickTree',
+  ]);
+  const LOCAL_DATA_STATUSES = new Set([
+    'OK',
+    'DUPLICATE',
+    'REPAIRED',
+    'INVALID_INPUT',
+    'NOT_FOUND',
+    'STALE_REVISION',
+    'CONFIRMATION_REQUIRED',
+    'GRANT_INVALID',
+    'NEEDS_REPAIR',
+    'CORRUPT',
+    'IO_UNAVAILABLE',
+    'INTEGRITY_FAILED',
+    'DISABLED',
+    'PARTIAL',
+  ]);
+  const MAX_LOCAL_ROWS = 500;
+  const MAX_LOCAL_TRACKS = 5000;
+  const MAX_LOCAL_TEXT_LENGTH = 320;
+  const MAX_LOCAL_RESPONSE_DEPTH = 6;
+
+  function isSafeLocalId(value) {
+    return typeof value === 'string' && /^[A-Za-z0-9._:-]{1,160}$/.test(value);
+  }
+
+  function isSafeLocalText(value) {
+    return (
+      typeof value === 'string' &&
+      value.trim() === value &&
+      value.length > 0 &&
+      value.length <= MAX_LOCAL_TEXT_LENGTH &&
+      value.indexOf('\u0000') === -1 &&
+      !value.includes('<') &&
+      !value.includes('>') &&
+      !value.includes('://')
+    );
+  }
+
+  function isBoundedLocalInteger(value, minimum, maximum) {
+    return Number.isSafeInteger(value) && value >= minimum && value <= maximum;
+  }
+
+  function isSafeLocalTrack(value) {
+    return (
+      isExactObject(value, [
+        'artist',
+        'durationMs',
+        'providerTrackId',
+        'source',
+        'title',
+      ]) &&
+      isSafeLocalId(value.source) &&
+      isSafeLocalId(value.providerTrackId) &&
+      isSafeLocalText(value.title) &&
+      isSafeLocalText(value.artist) &&
+      isBoundedLocalInteger(value.durationMs, 0, MAX_PLAYBACK_DURATION_MS)
+    );
+  }
+
+  function isSafeLocalTracks(value) {
+    return (
+      Array.isArray(value) &&
+      value.length <= MAX_LOCAL_TRACKS &&
+      value.every(isSafeLocalTrack)
+    );
+  }
+
+  function isSafeLocalMediaTrack(value) {
+    return (
+      isExactObject(value, [
+        'artist',
+        'availability',
+        'cover',
+        'displayName',
+        'durationMs',
+        'grantReferenceId',
+        'localTrackId',
+        'lrc',
+        'mime',
+        'source',
+        'title',
+      ]) &&
+      value.source === 'local' &&
+      /^local\.track\.[a-f0-9]{64}$/.test(value.localTrackId) &&
+      isSafeLocalId(value.grantReferenceId) &&
+      isSafeLocalText(value.displayName) &&
+      isSafeLocalText(value.title) &&
+      isSafeLocalText(value.artist) &&
+      /^[A-Za-z0-9.+-]+\/[A-Za-z0-9.+-]+$/.test(value.mime) &&
+      typeof value.cover === 'boolean' &&
+      typeof value.lrc === 'boolean' &&
+      ['available', 'needs-repair', 'revoked'].includes(value.availability) &&
+      isBoundedLocalInteger(value.durationMs, 0, MAX_PLAYBACK_DURATION_MS)
+    );
+  }
+
+  function isSafeLocalPlaylist(value) {
+    return (
+      isExactObject(value, [
+        'name',
+        'ordinal',
+        'playlistId',
+        'revision',
+        'tracks',
+      ]) &&
+      isSafeLocalId(value.playlistId) &&
+      isSafeLocalText(value.name) &&
+      isBoundedLocalInteger(value.ordinal, 0, MAX_LOCAL_ROWS) &&
+      isBoundedLocalInteger(value.revision, 0, MAX_PAGE_EPOCH) &&
+      isSafeLocalTracks(value.tracks)
+    );
+  }
+
+  function isSafeLocalFavorite(value) {
+    return (
+      isExactObject(value, [
+        'addedAtMs',
+        'artist',
+        'providerTrackId',
+        'source',
+        'title',
+      ]) &&
+      isSafeLocalId(value.source) &&
+      isSafeLocalId(value.providerTrackId) &&
+      isSafeLocalText(value.title) &&
+      isSafeLocalText(value.artist) &&
+      isBoundedLocalInteger(value.addedAtMs, 0, Number.MAX_SAFE_INTEGER)
+    );
+  }
+
+  function isSafeLocalBackup(value) {
+    return (
+      isExactObject(value, ['favorites', 'playlists', 'version']) &&
+      value.version === 1 &&
+      Array.isArray(value.playlists) &&
+      value.playlists.length <= MAX_LOCAL_ROWS &&
+      value.playlists.every(isSafeLocalPlaylist) &&
+      Array.isArray(value.favorites) &&
+      value.favorites.length <= MAX_LOCAL_ROWS &&
+      value.favorites.every(isSafeLocalFavorite)
+    );
+  }
+
+  function validateLocalDataRequest(operation, envelope) {
+    if (!isExactObject(envelope, ['action', 'payload'])) return false;
+    const { action, payload } = envelope;
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return false;
+    }
+    if (operation === 'local.data.query') {
+      if (!LOCAL_DATA_QUERY_ACTIONS.has(action)) return false;
+      if (['historyAnnual'].includes(action)) {
+        return (
+          isExactObject(payload, ['year']) &&
+          isBoundedLocalInteger(payload.year, 1970, 3000)
+        );
+      }
+      if (action === 'localTracks') return isExactObject(payload, []);
+      return isExactObject(payload, []);
+    }
+    if (
+      operation !== 'local.data.command' ||
+      !LOCAL_DATA_COMMAND_ACTIONS.has(action)
+    ) {
+      return false;
+    }
+    if (action === 'playlist.create') {
+      return (
+        isExactObject(payload, ['name', 'playlistId', 'tracks']) &&
+        isSafeLocalId(payload.playlistId) &&
+        isSafeLocalText(payload.name) &&
+        isSafeLocalTracks(payload.tracks)
+      );
+    }
+    if (action === 'playlist.replace') {
+      return (
+        isExactObject(payload, [
+          'expectedRevision',
+          'name',
+          'playlistId',
+          'tracks',
+        ]) &&
+        isSafeLocalId(payload.playlistId) &&
+        isBoundedLocalInteger(payload.expectedRevision, 0, MAX_PAGE_EPOCH) &&
+        isSafeLocalText(payload.name) &&
+        isSafeLocalTracks(payload.tracks)
+      );
+    }
+    if (action === 'playlist.delete') {
+      return (
+        isExactObject(payload, ['expectedRevision', 'playlistId']) &&
+        isSafeLocalId(payload.playlistId) &&
+        isBoundedLocalInteger(payload.expectedRevision, 0, MAX_PAGE_EPOCH)
+      );
+    }
+    if (action === 'playlist.reorder') {
+      return (
+        isExactObject(payload, ['playlistIds']) &&
+        Array.isArray(payload.playlistIds) &&
+        payload.playlistIds.length <= MAX_LOCAL_ROWS &&
+        payload.playlistIds.every(isSafeLocalId) &&
+        new Set(payload.playlistIds).size === payload.playlistIds.length
+      );
+    }
+    if (action === 'favorite.set') {
+      return (
+        isExactObject(payload, ['track', 'wanted']) &&
+        isSafeLocalTrack(payload.track) &&
+        typeof payload.wanted === 'boolean'
+      );
+    }
+    if (action === 'history.enable') {
+      return (
+        isExactObject(payload, ['enabled']) &&
+        typeof payload.enabled === 'boolean'
+      );
+    }
+    if (action === 'history.ingest') {
+      return (
+        isExactObject(payload, [
+          'cumulativePlayedMs',
+          'durationMs',
+          'occurredAtMs',
+          'sessionId',
+          'track',
+        ]) &&
+        isSafeLocalId(payload.sessionId) &&
+        isSafeLocalTrack(payload.track) &&
+        isBoundedLocalInteger(
+          payload.cumulativePlayedMs,
+          0,
+          MAX_PLAYBACK_DURATION_MS
+        ) &&
+        isBoundedLocalInteger(
+          payload.durationMs,
+          1,
+          MAX_PLAYBACK_DURATION_MS
+        ) &&
+        isBoundedLocalInteger(payload.occurredAtMs, 0, Number.MAX_SAFE_INTEGER)
+      );
+    }
+    if (
+      [
+        'history.clear',
+        'localTracks.refresh',
+        'cache.refresh',
+        'saf.pickAudio',
+        'saf.pickTree',
+        'backup.export',
+        'backup.import.pick',
+      ].includes(action)
+    ) {
+      return isExactObject(payload, []);
+    }
+    if (action === 'cache.capacity') {
+      return (
+        isExactObject(payload, ['capacityBytes']) &&
+        isBoundedLocalInteger(
+          payload.capacityBytes,
+          32 * 1024 * 1024,
+          8 * 1024 * 1024 * 1024
+        )
+      );
+    }
+    if (action === 'localTracks.repair') {
+      return (
+        isExactObject(payload, ['grantReferenceId']) &&
+        isSafeLocalId(payload.grantReferenceId)
+      );
+    }
+    if (action === 'cache.directory') {
+      return (
+        isExactObject(payload, ['state']) &&
+        ['ready', 'unavailable', 'read-only'].includes(payload.state)
+      );
+    }
+    if (action === 'settings.update') {
+      return (
+        isExactObject(payload, ['language', 'theme']) &&
+        /^[A-Za-z0-9._-]{1,32}$/.test(payload.theme) &&
+        /^[A-Za-z0-9._-]{1,32}$/.test(payload.language)
+      );
+    }
+    return (
+      action === 'backup.import' &&
+      isExactObject(payload, ['confirmed', 'mode']) &&
+      ['merge', 'overwrite'].includes(payload.mode) &&
+      typeof payload.confirmed === 'boolean'
+    );
+  }
+
+  function cloneLocalDataPayload(value) {
+    if (Array.isArray(value)) return value.map(cloneLocalDataPayload);
+    if (value && typeof value === 'object') {
+      return Object.keys(value).reduce(
+        (copy, key) => ({ ...copy, [key]: cloneLocalDataPayload(value[key]) }),
+        {}
+      );
+    }
+    return value;
+  }
+
+  function safeLocalResponseValue(value, depth = 0) {
+    if (depth > MAX_LOCAL_RESPONSE_DEPTH) return null;
+    if (value === null || typeof value === 'boolean') return value;
+    if (typeof value === 'number') {
+      return Number.isSafeInteger(value) ? value : null;
+    }
+    if (typeof value === 'string') {
+      const normalized = value.toLowerCase();
+      return value.length <= MAX_LOCAL_TEXT_LENGTH &&
+        !value.includes('://') &&
+        !normalized.startsWith('file:') &&
+        !normalized.startsWith('content:') &&
+        !normalized.includes('cookie=') &&
+        !normalized.includes('authorization:')
+        ? value
+        : null;
+    }
+    if (Array.isArray(value)) {
+      if (value.length > MAX_LOCAL_TRACKS) return null;
+      const rows = value.map((item) => safeLocalResponseValue(item, depth + 1));
+      return rows.some((item) => item === null) ? null : rows;
+    }
+    if (!value || typeof value !== 'object') return null;
+    const keys = Object.keys(value);
+    if (
+      keys.length > MAX_LOCAL_ROWS ||
+      keys.some((key) => {
+        const normalized = key.toLowerCase();
+        return (
+          key.length > 64 ||
+          [
+            'path',
+            'uri',
+            'url',
+            'cookie',
+            'header',
+            'token',
+            'credential',
+            'contentkey',
+          ].some((forbidden) => normalized.includes(forbidden))
+        );
+      })
+    )
+      return null;
+    return keys.reduce((projected, key) => {
+      if (projected === null) return null;
+      const child = safeLocalResponseValue(value[key], depth + 1);
+      return child === null && value[key] !== null
+        ? null
+        : { ...projected, [key]: child };
+    }, {});
+  }
+
+  function normalizeSafPickerReply(result) {
+    if (!isExactObject(result, ['accepted', 'status'])) {
+      throw createError(
+        'android-rpc-local-data-unavailable',
+        'Android SAF picker is unavailable.'
+      );
+    }
+    if (
+      typeof result.accepted !== 'boolean' ||
+      !['pending', 'rejected'].includes(result.status)
+    ) {
+      throw createError(
+        'android-rpc-local-data-unavailable',
+        'Android SAF picker is unavailable.'
+      );
+    }
+    return Object.freeze({ accepted: result.accepted, status: result.status });
+  }
+
+  function normalizeLocalDataReply(result, action) {
+    if (['saf.pickAudio', 'saf.pickTree'].includes(action)) {
+      return normalizeSafPickerReply(result);
+    }
+    if (!result || typeof result !== 'object' || Array.isArray(result)) {
+      throw createError(
+        'android-rpc-local-data-unavailable',
+        'Android local data is unavailable.'
+      );
+    }
+    const keys = Object.keys(result).sort();
+    if (
+      !['data', 'ok', 'revision', 'status'].every((key) =>
+        keys.includes(key)
+      ) &&
+      !(keys.includes('ok') && keys.includes('status'))
+    ) {
+      throw createError(
+        'android-rpc-local-data-unavailable',
+        'Android local data is unavailable.'
+      );
+    }
+    if (
+      keys.some((key) => !['ok', 'status', 'revision', 'data'].includes(key)) ||
+      typeof result.ok !== 'boolean' ||
+      !LOCAL_DATA_STATUSES.has(result.status) ||
+      (result.revision !== undefined &&
+        !isBoundedLocalInteger(result.revision, 0, MAX_PAGE_EPOCH))
+    ) {
+      throw createError(
+        'android-rpc-local-data-unavailable',
+        'Android local data is unavailable.'
+      );
+    }
+    const data =
+      result.data === undefined
+        ? undefined
+        : safeLocalResponseValue(result.data);
+    if (result.data !== undefined && data === null && result.data !== null) {
+      throw createError(
+        'android-rpc-local-data-unavailable',
+        'Android local data is unavailable.'
+      );
+    }
+    if (
+      action === 'localTracks' &&
+      (!data ||
+        !isExactObject(data, ['items']) ||
+        !Array.isArray(data.items) ||
+        data.items.length > MAX_LOCAL_TRACKS ||
+        !data.items.every(isSafeLocalMediaTrack))
+    ) {
+      throw createError(
+        'android-rpc-local-data-unavailable',
+        'Android local data is unavailable.'
+      );
+    }
+    return Object.freeze({
+      ok: result.ok,
+      status: result.status,
+      ...(result.revision === undefined ? {} : { revision: result.revision }),
+      ...(data === undefined ? {} : { data }),
+    });
+  }
+
+  function requestLocalData(operation, action, payload, options) {
+    const bridge = getBridge();
+    if (!bridge || !supportsResponseEvents(bridge)) {
+      return rejectedRequestHandle(
+        createError(
+          'android-rpc-local-data-unavailable',
+          'Android local data is unavailable.'
+        ),
+        options && options.pageEpoch
+      );
+    }
+    return projectTypedHandle(
+      request(operation, { action, payload }, typedRequestOptions(options)),
+      (result) => normalizeLocalDataReply(result, action)
+    );
+  }
+
+  const localData = Object.freeze({
+    query(action, payload = {}, options) {
+      return requestLocalData('local.data.query', action, payload, options);
+    },
+    command(action, payload = {}, options) {
+      return requestLocalData('local.data.command', action, payload, options);
+    },
+  });
+
+  function normalizeMediaDownloadReply(result) {
+    if (!result || typeof result !== 'object' || Array.isArray(result)) {
+      throw createError(
+        'android-rpc-media-download-unavailable',
+        'Android download is unavailable.'
+      );
+    }
+    const allowed = [
+      'operationId',
+      'status',
+      'source',
+      'providerTrackId',
+      'byteCount',
+      'retention',
+    ];
+    if (
+      Object.keys(result).some((key) => !allowed.includes(key)) ||
+      typeof result.status !== 'string' ||
+      ![
+        'queued',
+        'downloading',
+        'completed',
+        'cancelled',
+        'failed',
+        'deleted',
+        'cleaned',
+        'not-found',
+        'invalid-input',
+        'storage-unavailable',
+      ].includes(result.status)
+    ) {
+      throw createError(
+        'android-rpc-media-download-unavailable',
+        'Android download is unavailable.'
+      );
+    }
+    if (
+      result.operationId !== undefined &&
+      !isSafeMediaDownloadOperationId(result.operationId)
+    ) {
+      throw createError(
+        'android-rpc-media-download-unavailable',
+        'Android download is unavailable.'
+      );
+    }
+    if (
+      result.source !== undefined &&
+      !['bilibili', 'netease'].includes(result.source)
+    ) {
+      throw createError(
+        'android-rpc-media-download-unavailable',
+        'Android download is unavailable.'
+      );
+    }
+    if (
+      result.providerTrackId !== undefined &&
+      !isSafeBvid(result.providerTrackId) &&
+      !isSafeProviderTrackId(result.providerTrackId)
+    ) {
+      throw createError(
+        'android-rpc-media-download-unavailable',
+        'Android download is unavailable.'
+      );
+    }
+    if (
+      result.byteCount !== undefined &&
+      (!Number.isSafeInteger(result.byteCount) || result.byteCount < 0)
+    ) {
+      throw createError(
+        'android-rpc-media-download-unavailable',
+        'Android download is unavailable.'
+      );
+    }
+    if (
+      result.retention !== undefined &&
+      !isSafeMediaDownloadRetention(result.retention)
+    ) {
+      throw createError(
+        'android-rpc-media-download-unavailable',
+        'Android download is unavailable.'
+      );
+    }
+    return Object.freeze({
+      ...(result.operationId ? { operationId: result.operationId } : {}),
+      status: result.status,
+      ...(result.source ? { source: result.source } : {}),
+      ...(result.providerTrackId
+        ? { providerTrackId: result.providerTrackId }
+        : {}),
+      ...(result.byteCount === undefined
+        ? {}
+        : { byteCount: result.byteCount }),
+      ...(result.retention ? { retention: result.retention } : {}),
+    });
+  }
+
+  function requestMediaDownload(operation, payload, options) {
+    return projectTypedHandle(
+      request(operation, payload, typedRequestOptions(options)),
+      normalizeMediaDownloadReply
+    );
+  }
+
+  const mediaDownload = Object.freeze({
+    start(operationId, descriptor, retention, options) {
+      return requestMediaDownload(
+        'media.download.start',
+        {
+          operationId,
+          descriptor,
+          retention,
+        },
+        options
+      );
+    },
+    status(operationId, options) {
+      return requestMediaDownload(
+        'media.download.status',
+        { operationId },
+        options
+      );
+    },
+    cancel(operationId, options) {
+      return requestMediaDownload(
+        'media.download.cancel',
+        { operationId },
+        options
+      );
+    },
+    delete(descriptor, options) {
+      return requestMediaDownload(
+        'media.download.delete',
+        { descriptor },
+        options
+      );
+    },
+    cleanup(options) {
+      return requestMediaDownload('media.download.cleanup', {}, options);
+    },
+  });
+
   function cancelPageEpoch(pageEpoch) {
     pending.forEach((entry, requestId) => {
       if (
@@ -943,6 +2485,25 @@ const Listen2AndroidHttpAdapter = (() => {
     );
   }
 
+  function isSafePlaybackIdentity(source, providerTrackId, providerPartId) {
+    if (source === 'bilibili') {
+      return (
+        isSafeBvid(providerTrackId) && isPositiveSafeInteger(providerPartId)
+      );
+    }
+    if (source === 'netease') {
+      return (
+        isSafeProviderTrackId(providerTrackId) &&
+        isPositiveSafeInteger(providerPartId)
+      );
+    }
+    return (
+      source === 'local' &&
+      /^local\.track\.[a-f0-9]{64}$/.test(providerTrackId) &&
+      providerPartId === 1
+    );
+  }
+
   function validatePlaybackEnvelope(envelope) {
     const expected = ['command', 'expectedRevision', 'payload'];
     if (
@@ -978,11 +2539,12 @@ const Listen2AndroidHttpAdapter = (() => {
             'source',
             'title',
           ]) &&
-          ['bilibili', 'netease'].includes(payload.source) &&
-          (payload.source === 'bilibili'
-            ? isSafeBvid(payload.providerTrackId)
-            : isSafeProviderTrackId(payload.providerTrackId)) &&
-          isPositiveSafeInteger(payload.providerPartId) &&
+          ['bilibili', 'netease', 'local'].includes(payload.source) &&
+          isSafePlaybackIdentity(
+            payload.source,
+            payload.providerTrackId,
+            payload.providerPartId
+          ) &&
           isPlainPlaybackText(payload.title) &&
           isPlainPlaybackText(payload.artist) &&
           Number.isSafeInteger(payload.durationMs) &&
@@ -1068,6 +2630,78 @@ const Listen2AndroidHttpAdapter = (() => {
     );
   }
 
+  function isSafePlaybackIdentityText(value, maxLength) {
+    return (
+      typeof value === 'string' &&
+      value.length <= maxLength &&
+      !value.includes('://') &&
+      !value.toLowerCase().includes('cookie=') &&
+      !value.toLowerCase().includes('authorization:') &&
+      isPlainPlaybackText(value)
+    );
+  }
+
+  function isSafePlaybackLyric(value) {
+    if (
+      !value ||
+      typeof value !== 'object' ||
+      Array.isArray(value) ||
+      !isSafePlaybackIdentityText(value.source, 32) ||
+      !isSafePlaybackIdentityText(value.providerTrackId, 128) ||
+      !Number.isSafeInteger(value.providerPartId) ||
+      value.providerPartId < 0 ||
+      !isSafePlaybackIdentityText(value.trackHandle, 128) ||
+      !isSafePlaybackIdentityText(value.occurrenceId, 128) ||
+      !Number.isSafeInteger(value.selectionGeneration) ||
+      value.selectionGeneration < 0 ||
+      !Number.isSafeInteger(value.playbackRevision) ||
+      value.playbackRevision < 0 ||
+      !isSafePlaybackIdentityText(value.capability, 64) ||
+      !isSafePlaybackIdentityText(value.state, 32)
+    ) {
+      return false;
+    }
+    const unavailable =
+      value.capability === 'unavailable' &&
+      value.source === '' &&
+      value.providerTrackId === '' &&
+      value.providerPartId === 0 &&
+      value.trackHandle === '' &&
+      value.occurrenceId === '';
+    if (unavailable) return true;
+    return (
+      ['bilibili', 'netease', 'local'].includes(value.source) &&
+      isSafePlaybackIdentity(
+        value.source,
+        value.providerTrackId,
+        value.providerPartId
+      ) &&
+      isSafePlaybackHandle(value.trackHandle, 'track-') &&
+      isSafePlaybackHandle(value.occurrenceId, 'occ-')
+    );
+  }
+
+  function isSafeAdvancedPlayback(value) {
+    const fields = [
+      'qualitySelection',
+      'partSelection',
+      'defaultRendition',
+      'mv',
+      'pictureInPicture',
+      'audioEffects',
+      'visualization',
+      'loudness',
+      'deepSeekTranslation',
+    ];
+    return (
+      value &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      Object.keys(value).sort().join('|') === fields.slice().sort().join('|') &&
+      fields.every((field) => typeof value[field] === 'boolean')
+    );
+  }
+
   function isSafePlaybackSnapshot(snapshot, pageEpoch, lastRevision) {
     if (
       snapshot.version !== PLAYBACK_SNAPSHOT_VERSION ||
@@ -1111,6 +2745,15 @@ const Listen2AndroidHttpAdapter = (() => {
       )
         return false;
     }
+    if (snapshot.lyric !== undefined && !isSafePlaybackLyric(snapshot.lyric)) {
+      return false;
+    }
+    if (
+      snapshot.advancedPlayback !== undefined &&
+      !isSafeAdvancedPlayback(snapshot.advancedPlayback)
+    ) {
+      return false;
+    }
     return true;
   }
 
@@ -1153,6 +2796,12 @@ const Listen2AndroidHttpAdapter = (() => {
         trackHandle: snapshot.prepared.trackHandle,
         occurrenceId: snapshot.prepared.occurrenceId,
       };
+    }
+    if (snapshot.lyric !== undefined) {
+      result.lyric = { ...snapshot.lyric };
+    }
+    if (snapshot.advancedPlayback !== undefined) {
+      result.advancedPlayback = { ...snapshot.advancedPlayback };
     }
     return Object.freeze(result);
   }
@@ -1444,6 +3093,15 @@ const Listen2AndroidHttpAdapter = (() => {
     },
     get,
     request,
+    getProviderCapabilities,
+    getDeepSeekTranslationCapability,
+    startProviderCapabilities,
+    refreshProviderCapabilities,
+    onProviderCapabilities,
+    account,
+    localData,
+    mediaDownload,
+    deepSeek,
     cancelPageEpoch,
     teardown,
     connect: connectPlayback,

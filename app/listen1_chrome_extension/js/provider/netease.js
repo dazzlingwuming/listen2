@@ -595,6 +595,9 @@ class netease {
   }
 
   static parse_android_typed_search_response(response, searchType) {
+    if (searchType !== '0') {
+      throw new Error('Android NetEase search supports songs only.');
+    }
     const result = response && response.result;
     if (
       !result ||
@@ -651,6 +654,31 @@ class netease {
       requestId: handle.requestId,
       pageEpoch: handle.pageEpoch,
       cancel: handle.cancel,
+      promise,
+      then: promise.then.bind(promise),
+      catch: promise.catch.bind(promise),
+      success(fn) {
+        promise.then(fn);
+      },
+    };
+  }
+
+  static create_android_unavailable_search_facade(searchType, pageEpoch) {
+    const result = {
+      result: [],
+      total: 0,
+      type: searchType || '0',
+      error: {
+        status: 'android-provider-unavailable',
+        message:
+          'NetEase playlist search is unavailable on this Android device.',
+      },
+    };
+    const promise = Promise.resolve(result);
+    return {
+      requestId: '',
+      pageEpoch: Number.isInteger(pageEpoch) ? pageEpoch : 0,
+      cancel() {},
       promise,
       then: promise.then.bind(promise),
       catch: promise.catch.bind(promise),
@@ -864,6 +892,12 @@ class netease {
     };
     const androidHttp = this.get_android_http_adapter();
     if (androidHttp) {
+      if (searchType !== '0') {
+        return this.create_android_unavailable_search_facade(
+          searchType,
+          options.pageEpoch
+        );
+      }
       const pageEpoch = Number.isInteger(options.pageEpoch)
         ? options.pageEpoch
         : 0;

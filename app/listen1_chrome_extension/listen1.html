@@ -131,6 +131,17 @@
               <p class="lyric-translation-confirm-privacy">
                 {{_MACHINE_TRANSLATION_PRIVACY_NOTICE}}
               </p>
+              <div class="lyric-translation-consent" ng-if="isAndroidSurface()">
+                <label><input type="checkbox" ng-model="lyricTranslationConsent.lyrics" /> 我同意发送整曲歌词内容。</label>
+                <label><input type="checkbox" ng-model="lyricTranslationConsent.title" /> 我同意发送歌曲标题。</label>
+                <label><input type="checkbox" ng-model="lyricTranslationConsent.artist" /> 我同意发送歌手名称。</label>
+                <label><input type="checkbox" ng-model="lyricTranslationConsent.possibleCost" /> 我了解请求可能产生 API 费用。</label>
+                <label><input type="checkbox" ng-model="lyricTranslationConsent.cancellation" /> 我知道可以取消请求，网络中断也可能产生费用。</label>
+                <label><input type="checkbox" ng-model="lyricTranslationConsent.failureImpact" /> 我知道失败不会改动当前原歌词。</label>
+              </div>
+              <p class="lyric-translation-confirm-cost" ng-if="isAndroidSurface()">
+                仅在六项同意全部勾选后发送；翻译失败或取消不会替换原歌词。
+              </p>
               <p
                 class="lyric-translation-confirm-error"
                 ng-if="lyricTranslationConfirmError"
@@ -142,7 +153,7 @@
                 <button
                   type="button"
                   class="lyric-translation-confirm-action"
-                  ng-disabled="lyricTranslationConfirmPending"
+                  ng-disabled="lyricTranslationConfirmPending || (isAndroidSurface() && !lyricTranslationConsentComplete())"
                   ng-click="confirmCurrentLyricTranslation()"
                 >
                   <span
@@ -154,8 +165,8 @@
                 <button
                   type="button"
                   class="lyric-translation-confirm-cancel"
-                  ng-disabled="lyricTranslationConfirmPending"
-                  ng-click="closeLyricTranslationConfirmation()"
+                  ng-disabled="false"
+                  ng-click="lyricTranslationConfirmPending ? cancelCurrentLyricTranslation() : closeLyricTranslationConfirmation()"
                 >
                   {{_MACHINE_TRANSLATION_CANCEL}}
                 </button>
@@ -763,7 +774,7 @@
                             placeholder="{{_SEARCH_PLACEHOLDER}}"
                             ng-model-options="{debounce: 500}"
                             ng-keyup="enterEvent($event)"
-                            aria-label="搜索哔哩哔哩音乐"
+                            aria-label="搜索当前音乐来源"
                           />
                         </div>
                         <div
@@ -1097,6 +1108,7 @@
                               <div class="searchbox">
                                 <ul class="source-list">
                                   <li
+                                    ng-if="!isAndroidSurface()"
                                     class="source-button"
                                     ng-class="{'active':tab === 'allmusic'}"
                                     ng-click="changeSourceTab('allmusic')"
@@ -1241,7 +1253,7 @@
                                           source-button
                                           offline-download-button
                                         "
-                                        ng-show="options && !isChrome && song.source === 'bilibili'"
+                                        ng-show="options && (!isChrome || isAndroidSurface()) && (song.source === 'bilibili' || song.source === 'netease')"
                                         ng-click="downloadTrackForOffline(song)"
                                         ><span aria-hidden="true">⇩</span></a
                                       >
@@ -1808,7 +1820,7 @@
                                   {{audioEffectStatus()}}
                                 </p>
                               </div>
-                              <div class="settings-title" ng-if="!isChrome">
+                              <div class="settings-title" ng-if="!isChrome || isAndroidSurface()">
                                 <span>{{_MACHINE_TRANSLATION_TITLE}}</span>
                               </div>
                               <div
@@ -1816,7 +1828,7 @@
                                   settings-content
                                   machine-translation-settings
                                 "
-                                ng-if="!isChrome"
+                                ng-if="!isChrome || isAndroidSurface()"
                               >
                                 <p class="machine-translation-description">
                                   {{_MACHINE_TRANSLATION_DESCRIPTION}}
@@ -2822,7 +2834,7 @@
                                       source-button
                                       offline-download-button
                                     "
-                                    ng-show="options && !isChrome && song.source === 'bilibili'"
+                                    ng-show="options && (!isChrome || isAndroidSurface()) && (song.source === 'bilibili' || song.source === 'netease')"
                                     ng-click="downloadTrackForOffline(song)"
                                     ><span aria-hidden="true">⇩</span></a
                                   >
@@ -2868,7 +2880,7 @@
                                 translate-switch
                                 lyric-ai-retranslate-classic
                               "
-                              ng-if="!isChrome && currentPlaying.source === 'bilibili' && currentLyricResult && currentLyricResult.lyric"
+                              ng-if="(!isChrome || isAndroidSurface()) && currentPlaying.source === 'bilibili' && currentLyricResult && currentLyricResult.lyric"
                               ng-click="requestAiLyricRetranslation()"
                               title="{{_MACHINE_TRANSLATION_RETRANSLATE}}"
                               aria-label="{{_MACHINE_TRANSLATION_RETRANSLATE}}"
@@ -3415,6 +3427,17 @@
               <p class="lyric-translation-confirm-privacy">
                 {{_MACHINE_TRANSLATION_PRIVACY_NOTICE}}
               </p>
+              <div class="lyric-translation-consent" ng-if="isAndroidSurface()">
+                <label><input type="checkbox" ng-model="lyricTranslationConsent.lyrics" /> 我同意发送整曲歌词内容。</label>
+                <label><input type="checkbox" ng-model="lyricTranslationConsent.title" /> 我同意发送歌曲标题。</label>
+                <label><input type="checkbox" ng-model="lyricTranslationConsent.artist" /> 我同意发送歌手名称。</label>
+                <label><input type="checkbox" ng-model="lyricTranslationConsent.possibleCost" /> 我了解请求可能产生 API 费用。</label>
+                <label><input type="checkbox" ng-model="lyricTranslationConsent.cancellation" /> 我知道可以取消请求，网络中断也可能产生费用。</label>
+                <label><input type="checkbox" ng-model="lyricTranslationConsent.failureImpact" /> 我知道失败不会改动当前原歌词。</label>
+              </div>
+              <p class="lyric-translation-confirm-cost" ng-if="isAndroidSurface()">
+                仅在六项同意全部勾选后发送；翻译失败或取消不会替换原歌词。
+              </p>
               <p
                 class="lyric-translation-confirm-error"
                 ng-if="lyricTranslationConfirmError"
@@ -3426,7 +3449,7 @@
                 <button
                   type="button"
                   class="lyric-translation-confirm-action"
-                  ng-disabled="lyricTranslationConfirmPending"
+                  ng-disabled="lyricTranslationConfirmPending || (isAndroidSurface() && !lyricTranslationConsentComplete())"
                   ng-click="confirmCurrentLyricTranslation()"
                 >
                   <span
@@ -3438,8 +3461,8 @@
                 <button
                   type="button"
                   class="lyric-translation-confirm-cancel"
-                  ng-disabled="lyricTranslationConfirmPending"
-                  ng-click="closeLyricTranslationConfirmation()"
+                  ng-disabled="false"
+                  ng-click="lyricTranslationConfirmPending ? cancelCurrentLyricTranslation() : closeLyricTranslationConfirmation()"
                 >
                   {{_MACHINE_TRANSLATION_CANCEL}}
                 </button>
@@ -4266,6 +4289,14 @@
                             </span>
                           </button>
 
+                          <div class="mobile-library-hub-tools mobile-library-hub-capabilities" role="list" aria-label="音乐库能力">
+                            <button type="button" role="listitem" ng-click="openMobileCapability('playlists')">本机歌单</button>
+                            <button type="button" role="listitem" ng-click="openMobileCapability('favorites')">本机收藏</button>
+                            <button type="button" role="listitem" ng-click="openMobileCapability('cache')">缓存与下载</button>
+                            <button type="button" role="listitem" ng-click="openMobileCapability('backup')">备份与导入</button>
+                            <button type="button" role="listitem" ng-click="openMobileCapability('history')">历史与年度回响</button>
+                          </div>
+
                           <section class="mobile-library-hub-section">
                             <header class="mobile-library-hub-section-heading">
                               <h3>{{_CREATED_PLAYLIST}}</h3>
@@ -4453,7 +4484,7 @@
                             placeholder="{{_SEARCH_PLACEHOLDER}}"
                             ng-model-options="{debounce: 500}"
                             ng-keyup="enterEvent($event)"
-                            aria-label="搜索哔哩哔哩音乐"
+                            aria-label="搜索当前音乐来源"
                           />
                         </div>
                         <div
@@ -4531,7 +4562,7 @@
                         <div class="topbar-spacer"></div>
                         <section
                           class="bilibili-mobile-search"
-                          ng-if="is_window_hidden==1"
+                          ng-if="is_window_hidden==1 && tab === 'bilibili'"
                           aria-labelledby="bilibili-mobile-search-title"
                         >
                           <div class="bilibili-mobile-search-source">
@@ -4728,12 +4759,213 @@
                           </section>
                         </section>
                         <div ng-include="'annual_recap.html'"></div>
+                        <!-- Phone blueprint: an intentionally capability-aware map of
+                             the whole product. It uses existing actions and never
+                             fabricates Android storage/account/media success. -->
+                        <section
+                          class="mobile-product-home mobile-product-surface"
+                          ng-if="current_tag==2 && is_window_hidden==1 && !mobileProductPage"
+                          aria-labelledby="mobile-product-home-title"
+                        >
+                          <p class="mobile-product-kicker">Listen2 手机版</p>
+                          <h1 id="mobile-product-home-title">从这里继续听</h1>
+                          <button type="button" class="mobile-product-now-playing" ng-if="currentPlaying && currentPlaying.id" ng-click="toggleNowPlaying()" aria-label="打开正在播放与歌词">
+                            <span><small>正在播放</small><strong>{{currentPlaying.title}}</strong><small>{{currentPlaying.artist}}</small></span><b aria-hidden="true">›</b>
+                          </button>
+                          <p class="mobile-product-compact-note" ng-if="!currentPlaying || !currentPlaying.id">还没有正在播放的歌曲。</p>
+                          <div class="mobile-product-hero-actions">
+                            <button type="button" class="mobile-product-primary" ng-click="showTag(3); focusMobileSearch()">搜索音乐</button>
+                            <button type="button" ng-click="showTag(1)">打开音乐库</button>
+                          </div>
+                          <div class="mobile-product-data-list mobile-product-home-list" ng-if="mobileLocalData.playlists.length || mobileLocalData.favorites.length" aria-label="本机音乐库摘要">
+                            <strong>本机音乐库</strong>
+                            <button type="button" ng-repeat="item in mobileLocalData.playlists | limitTo:3 track by item.playlistId" ng-click="openMobileCapability('playlists')"><span>{{item.name}}</span><small>{{item.tracks.length}} 首</small></button>
+                            <p ng-if="!mobileLocalData.playlists.length && mobileLocalData.favorites.length">{{mobileLocalData.favorites.length}} 首本机收藏</p>
+                          </div>
+                          <div class="mobile-product-grid" role="list">
+                            <button type="button" role="listitem" ng-click="showTag(3)"><strong>发现</strong><small>搜索并直接查看结果</small></button>
+                            <button type="button" role="listitem" ng-click="showTag(1)"><strong>音乐库</strong><small>歌单、收藏和本地音乐</small></button>
+                            <button type="button" role="listitem" ng-click="openMobileCapability('history')" ng-disabled="!mobileLocalData.capabilities.historyAnnual"><strong>年度回响</strong><small>本机播放统计</small></button>
+                            <button type="button" role="listitem" ng-click="openMobileCapability('cache')" ng-disabled="!mobileLocalData.capabilities.cache"><strong>缓存</strong><small>容量与完整性</small></button>
+                          </div>
+                        </section>
+
+                        <section
+                          class="mobile-product-discover mobile-product-surface"
+                          ng-if="current_tag==3 && is_window_hidden==1 && !mobileProductPage"
+                          aria-labelledby="mobile-product-discover-title"
+                        >
+                          <p class="mobile-product-kicker">发现</p>
+                          <h1 id="mobile-product-discover-title">搜一首想听的歌</h1>
+                          <p class="mobile-product-compact-note">输入关键词后选择来源，结果会直接显示在此页。</p>
+                          <button type="button" class="mobile-product-primary" ng-click="focusMobileSearch()">输入关键词</button>
+                        </section>
+
+                        <section
+                          class="mobile-product-settings mobile-product-surface"
+                          ng-if="current_tag==4 && is_window_hidden==1 && !mobileProductPage"
+                          aria-labelledby="mobile-product-settings-title"
+                        >
+                          <p class="mobile-product-kicker">设置与账户</p>
+                          <h1 id="mobile-product-settings-title">设置与账户</h1>
+                          <div class="mobile-product-list" role="list">
+                            <button type="button" role="listitem" ng-click="showTag(5)"><span><strong>账户与哔哩哔哩登录</strong><small>{{androidAccountState.message || '查看账号状态'}}</small></span><b aria-hidden="true">›</b></button>
+                            <button type="button" role="listitem" ng-click="openMobileCapability('settings')" ng-disabled="!mobileLocalData.capabilities.settings"><span><strong>主题、语言与记录</strong><small>手机偏好</small></span><b aria-hidden="true">›</b></button>
+                            <button type="button" role="listitem" ng-click="openMobileCapability('history')" ng-disabled="!mobileLocalData.capabilities.historyAnnual"><span><strong>历史与年度回响</strong><small>开关、清空和年度统计</small></span><b aria-hidden="true">›</b></button>
+                            <button type="button" role="listitem" ng-click="openMobileCapability('cache')" ng-disabled="!mobileLocalData.capabilities.cache"><span><strong>缓存与下载</strong><small>容量和完整性检查</small></span><b aria-hidden="true">›</b></button>
+                            <button type="button" role="listitem" ng-click="openMobileCapability('backup')" ng-disabled="!mobileLocalData.capabilities.backupExport"><span><strong>歌单备份与导入</strong><small>导出、预览、合并或确认覆盖</small></span><b aria-hidden="true">›</b></button>
+                            <button type="button" role="listitem" ng-click="openMobileCapability('local')" ng-disabled="!mobileLocalData.capabilities.saf"><span><strong>本地音乐与授权修复</strong><small>导入或重新授权</small></span><b aria-hidden="true">›</b></button>
+                            <button type="button" role="listitem" ng-click="openMobileCapability('translation')"><span><strong>DeepSeek 歌词翻译</strong><small>{{mobileDeepSeekTranslationEnabled ? (mobileDeepSeekStatus.hasApiKey ? '已配置安全密钥' : '可用，尚未配置密钥') : '需要安全存储 bridge'}}</small></span><b aria-hidden="true">›</b></button>
+                          </div>
+                          <p class="mobile-product-compact-note" ng-if="!mobileLocalData.capabilities.settings || !mobileLocalData.capabilities.backupExport || !mobileLocalData.capabilities.saf">部分本机操作需要 Android bridge；不可用项已禁用。</p>
+                          <p class="mobile-product-compact-note" ng-if="!mobileAdvancedMediaEnabled">高级音质、MV/PiP、音效、可视化与响度功能会按 native capability 单独启用；当前不可用项不会显示为可操作按钮。</p>
+                          <p class="mobile-product-compact-note" ng-if="!mobileDeepSeekTranslationEnabled">DeepSeek 翻译需要可用的 Android Keystore 与 native client。</p>
+                        </section>
+
+                        <section
+                          class="mobile-product-sheet"
+                          ng-if="mobileProductPage"
+                          role="dialog"
+                          aria-modal="true"
+                          aria-labelledby="mobile-product-sheet-title"
+                        >
+                          <header>
+                            <button type="button" ng-click="closeMobileProductPage()" aria-label="返回设置或首页">‹</button>
+                            <div><p>Listen2 手机版</p><h2 id="mobile-product-sheet-title">{{mobileProductPage === 'status' ? '暂不可用' : mobileProductPage === 'library' ? '歌单与收藏' : mobileProductPage === 'history' ? '历史与年度回响' : mobileProductPage === 'cache' ? '缓存与下载' : mobileProductPage === 'settings' ? '手机设置' : mobileProductPage === 'backup' ? '歌单备份' : 'DeepSeek 翻译'}}</h2></div>
+                          </header>
+                          <div class="mobile-product-sheet-content">
+                            <p class="mobile-product-loading" ng-if="mobileLocalData.loading" role="status" aria-live="polite">正在读取 Android 数据…</p>
+                            <p class="mobile-product-unavailable" ng-if="mobileLocalData.error" role="alert">{{mobileLocalData.error}}</p>
+                            <p class="mobile-product-unavailable" ng-if="mobileCapabilityNotice">{{mobileCapabilityNotice}}</p>
+                            <section ng-if="mobileProductPage === 'library'">
+                              <h3>本机歌单与收藏</h3>
+                              <div class="mobile-product-inline-actions">
+                                <button type="button" class="mobile-product-primary" ng-click="beginMobilePlaylistCreate()">新建歌单</button>
+                                <button type="button" ng-click="startMobileSafPicker('saf.pickAudio')" ng-disabled="mobileLocalData.actionPending">导入本地音乐</button>
+                              </div>
+                              <div class="mobile-product-editor" ng-if="mobileLocalData.playlistDraft">
+                                <label class="mobile-product-field">歌单名称<input type="text" maxlength="320" ng-model="mobileLocalData.playlistDraft.name" /></label>
+                                <p ng-if="mobileLocalData.playlistDraft.mode === 'edit'">曲目 {{mobileLocalData.playlistDraft.tracks.length}} 首</p>
+                                <div class="mobile-product-track-row" ng-repeat="track in mobileLocalData.playlistDraft.tracks track by track.source + ':' + track.providerTrackId">
+                                  <span><strong>{{track.title}}</strong><small>{{track.artist}}</small></span>
+                                  <button type="button" ng-click="moveMobilePlaylistDraftTrack($index, -1)" ng-disabled="$first" aria-label="上移曲目">上移</button>
+                                  <button type="button" ng-click="moveMobilePlaylistDraftTrack($index, 1)" ng-disabled="$last" aria-label="下移曲目">下移</button>
+                                  <button type="button" ng-click="removeMobilePlaylistDraftTrack($index)">移除</button>
+                                </div>
+                                <div class="mobile-product-inline-actions">
+                                  <button type="button" ng-click="addCurrentTrackToMobilePlaylistDraft()" ng-disabled="!currentPlaying || !currentPlaying.id">加入正在播放</button>
+                                  <button type="button" class="mobile-product-primary" ng-click="saveMobilePlaylistDraft()" ng-disabled="mobileLocalData.actionPending">保存歌单</button>
+                                  <button type="button" ng-click="mobileLocalData.playlistDraft=null">取消</button>
+                                </div>
+                              </div>
+                              <p ng-if="!mobileLocalData.playlists.length && !mobileLocalData.favorites.length">还没有同步到本机的歌单或收藏。</p>
+                              <div class="mobile-product-data-list" ng-if="mobileLocalData.playlists.length">
+                                <strong>歌单</strong>
+                                <div class="mobile-product-playlist-row" ng-repeat="item in mobileLocalData.playlists track by item.playlistId">
+                                  <span><strong>{{item.name}}</strong><small>{{item.tracks.length}} 首</small></span>
+                                  <button type="button" ng-click="beginMobilePlaylistEdit(item)">编辑</button>
+                                  <button type="button" ng-click="moveMobilePlaylist($index, -1)" ng-disabled="$first">上移</button>
+                                  <button type="button" ng-click="moveMobilePlaylist($index, 1)" ng-disabled="$last">下移</button>
+                                  <button type="button" ng-click="requestMobilePlaylistDelete(item)">删除</button>
+                                </div>
+                              </div>
+                              <div class="mobile-product-data-list" ng-if="mobileLocalData.favorites.length">
+                                <strong>收藏</strong>
+                                <div class="mobile-product-playlist-row" ng-repeat="item in mobileLocalData.favorites track by item.source + ':' + item.providerTrackId"><span><strong>{{item.title}}</strong><small>{{item.artist}}</small></span><button type="button" ng-click="toggleMobileFavorite(item, false)">取消收藏</button></div>
+                              </div>
+                              <div class="mobile-product-data-list" ng-if="mobileLocalData.localTracks.length">
+                                <strong>本地曲目</strong>
+                                <div class="mobile-product-playlist-row" ng-repeat="item in mobileLocalData.localTracks track by item.localTrackId">
+                                  <button type="button" class="mobile-product-track-button" ng-click="playMobileLocalTrack(item)" ng-disabled="item.availability !== 'available' || mobileLocalData.actionPending"><span><strong>{{item.title || item.displayName}}</strong><small>{{item.artist}} · {{item.mime}}</small></span><b>{{item.availability === 'available' ? '播放' : item.availability === 'revoked' ? '已撤销' : '需修复'}}</b></button>
+                                  <button type="button" ng-if="item.availability !== 'available'" ng-click="repairMobileLocalGrant(item)" ng-disabled="mobileLocalData.actionPending">修复授权</button>
+                                </div>
+                              </div>
+                              <p class="mobile-product-compact-note" ng-if="!mobileLocalData.localTracks.length">尚未发现本地曲目；可导入音频或重新授权音乐文件夹。</p>
+                              <div class="mobile-product-data-list" ng-if="mobileLocalData.saf.length">
+                                <strong>本地音乐授权</strong>
+                                <p ng-repeat="item in mobileLocalData.saf track by item.referenceId">{{item.displayName}} · {{item.state}}</p>
+                              </div>
+                              <p ng-if="mobileLocalData.safPickerStatus" aria-live="polite">{{mobileLocalData.safPickerStatus}}</p>
+                              <button type="button" ng-click="startMobileSafPicker('saf.pickAudio')" ng-disabled="mobileLocalData.actionPending">选择本地音频</button>
+                              <button type="button" ng-click="startMobileSafPicker('saf.pickTree')" ng-disabled="mobileLocalData.actionPending">重新授权音乐文件夹</button>
+                              <button type="button" ng-click="refreshMobileLocalTracks()" ng-disabled="mobileLocalData.loading || mobileLocalData.actionPending">扫描本地曲目</button>
+                              <button type="button" ng-click="loadMobileLocalPage('library')" ng-disabled="mobileLocalData.loading || mobileLocalData.actionPending">刷新本机音乐库</button>
+                              <div class="mobile-product-confirm" ng-if="mobileLocalData.playlistDeleteConfirmation" role="alertdialog" aria-label="确认删除歌单"><p>删除“{{mobileLocalData.playlistDeleteConfirmation.name}}”？此操作不会删除原始音频文件。</p><button type="button" ng-click="mobileLocalData.playlistDeleteConfirmation=null">取消</button><button type="button" class="mobile-product-danger" ng-click="confirmMobilePlaylistDelete()">确认删除</button></div>
+                            </section>
+                            <section ng-if="mobileProductPage === 'history'">
+                              <h3>{{mobileLocalData.history.year || '今年'}}年度回响</h3>
+                              <p ng-if="mobileLocalData.history">{{mobileLocalData.history.playCount || 0}} 次有效播放 · {{mobileLocalData.history.uniqueTracks || 0}} 首歌曲 · {{mobileLocalData.history.uniqueArtists || 0}} 位歌手</p>
+                              <p>记录状态：{{mobileLocalData.settings.historyEnabled ? '已启用' : '已关闭'}}</p>
+                              <button type="button" ng-click="toggleMobileHistory()" ng-disabled="mobileLocalData.actionPending">{{mobileLocalData.settings.historyEnabled ? '关闭听歌记录' : '启用听歌记录'}}</button>
+                              <button type="button" ng-click="runMobileLocalCommand('history.clear', {}, 'history')" ng-disabled="mobileLocalData.actionPending">清空本机历史</button>
+                              <button type="button" ng-click="loadMobileLocalPage('history')" ng-disabled="mobileLocalData.loading">刷新年度回响</button>
+                            </section>
+                            <section ng-if="mobileProductPage === 'cache'">
+                              <h3>缓存容量与完整性</h3>
+                              <p ng-if="mobileLocalData.cache">已用 {{mobileFormatBytes(mobileLocalData.cache.usedBytes)}} / {{mobileFormatBytes(mobileLocalData.cache.capacityBytes)}} · {{mobileLocalData.cache.entries.length}} 项 · {{mobileLocalData.cache.corruptEntries}} 项待处理</p>
+                              <div class="mobile-product-inline-actions">
+                                <button type="button" class="mobile-product-primary" ng-click="downloadMobileTrackForOffline(currentPlaying)" ng-disabled="mobileLocalData.actionPending || !currentPlaying">下载当前歌曲</button>
+                                <button type="button" ng-click="deleteMobileOfflineTrack(currentPlaying)" ng-disabled="mobileLocalData.actionPending || !currentPlaying">删除当前离线歌曲</button>
+                                <button type="button" ng-click="cleanupMobileDownloads()" ng-disabled="mobileLocalData.actionPending">清理可淘汰缓存</button>
+                              </div>
+                              <p class="mobile-product-compact-note" ng-if="mobileLocalData.download" aria-live="polite">下载状态：{{mobileLocalData.download.status}}{{mobileLocalData.download.byteCount ? ' · ' + mobileFormatBytes(mobileLocalData.download.byteCount) : ''}}</p>
+                              <button type="button" ng-if="mobileLocalData.download && (mobileLocalData.download.status === 'queued' || mobileLocalData.download.status === 'downloading')" ng-click="cancelMobileDownload()">取消当前下载</button>
+                              <label class="mobile-product-field" ng-if="mobileLocalData.cache">容量（字节）<input type="number" min="33554432" max="8589934592" step="1048576" ng-model="mobileLocalData.cache.capacityBytes" /></label>
+                              <button type="button" ng-click="updateMobileCacheCapacity()" ng-disabled="mobileLocalData.actionPending || !mobileLocalData.cache">更新容量</button>
+                              <button type="button" ng-click="runMobileLocalCommand('cache.refresh', {}, 'cache')" ng-disabled="mobileLocalData.actionPending">检查缓存完整性</button>
+                              <button type="button" ng-click="loadMobileLocalPage('cache')" ng-disabled="mobileLocalData.loading">刷新缓存状态</button>
+                            </section>
+                            <section ng-if="mobileProductPage === 'settings'">
+                              <h3>本机偏好</h3>
+                              <label class="mobile-product-field" ng-if="mobileLocalData.settings">主题<input type="text" maxlength="32" ng-model="mobileLocalData.settings.theme" /></label>
+                              <label class="mobile-product-field" ng-if="mobileLocalData.settings">语言<input type="text" maxlength="32" ng-model="mobileLocalData.settings.language" /></label>
+                              <button type="button" ng-click="saveMobileSettings()" ng-disabled="mobileLocalData.actionPending || !mobileLocalData.settings">保存手机设置</button>
+                              <button type="button" ng-click="loadMobileLocalPage('settings')" ng-disabled="mobileLocalData.loading">重新读取设置</button>
+                            </section>
+                            <section ng-if="mobileProductPage === 'backup'">
+                              <h3>备份只包含歌单与收藏</h3>
+                              <p>不会导出登录凭据、本地路径、URI、歌词、缓存或历史。文件只能由 Android 系统选择器交给 native 读取。</p>
+                              <p ng-if="mobileLocalData.backupFileStatus">文件状态：{{mobileLocalData.backupFileStatus.state}}（{{mobileLocalData.backupFileStatus.status}}）</p>
+                              <p ng-if="mobileLocalData.backupPreview">预览：{{mobileLocalData.backupPreview.playlists}} 个歌单 · {{mobileLocalData.backupPreview.favorites}} 个收藏 · {{mobileLocalData.backupPreview.tracks}} 首歌曲</p>
+                              <button type="button" ng-click="startMobileSafPicker('backup.export')" ng-disabled="mobileLocalData.actionPending || !mobileLocalData.capabilities.backupSafExport">导出备份文件</button>
+                              <button type="button" ng-click="startMobileSafPicker('backup.import.pick')" ng-disabled="mobileLocalData.actionPending || !mobileLocalData.capabilities.backupSafImport">选择备份文件</button>
+                              <button type="button" ng-click="refreshMobileBackupFileStatus()" ng-disabled="mobileLocalData.actionPending">刷新文件状态</button>
+                              <button type="button" ng-click="previewMobileBackup()" ng-disabled="mobileLocalData.actionPending || !mobileLocalData.backupFileStatus || mobileLocalData.backupFileStatus.state !== 'ready'">刷新导入预览</button>
+                              <button type="button" ng-click="importMobileBackup('merge', false)" ng-disabled="mobileLocalData.actionPending || !mobileLocalData.backupFileStatus || mobileLocalData.backupFileStatus.state !== 'ready'">合并导入此备份</button>
+                              <button type="button" ng-click="importMobileBackup('overwrite', false)" ng-disabled="mobileLocalData.actionPending || !mobileLocalData.backupFileStatus || mobileLocalData.backupFileStatus.state !== 'ready'">覆盖导入…</button>
+                              <div class="mobile-product-confirm" ng-if="mobileLocalData.overwriteConfirmationOpen" role="alertdialog" aria-label="确认覆盖歌单和收藏">
+                                <p>覆盖会替换本机歌单和收藏，是否继续？</p>
+                                <button type="button" ng-click="mobileLocalData.overwriteConfirmationOpen=false">取消</button>
+                                <button type="button" class="mobile-product-primary" ng-click="importMobileBackup('overwrite', true)">确认覆盖导入</button>
+                              </div>
+                            </section>
+                            <section ng-if="mobileProductPage === 'translation'">
+                              <h3>DeepSeek 歌词翻译</h3>
+                              <p>翻译需要用户主动确认整曲歌词、标题、歌手、可能费用、取消和失败影响。API Key 只会交给 Android Keystore 加密存储，不写入 WebView/localStorage/备份/日志。</p>
+                              <p>安全存储：{{mobileDeepSeekStatus.secureStorageAvailable ? '可用' : '不可用'}} · native client：{{mobileDeepSeekStatus.nativeClientAvailable ? '已注入' : '未注入'}} · 密钥：{{mobileDeepSeekStatus.hasApiKey ? '已配置' : '未配置'}}</p>
+                              <label class="mobile-product-field">DeepSeek API Key<input type="password" autocomplete="off" maxlength="512" ng-model="machineTranslationConfig.apiKeyInput" placeholder="sk-…" /></label>
+                              <label class="mobile-product-field">翻译风格（可选）<textarea maxlength="2000" rows="3" ng-model="machineTranslationConfig.styleHint" placeholder="例如：自然、简洁，保留歌曲语气"></textarea></label>
+                              <button type="button" class="mobile-product-primary" ng-click="saveMachineTranslationApiKey()" ng-disabled="machineTranslationConfigPending || !machineTranslationConfig.apiKeyInput">安全保存密钥</button>
+                              <button type="button" ng-click="saveMachineTranslationStyle()" ng-disabled="machineTranslationConfigPending">保存翻译风格</button>
+                              <button type="button" class="mobile-product-primary" ng-click="refreshMachineTranslationConfig()">刷新安全状态</button>
+                              <button type="button" ng-click="testMachineTranslationConfig()" ng-disabled="machineTranslationConfigPending || !machineTranslationConfig.hasApiKey">测试 DeepSeek</button>
+                              <button type="button" ng-if="machineTranslationConfig.hasApiKey" ng-click="clearMachineTranslationApiKey()" ng-disabled="machineTranslationConfigPending">删除安全密钥</button>
+                              <button type="button" ng-click="openDeepSeekApiPage()">了解 API Key</button>
+                            </section>
+                            <section ng-if="mobileProductPage === 'status'">
+                              <h3>下一步</h3>
+                              <p>此入口保留在产品蓝本中，等待主线以版本化 native bridge 返回 capability 后启用。你可以返回继续搜索、浏览歌单或使用播放器。</p>
+                              <button type="button" class="mobile-product-primary" ng-click="closeMobileProductPage()">返回</button>
+                            </section>
+                          </div>
+                        </section>
                         <!-- hot playlist window-->
                         <div
                           class="
                             page page-hot-playlist
                             editorial-discovery-page
                           "
+                          ng-if="!isAndroidSurface()"
                           ng-show="current_tag==2 && is_window_hidden==1"
                           ng-controller="PlayListController"
                           ng-init="loadPlaylist();"
@@ -5054,6 +5286,7 @@
                               >
                                 <ul class="source-list">
                                   <li
+                                    ng-if="!isAndroidSurface()"
                                     class="source-button"
                                     ng-class="{'active':tab === 'allmusic'}"
                                     ng-click="changeSourceTab('allmusic')"
@@ -5264,7 +5497,7 @@
                                           source-button
                                           offline-download-button
                                         "
-                                        ng-show="options && !isChrome && song.source === 'bilibili'"
+                                        ng-show="options && (!isChrome || isAndroidSurface()) && (song.source === 'bilibili' || song.source === 'netease')"
                                         ng-click="downloadTrackForOffline(song)"
                                         ><span aria-hidden="true">⇩</span></a
                                       >
@@ -5906,7 +6139,7 @@
                                   {{audioEffectStatus()}}
                                 </p>
                               </div>
-                              <div class="settings-title" ng-if="!isChrome">
+                              <div class="settings-title" ng-if="!isChrome || isAndroidSurface()">
                                 <span>{{_MACHINE_TRANSLATION_TITLE}}</span>
                               </div>
                               <div
@@ -5914,7 +6147,7 @@
                                   settings-content
                                   machine-translation-settings
                                 "
-                                ng-if="!isChrome"
+                                ng-if="!isChrome || isAndroidSurface()"
                               >
                                 <p class="machine-translation-description">
                                   {{_MACHINE_TRANSLATION_DESCRIPTION}}
@@ -7233,7 +7466,7 @@
                                       source-button
                                       offline-download-button
                                     "
-                                    ng-show="options && !isChrome && song.source === 'bilibili'"
+                                    ng-show="options && (!isChrome || isAndroidSurface()) && (song.source === 'bilibili' || song.source === 'netease')"
                                     ng-click="downloadTrackForOffline(song)"
                                     ><span aria-hidden="true">⇩</span></a
                                   >
@@ -7394,6 +7627,7 @@
                                 album-art-parallax=""
                               >
                                 <div
+                                  ng-if="!isAndroidSurface()"
                                   class="now-playing-orbit-spectrum"
                                   audio-visualizer=""
                                   audio-visualizer-layout="radial"
@@ -7491,6 +7725,7 @@
                             </div>
                             <div class="now-playing-spectrum-shell">
                               <div
+                                ng-if="!isAndroidSurface()"
                                 class="now-playing-spectrum"
                                 audio-visualizer=""
                                 audio-visualizer-layout="linear"
@@ -7573,7 +7808,7 @@
                                 <button
                                   type="button"
                                   class="lyric-ai-retranslate-trigger"
-                                  ng-if="!isChrome && currentPlaying.source === 'bilibili' && currentLyricResult && currentLyricResult.lyric"
+                                  ng-if="(!isChrome || isAndroidSurface()) && currentPlaying.source === 'bilibili' && currentLyricResult && currentLyricResult.lyric"
                                   ng-click="requestAiLyricRetranslation()"
                                   title="{{_MACHINE_TRANSLATION_RETRANSLATE}}"
                                   aria-label="{{_MACHINE_TRANSLATION_RETRANSLATE}}"

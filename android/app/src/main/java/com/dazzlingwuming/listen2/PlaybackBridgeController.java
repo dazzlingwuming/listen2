@@ -17,6 +17,13 @@ public final class PlaybackBridgeController {
         void dispatch(PlaybackCommand command, PlaybackSnapshot snapshot);
         void rendererDetached();
         PlaybackSnapshot latestSnapshot();
+
+        /** Native playback events are projected back to the currently attached page. */
+        default void setSnapshotPublisher(SnapshotPublisher publisher) {}
+    }
+
+    public interface SnapshotPublisher {
+        void publish(PlaybackSnapshot snapshot);
     }
 
     /** AndroidHttpBridge adapts this callback to the existing reply proxy. */
@@ -70,12 +77,14 @@ public final class PlaybackBridgeController {
         policy = new PlaybackBridgePolicy(nextPageEpoch, initialRevision);
         pageSink = nextPageSink;
         deliveredRevision = -1L;
+        service.setSnapshotPublisher(this::publish);
         if (latest != null) publish(latest);
     }
 
     /** Old-page authority is removed; it intentionally does not touch the service/player. */
     public synchronized void detach(long retiringPageEpoch) {
         if (pageEpoch != retiringPageEpoch) return;
+        service.setSnapshotPublisher(null);
         pageSink = null;
         policy = null;
         pageEpoch = -1L;
@@ -104,9 +113,12 @@ public final class PlaybackBridgeController {
     /** Delivers only current-page, strictly newer sanitized snapshots. */
     public synchronized void publish(PlaybackSnapshot snapshot) {
         if (snapshot == null || pageSink == null || policy == null) return;
-        if (snapshot.getRevision() <= deliveredRevision) return;
-        deliveredRevision = snapshot.getRevision();
-        pageSink.publish(snapshot);
+        PlaybackSnapshot pageSnapshot = snapshot.getPageEpoch() == pageEpoch
+                ? snapshot : snapshot.withPageEpoch(pageEpoch);
+        policy.adoptSnapshot(pageSnapshot);
+        if (pageSnapshot.getRevision() <= deliveredRevision) return;
+        deliveredRevision = pageSnapshot.getRevision();
+        pageSink.publish(pageSnapshot);
     }
 
     /** Allows the bridge to decide whether a page epoch can still receive a reply. */

@@ -127,26 +127,11 @@ async function run() {
     { bvid: 'BV1xx411c7mD', selectionMode: 'explicit', cid: 42 },
     { pageEpoch: 10 }
   );
-  const manifestRequest = nativeBridge.posted[3];
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(manifestRequest.payload)), {
-    bvid: 'BV1xx411c7mD',
-    selectionMode: 'explicit',
-    cid: 42,
-  });
-  nativeBridge.emit({
-    version: 2,
-    terminal: 'error',
-    requestId: manifestRequest.requestId,
-    pageEpoch: 10,
-    status: 0,
-    error: 'UNSUPPORTED_CODEC',
-  });
   await assert.rejects(
     manifest.promise,
     (error) =>
-      error.code === 'android-rpc-unsupported-codec' &&
-      error.kind === 'unsupported-codec' &&
-      error.message.indexOf('UNSUPPORTED_CODEC') === -1
+      error.code === 'android-rpc-invalid-operation' &&
+      nativeBridge.posted.length === 3
   );
 
   const rejected = adapter.request(
@@ -154,7 +139,7 @@ async function run() {
     { keyword: 'Music', page: 1 },
     { pageEpoch: 11 }
   );
-  const rejectedRequest = nativeBridge.posted[4];
+  const rejectedRequest = nativeBridge.posted[3];
   nativeBridge.emit({
     version: 2,
     terminal: 'error',
@@ -180,7 +165,7 @@ async function run() {
     timedOut.promise,
     (error) => error.code === 'android-rpc-timeout' && error.kind === 'timeout'
   );
-  assert.strictEqual(nativeBridge.posted[6].operation, 'rpc.cancel');
+  assert.strictEqual(nativeBridge.posted[5].operation, 'rpc.cancel');
 
   const teardown = adapter.request(
     'bilibili.video.detail',
@@ -259,6 +244,326 @@ async function run() {
     ),
     (error) => error.code === 'android-rpc-invalid-operation'
   );
+
+  assert.strictEqual(adapter.getProviderCapabilities(), null);
+  const capabilityEvents = [];
+  const unsubscribe = adapter.onProviderCapabilities((capabilities) => {
+    capabilityEvents.push(capabilities);
+  });
+  const capabilitiesPromise = adapter.startProviderCapabilities({
+    pageEpoch: 15,
+  });
+  const capabilityRequest = nativeBridge.posted[nativeBridge.posted.length - 1];
+  assert.strictEqual(capabilityRequest.operation, 'provider.capabilities');
+  assert.deepStrictEqual(capabilityRequest.payload, {});
+  nativeBridge.emit({
+    version: 2,
+    terminal: 'ok',
+    requestId: capabilityRequest.requestId,
+    pageEpoch: 15,
+    status: 200,
+    result: {
+      version: 1,
+      bilibili: {
+        search: true,
+        directory: true,
+        detail: true,
+        media: true,
+        lyric: false,
+        manualLyric: false,
+        fallback: false,
+        login: false,
+        permission: false,
+      },
+      netease: {
+        search: false,
+        directory: false,
+        detail: false,
+        media: false,
+        lyric: false,
+        manualLyric: false,
+        fallback: false,
+        login: false,
+        permission: false,
+      },
+    },
+  });
+  const capabilities = await capabilitiesPromise;
+  assert.strictEqual(capabilities.bilibili.media, true);
+  assert.strictEqual(adapter.getProviderCapabilities(), capabilities);
+  assert.ok(capabilityEvents.some((value) => value === capabilities));
+
+  const accountBegin = adapter.account.qrBegin({ pageEpoch: 16 });
+  const accountBeginRequest =
+    nativeBridge.posted[nativeBridge.posted.length - 1];
+  assert.strictEqual(
+    accountBeginRequest.operation,
+    'bilibili.account.qr.begin'
+  );
+  assert.deepStrictEqual(accountBeginRequest.payload, {});
+  nativeBridge.emit({
+    version: 2,
+    terminal: 'ok',
+    requestId: accountBeginRequest.requestId,
+    pageEpoch: 16,
+    status: 200,
+    result: {
+      sessionId: 'qr-session-1',
+      status: 'waiting',
+      expiresAtEpochMs: 1893456000000,
+      qrUrl:
+        'https://passport.bilibili.com/h5-app/passport/login/scan?qrcode_key=qr_session_1&navhide=1',
+    },
+  });
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(await accountBegin.promise)),
+    {
+      sessionId: 'qr-session-1',
+      status: 'waiting',
+      expiresAtEpochMs: 1893456000000,
+      qrUrl:
+        'https://passport.bilibili.com/h5-app/passport/login/scan?qrcode_key=qr_session_1&navhide=1',
+    }
+  );
+
+  const accountPoll = adapter.account.poll('qr-session-1', { pageEpoch: 17 });
+  const accountPollRequest =
+    nativeBridge.posted[nativeBridge.posted.length - 1];
+  assert.strictEqual(accountPollRequest.operation, 'bilibili.account.qr.poll');
+  nativeBridge.emit({
+    version: 2,
+    terminal: 'ok',
+    requestId: accountPollRequest.requestId,
+    pageEpoch: 17,
+    status: 200,
+    result: {
+      sessionId: 'qr-session-1',
+      status: 'waiting',
+      expiresAtEpochMs: 1893456000000,
+      qrUrl:
+        'https://passport.bilibili.com/h5-app/passport/login/scan?qrcode_key=qr_session_1&token=must-not-pass',
+    },
+  });
+  await assert.rejects(
+    accountPoll.promise,
+    (error) => error.code === 'android-rpc-malformed-response'
+  );
+
+  const failedRefresh = adapter.refreshProviderCapabilities({ pageEpoch: 18 });
+  const failedCapabilityRequest =
+    nativeBridge.posted[nativeBridge.posted.length - 1];
+  nativeBridge.emit({
+    version: 2,
+    terminal: 'ok',
+    requestId: failedCapabilityRequest.requestId,
+    pageEpoch: 18,
+    status: 200,
+    result: { version: 1, bilibili: {}, netease: {} },
+  });
+  await assert.rejects(
+    failedRefresh,
+    (error) => error.code === 'android-rpc-malformed-response'
+  );
+  assert.strictEqual(adapter.getProviderCapabilities(), null);
+
+  const localCapabilities = adapter.localData.query(
+    'capabilities',
+    {},
+    {
+      pageEpoch: 19,
+    }
+  );
+  const localCapabilitiesRequest =
+    nativeBridge.posted[nativeBridge.posted.length - 1];
+  assert.strictEqual(localCapabilitiesRequest.operation, 'local.data.query');
+  assert.deepStrictEqual(localCapabilitiesRequest.payload, {
+    action: 'capabilities',
+    payload: {},
+  });
+  nativeBridge.emit({
+    version: 2,
+    terminal: 'ok',
+    requestId: localCapabilitiesRequest.requestId,
+    pageEpoch: 19,
+    status: 200,
+    result: {
+      ok: true,
+      status: 'OK',
+      data: { playlists: true, favorites: true },
+    },
+  });
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(await localCapabilities.promise)),
+    {
+      ok: true,
+      status: 'OK',
+      data: { playlists: true, favorites: true },
+    }
+  );
+
+  const localTracks = adapter.localData.query(
+    'localTracks',
+    {},
+    {
+      pageEpoch: 19,
+    }
+  );
+  const localTracksRequest =
+    nativeBridge.posted[nativeBridge.posted.length - 1];
+  assert.deepStrictEqual(localTracksRequest.payload, {
+    action: 'localTracks',
+    payload: {},
+  });
+  nativeBridge.emit({
+    version: 2,
+    terminal: 'ok',
+    requestId: localTracksRequest.requestId,
+    pageEpoch: 19,
+    status: 200,
+    result: {
+      ok: true,
+      status: 'OK',
+      data: {
+        items: [
+          {
+            localTrackId:
+              'local.track.0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+            source: 'local',
+            title: 'Local song',
+            artist: 'Local artist',
+            durationMs: 120000,
+            displayName: 'local-song.mp3',
+            mime: 'audio/mpeg',
+            cover: false,
+            lrc: false,
+            availability: 'available',
+            grantReferenceId: 'saf.tree.1',
+          },
+        ],
+      },
+    },
+  });
+  const localTrackReply = await localTracks.promise;
+  assert.strictEqual(localTrackReply.data.items[0].source, 'local');
+  assert.ok(!JSON.stringify(localTrackReply).includes('content://'));
+  assert.ok(
+    !Object.prototype.hasOwnProperty.call(localTrackReply.data.items[0], 'uri')
+  );
+
+  const localRepair = adapter.localData.command(
+    'localTracks.repair',
+    {
+      grantReferenceId: 'saf.tree.1',
+    },
+    { pageEpoch: 19 }
+  );
+  const localRepairRequest =
+    nativeBridge.posted[nativeBridge.posted.length - 1];
+  assert.deepStrictEqual(localRepairRequest.payload, {
+    action: 'localTracks.repair',
+    payload: { grantReferenceId: 'saf.tree.1' },
+  });
+  nativeBridge.emit({
+    version: 2,
+    terminal: 'ok',
+    requestId: localRepairRequest.requestId,
+    pageEpoch: 19,
+    status: 200,
+    result: { ok: false, status: 'GRANT_INVALID' },
+  });
+  const localRepairReply = await localRepair.promise;
+  assert.strictEqual(localRepairReply.status, 'GRANT_INVALID');
+
+  const safPicker = adapter.localData.command(
+    'saf.pickAudio',
+    {},
+    {
+      pageEpoch: 20,
+    }
+  );
+  const safPickerRequest = nativeBridge.posted[nativeBridge.posted.length - 1];
+  assert.strictEqual(safPickerRequest.operation, 'local.data.command');
+  assert.deepStrictEqual(safPickerRequest.payload, {
+    action: 'saf.pickAudio',
+    payload: {},
+  });
+  nativeBridge.emit({
+    version: 2,
+    terminal: 'ok',
+    requestId: safPickerRequest.requestId,
+    pageEpoch: 20,
+    status: 200,
+    result: { accepted: true, status: 'pending' },
+  });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(await safPicker.promise)), {
+    accepted: true,
+    status: 'pending',
+  });
+
+  const unavailableSafPicker = adapter.localData.command(
+    'saf.pickTree',
+    {},
+    {
+      pageEpoch: 21,
+    }
+  );
+  const unavailableSafPickerRequest =
+    nativeBridge.posted[nativeBridge.posted.length - 1];
+  nativeBridge.emit({
+    version: 2,
+    terminal: 'error',
+    requestId: unavailableSafPickerRequest.requestId,
+    pageEpoch: 21,
+    status: 0,
+    error: 'PLATFORM_ACTION_UNAVAILABLE',
+  });
+  await assert.rejects(
+    unavailableSafPicker.promise,
+    (error) =>
+      error.code === 'android-rpc-local-data-unavailable' &&
+      error.retryable === false
+  );
+
+  await assert.rejects(
+    adapter.localData.command(
+      'cache.capacity',
+      { capacityBytes: 1 },
+      { pageEpoch: 22 }
+    ),
+    (error) => error.code === 'android-rpc-invalid-payload'
+  );
+
+  const unsafeLocalReply = adapter.localData.query(
+    'settings',
+    {},
+    {
+      pageEpoch: 23,
+    }
+  );
+  const unsafeLocalReplyRequest =
+    nativeBridge.posted[nativeBridge.posted.length - 1];
+  nativeBridge.emit({
+    version: 2,
+    terminal: 'ok',
+    requestId: unsafeLocalReplyRequest.requestId,
+    pageEpoch: 23,
+    status: 200,
+    result: {
+      ok: true,
+      status: 'OK',
+      data: { cachePath: '/private/data' },
+    },
+  });
+  await assert.rejects(
+    unsafeLocalReply.promise,
+    (error) => error.code === 'android-rpc-local-data-unavailable'
+  );
+  context.window.Listen2AndroidHttp = null;
+  await assert.rejects(
+    adapter.localData.query('settings', {}, { pageEpoch: 24 }),
+    (error) => error.code === 'android-rpc-local-data-unavailable'
+  );
+  unsubscribe();
 
   console.log('Android RPC v2 contract tests passed');
 }

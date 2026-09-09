@@ -9,6 +9,8 @@ import org.junit.Test;
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.net.URI;
+import java.util.List;
 
 public final class PlaybackMediaResolverTest {
     @Test
@@ -71,7 +73,12 @@ public final class PlaybackMediaResolverTest {
 
     @Test
     public void netEaseDefaultResolverKeepsRouteAbsenceActionableAndFixturesInternal() {
-        NetEasePlaybackResolver unavailable = new NetEasePlaybackResolver();
+        NetEasePlaybackResolver unavailable = new NetEasePlaybackResolver(new NetEaseNativeProvider(
+                request -> NetEaseNativeProvider.Response.error("NETWORK_IO_ERROR"),
+                () -> "0123456789abcdef", new NetEaseNativeProvider.CookieSource() {
+                    @Override public String forWeapi() { return "fixture"; }
+                    @Override public String forEapi() { return "os=pc"; }
+                }));
         PlaybackMediaResolver resolver = new PlaybackMediaResolver(unavailable,
                 new PlaybackMediaResolver.IncrementingHandleSource("netease"), () -> 1_000L);
         PlaybackMediaResolver.Prepared prepared = resolver.prepare(new PlaybackMediaResolver.Descriptor(
@@ -83,7 +90,7 @@ public final class PlaybackMediaResolverTest {
         PlaybackMediaResolver.Resolution unavailableResult = resolver.resolveCurrent(
                 prepared.getOccurrenceId(), 4L);
         assertFalse(unavailableResult.isReady());
-        assertEquals("route-unavailable", unavailableResult.getStatus());
+        assertEquals("network-unavailable", unavailableResult.getStatus());
         assertFalse(unavailableResult.toSnapshotFields().toString().contains("candidate"));
 
         NetEasePlaybackResolver fixture = NetEasePlaybackResolver.forDeterministicFixture(
@@ -97,6 +104,58 @@ public final class PlaybackMediaResolverTest {
                 "replace-current", true);
 
         assertTrue(fixtureResolver.resolveCurrent(fixturePrepared.getOccurrenceId(), 5L).isReady());
+    }
+
+    @Test
+    public void netEaseCdnAllowlistAcceptsMusic126AndRejectsAdjacentHosts() {
+        FakeManifest manifest = new FakeManifest();
+        String valid = "https://m801.music.126.net/audio.mp3?auth=fixture";
+        manifest.candidates = Arrays.asList(valid,
+                "https://m801.music.126.net.evil.example/audio.mp3?auth=fixture");
+        PlaybackMediaResolver resolver = new PlaybackMediaResolver(manifest,
+                new PlaybackMediaResolver.IncrementingHandleSource("netease-cdn"), () -> 1_000L);
+        PlaybackMediaResolver.Prepared prepared = resolver.prepare(new PlaybackMediaResolver.Descriptor(
+                "netease", "123456", 1L, "title", "artist", 1_000L, "audio"));
+        assertTrue(resolver.select(prepared.getTrackHandle(), prepared.getOccurrenceId(), 1L,
+                "replace-current", true).isAccepted());
+
+        PlaybackMediaResolver.Resolution result = resolver.resolveCurrent(
+                prepared.getOccurrenceId(), 1L);
+        assertTrue(result.isReady());
+        assertEquals(1, result.getCandidateCount());
+        assertEquals(valid, result.candidates().get(0));
+        assertFalse(result.toSnapshotFields().toString().contains("music.126.net"));
+    }
+
+    @Test
+    public void authorizedLocalContentUriIsConsumedNativelyWithoutGenericAuthorityAllowlist() {
+        final URI authorized = URI.create("content://documents.example/tree/root/document/song");
+        PlaybackMediaResolver.ManifestPort localManifest = new PlaybackMediaResolver.ManifestPort() {
+            @Override public List<String> resolve(PlaybackMediaResolver.Descriptor descriptor) {
+                return Collections.singletonList(authorized.toString());
+            }
+
+            @Override public boolean isAuthorizedLocalUri(PlaybackMediaResolver.Descriptor descriptor,
+                    URI uri) {
+                return descriptor != null && "local".equals(descriptor.getSource())
+                        && authorized.equals(uri);
+            }
+        };
+        PlaybackMediaResolver resolver = new PlaybackMediaResolver(localManifest,
+                new PlaybackMediaResolver.IncrementingHandleSource("local"), () -> 1_000L);
+        PlaybackMediaResolver.Prepared prepared = resolver.prepare(new PlaybackMediaResolver.Descriptor(
+                "local", "local.track.0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                1L, "title", "artist", 1_000L, "audio"));
+        assertNotNull(prepared);
+        assertTrue(resolver.select(prepared.getTrackHandle(), prepared.getOccurrenceId(), 1L,
+                "replace-current", true).isAccepted());
+
+        PlaybackMediaResolver.Resolution result = resolver.resolveCurrent(
+                prepared.getOccurrenceId(), 1L);
+        assertTrue(result.isReady());
+        assertEquals(1, result.getCandidateCount());
+        assertEquals(authorized, result.mediaUris().get(0));
+        assertFalse(result.toSnapshotFields().toString().contains("content://"));
     }
 
     private static PlaybackMediaResolver resolver(FakeManifest manifest) {

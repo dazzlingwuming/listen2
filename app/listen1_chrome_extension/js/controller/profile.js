@@ -45,6 +45,13 @@ angular.module('listenone').controller('ProfileController', [
 
     $scope.proxyProtocol = 'http';
     $scope.proxyRules = '';
+    $scope.mobileSettingsState = {
+      storage: 'Android 存储、下载与备份能力等待受控 bridge 验证。',
+      translation:
+        'DeepSeek 密钥仅由 Android Keystore 安全保存，不会写入页面存储。',
+      media:
+        '音质、MV/PiP、响度和音效仅在 native capability 明确返回可用时启用。',
+    };
 
     $scope.changeProxyProtocol = (newProtocol) => {
       $scope.proxyProtocol = newProtocol;

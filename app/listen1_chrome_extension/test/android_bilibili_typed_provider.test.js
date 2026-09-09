@@ -133,6 +133,8 @@ async function run() {
   terminal(bridge, bridge.posted[1], fixtures.DETAIL_MULTIPART);
   const defaultContext = await defaultDetail;
   assert.strictEqual(defaultContext.cid, 101);
+  assert.strictEqual(defaultContext.parts.length, 2);
+  assert.strictEqual(defaultContext.parts[0].capability, 'playable');
   assert.strictEqual(
     defaultContext.resolvedTrackId,
     `bitrack_v_${fixtures.BVID}-101`
@@ -152,24 +154,20 @@ async function run() {
   });
   assert.strictEqual(bridge.posted[2].operation, 'bilibili.video.detail');
   terminal(bridge, bridge.posted[2], fixtures.DETAIL_MULTIPART);
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.strictEqual(bridge.posted[3].operation, 'bilibili.audio.manifest');
-  assert.deepStrictEqual(toPlain(bridge.posted[3].payload), {
-    bvid: fixtures.BVID,
-    selectionMode: 'explicit',
-    cid: 202,
-  });
-  terminal(bridge, bridge.posted[3], fixtures.MANIFEST_SUCCESS);
   const descriptor = await booted;
   assert.strictEqual(bootSuccess, 1);
-  assert.deepStrictEqual(
-    toPlain(descriptor.urlCandidates),
-    fixtures.MANIFEST_SUCCESS.candidates
+  assert.deepStrictEqual(toPlain(descriptor), {
+    nativePlayback: true,
+    bvid: fixtures.BVID,
+    cid: 202,
+    duration: 140,
+    platform: 'bilibili',
+  });
+  assert.strictEqual(
+    JSON.stringify(descriptor).includes('bilivideo'),
+    false,
+    'Android bootstrap must never receive a CDN candidate'
   );
-  assert.strictEqual(descriptor.url, fixtures.MANIFEST_SUCCESS.candidates[0]);
-  assert.strictEqual(descriptor.mimeType, 'audio/mp4');
-  assert.strictEqual(descriptor.codecs, 'mp4a.40.2');
-  assert.strictEqual(descriptor.expiry, 2147483647);
 
   let failures = 0;
   const invalidPart = new Promise((resolve) => {
@@ -183,15 +181,15 @@ async function run() {
       { pageEpoch: 7 }
     );
   });
-  assert.strictEqual(bridge.posted[4].operation, 'bilibili.video.detail');
-  terminal(bridge, bridge.posted[4], fixtures.DETAIL_MULTIPART);
+  assert.strictEqual(bridge.posted[3].operation, 'bilibili.video.detail');
+  terminal(bridge, bridge.posted[3], fixtures.DETAIL_MULTIPART);
   const invalidPartError = await invalidPart;
   assert.strictEqual(failures, 1);
   assert.strictEqual(invalidPartError.kind, 'invalid-part');
   assert.strictEqual(
     bridge.posted.length,
-    5,
-    'wrong explicit CID cannot request a fallback manifest'
+    4,
+    'wrong explicit CID cannot cause a native stream request from the page'
   );
   assert.strictEqual(invalidPartError.message.includes('999'), false);
 
@@ -201,8 +199,8 @@ async function run() {
   bridge.emit({
     version: 2,
     terminal: 'error',
-    requestId: bridge.posted[5].requestId,
-    pageEpoch: bridge.posted[5].pageEpoch,
+    requestId: bridge.posted[4].requestId,
+    pageEpoch: bridge.posted[4].pageEpoch,
     status: 0,
     error: fixtures.ERROR_FIXTURES.NETWORK,
   });
@@ -213,6 +211,110 @@ async function run() {
       status: 'android-rpc-network',
       message: 'Bilibili is unavailable while this device is offline.',
     },
+  });
+
+  const directory = provider.show_playlist('/show_playlist?offset=0');
+  assert.strictEqual(bridge.posted[5].operation, 'bilibili.directory.page');
+  assert.deepStrictEqual(toPlain(bridge.posted[5].payload), { page: 1 });
+  const directoryResult = new Promise((resolve) => directory.success(resolve));
+  terminal(bridge, bridge.posted[5], {
+    source: 'bilibili',
+    provider: 'bilibili',
+    rows: [
+      {
+        id: 'biplaylist_42',
+        providerPlaylistId: 42,
+        source: 'bilibili',
+        provider: 'bilibili',
+        title: 'Fixture chart',
+        cover: 'https://i0.hdslb.com/chart.jpg',
+      },
+    ],
+  });
+  assert.deepStrictEqual(toPlain(await directoryResult), {
+    result: [
+      {
+        cover_img_url: 'https://i0.hdslb.com/chart.jpg',
+        title: 'Fixture chart',
+        id: 'biplaylist_42',
+        source_url: 'https://www.bilibili.com/audio/am42',
+      },
+    ],
+  });
+
+  const detail = provider.bi_get_playlist('/playlist?list_id=biplaylist_42');
+  assert.strictEqual(bridge.posted[6].operation, 'bilibili.directory.detail');
+  assert.deepStrictEqual(toPlain(bridge.posted[6].payload), {
+    playlistId: '42',
+  });
+  const detailResult = new Promise((resolve) => detail.success(resolve));
+  terminal(bridge, bridge.posted[6], {
+    source: 'bilibili',
+    provider: 'bilibili',
+    info: {
+      id: 'biplaylist_42',
+      providerPlaylistId: 42,
+      source: 'bilibili',
+      provider: 'bilibili',
+      title: 'Fixture chart',
+      cover: 'https://i0.hdslb.com/chart.jpg',
+    },
+    tracks: [
+      {
+        id: 'bitrack_9001',
+        providerTrackId: 9001,
+        source: 'bilibili',
+        provider: 'bilibili',
+        title: 'Fixture audio',
+        artist: 'Fixture singer',
+        artistId: 'biartist_7',
+        duration: 185,
+        capability: 'playable',
+        cover: 'https://i0.hdslb.com/audio.jpg',
+      },
+    ],
+  });
+  const detailValue = await detailResult;
+  assert.strictEqual(detailValue.info.id, 'biplaylist_42');
+  assert.strictEqual(detailValue.tracks[0].id, 'bitrack_9001');
+  assert.strictEqual(detailValue.tracks[0].capability, 'playable');
+
+  const lyricPromise = provider.resolve_lyric({
+    trackId: `bitrack_v_${fixtures.BVID}-101`,
+    title: 'Android fixture song',
+    artist: 'Fixture artist',
+    duration: 201,
+    pageEpoch: 8,
+  });
+  assert.strictEqual(bridge.posted[7].operation, 'bilibili.video.detail');
+  terminal(bridge, bridge.posted[7], fixtures.DETAIL_MULTIPART);
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.strictEqual(bridge.posted[8].operation, 'bilibili.lyric.primary');
+  const lyricPayload = bridge.posted[8].payload;
+  assert.strictEqual(lyricPayload.bvid, fixtures.BVID);
+  assert.strictEqual(lyricPayload.cid, 101);
+  assert.strictEqual(lyricPayload.selectionRevision, 0);
+  terminal(bridge, bridge.posted[8], {
+    lyric: '[00:01.00]Fixture line',
+    tlyric: '[00:01.00]示例歌词',
+    source: 'netease-match',
+    matchedTitle: 'Android fixture song',
+    matchedArtist: 'Fixture artist',
+    matchedDurationSeconds: 201,
+    matchScorePercent: 98,
+    selectionIdentity: lyricPayload.selectionIdentity,
+    selectionRevision: lyricPayload.selectionRevision,
+    selectionToken: lyricPayload.selectionToken,
+  });
+  assert.deepStrictEqual(toPlain(await lyricPromise), {
+    lyric: '[00:01.00]Fixture line',
+    tlyric: '[00:01.00]示例歌词',
+    source: 'netease-match',
+    matchedTitle: 'Android fixture song',
+    matchedArtist: 'Fixture artist',
+    matchedDuration: 201,
+    matchScore: 98,
   });
 
   console.log('Android typed Bilibili provider tests passed');

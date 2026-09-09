@@ -1,7 +1,8 @@
 package com.dazzlingwuming.listen2;
 
-import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import androidx.room.migration.Migration;
@@ -73,5 +74,34 @@ public final class PlaybackMigrationInstrumentationTest {
             }
         }
         database.close();
+    }
+
+    @Test
+    public void migrationFourToFiveRetainsCheckpointAndAddsOnlySemanticDescriptorFields() throws Exception {
+        String databaseName = "listen2-playback-schema-4-test";
+        SupportSQLiteDatabase database = helper.createDatabase(databaseName, 4);
+        database.execSQL("INSERT INTO playback_occurrences (occurrenceId, trackHandle, source, providerTrackId,"
+                + " providerPartId, role, ordinal, playable) VALUES ('occ-1', 'track-1', 'bilibili',"
+                + " 'BV1xx411c7mD', 7, 'queue', 0, 1)");
+        database.execSQL("INSERT INTO playback_checkpoint (checkpointId, revision, transitionToken, baseContextId,"
+                + " currentOccurrenceId, baseCurrentOccurrenceId, mode, modeBeforeQueue, queueContextActive,"
+                + " historyCursor, shuffleNextIndex, positionMs, updatedAtMs) VALUES (1, 1, 'token-1',"
+                + " 'context-1', 'occ-1', 'occ-1', 'SEQUENTIAL', 'SEQUENTIAL', 0, 0, 0, 1234, 1)");
+        database.close();
+
+        SupportSQLiteDatabase migrated = helper.runMigrationsAndValidate(databaseName, 5, true,
+                Listen2Database.MIGRATION_4_5);
+        android.database.Cursor cursor = migrated.query("SELECT title, artist, durationMs, mediaKind"
+                + " FROM playback_occurrences WHERE occurrenceId = 'occ-1'");
+        try {
+            assertTrue(cursor.moveToFirst());
+            assertEquals("", cursor.getString(0));
+            assertEquals("", cursor.getString(1));
+            assertEquals(0L, cursor.getLong(2));
+            assertEquals("audio", cursor.getString(3));
+        } finally {
+            cursor.close();
+            migrated.close();
+        }
     }
 }

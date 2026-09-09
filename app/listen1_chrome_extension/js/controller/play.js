@@ -219,6 +219,15 @@ angular.module('listenone').controller('PlayController', [
 
     $scope.enableGloablShortcut = false;
     $scope.isChrome = !isElectron();
+    const isAndroidTranslationSurface = () =>
+      Boolean(
+        !isElectron() &&
+          typeof window !== 'undefined' &&
+          window.Listen2AndroidHttpAdapter &&
+          typeof window.Listen2AndroidHttpAdapter.isAvailable === 'function' &&
+          window.Listen2AndroidHttpAdapter.isAvailable()
+      );
+    $scope.isAndroidSurface = isAndroidTranslationSurface;
     $scope.isMac = false;
 
     $scope.currentDuration = '0:00';
@@ -700,6 +709,12 @@ angular.module('listenone').controller('PlayController', [
       $scope.closeAndroidPlayerDetail();
       return true;
     };
+    $scope.$on('android:playback-back', (angularEvent, playbackBack) => {
+      if (!playbackBack || typeof playbackBack !== 'object') return;
+      playbackBack.handled = $scope.handleAndroidPlayerBack({
+        preventDefault() {},
+      });
+    });
     $scope.primaryLyricState = {
       state: 'idle',
       trackId: '',
@@ -710,6 +725,15 @@ angular.module('listenone').controller('PlayController', [
     $scope.lyricTranslationConfirmPending = false;
     $scope.lyricTranslationConfirmError = '';
     $scope.lyricTranslationConfirmMode = 'translate';
+    $scope.lyricTranslationConsent = {
+      lyrics: false,
+      title: false,
+      artist: false,
+      possibleCost: false,
+      cancellation: false,
+      failureImpact: false,
+    };
+    let activeLyricTranslationHandle = null;
     $scope.lyricTranslationSourceSnapshot = null;
     $scope.lyricPickerModal = false;
     $scope.machineTranslationConfig = {
@@ -718,6 +742,7 @@ angular.module('listenone').controller('PlayController', [
       targetLanguage: 'zh-CN',
       hasApiKey: false,
       secureStorageAvailable: false,
+      nativeClientAvailable: false,
       apiKeyInput: '',
       defaultStyleHint: '',
       effectiveStyleHint: '',
@@ -1990,6 +2015,12 @@ angular.module('listenone').controller('PlayController', [
         ...$scope.machineTranslationConfig,
         ...response.config,
       };
+      if (isAndroidTranslationSurface()) {
+        $scope.$emit(
+          'android:deepseek-config-changed',
+          $scope.machineTranslationConfig
+        );
+      }
       return true;
     }
 
@@ -2009,7 +2040,7 @@ angular.module('listenone').controller('PlayController', [
     };
 
     function loadMachineTranslationConfig() {
-      if (!isElectron()) {
+      if (!isElectron() && !isAndroidTranslationSurface()) {
         return Promise.resolve(false);
       }
       return MediaService.getMachineTranslationConfig()
@@ -2022,11 +2053,14 @@ angular.module('listenone').controller('PlayController', [
         .catch(() => false);
     }
 
+    $scope.refreshMachineTranslationConfig = () =>
+      loadMachineTranslationConfig();
+
     function saveMachineTranslationConfig(
       showNotice,
       { includeApiKey = true, includeStyleHint = true, noticeKey } = {}
     ) {
-      if (!isElectron()) {
+      if (!isElectron() && !isAndroidTranslationSurface()) {
         return Promise.resolve(false);
       }
       $scope.machineTranslationConfigPending = true;
@@ -2118,11 +2152,18 @@ angular.module('listenone').controller('PlayController', [
         shell.openExternal(url);
         return;
       }
+      if (isAndroidTranslationSurface()) {
+        window.location.href = url;
+        return;
+      }
       window.open(url, '_blank');
     };
 
     $scope.clearMachineTranslationApiKey = () => {
-      if (!isElectron() || $scope.machineTranslationConfigPending) {
+      if (
+        (!isElectron() && !isAndroidTranslationSurface()) ||
+        $scope.machineTranslationConfigPending
+      ) {
         return;
       }
       $scope.machineTranslationConfigPending = true;
@@ -2200,13 +2241,16 @@ angular.module('listenone').controller('PlayController', [
         $scope.settings = localSettings;
       }
       // apply settings
-      switchMode($scope.settings.playmode);
+      // Native playback restores its own Room-backed mode and volume. Sending
+      // renderer defaults before the Media3 session attaches creates stale,
+      // rejected startup commands and must not override native truth.
+      if (!androidPlaybackAdapter) switchMode($scope.settings.playmode);
 
       $scope.volume = $scope.settings.volume;
       if ($scope.volume === null) {
         $scope.volume = 90;
         $scope.saveLocalSettings();
-      } else {
+      } else if (!androidPlaybackAdapter) {
         l1Player.setVolume($scope.volume);
       }
       $scope.enableGlobalShortCut = localStorage.getObject(
@@ -2921,6 +2965,11 @@ angular.module('listenone').controller('PlayController', [
           if (resolvedCandidate.hasTranslation) {
             return resolvedCandidate;
           }
+          // Android sends a complete lyric only after the explicit consent
+          // dialog; automatic lookup must never create a billable request.
+          if (isAndroidTranslationSurface()) {
+            return resolvedCandidate;
+          }
           return MediaService.machineTranslateLyricCandidate(
             track,
             resolvedCandidate,
@@ -3039,11 +3088,26 @@ angular.module('listenone').controller('PlayController', [
     let lyricTranslationConfirmTrigger = null;
 
     function resetLyricTranslationConfirmation(restoreFocus = false) {
+      if (
+        activeLyricTranslationHandle &&
+        typeof activeLyricTranslationHandle.cancel === 'function'
+      ) {
+        activeLyricTranslationHandle.cancel();
+      }
+      activeLyricTranslationHandle = null;
       lyricTranslationRequestToken += 1;
       $scope.lyricTranslationConfirmOpen = false;
       $scope.lyricTranslationConfirmPending = false;
       $scope.lyricTranslationConfirmError = '';
       $scope.lyricTranslationConfirmMode = 'translate';
+      $scope.lyricTranslationConsent = {
+        lyrics: false,
+        title: false,
+        artist: false,
+        possibleCost: false,
+        cancellation: false,
+        failureImpact: false,
+      };
       const trigger = lyricTranslationConfirmTrigger;
       lyricTranslationConfirmTrigger = null;
       if (restoreFocus && trigger && document.contains(trigger)) {
@@ -3054,6 +3118,12 @@ angular.module('listenone').controller('PlayController', [
     $scope.closeLyricTranslationConfirmation = () => {
       resetLyricTranslationConfirmation(true);
     };
+
+    $scope.$on('android:close-transient-overlay', () => {
+      if ($scope.lyricTranslationConfirmOpen) {
+        resetLyricTranslationConfirmation(false);
+      }
+    });
 
     $scope.handleLyricTranslationConfirmationKeydown = (event) => {
       const isEscape = event.key === 'Escape' || event.keyCode === 27;
@@ -3107,6 +3177,31 @@ angular.module('listenone').controller('PlayController', [
           : '_MACHINE_TRANSLATION_CONFIRM_ACTION'
       );
 
+    $scope.lyricTranslationConsentComplete = () => {
+      const consent = $scope.lyricTranslationConsent || {};
+      return [
+        'lyrics',
+        'title',
+        'artist',
+        'possibleCost',
+        'cancellation',
+        'failureImpact',
+      ].every((field) => consent[field] === true);
+    };
+
+    $scope.cancelCurrentLyricTranslation = () => {
+      if (
+        activeLyricTranslationHandle &&
+        typeof activeLyricTranslationHandle.cancel === 'function'
+      ) {
+        activeLyricTranslationHandle.cancel();
+      }
+      activeLyricTranslationHandle = null;
+      if ($scope.lyricTranslationConfirmOpen) {
+        resetLyricTranslationConfirmation(true);
+      }
+    };
+
     function openLyricTranslationConfirmation(mode = 'translate') {
       const track = $scope.currentPlaying;
       const originalResult = $scope.currentLyricResult;
@@ -3114,7 +3209,7 @@ angular.module('listenone').controller('PlayController', [
         notyf.info(i18next.t('_LYRIC_TRANSLATION_UNAVAILABLE'));
         return;
       }
-      if (!isElectron()) {
+      if (!isElectron() && !isAndroidTranslationSurface()) {
         notyf.info(i18next.t('_LYRIC_TRANSLATION_UNAVAILABLE'));
         return;
       }
@@ -3124,6 +3219,14 @@ angular.module('listenone').controller('PlayController', [
       lyricTranslationConfirmTrigger = document.activeElement;
       $scope.lyricTranslationConfirmMode =
         mode === 'retranslate' ? 'retranslate' : 'translate';
+      $scope.lyricTranslationConsent = {
+        lyrics: false,
+        title: false,
+        artist: false,
+        possibleCost: false,
+        cancellation: false,
+        failureImpact: false,
+      };
       $scope.lyricTranslationConfirmOpen = true;
       $scope.lyricTranslationConfirmError = '';
       $timeout(() => {
@@ -3171,15 +3274,27 @@ angular.module('listenone').controller('PlayController', [
       notyf.success(i18next.t('_MACHINE_TRANSLATION_SOURCE_RESTORED'));
     };
 
+    function getPersistentLyricTrack(track) {
+      return {
+        ...track,
+        pageEpoch:
+          (nativeLyricRequestIdentity &&
+            nativeLyricRequestIdentity.pageEpoch) ||
+          track.pageEpoch,
+      };
+    }
+
     $scope.confirmCurrentLyricTranslation = () => {
       const track = $scope.currentPlaying;
       const originalResult = $scope.currentLyricResult;
       if (
-        !isElectron() ||
+        (!isElectron() && !isAndroidTranslationSurface()) ||
         !isBilibiliTrack(track) ||
         !originalResult ||
         !originalResult.lyric ||
-        $scope.lyricTranslationConfirmPending
+        $scope.lyricTranslationConfirmPending ||
+        (isAndroidTranslationSurface() &&
+          !$scope.lyricTranslationConsentComplete())
       ) {
         return;
       }
@@ -3202,15 +3317,26 @@ angular.module('listenone').controller('PlayController', [
       $scope.lyricTranslationConfirmPending = true;
       $scope.lyricTranslationConfirmError = '';
       const candidate = lyricResultToCandidate(track, originalResult);
-      MediaService.machineTranslateLyricCandidate(
+      const translationHandle = MediaService.machineTranslateLyricCandidate(
         track,
         candidate,
         getMachineTranslationTargetLanguage(),
         {
           allowNetwork: true,
           forceRefresh: retranslate,
+          styleHint: $scope.machineTranslationConfig.styleHint || '',
+          ...(isAndroidTranslationSurface()
+            ? {
+                consent: {
+                  ...$scope.lyricTranslationConsent,
+                  acceptedAtEpochMs: Date.now(),
+                },
+              }
+            : {}),
         }
-      )
+      );
+      activeLyricTranslationHandle = translationHandle;
+      translationHandle
         .then(decorateLyricCandidate)
         .then((resolvedCandidate) => {
           $scope.$evalAsync(() => {
@@ -3222,6 +3348,7 @@ angular.module('listenone').controller('PlayController', [
               return;
             }
             $scope.lyricTranslationConfirmPending = false;
+            activeLyricTranslationHandle = null;
             if (!resolvedCandidate.hasTranslation) {
               $scope.lyricTranslationConfirmError =
                 getMachineTranslationErrorMessage(
@@ -3236,15 +3363,33 @@ angular.module('listenone').controller('PlayController', [
             ) {
               return;
             }
-            applyLyricResult(
-              track,
-              candidateToLyricResult(resolvedCandidate, originalResult, source)
+            const translatedResult = candidateToLyricResult(
+              resolvedCandidate,
+              originalResult,
+              source
             );
+            applyLyricResult(track, translatedResult);
+            if (isAndroidTranslationSurface()) {
+              MediaService.putPersistentLyric(
+                getPersistentLyricTrack(track),
+                translatedResult,
+                'auto',
+                Number(originalResult.lyricCacheRevision || 0)
+              ).catch(() => null);
+            }
             $scope.lyricTranslationSourceSnapshot = sourceTranslationSnapshot;
             $scope.enableLyricTranslation = true;
             localStorage.setObject('enable_lyric_translation', true);
             $scope.lyricTranslationConfirmOpen = false;
             $scope.lyricTranslationConfirmError = '';
+            $scope.lyricTranslationConsent = {
+              lyrics: false,
+              title: false,
+              artist: false,
+              possibleCost: false,
+              cancellation: false,
+              failureImpact: false,
+            };
             notifyTranslationResult(resolvedCandidate);
           });
         })
@@ -3254,6 +3399,7 @@ angular.module('listenone').controller('PlayController', [
               return;
             }
             $scope.lyricTranslationConfirmPending = false;
+            activeLyricTranslationHandle = null;
             $scope.lyricTranslationConfirmError = i18next.t(
               '_MACHINE_TRANSLATION_FAILED'
             );
@@ -3310,10 +3456,19 @@ angular.module('listenone').controller('PlayController', [
             if (!isCurrentLyricRequest(track, requestToken)) return;
             $scope.lyricTranslationLookupPending = false;
             if (!resolvedCandidate.hasTranslation) return;
-            applyLyricResult(
-              track,
-              candidateToLyricResult(resolvedCandidate, result)
+            const translatedResult = candidateToLyricResult(
+              resolvedCandidate,
+              result
             );
+            applyLyricResult(track, translatedResult);
+            if (isAndroidTranslationSurface()) {
+              MediaService.putPersistentLyric(
+                getPersistentLyricTrack(track),
+                translatedResult,
+                'auto',
+                Number(result.lyricCacheRevision || 0)
+              ).catch(() => null);
+            }
           });
         })
         .catch(() => {
@@ -3326,11 +3481,15 @@ angular.module('listenone').controller('PlayController', [
     }
 
     function persistAutomaticLyric(track, result, expectedRevision) {
-      if (!isElectron() || !result || !result.lyric) {
+      if (
+        (!isElectron() && !isAndroidTranslationSurface()) ||
+        !result ||
+        !result.lyric
+      ) {
         return Promise.resolve(null);
       }
       return MediaService.putPersistentLyric(
-        track,
+        getPersistentLyricTrack(track),
         result,
         'auto',
         expectedRevision
@@ -3358,14 +3517,41 @@ angular.module('listenone').controller('PlayController', [
       if (!androidPlaybackAdapter) resetLyricDisplay();
       setPrimaryLyricState(track, 'loading');
       if (!isElectron()) {
-        getProviderLyric(track)
-          .then((result) => {
+        MediaService.getPersistentLyric(getPersistentLyricTrack(track))
+          .catch(() => ({ ok: false, result: null, record: null }))
+          .then((cacheResponse) => {
+            if (!isCurrentLyricRequest(track, requestToken)) return null;
+            const cached = cacheResponse && cacheResponse.result;
+            if (cached) {
+              $scope.$evalAsync(() => {
+                if (isCurrentLyricRequest(track, requestToken)) {
+                  applyLyricResult(track, cached);
+                }
+              });
+              return null;
+            }
+            return getProviderLyric(track).then((result) => ({
+              result,
+              expectedRevision: Number(
+                (cacheResponse &&
+                  cacheResponse.record &&
+                  cacheResponse.record.revision) ||
+                  0
+              ),
+            }));
+          })
+          .then((remote) => {
+            if (!remote || !isCurrentLyricRequest(track, requestToken)) return;
+            const result = remote.result || { lyric: '' };
             if (!isCurrentLyricRequest(track, requestToken)) return;
             $scope.$evalAsync(() => {
               if (!isCurrentLyricRequest(track, requestToken)) return;
               applyLyricResult(track, result);
               applyAutomaticLyricTranslation(track, result, requestToken);
             });
+            persistAutomaticLyric(track, result, remote.expectedRevision).catch(
+              () => null
+            );
           })
           .catch(() => {
             $scope.$evalAsync(() => {
@@ -4143,7 +4329,15 @@ angular.module('listenone').controller('PlayController', [
     });
 
     // connect player should run after all addListener function finished
-    l1Player.connectPlayer();
+    const playerConnection = l1Player.connectPlayer();
+    if (playerConnection && typeof playerConnection.catch === 'function') {
+      playerConnection.catch(() => {
+        if (!androidPlaybackAdapter || playControllerDestroyed) return;
+        $scope.$evalAsync(() => {
+          $scope.androidPlaybackBusy = false;
+        });
+      });
+    }
     if (androidPlaybackAdapter) {
       refreshAndroidPlaybackSnapshot();
       document.addEventListener('keydown', $scope.handleAndroidPlayerBack);

@@ -1,5 +1,7 @@
 package com.dazzlingwuming.listen2;
 
+import com.dazzlingwuming.listen2.provider.AdvancedPlaybackCapabilities;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -34,6 +36,8 @@ public final class PlaybackBridgePolicy {
     private boolean muted;
     private PlaybackSnapshot.Mode mode = PlaybackSnapshot.Mode.SEQUENTIAL;
     private PlaybackSnapshot.RecoveryStatus recovery = new PlaybackSnapshot.RecoveryStatus("ready", false);
+    private PlaybackSnapshot.LyricContext lyricContext = PlaybackSnapshot.LyricContext.unavailable();
+    private AdvancedPlaybackCapabilities advancedCapabilities = AdvancedPlaybackCapabilities.unavailable();
     private final List<PlaybackSnapshot.QueueOccurrence> queue = new ArrayList<>();
     private final Map<String, NativePreparedSelection> preparedSelections = new HashMap<>();
     private PlaybackSnapshot.PreparedSelection visiblePreparedSelection;
@@ -67,9 +71,35 @@ public final class PlaybackBridgePolicy {
         PlaybackCommand.Type type = parseType((String) rawCommand);
         if (type == null) return Result.error("UNSUPPORTED_COMMAND");
         if (requestedEpoch.longValue() != pageEpoch) return Result.error("STALE_PAGE_EPOCH");
-        if (expectedRevision.longValue() != revision) return Result.error("STALE_REVISION");
+        // A freshly reconnected page subscribes from revision zero so it can
+        // recover the service-owned projection even when the old page advanced
+        // the revision before this WebView was recreated.
+        boolean bootstrapSubscribe = type == PlaybackCommand.Type.SUBSCRIBE
+                && expectedRevision.longValue() == 0L;
+        if (!bootstrapSubscribe && expectedRevision.longValue() != revision) {
+            return Result.error("STALE_REVISION");
+        }
         if (revision == MAX_REVISION) return Result.error("REVISION_EXHAUSTED");
         return apply((String) requestId, expectedRevision.longValue(), type, payload);
+    }
+
+    /** Reconciles page validation state with a newer native-owned projection. */
+    public void adoptSnapshot(PlaybackSnapshot snapshot) {
+        if (snapshot == null || snapshot.getPageEpoch() != pageEpoch
+                || snapshot.getRevision() < revision) return;
+        revision = snapshot.getRevision();
+        state = snapshot.getState();
+        metadata = snapshot.getMetadata();
+        positionMs = snapshot.getPositionMs();
+        volumePercent = snapshot.getVolumePercent();
+        muted = snapshot.isMuted();
+        mode = snapshot.getMode();
+        recovery = snapshot.getRecoveryStatus();
+        lyricContext = snapshot.getLyricContext();
+        advancedCapabilities = snapshot.getAdvancedCapabilities();
+        queue.clear();
+        queue.addAll(snapshot.getQueue());
+        visiblePreparedSelection = snapshot.getPreparedSelection();
     }
 
     private Result apply(String requestId, long expectedRevision, PlaybackCommand.Type type,
@@ -253,7 +283,8 @@ public final class PlaybackBridgePolicy {
         return new PlaybackSnapshot(SNAPSHOT_VERSION, pageEpoch, revision, state, metadata, positionMs,
                 metadataDuration(), volumePercent, muted, mode,
                 new PlaybackSnapshot.ActionAvailability(true, true, !queue.isEmpty(), !queue.isEmpty(),
-                        metadataDuration() > 0L, !queue.isEmpty()), queue, visiblePreparedSelection, recovery);
+                        metadataDuration() > 0L, !queue.isEmpty()), queue, visiblePreparedSelection, recovery,
+                lyricContext, advancedCapabilities);
     }
 
     private long metadataDuration() {
@@ -329,6 +360,10 @@ public final class PlaybackBridgePolicy {
     private static boolean isValidLogicalIdentity(String source, String providerTrackId, Long providerPartId) {
         if (providerPartId == null) return false;
         if ("bilibili".equals(source)) return isSafeBvid(providerTrackId);
+        if ("local".equals(source)) {
+            return providerPartId.longValue() == 1L && providerTrackId != null
+                    && providerTrackId.matches("local\\.track\\.[a-f0-9]{64}");
+        }
         return "netease".equals(source) && providerTrackId != null
                 && providerTrackId.matches("[1-9][0-9]{0,17}");
     }

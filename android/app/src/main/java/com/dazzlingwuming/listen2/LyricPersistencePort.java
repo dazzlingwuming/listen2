@@ -9,6 +9,15 @@ public interface LyricPersistencePort {
 
     Result execute(Intent intent);
 
+    default ContentResult readContent(Intent intent) {
+        return ContentResult.error("LYRIC_PERSISTENCE_UNAVAILABLE");
+    }
+
+    default Result persistContent(Intent intent, String originalText, String translationText,
+            int matchQuality, long matchedAtMs) {
+        return Result.error("LYRIC_PERSISTENCE_UNAVAILABLE");
+    }
+
     static LyricPersistencePort unavailable() {
         return intent -> Result.error("LYRIC_PERSISTENCE_UNAVAILABLE");
     }
@@ -77,6 +86,36 @@ public interface LyricPersistencePort {
 
         public static Result error(String errorCode) {
             return new Result("invalid", 0L, null, null, 0L, errorCode);
+        }
+    }
+
+    final class ContentResult {
+        public final String status;
+        public final long revision;
+        public final String originalText;
+        public final String translationText;
+        public final String errorCode;
+
+        private ContentResult(String status, long revision, String originalText,
+                String translationText, String errorCode) {
+            this.status = status;
+            this.revision = revision;
+            this.originalText = originalText;
+            this.translationText = translationText;
+            this.errorCode = errorCode;
+        }
+
+        public static ContentResult found(long revision, String originalText,
+                String translationText) {
+            return new ContentResult("found", revision, originalText, translationText, null);
+        }
+
+        public static ContentResult notFound() {
+            return new ContentResult("not-found", 0L, null, null, null);
+        }
+
+        public static ContentResult error(String errorCode) {
+            return new ContentResult("invalid", 0L, null, null, errorCode);
         }
     }
 }

@@ -10,6 +10,7 @@
       ? window.Listen2AndroidHttpAdapter
       : null;
   const nativeLogicalTracks = new Map();
+  const nativeTracksByOccurrence = new Map();
   let nativeCurrentTrack = null;
   let nativeSelectedTrackId = '';
   const nativePageEpoch = Math.floor(Date.now() % 2147483647);
@@ -17,17 +18,37 @@
   let l1Player;
 
   const nativeTrackSelection = (track) => {
-    const id = String(track && track.id ? track.id : '');
+    let rawId = '';
+    if (track && track.id) rawId = track.id;
+    else if (track && track.localTrackId) rawId = track.localTrackId;
+    const id = String(rawId);
     const title =
       typeof (track && track.title) === 'string' ? track.title.trim() : '';
     const artist =
       typeof (track && track.artist) === 'string' ? track.artist.trim() : '';
     const durationMs = Math.max(
       0,
-      Math.round(Number(track && track.duration) * 1000) || 0
+      Number.isFinite(Number(track && track.durationMs))
+        ? Math.round(Number(track.durationMs))
+        : Math.round(Number(track && track.duration) * 1000) || 0
     );
     if (!title || !artist || title.length > 256 || artist.length > 256) {
       return null;
+    }
+    if (
+      track &&
+      track.source === 'local' &&
+      /^local\.track\.[a-f0-9]{64}$/.test(id)
+    ) {
+      return {
+        source: 'local',
+        providerTrackId: id,
+        providerPartId: 1,
+        title,
+        artist,
+        durationMs,
+        mediaKind: 'audio',
+      };
     }
     const bilibili = /^bitrack_v_(BV[0-9A-Za-z]{6,32})-(\d+)$/.exec(id);
     if (bilibili) {
@@ -35,6 +56,18 @@
         source: 'bilibili',
         providerTrackId: bilibili[1],
         providerPartId: Number(bilibili[2]),
+        title,
+        artist,
+        durationMs,
+        mediaKind: 'audio',
+      };
+    }
+    const bilibiliAudio = /^bitrack_([1-9][0-9]{0,17})$/.exec(id);
+    if (bilibiliAudio) {
+      return {
+        source: 'bilibili',
+        providerTrackId: bilibiliAudio[1],
+        providerPartId: 1,
         title,
         artist,
         durationMs,
@@ -60,7 +93,7 @@
 
   const nativeCommand = (command, payload) => {
     if (!androidPlayback) return Promise.resolve();
-    return androidPlayback.command(command, payload).catch(() => null);
+    return androidPlayback.command(command, payload);
   };
 
   const lyricSafeNativeSnapshot = (snapshot) => {
@@ -102,22 +135,38 @@
     nativeLogicalTracks.set(track.id, track);
     return androidPlayback
       .prepareSelection(selection)
-      .then((prepared) =>
-        androidPlayback.selectPrepared(prepared, { action, playWhenReady })
-      )
+      .then((prepared) => {
+        nativeTracksByOccurrence.set(prepared.occurrenceId, track);
+        return androidPlayback.selectPrepared(prepared, {
+          action,
+          playWhenReady,
+        });
+      })
       .then((snapshot) => {
         if (action === 'replace-current') {
           nativeCurrentTrack = track;
           nativeSelectedTrackId = track.id;
         }
         return snapshot;
-      })
-      .catch(() => null);
+      });
   };
 
   const syncNativeSnapshot = (snapshot) => {
     if (!snapshot || !androidPlayback) return;
     nativeLyricSnapshot = lyricSafeNativeSnapshot(snapshot);
+    const currentOccurrence =
+      Array.isArray(snapshot.queue) && snapshot.queue.length
+        ? snapshot.queue[0] && snapshot.queue[0].occurrenceId
+        : '';
+    const currentTrack = nativeTracksByOccurrence.get(currentOccurrence);
+    if (currentTrack) {
+      nativeCurrentTrack = currentTrack;
+      nativeSelectedTrackId = currentTrack.id;
+    } else if (!currentOccurrence) {
+      nativeCurrentTrack = null;
+      nativeSelectedTrackId = '';
+      nativeTracksByOccurrence.clear();
+    }
     const playing = {
       id: nativeCurrentTrack ? nativeCurrentTrack.id : '',
       title: snapshot.metadata.title,
@@ -162,35 +211,33 @@
           nativeCurrentTrack &&
           nativeSelectedTrackId !== nativeCurrentTrack.id
         ) {
-          nativeSelect(nativeCurrentTrack, 'replace-current', true);
-        } else {
-          nativeCommand('play', {});
+          return nativeSelect(nativeCurrentTrack, 'replace-current', true);
         }
-        return;
+        return nativeCommand('play', {});
       }
       getPlayerAsync(mode, (player) => {
         player.play();
       });
+      return Promise.resolve(null);
     },
     pause() {
       if (androidPlayback) {
-        nativeCommand('pause', {});
-        return;
+        return nativeCommand('pause', {});
       }
       getPlayerAsync(mode, (player) => {
         player.pause();
       });
+      return Promise.resolve(null);
     },
     togglePlayPause() {
       if (androidPlayback) {
-        nativeCommand(
+        return nativeCommand(
           androidPlayback.getPlaybackSnapshot() &&
             androidPlayback.getPlaybackSnapshot().state === 'playing'
             ? 'pause'
             : 'play',
           {}
         );
-        return;
       }
       getPlayerAsync(mode, (player) => {
         if (player.playing) {
@@ -199,24 +246,33 @@
           player.play();
         }
       });
+      return Promise.resolve(null);
     },
     playById(id) {
       if (androidPlayback) {
-        nativeSelect(nativeLogicalTracks.get(id), 'replace-current', true);
-        return;
+        return nativeSelect(
+          nativeLogicalTracks.get(id),
+          'replace-current',
+          true
+        );
       }
       getPlayerAsync(mode, (player) => {
         player.playById(id);
       });
+      return Promise.resolve(null);
     },
     loadById(idx) {
       if (androidPlayback) {
-        nativeSelect(nativeLogicalTracks.get(idx), 'replace-current', false);
-        return;
+        return nativeSelect(
+          nativeLogicalTracks.get(idx),
+          'replace-current',
+          false
+        );
       }
       getPlayerAsync(mode, (player) => {
         player.loadById(idx);
       });
+      return Promise.resolve(null);
     },
     seek(per) {
       if (androidPlayback) {
@@ -225,39 +281,39 @@
           0,
           Math.round(Number(per) * Number(snapshot && snapshot.durationMs)) || 0
         );
-        nativeCommand('seek', { positionMs });
-        return;
+        return nativeCommand('seek', { positionMs });
       }
       getPlayerAsync(mode, (player) => {
         player.seek(per);
       });
+      return Promise.resolve(null);
     },
     next() {
       if (androidPlayback) {
-        nativeCommand('next', {});
-        return;
+        return nativeCommand('next', {});
       }
       getPlayerAsync(mode, (player) => {
         player.skip('next');
       });
+      return Promise.resolve(null);
     },
     prev() {
       if (androidPlayback) {
-        nativeCommand('previous', {});
-        return;
+        return nativeCommand('previous', {});
       }
       getPlayerAsync(mode, (player) => {
         player.skip('prev');
       });
+      return Promise.resolve(null);
     },
     random() {
       if (androidPlayback) {
-        nativeCommand('next', {});
-        return;
+        return nativeCommand('next', {});
       }
       getPlayerAsync(mode, (player) => {
         player.skip('random');
       });
+      return Promise.resolve(null);
     },
     setLoopMode(input) {
       if (androidPlayback) {
@@ -270,73 +326,74 @@
           2: 'shuffle',
         };
         if (modeByInput[input] !== undefined)
-          nativeCommand('mode', { mode: modeByInput[input] });
-        return;
+          return nativeCommand('mode', { mode: modeByInput[input] });
+        return Promise.resolve(null);
       }
       getPlayerAsync(mode, (player) => {
         // eslint-disable-next-line no-param-reassign
         player.loop_mode = input;
       });
+      return Promise.resolve(null);
     },
     mute() {
       if (androidPlayback) {
-        nativeCommand('mute', { muted: true });
-        return;
+        return nativeCommand('mute', { muted: true });
       }
       getPlayerAsync(mode, (player) => {
         player.mute();
       });
+      return Promise.resolve(null);
     },
     unmute() {
       if (androidPlayback) {
-        nativeCommand('mute', { muted: false });
-        return;
+        return nativeCommand('mute', { muted: false });
       }
       getPlayerAsync(mode, (player) => {
         player.unmute();
       });
+      return Promise.resolve(null);
     },
     toggleMute() {
       if (androidPlayback) {
         const snapshot = androidPlayback.getPlaybackSnapshot();
-        nativeCommand('mute', { muted: !(snapshot && snapshot.muted) });
-        return;
+        return nativeCommand('mute', { muted: !(snapshot && snapshot.muted) });
       }
       getPlayerAsync(mode, (player) => {
         if (player.muted) player.unmute();
         else player.mute();
       });
+      return Promise.resolve(null);
     },
     setVolume(per) {
       if (androidPlayback) {
-        nativeCommand('volume', {
+        return nativeCommand('volume', {
           volumePercent: Math.max(
             0,
             Math.min(100, Math.round(Number(per) || 0))
           ),
         });
-        return;
       }
       getPlayerAsync(mode, (player) => {
         // eslint-disable-next-line no-param-reassign
         player.volume = per / 100;
       });
+      return Promise.resolve(null);
     },
     adjustVolume(increase) {
       if (androidPlayback) {
         const snapshot = androidPlayback.getPlaybackSnapshot();
         const current = Number(snapshot && snapshot.volumePercent) || 0;
-        nativeCommand('volume', {
+        return nativeCommand('volume', {
           volumePercent: Math.max(
             0,
             Math.min(100, current + (increase ? 10 : -10))
           ),
         });
-        return;
       }
       getPlayerAsync(mode, (player) => {
         player.adjustVolume(increase);
       });
+      return Promise.resolve(null);
     },
     addTrack(track) {
       if (androidPlayback) {
@@ -349,83 +406,88 @@
     },
     enqueueNext(track) {
       if (androidPlayback) {
-        nativeSelect(track, 'enqueue-next', false);
-        return;
+        return nativeSelect(track, 'enqueue-next', false);
       }
       getPlayerAsync(mode, (player) => {
         player.enqueueNext(track);
       });
+      return Promise.resolve(null);
     },
     removePlayNextQueueEntry(queueId) {
       if (androidPlayback) {
-        nativeCommand('remove', { occurrenceId: queueId });
-        return;
+        return nativeCommand('remove', { occurrenceId: queueId });
       }
       getPlayerAsync(mode, (player) => {
         player.removePlayNextQueueEntry(queueId);
       });
+      return Promise.resolve(null);
     },
     movePlayNextQueueEntry(queueId, targetIndex) {
       if (androidPlayback) {
-        nativeCommand('reorder', { occurrenceId: queueId, targetIndex });
-        return;
+        return nativeCommand('reorder', { occurrenceId: queueId, targetIndex });
       }
       getPlayerAsync(mode, (player) => {
         player.movePlayNextQueueEntry(queueId, targetIndex);
       });
+      return Promise.resolve(null);
     },
     clearPlayNextQueue() {
       if (androidPlayback) {
-        nativeCommand('clear', {});
-        return;
+        return nativeCommand('clear', {});
       }
       getPlayerAsync(mode, (player) => {
         player.clearPlayNextQueue();
       });
+      return Promise.resolve(null);
     },
     insertTrack(track, to_track, direction) {
       if (androidPlayback) {
-        nativeSelect(track, 'enqueue-next', false);
-        return;
+        return nativeSelect(track, 'enqueue-next', false);
       }
       getPlayerAsync(mode, (player) => {
         player.insertAudioByDirection(track, to_track, direction);
       });
+      return Promise.resolve(null);
     },
     removeTrack(index) {
       if (androidPlayback) {
         const queue = l1Player.status.playNextQueue || [];
         const entry = queue[Number(index)];
-        if (entry) nativeCommand('remove', { occurrenceId: entry.queueId });
-        return;
+        return entry
+          ? nativeCommand('remove', { occurrenceId: entry.queueId })
+          : Promise.resolve(null);
       }
       getPlayerAsync(mode, (player) => {
         player.removeAudio(index);
       });
+      return Promise.resolve(null);
     },
     addTracks(list) {
       if (androidPlayback) {
-        (Array.isArray(list) ? list : []).forEach((track) =>
-          nativeSelect(track, 'enqueue-next', false)
+        return (Array.isArray(list) ? list : []).reduce(
+          (promise, track) =>
+            promise.then(() => nativeSelect(track, 'enqueue-next', false)),
+          Promise.resolve(null)
         );
-        return;
       }
       getPlayerAsync(mode, (player) => {
         player.appendAudioList(list);
       });
+      return Promise.resolve(null);
     },
     clearPlaylist() {
       if (androidPlayback) {
-        nativeCommand('clear', {});
-        return;
+        return nativeCommand('clear', {});
       }
       getPlayerAsync(mode, (player) => {
         player.clearPlaylist();
       });
+      return Promise.resolve(null);
     },
     setNewPlaylist(list) {
       if (androidPlayback) {
         nativeLogicalTracks.clear();
+        nativeTracksByOccurrence.clear();
         (Array.isArray(list) ? list : []).forEach((track) =>
           nativeLogicalTracks.set(track.id, track)
         );
@@ -444,13 +506,10 @@
     },
     connectPlayer() {
       if (androidPlayback) {
-        androidPlayback
-          .connect({
-            pageEpoch: nativePageEpoch,
-            onSnapshot: syncNativeSnapshot,
-          })
-          .promise.catch(() => {});
-        return;
+        return androidPlayback.connect({
+          pageEpoch: nativePageEpoch,
+          onSnapshot: syncNativeSnapshot,
+        }).promise;
       }
       getPlayerAsync(mode, (player) => {
         if (!player.playing) {
@@ -499,6 +558,7 @@
         player.sendPlayingEvent();
         player.sendLoadEvent();
       });
+      return Promise.resolve(null);
     },
   };
 

@@ -37,6 +37,911 @@ angular.module('listenone').controller('NavigationController', [
     $scope.lastfm = lastfm;
 
     $scope.isOpenSidebar = true;
+    // Phone-only product surfaces deliberately route to existing desktop actions
+    // where those actions are safe. Native-backed features remain visible, but
+    // never claim to work until the Android bridge publishes that capability.
+    $scope.mobileProductPage = '';
+    $scope.mobileCapabilityNotice = '';
+    const isAndroidSurface = () =>
+      Boolean(
+        typeof isElectron === 'function' &&
+          !isElectron() &&
+          window.Listen2AndroidHttpAdapter &&
+          window.Listen2AndroidHttpAdapter.isAvailable &&
+          window.Listen2AndroidHttpAdapter.isAvailable()
+      );
+    const getAndroidAdapter = () =>
+      isAndroidSurface() ? window.Listen2AndroidHttpAdapter : null;
+    let mobileLocalEpoch = 0;
+    let removeProviderCapabilityListener = () => {};
+    $scope.mobileLocalData = {
+      capabilities: {},
+      error: '',
+      loading: false,
+      page: '',
+      actionPending: '',
+      playlists: [],
+      favorites: [],
+      localTracks: [],
+      saf: [],
+      history: null,
+      cache: null,
+      download: null,
+      settings: null,
+      backup: null,
+      backupPreview: null,
+      safPickerStatus: '',
+      overwriteConfirmationOpen: false,
+      playlistDraft: null,
+      playlistDeleteConfirmation: null,
+      playlistNewName: '',
+    };
+    $scope.mobileAdvancedMediaEnabled = false;
+    $scope.mobileDeepSeekTranslationEnabled = false;
+    $scope.mobileDeepSeekStatus = {
+      secureStorageAvailable: false,
+      nativeClientAvailable: false,
+      hasApiKey: false,
+      status: 'unavailable',
+    };
+    const refreshMobileAdvancedCapability = () => {
+      if (
+        !MediaService ||
+        typeof MediaService.getAndroidProviderCapabilities !== 'function'
+      ) {
+        $scope.mobileAdvancedMediaEnabled = false;
+        return;
+      }
+      const matrix = MediaService.getAndroidProviderCapabilities();
+      $scope.mobileAdvancedMediaEnabled = Boolean(
+        matrix &&
+          Object.keys(matrix).some(
+            (provider) => matrix[provider] && matrix[provider].media === true
+          )
+      );
+    };
+    const refreshMobileDeepSeekCapability = () => {
+      if (
+        !MediaService ||
+        typeof MediaService.getAndroidDeepSeekTranslationCapability !==
+          'function'
+      ) {
+        $scope.mobileDeepSeekTranslationEnabled = false;
+        return Promise.resolve(null);
+      }
+      $scope.mobileDeepSeekTranslationEnabled =
+        MediaService.getAndroidDeepSeekTranslationCapability() === true;
+      if (typeof MediaService.getMachineTranslationConfig !== 'function') {
+        return Promise.resolve(null);
+      }
+      return MediaService.getMachineTranslationConfig()
+        .then((response) => {
+          if (response && response.config) {
+            $scope.mobileDeepSeekStatus = response.config;
+          }
+          return response;
+        })
+        .catch(() => null);
+    };
+    const safeMobileError = (error) => {
+      const code = error && (error.safeCode || error.code);
+      if (code === 'CANCELLED' || code === 'android-rpc-cancelled')
+        return '请求已取消。';
+      if (code === 'TIMEOUT' || code === 'android-rpc-timeout')
+        return '请求超时，请重试。';
+      return 'Android 数据暂时不可用，请稍后重试。';
+    };
+    const settleMobileLocal = (epoch, update) => {
+      if (epoch !== mobileLocalEpoch) return;
+      $scope.$evalAsync(() => {
+        if (epoch === mobileLocalEpoch) update();
+      });
+    };
+    const localDataRequest = (kind, action, payload = {}) => {
+      const adapter = getAndroidAdapter();
+      if (
+        !adapter ||
+        !adapter.localData ||
+        typeof adapter.localData[kind] !== 'function'
+      ) {
+        return Promise.reject(new Error('android-local-data-unavailable'));
+      }
+      const handle = adapter.localData[kind](action, payload, {
+        pageEpoch: mobileLocalEpoch,
+      });
+      return handle && handle.promise
+        ? handle.promise
+        : Promise.resolve(handle);
+    };
+    const hasLocalCapability = (name) =>
+      $scope.mobileLocalData.capabilities &&
+      $scope.mobileLocalData.capabilities[name] === true;
+    const setMobileLocalReply = (epoch, key, reply) => {
+      settleMobileLocal(epoch, () => {
+        $scope.mobileLocalData[key] = reply && reply.data ? reply.data : null;
+        $scope.mobileLocalData.error =
+          reply && reply.ok === false
+            ? `操作未完成：${reply.status || 'UNKNOWN'}`
+            : '';
+      });
+    };
+    $scope.refreshMobileCapabilities = () => {
+      if (!isAndroidSurface()) return Promise.resolve(null);
+      mobileLocalEpoch += 1;
+      const epoch = mobileLocalEpoch;
+      settleMobileLocal(epoch, () => {
+        $scope.mobileLocalData.loading = true;
+        $scope.mobileLocalData.error = '';
+      });
+      const local = localDataRequest('query', 'capabilities')
+        .then((reply) => {
+          settleMobileLocal(epoch, () => {
+            $scope.mobileLocalData.capabilities =
+              reply && reply.ok && reply.data ? reply.data : {};
+            $scope.mobileLocalData.loading = false;
+            if (!reply || !reply.ok) {
+              $scope.mobileLocalData.error = 'Android 数据能力尚未就绪。';
+            }
+          });
+          return reply;
+        })
+        .catch((error) => {
+          settleMobileLocal(epoch, () => {
+            $scope.mobileLocalData.loading = false;
+            $scope.mobileLocalData.error = safeMobileError(error);
+          });
+          return null;
+        });
+      if (
+        MediaService &&
+        typeof MediaService.startAndroidProviderCapabilities === 'function'
+      ) {
+        MediaService.startAndroidProviderCapabilities({ pageEpoch: epoch })
+          .then(() =>
+            settleMobileLocal(epoch, () => {
+              refreshMobileAdvancedCapability();
+              refreshMobileDeepSeekCapability();
+            })
+          )
+          .catch(() => null);
+      }
+      refreshMobileDeepSeekCapability();
+      return local;
+    };
+    $scope.loadMobileLocalPage = (page) => {
+      if (!isAndroidSurface()) return;
+      const pageActions = {
+        home: ['playlists', 'favorites'],
+        library: ['playlists', 'favorites', 'localTracks', 'saf'],
+        history: ['historyAnnual', 'settings'],
+        cache: ['cache'],
+        settings: ['settings'],
+        backup: ['backup.fileStatus'],
+      };
+      const actions = pageActions[page] || [];
+      mobileLocalEpoch += 1;
+      const epoch = mobileLocalEpoch;
+      settleMobileLocal(epoch, () => {
+        $scope.mobileLocalData.page = page;
+        $scope.mobileLocalData.loading = true;
+        $scope.mobileLocalData.error = '';
+      });
+      const requests = actions.map((action) => {
+        const payload =
+          action === 'historyAnnual' ? { year: new Date().getFullYear() } : {};
+        return localDataRequest('query', action, payload).then((reply) => ({
+          action,
+          reply,
+        }));
+      });
+      Promise.all(requests)
+        .then((results) => {
+          settleMobileLocal(epoch, () => {
+            results.forEach(({ action, reply }) => {
+              const data = reply && reply.data ? reply.data : null;
+              if (action === 'playlists')
+                $scope.mobileLocalData.playlists = (data && data.items) || [];
+              if (action === 'favorites')
+                $scope.mobileLocalData.favorites = (data && data.items) || [];
+              if (action === 'localTracks')
+                $scope.mobileLocalData.localTracks = (data && data.items) || [];
+              if (action === 'saf')
+                $scope.mobileLocalData.saf = (data && data.items) || [];
+              if (action === 'historyAnnual')
+                $scope.mobileLocalData.history = data;
+              if (action === 'cache') $scope.mobileLocalData.cache = data;
+              if (action === 'settings') $scope.mobileLocalData.settings = data;
+              if (action === 'backup.fileStatus')
+                $scope.mobileLocalData.backupFileStatus = data;
+              if (!reply || !reply.ok)
+                $scope.mobileLocalData.error = `操作未完成：${
+                  (reply && reply.status) || 'UNKNOWN'
+                }`;
+            });
+            $scope.mobileLocalData.loading = false;
+          });
+        })
+        .catch((error) => {
+          settleMobileLocal(epoch, () => {
+            $scope.mobileLocalData.loading = false;
+            $scope.mobileLocalData.error = safeMobileError(error);
+          });
+        });
+    };
+    $scope.runMobileLocalCommand = (action, payload, refreshPage) => {
+      mobileLocalEpoch += 1;
+      const epoch = mobileLocalEpoch;
+      settleMobileLocal(epoch, () => {
+        $scope.mobileLocalData.actionPending = action;
+        $scope.mobileLocalData.error = '';
+      });
+      return localDataRequest('command', action, payload)
+        .then((reply) => {
+          settleMobileLocal(epoch, () => {
+            $scope.mobileLocalData.actionPending = '';
+            if (!reply || !reply.ok) {
+              $scope.mobileLocalData.error = `操作未完成：${
+                (reply && reply.status) || 'UNKNOWN'
+              }`;
+              return;
+            }
+            if (action === 'history.enable' && reply.data) {
+              $scope.mobileLocalData.settings = {
+                ...($scope.mobileLocalData.settings || {}),
+                historyEnabled: reply.data.enabled,
+              };
+            }
+            if (action === 'cache.refresh' || action === 'cache.capacity') {
+              $scope.mobileLocalData.cache =
+                reply.data || $scope.mobileLocalData.cache;
+            }
+            if (action === 'settings.update')
+              $scope.mobileLocalData.settings = reply.data || payload;
+            if (action === 'backup.import') {
+              $scope.mobileLocalData.backupPreview = reply.data || null;
+              $scope.mobileLocalData.overwriteConfirmationOpen = false;
+            }
+          });
+          if (refreshPage) $scope.loadMobileLocalPage(refreshPage);
+          return reply;
+        })
+        .catch((error) => {
+          settleMobileLocal(epoch, () => {
+            $scope.mobileLocalData.actionPending = '';
+            $scope.mobileLocalData.error = safeMobileError(error);
+          });
+          return null;
+        });
+    };
+    $scope.refreshMobileLocalTracks = () =>
+      $scope.runMobileLocalCommand('localTracks.refresh', {}, 'library');
+    $scope.repairMobileLocalGrant = (track) => {
+      const grantReferenceId = track && track.grantReferenceId;
+      if (!grantReferenceId || typeof grantReferenceId !== 'string') {
+        $scope.mobileLocalData.error = '本地授权引用无效，请重新选择文件夹。';
+        return Promise.resolve(null);
+      }
+      return $scope.runMobileLocalCommand(
+        'localTracks.repair',
+        { grantReferenceId },
+        'library'
+      );
+    };
+    $scope.playMobileLocalTrack = (track) => {
+      if (
+        !track ||
+        track.source !== 'local' ||
+        !/^local\.track\.[a-f0-9]{64}$/.test(track.localTrackId)
+      ) {
+        $scope.mobileLocalData.error = '本地曲目标识无效。';
+        return Promise.resolve(null);
+      }
+      if (track.availability !== 'available') {
+        $scope.mobileLocalData.error = '本地曲目授权已失效，请先修复授权。';
+        return Promise.resolve(null);
+      }
+      const playable = {
+        id: track.localTrackId,
+        source: 'local',
+        title: track.title || track.displayName,
+        artist: track.artist,
+        durationMs: track.durationMs,
+        duration: Number(track.durationMs || 0) / 1000,
+      };
+      l1Player.addTrack(playable);
+      return l1Player.playById(playable.id);
+    };
+    $scope.previewMobileBackup = () => {
+      if (!hasLocalCapability('backupSafImport')) return;
+      mobileLocalEpoch += 1;
+      const epoch = mobileLocalEpoch;
+      settleMobileLocal(epoch, () => {
+        $scope.mobileLocalData.actionPending = 'backupPreview';
+        $scope.mobileLocalData.error = '';
+      });
+      localDataRequest('query', 'backup.preview', {})
+        .then((reply) => setMobileLocalReply(epoch, 'backupPreview', reply))
+        .catch((error) =>
+          settleMobileLocal(epoch, () => {
+            $scope.mobileLocalData.error = safeMobileError(error);
+          })
+        )
+        .finally(() =>
+          settleMobileLocal(epoch, () => {
+            $scope.mobileLocalData.actionPending = '';
+          })
+        );
+    };
+    $scope.importMobileBackup = (mode, confirmed) => {
+      const state = $scope.mobileLocalData.backupFileStatus;
+      if (!state || state.state !== 'ready') return;
+      if (mode === 'overwrite' && !confirmed) {
+        $scope.mobileLocalData.overwriteConfirmationOpen = true;
+        return;
+      }
+      $scope.runMobileLocalCommand(
+        'backup.import',
+        {
+          mode,
+          confirmed: Boolean(confirmed),
+        },
+        'library'
+      );
+    };
+    $scope.refreshMobileBackupFileStatus = () => {
+      localDataRequest('query', 'backup.fileStatus', {})
+        .then((reply) => {
+          $scope.$evalAsync(() => {
+            $scope.mobileLocalData.backupFileStatus =
+              reply && reply.data ? reply.data : null;
+            if (reply && reply.data && reply.data.state === 'ready') {
+              $scope.mobileLocalData.backupPreview = reply.data.preview || null;
+            }
+          });
+          return reply;
+        })
+        .catch((error) => {
+          $scope.mobileLocalData.error = safeMobileError(error);
+          return null;
+        });
+    };
+    $scope.mobileFormatBytes = (value) => {
+      const bytes = Number(value);
+      if (!Number.isFinite(bytes) || bytes < 0) return '未知';
+      if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+      return `${(bytes / (1024 * 1024)).toFixed(
+        bytes >= 1024 * 1024 * 1024 ? 0 : 1
+      )} MB`;
+    };
+    $scope.updateMobileCacheCapacity = () => {
+      const cache = $scope.mobileLocalData.cache || {};
+      const bytes = Number(cache.capacityBytes);
+      if (
+        !Number.isSafeInteger(bytes) ||
+        bytes < 32 * 1024 * 1024 ||
+        bytes > 8 * 1024 * 1024 * 1024
+      ) {
+        $scope.mobileLocalData.error = '缓存容量须在 32 MB 到 8 GB 之间。';
+        return;
+      }
+      $scope.runMobileLocalCommand(
+        'cache.capacity',
+        { capacityBytes: bytes },
+        'cache'
+      );
+    };
+    const settleMobileDownload = (reply) => {
+      $scope.$evalAsync(() => {
+        $scope.mobileLocalData.download = reply || null;
+        if (
+          !reply ||
+          ['failed', 'invalid-input', 'storage-unavailable'].includes(
+            reply.status
+          )
+        ) {
+          $scope.mobileLocalData.error =
+            '离线下载未完成，请检查网络或缓存空间后重试。';
+        }
+      });
+      return reply;
+    };
+    $scope.downloadMobileTrackForOffline = (track) => {
+      if (
+        !isAndroidSurface() ||
+        !MediaService ||
+        typeof MediaService.downloadAndroidTrack !== 'function'
+      ) {
+        return Promise.resolve(null);
+      }
+      $scope.mobileLocalData.actionPending = 'media.download.start';
+      return MediaService.downloadAndroidTrack(track, {
+        retention: 'download',
+        pageEpoch: mobileLocalEpoch,
+      })
+        .then(settleMobileDownload)
+        .catch((error) => {
+          $scope.mobileLocalData.error = safeMobileError(error);
+          return null;
+        })
+        .finally(() => {
+          $scope.$evalAsync(() => {
+            $scope.mobileLocalData.actionPending = '';
+          });
+        });
+    };
+    $scope.cancelMobileDownload = () => {
+      const current = $scope.mobileLocalData.download;
+      if (
+        !current ||
+        !current.operationId ||
+        !MediaService ||
+        typeof MediaService.cancelAndroidMediaDownload !== 'function'
+      )
+        return;
+      MediaService.cancelAndroidMediaDownload(current.operationId, {
+        pageEpoch: mobileLocalEpoch,
+      })
+        .then(settleMobileDownload)
+        .catch((error) => {
+          $scope.mobileLocalData.error = safeMobileError(error);
+        });
+    };
+    $scope.deleteMobileOfflineTrack = (track) => {
+      if (
+        !MediaService ||
+        typeof MediaService.deleteAndroidMediaDownload !== 'function'
+      )
+        return;
+      MediaService.deleteAndroidMediaDownload(track, {
+        pageEpoch: mobileLocalEpoch,
+      })
+        .then(settleMobileDownload)
+        .then(() => $scope.loadMobileLocalPage('cache'))
+        .catch((error) => {
+          $scope.mobileLocalData.error = safeMobileError(error);
+        });
+    };
+    $scope.cleanupMobileDownloads = () => {
+      if (
+        !MediaService ||
+        typeof MediaService.cleanupAndroidMediaDownloads !== 'function'
+      )
+        return;
+      MediaService.cleanupAndroidMediaDownloads({ pageEpoch: mobileLocalEpoch })
+        .then(settleMobileDownload)
+        .then(() => $scope.loadMobileLocalPage('cache'))
+        .catch((error) => {
+          $scope.mobileLocalData.error = safeMobileError(error);
+        });
+    };
+    $scope.toggleMobileHistory = () => {
+      const settings = $scope.mobileLocalData.settings || {};
+      $scope.runMobileLocalCommand(
+        'history.enable',
+        { enabled: !settings.historyEnabled },
+        'history'
+      );
+    };
+    $scope.saveMobileSettings = () => {
+      const settings = $scope.mobileLocalData.settings || {};
+      if (!settings.theme || !settings.language) {
+        $scope.mobileLocalData.error = '主题和语言不能为空。';
+        return;
+      }
+      $scope.runMobileLocalCommand(
+        'settings.update',
+        {
+          theme: String(settings.theme),
+          language: String(settings.language),
+        },
+        'settings'
+      );
+    };
+    $scope.startMobileSafPicker = (action) => {
+      const backupAction =
+        action === 'backup.export' || action === 'backup.import.pick';
+      if (
+        !(backupAction
+          ? hasLocalCapability('backupSafExport') ||
+            hasLocalCapability('backupSafImport')
+          : hasLocalCapability('saf'))
+      ) {
+        $scope.mobileLocalData.error = 'SAF 选择器尚未接线。';
+        return;
+      }
+      const epoch = mobileLocalEpoch + 1;
+      mobileLocalEpoch = epoch;
+      settleMobileLocal(epoch, () => {
+        $scope.mobileLocalData.actionPending = action;
+        $scope.mobileLocalData.safPickerStatus = '';
+        $scope.mobileLocalData.error = '';
+      });
+      localDataRequest('command', action, {})
+        .then((reply) => {
+          settleMobileLocal(epoch, () => {
+            $scope.mobileLocalData.actionPending = '';
+            if (
+              !reply ||
+              !reply.ok ||
+              !reply.data ||
+              reply.data.accepted !== true
+            ) {
+              $scope.mobileLocalData.error =
+                'SAF 选择器当前未接线或未接受请求。';
+              return;
+            }
+            $scope.mobileLocalData.safPickerStatus =
+              '已请求系统文件选择器，等待系统返回结果。';
+            if (backupAction) {
+              window.setTimeout(
+                () => $scope.refreshMobileBackupFileStatus(),
+                700
+              );
+              window.setTimeout(
+                () => $scope.refreshMobileBackupFileStatus(),
+                1800
+              );
+            }
+          });
+        })
+        .catch((error) => {
+          settleMobileLocal(epoch, () => {
+            $scope.mobileLocalData.actionPending = '';
+            $scope.mobileLocalData.error = safeMobileError(error);
+          });
+        });
+    };
+    const safeMobilePlaylistId = () =>
+      `mobile.${Date.now().toString(36)}.${Math.random()
+        .toString(36)
+        .slice(2, 10)}`;
+    $scope.beginMobilePlaylistCreate = () => {
+      $scope.mobileLocalData.playlistNewName = '';
+      $scope.mobileLocalData.playlistDraft = {
+        mode: 'create',
+        name: '',
+        tracks: [],
+      };
+    };
+    $scope.beginMobilePlaylistEdit = (playlist) => {
+      if (!playlist) return;
+      $scope.mobileLocalData.playlistDraft = {
+        mode: 'edit',
+        playlistId: playlist.playlistId,
+        revision: playlist.revision,
+        name: playlist.name,
+        tracks: Array.isArray(playlist.tracks) ? playlist.tracks.slice() : [],
+      };
+    };
+    const currentMobileLocalTrack = () => {
+      const track = $scope.currentPlaying;
+      if (!track) return null;
+      const providerTrackId = track.providerTrackId || track.bvid;
+      const durationMs = Number.isSafeInteger(track.durationMs)
+        ? track.durationMs
+        : Math.round(Number(track.duration || 0) * 1000);
+      if (
+        !track.source ||
+        !providerTrackId ||
+        !track.title ||
+        !track.artist ||
+        !Number.isSafeInteger(durationMs) ||
+        durationMs < 0
+      ) {
+        return null;
+      }
+      return {
+        source: String(track.source),
+        providerTrackId: String(providerTrackId),
+        title: String(track.title),
+        artist: String(track.artist),
+        durationMs,
+      };
+    };
+    $scope.addCurrentTrackToMobilePlaylistDraft = () => {
+      const draft = $scope.mobileLocalData.playlistDraft;
+      const track = currentMobileLocalTrack();
+      if (!draft || !Array.isArray(draft.tracks)) return;
+      if (!track) {
+        $scope.mobileLocalData.error =
+          '当前播放项没有可写入本机歌单的受控曲目 ID。';
+        return;
+      }
+      if (
+        draft.tracks.some(
+          (item) =>
+            item.source === track.source &&
+            item.providerTrackId === track.providerTrackId
+        )
+      ) {
+        return;
+      }
+      draft.tracks.push(track);
+    };
+    $scope.removeMobilePlaylistDraftTrack = (index) => {
+      const draft = $scope.mobileLocalData.playlistDraft;
+      if (!draft || !Array.isArray(draft.tracks)) return;
+      draft.tracks.splice(index, 1);
+    };
+    $scope.moveMobilePlaylistDraftTrack = (index, direction) => {
+      const draft = $scope.mobileLocalData.playlistDraft;
+      if (!draft || !Array.isArray(draft.tracks)) return;
+      const next = index + direction;
+      if (next < 0 || next >= draft.tracks.length) return;
+      [draft.tracks[index], draft.tracks[next]] = [
+        draft.tracks[next],
+        draft.tracks[index],
+      ];
+    };
+    $scope.saveMobilePlaylistDraft = () => {
+      const draft = $scope.mobileLocalData.playlistDraft;
+      if (!draft || !String(draft.name || '').trim()) {
+        $scope.mobileLocalData.error = '歌单名称不能为空。';
+        return;
+      }
+      const isCreate = draft.mode === 'create';
+      const payload = isCreate
+        ? {
+            playlistId: safeMobilePlaylistId(),
+            name: String(draft.name).trim(),
+            tracks: draft.tracks || [],
+          }
+        : {
+            playlistId: draft.playlistId,
+            expectedRevision: Number(draft.revision),
+            name: String(draft.name).trim(),
+            tracks: draft.tracks || [],
+          };
+      $scope
+        .runMobileLocalCommand(
+          isCreate ? 'playlist.create' : 'playlist.replace',
+          payload,
+          'library'
+        )
+        .then((reply) => {
+          if (reply && reply.ok) $scope.mobileLocalData.playlistDraft = null;
+        });
+    };
+    $scope.requestMobilePlaylistDelete = (playlist) => {
+      if (!playlist) return;
+      $scope.mobileLocalData.playlistDeleteConfirmation = playlist;
+    };
+    $scope.confirmMobilePlaylistDelete = () => {
+      const playlist = $scope.mobileLocalData.playlistDeleteConfirmation;
+      if (!playlist) return;
+      $scope
+        .runMobileLocalCommand(
+          'playlist.delete',
+          {
+            playlistId: playlist.playlistId,
+            expectedRevision: Number(playlist.revision),
+          },
+          'library'
+        )
+        .then((reply) => {
+          if (reply && reply.ok)
+            $scope.mobileLocalData.playlistDeleteConfirmation = null;
+        });
+    };
+    $scope.moveMobilePlaylist = (index, direction) => {
+      const rows = ($scope.mobileLocalData.playlists || []).slice();
+      const next = index + direction;
+      if (next < 0 || next >= rows.length) return;
+      [rows[index], rows[next]] = [rows[next], rows[index]];
+      $scope.runMobileLocalCommand(
+        'playlist.reorder',
+        {
+          playlistIds: rows.map((row) => row.playlistId),
+        },
+        'library'
+      );
+    };
+    $scope.toggleMobileFavorite = (track, wanted) => {
+      if (!track) return;
+      $scope.runMobileLocalCommand(
+        'favorite.set',
+        {
+          track: {
+            source: track.source,
+            providerTrackId: track.providerTrackId,
+            title: track.title,
+            artist: track.artist,
+            durationMs: Number(track.durationMs || 0),
+          },
+          wanted: Boolean(wanted),
+        },
+        'library'
+      );
+    };
+    $scope.toggleCurrentMobileFavorite = (wanted) => {
+      const track = currentMobileLocalTrack();
+      if (!track) {
+        $scope.mobileLocalData.error =
+          '当前播放项没有可写入本机收藏的受控曲目 ID。';
+        return;
+      }
+      $scope.toggleMobileFavorite(track, wanted);
+    };
+    $scope.openMobileProductPage = (page) => {
+      $scope.mobileCapabilityNotice = '';
+      $scope.mobileProductPage = page || '';
+      const browser = document.getElementsByClassName('browser')[0];
+      if (browser) browser.scrollTop = 0;
+    };
+    $scope.closeMobileProductPage = () => {
+      $scope.mobileProductPage = '';
+      $scope.mobileCapabilityNotice = '';
+    };
+
+    // Native Android owns Activity navigation, while this packaged page owns
+    // its transient UI stack. This hook answers synchronously and schedules
+    // scope changes through Angular; it never pauses or releases playback.
+    const handleAndroidPlaybackBack = () => {
+      const playbackBack = { handled: false };
+      $rootScope.$broadcast('android:playback-back', playbackBack);
+      if (playbackBack.handled) {
+        $scope.$applyAsync();
+        return true;
+      }
+      const searchBack = { handled: false };
+      $rootScope.$broadcast('android:search-back', searchBack);
+      if (searchBack.handled) {
+        $scope.$applyAsync();
+        return true;
+      }
+      const translationConfirmation = document.querySelector(
+        '[data-lyric-translation-confirm]'
+      );
+      if (
+        translationConfirmation &&
+        translationConfirmation.offsetParent !== null
+      ) {
+        $scope.$applyAsync(() => {
+          $rootScope.$broadcast('android:close-transient-overlay');
+        });
+        return true;
+      }
+      if ($scope.mobileProductPage) {
+        $scope.$applyAsync(() => $scope.closeMobileProductPage());
+        return true;
+      }
+      if ($scope.is_dialog_hidden === 0) {
+        $scope.$applyAsync(() => $scope.closeDialog());
+        return true;
+      }
+      if ($scope.is_window_hidden === 0 || $scope.window_url_stack.length) {
+        $scope.$applyAsync(() => $scope.popWindow());
+        return true;
+      }
+      if (!$scope.menuHidden && typeof $scope.togglePlaylist === 'function') {
+        $scope.$applyAsync(() => $scope.togglePlaylist());
+        return true;
+      }
+      return false;
+    };
+    if (isAndroidSurface()) {
+      window.Listen2AndroidPlaybackBack = handleAndroidPlaybackBack;
+    }
+    $scope.focusMobileSearch = () => {
+      const input = document.getElementById('search-input');
+      if (input && typeof input.focus === 'function') input.focus();
+    };
+    $scope.openMobileCapability = (capability) => {
+      const unavailable = {
+        backup: '备份导入导出需要 Android 文件选择与存储 bridge；当前未验证。',
+        playlists: '本机歌单数据 bridge；当前未验证。',
+        favorites: '本机收藏数据 bridge；当前未验证。',
+        cache: '离线缓存与下载目录需要 Android 缓存 bridge；当前未验证。',
+        local: '本地音乐需要 SAF 授权、标签和 LRC bridge；当前未验证。',
+        history: '听歌历史与年度回响需要 Android 数据 bridge；当前未验证。',
+        settings: '手机设置数据 bridge；当前未验证。',
+        account:
+          '账号与哔哩哔哩扫码会话需要 Android account bridge；当前不可用。',
+        media:
+          '音质、分P、MV/PiP 和音效需要已验证的 Android media capability；当前未验证。',
+        translation:
+          'DeepSeek 密钥安全保存与翻译需要 Android secure-storage bridge；当前不可用。',
+      };
+      if (capability === 'player') {
+        $scope.toggleNowPlaying();
+        return;
+      }
+      if (isAndroidSurface()) {
+        if (
+          capability === 'translation' &&
+          $scope.mobileDeepSeekTranslationEnabled
+        ) {
+          $scope.openMobileProductPage('translation');
+          refreshMobileDeepSeekCapability();
+          return;
+        }
+        const androidPages = {
+          local: ['library', 'saf'],
+          playlists: ['library', 'playlists'],
+          favorites: ['library', 'favorites'],
+          history: ['history', 'historyAnnual'],
+          cache: ['cache', 'cache'],
+          settings: ['settings', 'settings'],
+          backup: ['backup', 'backupExport'],
+        };
+        const route = androidPages[capability];
+        if (route && hasLocalCapability(route[1])) {
+          $scope.openMobileProductPage(route[0]);
+          $scope.loadMobileLocalPage(route[0]);
+          return;
+        }
+      }
+      if (!isAndroidSurface()) {
+        if (capability === 'local') {
+          $scope.showPlaylist('lmplaylist_reserve');
+          return;
+        }
+        if (capability === 'account') {
+          $scope.showTag(5);
+          return;
+        }
+        if (capability === 'media') {
+          $scope.showTag(4);
+          return;
+        }
+        if (capability === 'backup' || capability === 'translation') {
+          $scope.showTag(4);
+          $scope.openMobileProductPage(capability);
+          return;
+        }
+        if (capability === 'history') {
+          $scope.showTag(7);
+          if (typeof $scope.refreshAnnualListeningSummary === 'function') {
+            $scope.refreshAnnualListeningSummary();
+          }
+          return;
+        }
+        if (
+          capability === 'cache' &&
+          typeof $scope.showAudioCache === 'function'
+        ) {
+          $scope.showAudioCache();
+          return;
+        }
+      }
+      $scope.mobileCapabilityNotice =
+        unavailable[capability] || '此能力当前未验证。';
+      $scope.openMobileProductPage('status');
+    };
+
+    $timeout(() => {
+      $scope.refreshMobileCapabilities().then((reply) => {
+        if (reply && reply.ok) $scope.loadMobileLocalPage('home');
+      });
+      if (
+        MediaService &&
+        typeof MediaService.onAndroidProviderCapabilities === 'function'
+      ) {
+        removeProviderCapabilityListener =
+          MediaService.onAndroidProviderCapabilities(() => {
+            $scope.$evalAsync(() => {
+              refreshMobileAdvancedCapability();
+              refreshMobileDeepSeekCapability();
+            });
+          });
+      }
+    }, 0);
+
+    $scope.$on('$destroy', () => {
+      mobileLocalEpoch += 1;
+      removeProviderCapabilityListener();
+      if (window.Listen2AndroidPlaybackBack === handleAndroidPlaybackBack) {
+        delete window.Listen2AndroidPlaybackBack;
+      }
+    });
+
+    $scope.$on('android:deepseek-config-changed', (event, config) => {
+      if (!config || typeof config !== 'object') return;
+      $scope.mobileDeepSeekStatus = {
+        ...$scope.mobileDeepSeekStatus,
+        ...config,
+      };
+    });
 
     $scope.$on('bilibili-auth:open-dialog', () => {
       $scope.showDialog(13, 'bilibili');
@@ -69,6 +974,8 @@ angular.module('listenone').controller('NavigationController', [
     };
     // tag
     $scope.showTag = (tag_id, tag_params) => {
+      $scope.mobileProductPage = '';
+      $scope.mobileCapabilityNotice = '';
       $scope.current_tag = tag_id;
       $scope.is_window_hidden = 1;
       $scope.window_url_stack = [];
@@ -481,7 +1388,21 @@ angular.module('listenone').controller('NavigationController', [
     };
 
     $scope.downloadTrackForOffline = (song) => {
-      if (!isElectron() || !song || song.source !== 'bilibili') return;
+      if (!song || !['bilibili', 'netease'].includes(song.source)) return;
+      if (isAndroidSurface()) {
+        $scope.downloadMobileTrackForOffline(song).then((response) => {
+          if (
+            response &&
+            ['queued', 'downloading', 'completed'].includes(response.status)
+          ) {
+            notyf.success('已加入 Android 离线下载。');
+          } else if (response) {
+            notyf.error('Android 离线下载未能开始。');
+          }
+        });
+        return;
+      }
+      if (!isElectron() || song.source !== 'bilibili') return;
       notyf.info(i18next.t('_AUDIO_CACHE_DOWNLOAD_STARTING'));
       MediaService.downloadBilibiliTrack(song).then((response) => {
         if (
