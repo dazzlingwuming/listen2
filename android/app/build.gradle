@@ -31,6 +31,7 @@ tasks.register('syncListen1Assets', Copy) {
         include 'js/lastfm.js'
         include 'js/loweb.js'
         include 'js/lowebutil.js'
+        include 'js/mobile_provider_registry.js'
         include 'js/myplaylist.js'
         include 'js/player_thread.js'
         include 'js/playlist_backup.js'
