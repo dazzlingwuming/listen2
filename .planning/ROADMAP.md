@@ -1,252 +1,120 @@
-# Roadmap: Listen2 Android Platform Parity
+# Roadmap: Listen2 Android v1.0 — Official-Mobile Product Pivot
 
 ## Overview
 
-Deliver Android parity as dependency-ordered, emulator-proven vertical slices: first establish a safe typed bridge while proving the Bilibili home/search/play/lyrics journey, then move playback ownership into Media3, add provider and user-data capabilities, and finish with release-like evidence. Every phase is MVP mode: a capability is complete only when its observable behavior and required evidence both pass. A “degraded” or “not verified” label is honest runtime status, never completion or parity-ready evidence.
+Android v1.0 now takes the original author's `listen1/listen1_mobile` v0.8.2 as the **product reference**, not as an obsolete technology stack to copy: its phone-first information architecture, bottom navigation, focused player flow, and the one-contract four-source search model are the starting point. The Android product adds Bilibili as a fifth source and uses the current `main` desktop behavior as the complete capability baseline.
+
+The implementation remains the current Android API 35 architecture: shared browser UI inside the hardened WebView shell, a narrow typed native bridge, Media3 as the sole playback owner, and native Room/SAF/Keystore/cache ownership. It does **not** return to React Native 0.59, SDK 28, direct provider HTTP, caller-controlled headers, or arbitrary URL bridging.
+
+The prior roadmap fragmented this outcome into infrastructure-heavy stages and repeatedly treated builds as acceptance. The new route completes five user journeys in sequence. Normal work validates cohesive source/UI contracts through JavaScript and JVM tests; it does not create an APK for every small change. Phase 8 is the single API 35 end-to-end, performance, and release-like acceptance gate for the integrated product.
+
+## Retained Foundation (not acceptance)
+
+Historical Phase 1–3 plan directories are retained to preserve evidence and avoid directory conflicts. They are not executable roadmap stages and own no v1 requirements after this pivot.
+
+- **Phase 1 foundation present:** packaged WebView shell, fixed appassets origin, typed bridge, and Bilibili/NetEase candidate paths exist.
+- **Phase 2 foundation present:** Media3 `MediaSessionService`, snapshot-driven UI, queue/checkpoint primitives, Room schema, and several JVM contracts exist.
+- **Phase 3 foundation present:** a typed NetEase search/lyric seam and lyric persistence primitives exist.
+
+Those facts reduce implementation work, but none proves that a user can complete the current five-source Android journeys. The old Phase 1–3 status is therefore **foundation implemented; product acceptance not closed**. Requirement ownership and completion evidence begin with Phase 4 below.
 
 ## Phases
 
-- [ ] **Phase 1: Verified Bilibili Startup Slice** - Prove a typed, cancellable bridge through an emulator-verified home, Bilibili search, playback, and lyric-entry journey.
-- [ ] **Phase 2: Native Media3 Playback & Background Control** - Make one native Media3 owner reliable across controls, queue behavior, background execution, and recovery.
-- [ ] **Phase 3: NetEase Lyrics & Provider Contract** - Complete the NetEase listening slice and reliable synchronized-lyrics behavior under the capability matrix.
-- [ ] **Phase 4: Durable Library & Playlist Management** - Give users a persistent, source-aware library and safe playlist/favorite editing.
-- [ ] **Phase 5: Secure Account Sessions** - Provide truthful account states, Bilibili QR sign-in, and secure session lifecycle handling.
-- [ ] **Phase 6: Local Music, Backup & Listening History** - Bring local files, safe backup/restore, and durable history/recap to Android.
-- [ ] **Phase 7: Proven Provider Expansion** - Expand only provider capabilities that satisfy contract, entitlement, and regression evidence.
-- [ ] **Phase 8: Verified Cache, Downloads & Offline Playback** - Deliver recoverable offline media with separate ownership, quotas, and user management.
-- [ ] **Phase 9: Advanced Playback, Effects & AI** - Add MV/rendition handling, Android-equivalent effects, loudness, and consented DeepSeek translation.
-- [ ] **Phase 10: Mobile UX, Accessibility & Performance Hardening** - Make the complete product usable, responsive, and resilient across Android device conditions.
-- [ ] **Phase 11: Release-like Parity Evidence** - Prove the complete device journey and release gates before any parity-ready claim.
+- [ ] **Phase 4: Official Mobile Shell & Unified Provider Registry** - Deliver the official-style phone shell and one declarative provider capability contract for NetEase, QQ, Kugou, Kuwo, and Bilibili.
+- [ ] **Phase 5: Five-Source Listen Journey** - Make source-labelled search → detail → authorized playback → lyrics work coherently across the four official mobile sources plus Bilibili.
+- [ ] **Phase 6: Personal Library & Continuity** - Let users own playlists, accounts, local music, backups, and listening history on Android.
+- [ ] **Phase 7: Offline & Advanced Desktop-Equivalent Playback** - Complete cache/offline, MV/PiP/rendition, effects, loudness, and consented translation with truthful Android fallbacks.
+- [ ] **Phase 8: Integrated API 35 Acceptance & Release-Like Evidence** - Run the integrated device journey once, measure it, and make an honest parity-ready decision.
 
 ## Phase Details
 
-### Phase 1: Verified Bilibili Startup Slice
+### Phase 4: Official Mobile Shell & Unified Provider Registry
 
-**Goal:** On a supported emulator, users can open Android home and complete a safe Bilibili search → selected part → audio playback → primary-lyric-entry journey through the typed, cancellable bridge.
-**Mode:** mvp
-**Requirements:** NET-001, NET-002, NET-003, SRCH-001, SRCH-002, SRCH-003, SEC-001, SEC-002, SEC-003
-**Depends on:** Nothing (first executable phase)
-**UI hint:** yes
+**Goal:** Users enter a phone-first Listen2 shell whose navigation and provider choices behave like the original mobile product while safely reflecting Android's real capability state.
+**Depends on:** Retained Phase 1–3 foundation
+**Requirements:** UI-001, UI-002, UI-003, NET-001, NET-002, SEC-001, SEC-002, SEC-003, TEST-001
 **Success Criteria** (what must be TRUE):
 
-  1. On an Android emulator, a user can open the touchable home screen, submit or revise a Bilibili search, and see current, source-labelled results without a stale result replacing the active query.
-  2. A user can open a supported result and part, see its playable/login/unsupported state, and hear permitted Bilibili audio after controlled manifest and rendition resolution.
-  3. A user can enter the primary lyrics experience for the playing Bilibili track; unavailable content, network/TLS faults, permission failures, and bad provider data explain a recovery action instead of appearing as empty success.
-  4. A user can cancel an in-flight search or detail request and receive one clear terminal state; timeouts, destroyed pages, and expired responses cannot leave a spinner or alter the new page.
-  5. Unsafe origins, frames, navigation targets, URL shapes, payloads, and media-proxy attempts are rejected without exposing cookies, caller headers, local files, or executable provider content.
-
-**Plans:** 6/7 plans executed
-**Wave 1**
-
-- [x] 01-01-PLAN.md
-- [x] 01-02-PLAN.md
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 01-03-PLAN.md
-- [x] 01-05-PLAN.md
-
-**Wave 3** *(blocked on Wave 2 completion)*
-
-- [x] 01-04-PLAN.md
-
-**Wave 4** *(blocked on Wave 3 completion)*
-
-- [x] 01-06-PLAN.md
-
-**Wave 5** *(blocked on Wave 4 completion)*
-
-- [ ] 01-07-PLAN.md
-
-### Phase 2: Native Media3 Playback & Background Control
-
-**Goal:** Users have one native playback experience whose controls, queue, notification, lock screen, and recovery behavior all describe the same Media3 state.
-**Mode:** mvp
-**Requirements:** PLAY-001, PLAY-003, PLAY-004, PLAY-005, PLAY-006, DATA-001
-**Depends on:** Phase 1
-**UI hint:** yes
-**Success Criteria** (what must be TRUE):
-
-  1. A user can play, pause, seek, change volume or mute, and move previous/next from the page, mini-player, notification, or lock screen with every surface reflecting the same current track and position.
-  2. A user can add duplicate tracks to a visible FIFO play-next queue, reorder or remove them, and return to the originating playlist or playback mode once the queue is consumed.
-  3. A user can use shuffle, repeat, and previous without skipped or duplicated queue consumption; the resulting mode and history survive restart through durable playback checkpoints.
-  4. When the screen turns off, the activity or renderer is destroyed, or audio focus/noisy/headset/Bluetooth events occur, playback continues or recovers through the legal MediaSession foreground-service path with an understandable state.
-  5. When nothing is playing, the app does not retain a high-cost foreground playback service; user-visible library, queue, lyric metadata, cache-catalog, and SAF records have a migration-safe durable store.
-
-**Plans:** 7/10 plans executed
-
-- [x] 02-01-PLAN.md
-- [x] 02-02-PLAN.md
-- [x] 02-03-PLAN.md
-- [x] 02-04-PLAN.md
-- [x] 02-05-PLAN.md
-- [x] 02-06-PLAN.md
-- [x] 02-07-PLAN.md
-- [ ] 02-08-PLAN.md
-- [ ] 02-09-PLAN.md
-- [ ] 02-10-PLAN.md
-
-### Phase 3: NetEase Lyrics & Provider Contract
-
-**Goal:** Users can complete the NetEase listening journey and use synchronized, accessible lyrics whose state follows the active Media3 track rather than stale web state.
-**Mode:** mvp
-**Requirements:** NET-004, LYR-001, LYR-002, LYR-003
-**Depends on:** Phase 1, Phase 2
-**UI hint:** yes
-**Success Criteria** (what must be TRUE):
-
-  1. Within actual authorization, a user can search NetEase, open a directory or playlist track, resolve a real rendition, play it, and enter its primary lyric experience with actionable provider errors.
-  2. For Bilibili and NetEase tracks, lyric highlighting, scroll position, offset, translation, pause, seek, track change, and recovery follow the active Media3 clock rather than a prior track.
-  3. A user can manually search for, select, and keep a lyric source; missing, plain-text, insufficient-timestamp, timeout, and mismatch cases remain clear degradations that do not delay audio playback.
-  4. A screen-reader user can identify the active lyric line, offset, and original/translation state, while cancellation, stale results, and error callbacks cannot overwrite the current lyric view.
-  5. The provider matrix names each provider route and leaves every QQ, Kugou, Kuwo, Migu, and Taihe capability unavailable until its independent fixture, device, and authorization evidence exists.
+  1. A user can move between Home, Search, Library, Account, Settings, mini-player, player detail, queue, lyrics, and playlists through a phone-sized navigation hierarchy; system Back, keyboard, rotation, insets, 200% font scaling, contrast, and 48 dp controls preserve the intended layer rather than exposing a desktop layout.
+  2. In Search, a user sees one source-selector model for NetEase, QQ, Kugou, Kuwo, and Bilibili; the source label, supported actions, login state, and unavailable reason all come from the same capability registry rather than hard-coded per-page switches.
+  3. Migu and Taihe remain represented only as explicitly unavailable capability-matrix entries until they have their own route and device proof; users never encounter a dead source tab, fake result, or empty-success state.
+  4. A user can revise or cancel an operation without a stale result, spinner, or error changing the active page; offline, timeout, malformed provider data, and entitlement failures show a source-specific recovery action.
+  5. Untrusted pages, frames, navigations, file/content URLs, caller-supplied cookies or headers, and oversized/malformed bridge data cannot gain provider or local-data access, while routine JavaScript/JVM contracts guard the registry and these boundaries.
 
 **Plans:** TBD
-
-### Phase 4: Durable Library & Playlist Management
-
-**Goal:** Users can manage a persistent, source-aware music library without losing correct ordering, favorites, or capability boundaries.
-**Mode:** mvp
-**Requirements:** LIB-001, LIB-002, LIB-003
-**Depends on:** Phase 2, Phase 3
 **UI hint:** yes
+
+### Phase 5: Five-Source Listen Journey
+
+**Goal:** Within a user's actual authorization, each official mobile source and Bilibili supports a coherent phone journey from search to details, playback, and lyrics.
+**Depends on:** Phase 4
+**Requirements:** NET-003, NET-004, SRCH-001, SRCH-002, SRCH-003, PLAY-001, PLAY-003, PLAY-004, PLAY-005, PLAY-006, LYR-001, LYR-002, LYR-003
 **Success Criteria** (what must be TRUE):
 
-  1. A user can distinguish their playlists, favorite playlists, provider playlists, and local music with their current synchronization state; offline browsing retains valid local content when a remote source fails.
-  2. A user can create, rename, edit, delete, reorder, favorite, and unfavorite playlists or tracks under the same duplicate rules as desktop, with confirmation before destructive deletion.
-  3. After rapid edits, rotation, restart, or process recovery, a user sees one transactionally consistent playlist order and favorite state rather than partial edits or duplicated identities.
-  4. A user sees play-next, lyrics, download, and deletion actions only when the corresponding capability is available for that item.
+  1. A user can search NetEase, QQ, Kugou, Kuwo, or Bilibili, paginate or cancel the request, and see source-labelled title, artist, artwork, duration, result kind, and real playable/login/unsupported status without one source's failure erasing another source's result.
+  2. A user can open a supported source result into its directory, album/playlist, track detail, or Bilibili part list and select the intended track; rotation, Back, artwork failure, bad JSON, and an unavailable route preserve the current context and explain the next action.
+  3. A user can play an authorized, device-supported track from each of the five sources; the mini-player, player detail, notification, lock screen, audio focus/noisy/headset/Bluetooth controls, seek, volume, mute, previous/next, and track error all report the same sole-Media3 state.
+  4. A user can use play-next, duplicate queue entries, reorder/removal, shuffle, repeat, and real previous history, then close, rotate, or temporarily lose the renderer without silently consuming or duplicating the queue.
+  5. A user can view synchronized lyrics and available translations for the active source track, change lyric offset or choose a manual lyric source where available, and receive an explicit missing/mismatch/timeout/unsupported state instead of lyrics from a previous track or fabricated timestamps.
 
 **Plans:** TBD
-
-### Phase 5: Secure Account Sessions
-
-**Goal:** Users can sign in, understand account capability, and sign out without leaving credentials or protected references behind.
-**Mode:** mvp
-**Requirements:** AUTH-001, AUTH-002, AUTH-003
-**Depends on:** Phase 1, Phase 3, Phase 4
 **UI hint:** yes
+
+### Phase 6: Personal Library & Continuity
+
+**Goal:** Users can manage their own music, account state, local files, backups, and history safely across Android restarts.
+**Depends on:** Phase 5
+**Requirements:** LIB-001, LIB-002, LIB-003, AUTH-001, AUTH-002, AUTH-003, LOCAL-001, LOCAL-002, LOCAL-003, DATA-001, DATA-002, DATA-003, HIST-001, HIST-002, HIST-003
 **Success Criteria** (what must be TRUE):
 
-  1. A user sees distinct per-provider states for signed out, signing in, signed in, expired, network failure, and insufficient permission; unsupported login routes are not presented as working buttons.
-  2. A user can complete the Bilibili QR journey through generation, wait, success, expiry, cancellation, retry, and session refresh, with declared provider login routes exercising controlled fixtures and recovery paths.
-  3. On expiry or logout, the app removes the identifiable session, protected notification state, and protected cache references while retaining the user's playlists, history, and local music.
-  4. A user never receives a token, cookie, refresh token, or API key in page state, logs, or backups, and a fresh login does not reuse the prior session.
+  1. A user can distinguish personal playlists, favorite playlists, remote provider playlists, and local tracks; create, rename, edit, reorder, favorite, or delete them with the same duplicate and confirmation behavior after rapid edits, restart, rotation, or process recovery.
+  2. A user sees honest per-provider account states and can complete the supported Bilibili QR sign-in lifecycle (including expiry, cancellation, retry, refresh, and sign-out); protected credentials never appear in the page, notification, logs, backup, or a new login session.
+  3. A user can import supported local audio through Android's document picker without broad storage permission, inspect tags/artwork/duration and authorized LRC, add it to library/queue/playback, and repair or remove a revoked, duplicate, unreadable, unsupported, or non-seekable item.
+  4. A user can export eligible playlists/favorites, preview an import, safely merge it by default, and explicitly confirm overwrite; malformed, oversized, old-version, or interrupted backups fail without deleting existing data.
+  5. A user can trust listening history and annual recap to count only genuine listening, survive restart/midnight/year boundaries, and support disable, export, and irreversible clear without history writes delaying playback.
 
 **Plans:** TBD
-
-### Phase 6: Local Music, Backup & Listening History
-
-**Goal:** Users can safely own their local collection, restore playlists without destructive surprise, and review or control durable on-device listening history.
-**Mode:** mvp
-**Requirements:** LOCAL-001, LOCAL-002, LOCAL-003, DATA-002, DATA-003, HIST-001, HIST-002, HIST-003
-**Depends on:** Phase 2, Phase 4, Phase 5
 **UI hint:** yes
+
+### Phase 7: Offline & Advanced Desktop-Equivalent Playback
+
+**Goal:** Users can keep authorized media offline and use advanced desktop capabilities through real Android behavior or an honest, actionable platform-equivalent state.
+**Depends on:** Phase 5, Phase 6
+**Requirements:** PLAY-002, CACHE-001, CACHE-002, CACHE-003, CACHE-004, FX-001, FX-002, FX-003, AI-001, AI-002, AI-003, SEC-004
 **Success Criteria** (what must be TRUE):
 
-  1. A user can select supported audio files through Android's document picker without granting full storage access, then see their tags, artwork, duration, LRC, and local-source state in playlists, queues, and Media3 playback.
-  2. When a local grant is revoked, a file is unreadable or unsupported, a duplicate is chosen, or a cloud item cannot seek, the user gets a repair or removal action; paths and raw file handles never enter the page, bridge, or backup.
-  3. A user can export only eligible playlists and favorites, preview a backup import, merge it without losing current playlists, and use an explicitly confirmed overwrite only when desired; invalid or interrupted imports fail recoverably.
-  4. A user's valid plays count only after real forward listening meets the stated threshold, and the history pointer plus annual recap remain correct across restart, midnight, and year boundaries.
-  5. A user can disable, export, or clear local history; disabled history stops growing and cleared statistics cannot reappear from cache, logs, backup, or a remote source.
+  1. A user can distinguish temporary cache, playlist cache, and explicit download; only complete, validated, currently authorized entries play offline, while cancel/resume/repair/eviction/disk-full/network-change/process-death states remain recoverable and do not leave partial media playable.
+  2. A user can set the stated cache limit, find/filter/sort entries, promote an eligible entry to an explicit download, or remove selected/all entries; cache contents, signed URLs, paths, credentials, and media bytes never enter backup or logs.
+  3. A user can choose an authorized rendition or Bilibili part and use MV full-screen/PiP only when the account, codec, device, and media permit it; otherwise the user gets an audio fallback or a concrete unsupported/entitlement explanation, never a bypass.
+  4. A user can turn effects, real-time visualization, or fixed loudness normalization on/off only when the device and complete media support them; effect/analysis failure preserves audio, first playback does not wait, and static/hidden visual fallback is labelled honestly.
+  5. A user can configure or remove a protected DeepSeek key and explicitly consent to the title, artist, lyrics, possible cost, cancellation, and failure consequences before translation; only schema- and alignment-valid translations persist, and no secret or lyric payload leaks to UI state, artifacts, logs, or backups.
 
 **Plans:** TBD
-
-### Phase 7: Proven Provider Expansion
-
-**Goal:** Users gain additional music-provider capabilities only when each visible capability has passed its route contract, entitlement boundary, and regression evidence.
-**Mode:** mvp
-**Requirements:** SEC-004, TEST-001
-**Depends on:** Phase 3, Phase 5, Phase 6
 **UI hint:** yes
+
+### Phase 8: Integrated API 35 Acceptance & Release-Like Evidence
+
+**Goal:** An evaluator can install one integrated Android build, reproduce the complete user journeys, inspect measured performance and release-like gates, and make an evidence-backed parity decision.
+**Depends on:** Phase 4, Phase 5, Phase 6, Phase 7
+**Requirements:** PERF-001, PERF-002, PERF-003, TEST-002, TEST-003, TEST-004, REL-001, REL-002, REL-003
 **Success Criteria** (what must be TRUE):
 
-  1. A user sees an additional provider capability only after its registry, request/response contract, cancellation/error behavior, and provider fixture checks pass; unverified capabilities remain unavailable rather than becoming dead controls.
-  2. A user receiving a provider entitlement, membership, region, DRM, quality, download, MV, or offline refusal sees the real limitation and a safe recovery path; the app never attempts to bypass it.
-  3. A user can rely on provider search, playback, lyric, library, backup, cache, history, and security regressions being exercised through JavaScript and Android policy contracts before the related capability is exposed.
+  1. On a recorded API 35 emulator, an evaluator can run one integrated journey covering cold start/mobile layout, five-source search/detail/play/lyrics, account state, library/queue/history, local SAF music, backup recovery, cache/offline behavior, screen-off background playback, rotation/process recovery, network recovery, and safe external navigation; credential-dependent paths are explicitly marked `not verified` when no user credential is supplied.
+  2. The integrated build meets the recorded cold-start, interactive-shell, playback-entry, first-search, and first-audio budgets with separate bridge/network/Media3 timings and resource measurements; ten minutes of fixture playback and low-memory recovery produce no ANR, duplicate request, duplicate history, or queue corruption.
+  3. The debug and minified release-like builds reproducibly resolve dependencies, package approved assets, pass required JavaScript/JVM/instrumentation suites, and pass Media3 service, notification, Room migration, manifest, network-security, version-upgrade, alignment, signature, artifact-hash, and secret-scan checks without using release credentials.
+  4. Every result records date, build, API/device, network, fixture, command, outcome, uncovered items, and recovery path. Android v1.0 becomes `parity-ready` only when all 58 requirements have passing implementation and evidence; `foundation present`, `degraded`, and `not verified` remain incomplete.
 
 **Plans:** TBD
-
-### Phase 8: Verified Cache, Downloads & Offline Playback
-
-**Goal:** Users can identify, manage, and reliably play complete authorized media offline without partial files, unbounded storage, or hidden retention.
-**Mode:** mvp
-**Requirements:** CACHE-001, CACHE-002, CACHE-003, CACHE-004
-**Depends on:** Phase 2, Phase 4, Phase 5, Phase 6
 **UI hint:** yes
-**Success Criteria** (what must be TRUE):
-
-  1. After playback or an explicit download, a user can distinguish temporary cache, playlist cache, and explicit download; only complete, validated, Media3-readable content becomes playable.
-  2. A user can play a complete still-authorized cache entry while offline, and can cancel, resume, repair, or remove a download without duplicate or partial media appearing as playable after network changes or process death.
-  3. A user can select the stated capacity limits, including the 2 GB default, and observe LRU eviction affect only non-explicit media while explicit downloads stay until the user removes them.
-  4. A user can search, sort, filter, convert, delete singly or in bulk, and clear cache entries; disk-full or catalog inconsistency gives a bounded recovery state and no cache data enters backup or logs.
-
-**Plans:** TBD
-
-### Phase 9: Advanced Playback, Effects & AI
-
-**Goal:** Users can access advanced desktop-parity playback and translation capabilities through Android-equivalent, permission-aware, and honest degradation paths.
-**Mode:** mvp
-**Requirements:** PLAY-002, FX-001, FX-002, FX-003, AI-001, AI-002, AI-003
-**Depends on:** Phase 2, Phase 3, Phase 5, Phase 8
-**UI hint:** yes
-**Success Criteria** (what must be TRUE):
-
-  1. A user receives only authorized, supported renditions; quality selection, part switching, bounded CDN recovery, and MV full-screen or picture-in-picture work when supported, otherwise audio fallback or an actionable error is shown.
-  2. A user can enable, choose, disable, and reset audio-effect presets without changing device volume, mute, headset, Bluetooth, or fixed-gain behavior, and an effect failure does not stop playback.
-  3. A user sees a spectrum or visualization that follows real audio and active playback state; background, constrained, or unsupported devices show an explicit static or hidden degradation instead of invented realtime data.
-  4. A user can use loudness normalization only after non-blocking analysis of complete media; unanalysed or failed media retains original volume and changed hash, sample rate, or codec invalidates the analysis.
-  5. A user can configure, test, and remove a protected DeepSeek key, then must explicitly consent to the lyrics, title, artist, possible cost, cancellation, and failure impact before a translation call; only validated, aligned results are cached.
-
-**Plans:** TBD
-
-### Phase 10: Mobile UX, Accessibility & Performance Hardening
-
-**Goal:** Users can complete the available Android music journeys comfortably, accessibly, quickly, and recoverably across supported device conditions.
-**Mode:** mvp
-**Requirements:** PERF-001, PERF-002, PERF-003, UI-001, UI-002, UI-003, TEST-002
-**Depends on:** Phase 1, Phase 2, Phase 3, Phase 4, Phase 5, Phase 6, Phase 7, Phase 8, Phase 9
-**UI hint:** yes
-**Success Criteria** (what must be TRUE):
-
-  1. A user can navigate search, library, account, mini-player, player detail, queue, lyrics, playlists, and settings through phone-appropriate panels and safe system back behavior without desktop-only controls.
-  2. A user using cutouts, system navigation, keyboard, rotation, 200% font scaling, high contrast, reduced motion, or a screen reader can see, reach, and understand the primary controls without obscured content or sub-48 dp targets.
-  3. On the recorded API 26 and current-target emulator samples, a user reaches interactive shell and playback entry within the required cold-start budgets, and fixture search plus first audio meet their respective latency budgets with resource measurements.
-  4. After low-memory process death, a user returns to the correct queue, track, playback mode, near-current position, and explainable account state without duplicate requests, queue consumption, or history counting; ten minutes of fixture playback has no ANR.
-  5. Instrumentation proves the real WebMessage handshake, renderer recovery, unique player, media controls, focus/noisy handling, SAF, Room, Keystore, cache integrity, and process recovery rather than relying on static or JVM-only claims.
-
-**Plans:** TBD
-
-### Phase 11: Release-like Parity Evidence
-
-**Goal:** A release evaluator can reproduce the full Android parity journey, inspect release-like gates, and make a parity-ready decision based only on passing evidence.
-**Mode:** mvp
-**Requirements:** TEST-003, TEST-004, REL-001, REL-002, REL-003
-**Depends on:** Phase 1, Phase 2, Phase 3, Phase 4, Phase 5, Phase 6, Phase 7, Phase 8, Phase 9, Phase 10
-**UI hint:** yes
-**Success Criteria** (what must be TRUE):
-
-  1. A recorded Android emulator journey covers cold start and layout, Bilibili and NetEase search/play/lyrics/translation, account state, library/queue/history, offline cache, SAF local media, backup recovery, background playback, rotation/process recovery, network recovery, and external navigation.
-  2. Debug and minified release-like APKs reproducibly resolve dependencies, copy assets, run required tests, pass R8 and service/notification/migration smoke checks, and pass manifest, Network Security, version, alignment, signature, artifact-hash, and secret scans without publishing signing credentials.
-  3. Every evidence record states date, API, emulator/device, network, build variant, fixture, command, result, uncovered items, and recovery path, with accessibility, performance, cleartext, and failure data redacted for review.
-  4. A parity-ready result is possible only after all 58 requirements have implementation and passing evidence, including critical emulator E2E, background playback, data/security, performance, and release-like gates; “degraded” or “not verified” remains Pending and cannot satisfy completion.
-
-**Plans:** TBD
 
 ## Progress
 
-**Execution Order:** Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6 → Phase 7 → Phase 8 → Phase 9 → Phase 10 → Phase 11
+**Execution order:** Historical foundation → Phase 4 → Phase 5 → Phase 6 → Phase 7 → Phase 8
 
 | Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 1. Verified Bilibili Startup Slice | 6/7 | In Progress|  |
-| 2. Native Media3 Playback & Background Control | 7/10 | In Progress|  |
-| 3. NetEase Lyrics & Provider Contract | 0/TBD | Not started | - |
-| 4. Durable Library & Playlist Management | 0/TBD | Not started | - |
-| 5. Secure Account Sessions | 0/TBD | Not started | - |
-| 6. Local Music, Backup & Listening History | 0/TBD | Not started | - |
-| 7. Proven Provider Expansion | 0/TBD | Not started | - |
-| 8. Verified Cache, Downloads & Offline Playback | 0/TBD | Not started | - |
-| 9. Advanced Playback, Effects & AI | 0/TBD | Not started | - |
-| 10. Mobile UX, Accessibility & Performance Hardening | 0/TBD | Not started | - |
-| 11. Release-like Parity Evidence | 0/TBD | Not started | - |
+| --- | --- | --- | --- |
+| 4. Official Mobile Shell & Unified Provider Registry | 0/TBD | Not started | - |
+| 5. Five-Source Listen Journey | 0/TBD | Not started | - |
+| 6. Personal Library & Continuity | 0/TBD | Not started | - |
+| 7. Offline & Advanced Desktop-Equivalent Playback | 0/TBD | Not started | - |
+| 8. Integrated API 35 Acceptance & Release-Like Evidence | 0/TBD | Not started | - |

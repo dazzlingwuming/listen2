@@ -46,11 +46,11 @@ Android 保留共享前端，但 native 只提供窄的、版本化、可取消�
 
 ### 播放/队列（PLAY）
 
-- [x] **PLAY-001** [T][P][E] Media3 ExoPlayer、MediaSession 和队列由一个 native playback owner 持有；WebView/Howler 只发送 track/part 意图和渲染 snapshot，页面、mini-player 和通知共享同一 PlaybackState。
+- [ ] **PLAY-001** [T][P][E] Media3 ExoPlayer、MediaSession 和队列由一个 native playback owner 持有；WebView/Howler 只发送 track/part 意图和渲染 snapshot，页面、mini-player 和通知共享同一 PlaybackState。
 - [ ] **PLAY-002** [T][P][E] native 根据受控 track/part 标识解析真实 MIME、容器、codec、时长和 rendition，按账号权限选择音质/画质并执行有上限的 CDN 候选恢复；MV 在设备/授权/codec 支持时可切分 P、画质、全屏和画中画，不支持时回退音频或显示可操作错误。
-- [x] **PLAY-003** [T][P][E] 我能使用播放/暂停、seek、进度、时长、音量、静音、上一首和下一首；媒体 URL 失败保留当前曲目上下文并可重试，不错误切歌。
-- [x] **PLAY-004** [P][E] 我能把曲目加入独立 FIFO play-next 队列并查看来源顺序；队列支持重复项、上移、下移、删除、清空、重启恢复，消费完成后回到原歌单或播放模式。
-- [x] **PLAY-005** [P][E] shuffle 每轮采用 Fisher–Yates 且不重复可播放曲目，repeat 与上一首真实历史指针在重启后保持；自然结束、快速 next、失败重试不会跳过或重复消费。
+- [ ] **PLAY-003** [T][P][E] 我能使用播放/暂停、seek、进度、时长、音量、静音、上一首和下一首；媒体 URL 失败保留当前曲目上下文并可重试，不错误切歌。
+- [ ] **PLAY-004** [P][E] 我能把曲目加入独立 FIFO play-next 队列并查看来源顺序；队列支持重复项、上移、下移、删除、清空、重启恢复，消费完成后回到原歌单或播放模式。
+- [ ] **PLAY-005** [P][E] shuffle 每轮采用 Fisher–Yates 且不重复可播放曲目，repeat 与上一首真实历史指针在重启后保持；自然结束、快速 next、失败重试不会跳过或重复消费。
 - [ ] **PLAY-006** [T][P][E] 屏幕关闭、Activity 销毁、renderer 被杀或进程回收后，MediaSessionService/合法 mediaPlayback foreground service 继续或可恢复播放；通知/锁屏、audio focus、AUDIO_BECOMING_NOISY、耳机和 Bluetooth/AVRCP 控制与页面一致，无播放时不常驻高耗电服务。
 
 ### 歌词/翻译（LYR）
@@ -168,75 +168,75 @@ Android 保留共享前端，但 native 只提供窄的、版本化、可取消�
 
 ## Traceability
 
-此表先为全部需求建立追踪行。当前没有获准的阶段分配，因此每行 Phase 均为 TBD、Status 均为 Pending；阶段规划只能补充证据，不能删除或延期这些需求。
+2026-09-10 的产品方向已获准：所有 58 项需求都归入 Phase 4–8 的五个完整用户旅程。历史 Phase 1–3 的 bridge、Media3、Room、SAF、cache 与部分 provider 代码只记为 foundation；除非该需求完成新路线规定的实现和可复核证据，不能标记 Complete。
 
 | Requirement | Phase | Status | Evidence target |
 | --- | --- | --- | --- |
-| PERF-001 | Phase 10 | Pending | cold-start instrumentation |
-| PERF-002 | Phase 10 | Pending | fixture timing/resource report |
-| PERF-003 | Phase 10 | Pending | process-kill/ANR recovery |
-| UI-001 | Phase 10 | Pending | mobile navigation E2E |
-| UI-002 | Phase 10 | Pending | inset/accessibility test |
-| UI-003 | Phase 10 | Pending | Android-equivalent UX matrix |
-| NET-001 | Phase 1 | Pending | typed bridge/origin policy |
-| NET-002 | Phase 1 | Pending | cancel/timeout/error fixture |
-| NET-003 | Phase 1 | Pending | Bilibili closed-loop E2E |
-| NET-004 | Phase 3 | Pending | NetEase/five-provider matrix |
-| SRCH-001 | Phase 1 | Pending | query/paging/cancel contract |
-| SRCH-002 | Phase 1 | Pending | directory/detail E2E |
-| SRCH-003 | Phase 1 | Pending | negative/partial result fixture |
-| PLAY-001 | Phase 2 | Complete | sole Media3 owner test |
-| PLAY-002 | Phase 9 | Pending | rendition/CDN/MV fixture |
-| PLAY-003 | Phase 2 | Complete | unified PlaybackState test |
-| PLAY-004 | Phase 2 | Complete | FIFO queue persistence |
-| PLAY-005 | Phase 2 | Complete | shuffle/repeat transition |
-| PLAY-006 | Phase 2 | Pending | service/focus/lockscreen recovery |
-| LYR-001 | Phase 3 | Pending | Bilibili/NetEase lyric fixture |
-| LYR-002 | Phase 3 | Pending | manual/offset persistence |
-| LYR-003 | Phase 3 | Pending | stale/error/TalkBack test |
-| LIB-001 | Phase 4 | Pending | source/offline library E2E |
-| LIB-002 | Phase 4 | Pending | playlist CRUD/favorite test |
-| LIB-003 | Phase 4 | Pending | transactional/capability test |
-| AUTH-001 | Phase 5 | Pending | session-state matrix UI |
-| AUTH-002 | Phase 5 | Pending | QR/login provider fixture |
-| AUTH-003 | Phase 5 | Pending | Keystore/refresh/logout test |
+| PERF-001 | Phase 8 | Pending | cold-start instrumentation |
+| PERF-002 | Phase 8 | Pending | fixture timing/resource report |
+| PERF-003 | Phase 8 | Pending | process-kill/ANR recovery |
+| UI-001 | Phase 4 | Pending | official-style mobile navigation E2E |
+| UI-002 | Phase 4 | Pending | inset/accessibility test |
+| UI-003 | Phase 4 | Pending | Android-equivalent UX matrix |
+| NET-001 | Phase 4 | Pending | typed bridge/origin policy |
+| NET-002 | Phase 4 | Pending | cancel/timeout/error fixture |
+| NET-003 | Phase 5 | Pending | Bilibili closed-loop E2E |
+| NET-004 | Phase 5 | Pending | NetEase/QQ/Kugou/Kuwo/Bilibili matrix |
+| SRCH-001 | Phase 5 | Pending | five-source query/paging/cancel contract |
+| SRCH-002 | Phase 5 | Pending | five-source directory/detail E2E |
+| SRCH-003 | Phase 5 | Pending | negative/partial result fixture |
+| PLAY-001 | Phase 5 | Foundation present; Pending acceptance | sole Media3 owner test plus five-source E2E |
+| PLAY-002 | Phase 7 | Pending | rendition/CDN/MV fixture |
+| PLAY-003 | Phase 5 | Foundation present; Pending acceptance | unified PlaybackState and device-control E2E |
+| PLAY-004 | Phase 5 | Foundation present; Pending acceptance | FIFO queue persistence and journey E2E |
+| PLAY-005 | Phase 5 | Foundation present; Pending acceptance | shuffle/repeat transition and journey E2E |
+| PLAY-006 | Phase 5 | Pending | service/focus/lockscreen recovery |
+| LYR-001 | Phase 5 | Pending | five-source lyric capability fixtures |
+| LYR-002 | Phase 5 | Pending | manual/offset persistence |
+| LYR-003 | Phase 5 | Pending | stale/error/TalkBack test |
+| LIB-001 | Phase 6 | Pending | source/offline library E2E |
+| LIB-002 | Phase 6 | Pending | playlist CRUD/favorite test |
+| LIB-003 | Phase 6 | Pending | transactional/capability test |
+| AUTH-001 | Phase 6 | Pending | session-state matrix UI |
+| AUTH-002 | Phase 6 | Pending | QR/login provider fixture |
+| AUTH-003 | Phase 6 | Pending | Keystore/refresh/logout test |
 | LOCAL-001 | Phase 6 | Pending | SAF import instrumentation |
 | LOCAL-002 | Phase 6 | Pending | tag/LRC/local playback |
 | LOCAL-003 | Phase 6 | Pending | revoke/path-boundary test |
-| DATA-001 | Phase 2 | Pending | Room/DataStore migration |
+| DATA-001 | Phase 6 | Pending | Room/DataStore migration |
 | DATA-002 | Phase 6 | Pending | backup allow-list scan |
 | DATA-003 | Phase 6 | Pending | merge/conflict/rollback |
 | HIST-001 | Phase 6 | Pending | threshold/dedup fixture |
 | HIST-002 | Phase 6 | Pending | lifecycle/annual aggregation |
 | HIST-003 | Phase 6 | Pending | opt-out/export/clear |
-| CACHE-001 | Phase 8 | Pending | atomic/hash/catalog test |
-| CACHE-002 | Phase 8 | Pending | offline/resume/repair |
-| CACHE-003 | Phase 8 | Pending | quota/LRU policy |
-| CACHE-004 | Phase 8 | Pending | cache library/disk-full |
-| FX-001 | Phase 9 | Pending | effect preset device test |
-| FX-002 | Phase 9 | Pending | spectrum/degradation test |
-| FX-003 | Phase 9 | Pending | LUFS/hash/background analysis |
-| AI-001 | Phase 9 | Pending | key settings/Keystore |
-| AI-002 | Phase 9 | Pending | confirmation/no-call test |
-| AI-003 | Phase 9 | Pending | alignment/cache/secret scan |
-| SEC-001 | Phase 1 | Pending | origin/navigation policy |
-| SEC-002 | Phase 1 | Pending | cleartext/WebView config scan |
-| SEC-003 | Phase 1 | Pending | schema/sink negative test |
+| CACHE-001 | Phase 7 | Pending | atomic/hash/catalog test |
+| CACHE-002 | Phase 7 | Pending | offline/resume/repair |
+| CACHE-003 | Phase 7 | Pending | quota/LRU policy |
+| CACHE-004 | Phase 7 | Pending | cache library/disk-full |
+| FX-001 | Phase 7 | Pending | effect preset device test |
+| FX-002 | Phase 7 | Pending | spectrum/degradation test |
+| FX-003 | Phase 7 | Pending | LUFS/hash/background analysis |
+| AI-001 | Phase 7 | Pending | key settings/Keystore |
+| AI-002 | Phase 7 | Pending | confirmation/no-call test |
+| AI-003 | Phase 7 | Pending | alignment/cache/secret scan |
+| SEC-001 | Phase 4 | Pending | origin/navigation policy |
+| SEC-002 | Phase 4 | Pending | cleartext/WebView config scan |
+| SEC-003 | Phase 4 | Pending | schema/sink negative test |
 | SEC-004 | Phase 7 | Pending | secret/entitlement audit |
-| TEST-001 | Phase 7 | Pending | JS/JVM contract suites |
-| TEST-002 | Phase 10 | Pending | WebView/Media3/storage suite |
-| TEST-003 | Phase 11 | Pending | emulator E2E evidence |
-| TEST-004 | Phase 11 | Pending | accessibility/perf/redaction report |
-| REL-001 | Phase 11 | Pending | reproducible APK/R8 smoke |
-| REL-002 | Phase 11 | Pending | release-like/signature/hash scan |
-| REL-003 | Phase 11 | Pending | parity-ready gate |
+| TEST-001 | Phase 4 | Pending | JS/JVM registry and boundary suites |
+| TEST-002 | Phase 8 | Pending | integrated WebView/Media3/storage suite |
+| TEST-003 | Phase 8 | Pending | API 35 emulator E2E evidence |
+| TEST-004 | Phase 8 | Pending | accessibility/perf/redaction report |
+| REL-001 | Phase 8 | Pending | reproducible APK/R8 smoke |
+| REL-002 | Phase 8 | Pending | release-like/signature/hash scan |
+| REL-003 | Phase 8 | Pending | parity-ready gate |
 
-Coverage is self-consistent: 58 requirement checkboxes, 58 unique IDs, 58 traceability rows, and 58 uniquely assigned roadmap phases; all 58 Status=Pending rows remain incomplete until their implementation and evidence pass.
+Coverage is self-consistent: 58 requirement checkboxes, 58 unique IDs, 58 traceability rows, and 58 uniquely assigned Phase 4–8 owners. All requirements remain incomplete until their new-route implementation and evidence pass; four Media3/queue rows record existing foundation tests without claiming acceptance.
 
 ## Definition of Done
 
 1. 58 个需求均有实现和可复核证据；capability matrix 中任何 degraded/not verified 项都保持需求未完成，不能用降级状态替代本里程碑已承诺的桌面平价能力；不存在死按钮、静默 fallback 或仅凭页面入口宣称完成。
-2. Bilibili 与 NetEase 各自通过搜索 → 详情/分 P/曲目 → 媒体清单 → 实际播放 → 主歌词/翻译入口闭环；错误、取消、过期、权限、离线和 codec 限制可恢复或如实说明。
+2. NetEase、QQ、Kugou、Kuwo 与 Bilibili 各自通过搜索 → 详情/歌单或分 P → 媒体清单 → 实际播放 → 歌词/翻译能力入口闭环；错误、取消、过期、权限、离线和 codec 限制可恢复或如实说明。
 3. Media3 MediaSessionService 是唯一播放 owner；屏幕关闭、通知、锁屏、audio focus、耳机/Bluetooth、Activity/renderer/进程重建、MV 回退和 queue 恢复均有模拟器或真机证据。
 4. QQ、Kugou、Kuwo、Migu、Taihe 和 Local Music 在 capability matrix 中逐字段记录；已声明能力有 adapter、allow-list、fixture、权限前提和设备证据，未验证能力不会出现在可用入口。
 5. 移动 shell、inset、键盘、旋转、返回、48 dp 触控、字体缩放、对比度、减少动画和 TalkBack 验收通过；桌面窗口形态已转为 Android 等价 UX。
@@ -260,4 +260,5 @@ Coverage is self-consistent: 58 requirement checkboxes, 58 unique IDs, 58 tracea
 - .planning/PROJECT.md：2026-08-30 Android parity 目标、Active 范围、约束和验证门禁。
 - .planning/research/FEATURES.md：桌面/旧移动端/当前 Android 矩阵、provider 边界、table stakes、anti-features 和验收行为。
 - .planning/research/SUMMARY.md：Media3 sole owner、窄 typed bridge、Room/DataStore/Keystore、SAF、缓存分层、测试和发布证据边界。
+- `listen1/listen1_mobile` v0.8.2：原作者 Android 产品的手机导航、页面层级、聚焦播放器和 NetEase/QQ/Kugou/Kuwo 统一 provider 契约；仅作为产品/行为蓝本，不复制其过时 React Native、直接 HTTP 或网络安全做法。
 - 根 README.md：Listen2 v2.34.0 桌面播放器、Bilibili/MV/登录、歌词/DeepSeek、缓存、响度、队列、历史和备份行为。

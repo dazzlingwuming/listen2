@@ -1,99 +1,88 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-milestone_name: milestone
-current_phase: 1
-current_phase_name: Verified Bilibili Startup Slice
-status: blueprint_ready_for_user_acceptance
-stopped_at: Android whole-product blueprint implemented and emulator-verified
-last_updated: "2026-09-09T11:00:00+08:00"
-last_activity: 2026-09-09
-last_activity_desc: Completed breadth-first Android blueprint, local CI, and API 35 emulator acceptance
+milestone_name: android-official-mobile-product-pivot
+current_phase: 4
+current_phase_name: Official Mobile Shell & Unified Provider Registry
+status: roadmap_reframed_ready_for_phase_4_planning
+stopped_at: Five-stage user-journey roadmap written; Phase 4 is next
+last_updated: "2026-09-10T00:00:00+08:00"
+last_activity: 2026-09-10
+last_activity_desc: Reframed Android roadmap around official Listen1 Mobile product behavior and current desktop parity
 progress:
-  total_phases: 11
+  total_phases: 5
   completed_phases: 0
-  total_plans: 17
-  completed_plans: 13
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-08-30)
+See: `.planning/PROJECT.md`
 
 **Core value:** Android users reliably complete an authorized end-to-end music journey from search through playback, lyrics, and later control.
-**Current focus:** Breadth-first Android whole-product functional blueprint
+
+**Current focus:** Phase 4 — rework the phone shell and source registry around the original Listen1 Mobile product behavior before adding any more provider-specific Android code.
 
 ## Current Position
 
-Phase: Cross-phase blueprint implementation (desktop parity breadth before APK)
-Plan: `.planning/ANDROID-BLUEPRINT-PLAN.md`
-Status: BLUEPRINT READY — debug APK built; awaiting user comparison and credential-dependent acceptance
-Last activity: 2026-09-09 — completed the whole-product implementation, final CI, and one API 35 emulator pass
+Phase: 4 — Official Mobile Shell & Unified Provider Registry
 
-Progress: Reconstructed by user-visible capability; ROADMAP phase counters remain historical until reconciled
+Plan: Not yet created; next entry is `$gsd-plan-phase 4`.
+
+Status: Roadmap reframed after explicit user direction. Product implementation for the new five-stage plan has not started.
+
+Progress: Historical Phase 1–3 work is retained only as a foundation. It is not counted as a completed product phase and does not close requirements or device acceptance.
 
 ## Performance Metrics
 
-**Velocity:**
+**Velocity:** Reset at the approved product pivot; prior per-plan counts belong to the superseded infrastructure-first roadmap and are not comparable.
 
-- Total plans completed: 6
-- Average duration: -
-- Total execution time: 0 hours
-
-**By Phase:**
-
-| Phase | Plans | Total | Avg/Plan |
-|-------|-------|-------|----------|
-| - | - | - | - |
-
-**Recent Trend:**
-
-- Last 5 plans: -
-- Trend: Not established
-
-**Per-Plan Metrics:**
-
-| Plan | Duration | Tasks | Files |
-|------|----------|-------|-------|
-| Phase 2 P6 | 15m | 2 tasks | 5 files |
-| Phase 02 P07 | 12min | 3 tasks | 5 files |
+| Phase | Plans | Status |
+| --- | --- | --- |
+| 4. Official Mobile Shell & Unified Provider Registry | TBD | Not started |
+| 5. Five-Source Listen Journey | TBD | Not started |
+| 6. Personal Library & Continuity | TBD | Not started |
+| 7. Offline & Advanced Desktop-Equivalent Playback | TBD | Not started |
+| 8. Integrated API 35 Acceptance & Release-Like Evidence | TBD | Not started |
 
 ## Accumulated Context
 
 ### Decisions
 
-- Phase 1 is an emulator-verified Bilibili startup/home/search/play/lyric-entry slice with the typed, cancellable bridge; it is not a docs-only foundation.
-- Media3 MediaSessionService is the only Android playback owner; WebView renders snapshots and sends bounded intent only.
-- Capability-matrix status controls feature exposure: “degraded” and “not verified” are visible statuses, not parity completion.
-- Formal parity-ready requires all 58 requirements and the release-like/evidence gates in Phase 11; merge, deploy, and signing credentials remain out of scope.
-- [Phase ?]: Android renderer playback status is snapshot-only; native Media3 is the sole owner after the typed bridge handshake.
-- [Phase ?]: Android mini-player/detail and FIFO queue now render revisioned native snapshots; no command acknowledgement is final UI truth.
-- The breadth-first Android blueprint now exposes phone Home/Search/Library/Settings surfaces, native Media3 playback, Bilibili/NetEase typed providers, local SAF music/LRC, playlist/favorites/history, downloads/cache, backup/restore, and consented DeepSeek configuration through bounded native capabilities.
-- Desktop-only advanced surfaces without a safe Android implementation (MV/PiP/effects/visualizer/loudness) remain explicitly unavailable rather than appearing functional.
+- Product reference is the original author's `listen1/listen1_mobile` v0.8.2: use its phone-first shell, navigation, focused player flow, and uniform four-provider contract as behavior/design reference. Add Bilibili as the fifth Android source.
+- Technology does not revert to the old React Native 0.59 / SDK 28 implementation. Keep the SDK 35 WebView hardening, typed bridge, Media3 sole owner, Room, SAF, Keystore, and native cache ownership.
+- Do not translate the original app's legacy direct HTTP, cleartext, caller-cookie/header, or unbounded Promise behavior. The shared provider contract is consolidated first; native logic is reserved for privileged lifecycle, secure storage, local file, download/cache, and media ownership responsibilities.
+- The latest desktop `main` capability set remains the v1 promise. A desktop-only form is rendered as Android-equivalent UX or reported as unavailable with a real reason; it is not silently dropped.
+- Current bridge, Media3, Room, SAF, cache, Bilibili/NetEase and lyric code are foundation facts. They are neither a five-source product claim nor final E2E acceptance.
+- Fast iteration uses scoped JavaScript/JVM/contract tests after coherent work. Do not assemble an APK merely to inspect each small change. Phase 8 performs the integrated API 35 emulator, performance, and release-like validation.
 
 ### Pending Todos
 
-- User acceptance on a physical Android phone.
-- Credential-dependent checks: Bilibili QR account flow and DeepSeek translation with a user-provided key outside the repository.
-- SAF import/export and local-file/LRC picking with user-owned files.
-- Recheck an actually playable provider item: the bounded Bilibili sample reached Media3 but its upstream manifest was unavailable and correctly exposed a retryable error.
+- Plan and execute Phase 4 around source registry and official-style mobile navigation.
+- Implement Phase 5 as one coherent NetEase/QQ/Kugou/Kuwo/Bilibili source journey, rather than adding per-endpoint native patches.
+- Obtain user-owned credentials only for final Bilibili QR and DeepSeek checks; keep them outside the repository.
+- Use user-owned SAF media only in the final integrated acceptance and record absence as `not verified`.
 
 ### Blockers/Concerns
 
-- Release signing remains out of scope; the produced artifact is a verified debug APK.
-- Gradle `connectedDebugAndroidTest` could not download Unified Test Platform because `dl.google.com` failed TLS. Installing both APKs and invoking `AndroidJUnitRunner` directly passed 19 tests; two staged process-death scenarios remain assumption-skipped.
-- Local Homebrew Gradle 8.14.5/JDK 21 differs from the repository CI pin (Gradle 8.10.2/JDK 17), while Java bytecode target remains 17.
+- The official reference app is a useful product/contract reference, not a safe code drop-in: it is React Native 0.59-era software and includes legacy provider behavior incompatible with the API 35 security constraints.
+- Music-provider availability, membership, region, DRM, endpoint drift, WebView codec support, and device PiP/effect support remain external variables. They must produce a visible, actionable state rather than a claimed success.
+- Existing historical Android evidence and `android/evidence/phase01/` are preserved but cannot prove the newly specified five-source journey. Do not delete or overwrite the untracked Phase 1 evidence while executing this roadmap.
+- Release signing, merge, and deploy remain out of scope. Local toolchain drift from repository-pinned Gradle/JDK must be recorded during Phase 8 rather than hidden.
 
 ## Deferred Items
 
 | Category | Item | Status | Deferred At |
-|----------|------|--------|-------------|
-| *(none)* | | | |
+| --- | --- | --- | --- |
+| *(none)* | All 58 requirements remain in Android v1.0 | Not deferred | - |
 
 ## Session Continuity
 
-Last session: 2026-09-09
-Stopped at: Blueprint implementation and final emulator acceptance complete; ready for physical-device comparison
-Resume file: `.planning/ANDROID-BLUEPRINT-PLAN.md`
+Last session: 2026-09-10
+
+Stopped at: Approved roadmap pivot completed; the next safe implementation entry point is Phase 4 planning.
+
+Resume with: `$gsd-plan-phase 4`
