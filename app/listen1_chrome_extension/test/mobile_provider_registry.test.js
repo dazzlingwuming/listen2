@@ -275,6 +275,24 @@ async function testLifecycle() {
   assert.strictEqual((await invalidIdentity.promise).code, 'INVALID_REQUEST');
   assert.strictEqual(invoked, 0, 'transport-shaped identities never dispatch');
 
+  const invalidDirectory = lifecycle.start({
+    operation: 'directory',
+    sourceId: 'netease',
+    pageEpoch: 4,
+    deadlineMs: 10,
+    payload: { id: 'https://unsafe.example/directory', page: 1 },
+    capabilities: { directory: true },
+    executor: () => {
+      invoked += 1;
+    },
+  });
+  assert.strictEqual((await invalidDirectory.promise).code, 'INVALID_REQUEST');
+  assert.strictEqual(
+    invoked,
+    0,
+    'transport-shaped directory identities never dispatch'
+  );
+
   let timeoutReply;
   let abortCount = 0;
   const timeout = lifecycle.start({

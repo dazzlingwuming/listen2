@@ -248,6 +248,15 @@
     );
   }
 
+  function validDirectoryId(value) {
+    // Directory identifiers are semantic, opaque handles. The mobile bridge
+    // never accepts transport routes, paths, query strings, or URL fragments
+    // from the caller at this boundary.
+    return (
+      validText(value, 256) && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,255}$/.test(value)
+    );
+  }
+
   function validPayload(operation, payload, sourceId) {
     let allowed = [];
     if (operation === 'search') allowed = ['keyword', 'page'];
@@ -266,7 +275,7 @@
     if (operation === 'directory')
       return (
         (!Object.prototype.hasOwnProperty.call(payload, 'id') ||
-          validText(payload.id, 512)) &&
+          validDirectoryId(payload.id)) &&
         (!Object.prototype.hasOwnProperty.call(payload, 'page') ||
           (Number.isInteger(payload.page) &&
             payload.page >= 1 &&

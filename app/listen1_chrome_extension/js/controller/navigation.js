@@ -1042,8 +1042,7 @@ angular.module('listenone').controller('NavigationController', [
     };
     // tag
     $scope.showTag = (tag_id, tag_params) => {
-      $scope.mobileProductPage = '';
-      $scope.mobileCapabilityNotice = '';
+      if ($scope.mobileProductPage) closeMobileProductLayer();
       $scope.current_tag = tag_id;
       $scope.is_window_hidden = 1;
       $scope.window_url_stack = [];

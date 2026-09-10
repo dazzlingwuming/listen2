@@ -74,7 +74,7 @@ function createNavigationHarness(options = {}) {
     querySelector: () => confirmation,
   };
   context.window = {
-    Listen2AndroidHttpAdapter: { isAvailable: () => true },
+    Listen2AndroidHttpAdapter: options.adapter || { isAvailable: () => true },
   };
   const scope = {
     $on() {
@@ -224,6 +224,63 @@ function testDeferredBackConsumesOnlyOneLayer() {
   );
 }
 
+async function testShowTagCancelsProductLayerRequests() {
+  const handles = [];
+  const adapter = {
+    isAvailable: () => true,
+    localData: {
+      query(_action, _payload, requestOptions) {
+        let resolve;
+        const handle = {
+          cancelled: false,
+          requestOptions,
+          cancel() {
+            this.cancelled = true;
+          },
+          promise: new Promise((done) => {
+            resolve = done;
+          }),
+        };
+        handle.resolve = resolve;
+        handles.push(handle);
+        return handle;
+      },
+    },
+  };
+  const harness = createNavigationHarness({ adapter });
+  harness.scope.openMobileProductPage('cache');
+  harness.scope.loadMobileLocalPage('cache');
+  assert.strictEqual(handles.length, 1);
+  const stale = handles[0];
+
+  harness.scope.showTag(2);
+  assert.strictEqual(stale.cancelled, true, 'showTag must cancel owned work');
+  assert.strictEqual(harness.scope.mobileProductPage, '');
+  assert.ok(
+    harness.broadcasts.includes('android:mobile-layer-back'),
+    'showTag must use the product-layer close path'
+  );
+
+  harness.scope.openMobileProductPage('cache');
+  harness.scope.loadMobileLocalPage('cache');
+  assert.strictEqual(handles.length, 2);
+  assert.ok(
+    handles[1].requestOptions.pageEpoch >= stale.requestOptions.pageEpoch + 2,
+    'closing a product layer must advance the owner epoch before the next request'
+  );
+  stale.resolve({ ok: true, data: { stale: true } });
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.notDeepStrictEqual(
+    harness.scope.mobileLocalData.cache,
+    { stale: true },
+    'a late reply from a closed product layer must not update visible state'
+  );
+  handles[1].resolve({ ok: true, data: { current: true } });
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
 assert.ok(modernBodyStart >= 0, 'modern theme shell should remain present');
 assert.ok(
   mobileLibraryHubStart >= 0,
@@ -326,13 +383,13 @@ assert.match(
 );
 assert.match(
   mobileCss,
-  /html:not\(\[data-listen2-platform='android'\]\) \.modern-body \.main \.sidebar[\s\S]*?display: flex !important;/,
-  'a 600–760px Electron window keeps its desktop sidebar'
+  /@media screen and \(max-width: 760px\)\s*\{\s*@scope \(html\[data-listen2-platform='android'\]\)/,
+  'the complete phone-shell media block must be rooted at the trusted Android marker'
 );
-assert.match(
+assert.doesNotMatch(
   mobileCss,
-  /html:not\(\[data-listen2-platform='android'\]\) \.modern-body \.mobile-tabbar[\s\S]*?display: none !important;/,
-  'a narrow Electron window cannot gain Android fixed navigation'
+  /html:not\(\[data-listen2-platform='android'\]\)/,
+  'Electron isolation must come from the Android root scope, not incomplete reverse overrides'
 );
 assert.match(
   mobileCss,
@@ -341,7 +398,7 @@ assert.match(
 );
 assert.match(
   mobileCss,
-  /html\[data-listen2-platform='android'\] \.modern-body:has\(.footer\.player-dock \.player-dock-surface\.slidedown\) \.android-queue-sheet[\s\S]*?safe-area-inset-bottom/,
+  /html\[data-listen2-platform='android'\]\s+\.modern-body:has\(.footer\.player-dock \.player-dock-surface\.slidedown\)\s+\.android-queue-sheet[\s\S]*?safe-area-inset-bottom/,
   'landscape full-player queues reserve only their visible safe-area control'
 );
 assert.match(
@@ -457,7 +514,14 @@ assert.doesNotMatch(
   'phone sheet actions must not retain a two-column action grid at large text'
 );
 
-testNearestLayerBack();
-testDeferredBackConsumesOnlyOneLayer();
+async function main() {
+  testNearestLayerBack();
+  testDeferredBackConsumesOnlyOneLayer();
+  await testShowTagCancelsProductLayerRequests();
+  process.stdout.write('mobile UI contract tests passed\n');
+}
 
-process.stdout.write('mobile UI contract tests passed\n');
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
