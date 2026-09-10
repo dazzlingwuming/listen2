@@ -351,6 +351,67 @@ assert.match(
   'the existing full-screen now-playing state should have a mobile viewport rule'
 );
 
+assert.match(
+  mobileCss,
+  /--mobile-dock-height:\s*64px;/,
+  'the mini player must reserve the canonical 64px dock'
+);
+assert.match(
+  mobileCss,
+  /--mobile-tabbar-height:\s*calc\(64px \+ env\(safe-area-inset-bottom, 0px\)\);/,
+  'the tab bar must reserve 64px plus the bottom safe area'
+);
+assert.match(
+  mobileCss,
+  /calc\(var\(--mobile-tabbar-height\) \+ var\(--mobile-dock-height\) \+ 24px\)/,
+  'the sole scroll surface must reserve both fixed controls and breathing room'
+);
+assert.match(
+  mobileCss,
+  /mobile-provider-selector[\s\S]*?flex-wrap:\s*nowrap;[\s\S]*?overflow-x:\s*auto;/,
+  'the source selector must remain one horizontally scrollable row'
+);
+assert.match(
+  mobileCss,
+  /mobile-provider-selector[\s\S]*?min-height:\s*48px/,
+  'each source selector action must remain touch sized'
+);
+assert.match(
+  mobileCss,
+  /safe-area-inset-top[\s\S]*?safe-area-inset-right[\s\S]*?safe-area-inset-bottom[\s\S]*?safe-area-inset-left/,
+  'sheets must account for every safe-area edge in either orientation'
+);
+assert.match(
+  mobileCss,
+  /mobile-library-hub-panel[\s\S]*?overflow:\s*hidden[\s\S]*?mobile-library-hub-scroll[\s\S]*?overflow-y:\s*auto/,
+  'bounded sheets must retain their own vertical scrolling region'
+);
+assert.match(
+  mobileCss,
+  /mobile-provider-selector[^}]*:focus-visible[\s\S]*?outline:\s*3px solid/,
+  'provider selection needs a visible 3:1 focus indicator'
+);
+assert.match(
+  mobileCss,
+  /@media \(prefers-reduced-motion: reduce\)[\s\S]*?mobile-provider-selector[\s\S]*?transition-duration:\s*0\.01ms !important/,
+  'reduced motion must remove shell movement'
+);
+assert.match(
+  mobileCss,
+  /mobile-provider-search[\s\S]*?transition:\s*opacity 160ms[^;]*, transform 160ms/,
+  'normal shell transitions must use opacity/transform and finish within 160ms'
+);
+assert.match(
+  mobileCss,
+  /@media \(max-width: 359px\)[\s\S]*?text-overflow:\s*ellipsis[\s\S]*?white-space:\s*nowrap/,
+  '320px layouts must ellipsize fixed-control labels instead of overlapping them'
+);
+assert.doesNotMatch(
+  mobileCss,
+  /mobile-library-hub-tools\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,/,
+  'phone sheet actions must not retain a two-column action grid at large text'
+);
+
 testNearestLayerBack();
 
 process.stdout.write('mobile UI contract tests passed\n');

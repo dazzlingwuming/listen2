@@ -9967,9 +9967,9 @@ body.modern-white .audio-effects-summary p {
 
 @media screen and (max-width: 760px) {
   .modern-body {
-    --dock-height: 62px;
-    --mobile-tabbar-height: calc(60px + env(safe-area-inset-bottom, 0px));
-    --mobile-dock-height: 62px;
+    --dock-height: 64px;
+    --mobile-tabbar-height: calc(64px + env(safe-area-inset-bottom, 0px));
+    --mobile-dock-height: 64px;
 
     width: 100%;
     max-width: 100%;
@@ -10101,8 +10101,10 @@ body.modern-white .audio-effects-summary p {
     flex: 1 1 auto;
     min-height: 0;
     height: auto;
-    padding: 0 0
-      calc(var(--mobile-tabbar-height) + var(--mobile-dock-height) + 22px);
+    padding: env(safe-area-inset-top, 0px)
+      max(0px, env(safe-area-inset-right, 0px))
+      calc(var(--mobile-tabbar-height) + var(--mobile-dock-height) + 24px)
+      max(0px, env(safe-area-inset-left, 0px));
     overflow-x: hidden !important;
     overflow-y: auto !important;
   }
@@ -11088,8 +11090,8 @@ body.modern-white .audio-effects-summary p {
   .modern-body .mobile-library-hub-close,
   .modern-body .mobile-library-hub-section-heading button {
     display: inline-flex;
-    min-width: 44px;
-    min-height: 44px;
+    min-width: 48px;
+    min-height: 48px;
     align-items: center;
     justify-content: center;
     border: 0;
@@ -11243,7 +11245,7 @@ body.modern-white .audio-effects-summary p {
 
   .modern-body .mobile-library-hub-tools {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
     gap: 8px;
   }
 
@@ -11296,6 +11298,95 @@ body.modern-white .audio-effects-summary p {
     .playsong-detail {
     max-width: 100%;
     min-width: 0;
+  }
+
+  /* The five-source selector is one focusable, horizontally scrollable row at
+   * compact widths. Long source labels never create a second control row. */
+  .modern-body .mobile-provider-selector {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    min-height: 48px;
+    flex-wrap: nowrap;
+    gap: 4px;
+    padding: 2px 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+  }
+
+  .modern-body .mobile-provider-selector > button {
+    min-width: max-content;
+    min-height: 48px;
+    flex: 0 0 auto;
+    padding: 0 12px;
+    white-space: nowrap;
+  }
+
+  .modern-body .mobile-provider-selector:focus-visible,
+  .modern-body .mobile-provider-selector > button:focus-visible,
+  .modern-body .mobile-library-hub button:focus-visible {
+    outline: 3px solid var(--ui-accent);
+    outline-offset: 2px;
+  }
+
+  /* These are the visible shell layers; transform/opacity keeps the normal
+   * transition bounded while the reduced-motion override below removes it. */
+  .modern-body .mobile-provider-search,
+  .modern-body .mobile-library-hub-panel,
+  .modern-body .android-queue-sheet-panel {
+    transition: opacity 160ms ease, transform 160ms ease;
+  }
+
+  @media (orientation: landscape) {
+    .modern-body .mobile-library-hub,
+    .modern-body .android-queue-sheet {
+      padding-top: max(8px, env(safe-area-inset-top, 0px));
+      padding-right: max(8px, env(safe-area-inset-right, 0px));
+      padding-bottom: calc(
+        var(--mobile-tabbar-height) + var(--mobile-dock-height) + 8px
+      );
+      padding-left: max(8px, env(safe-area-inset-left, 0px));
+    }
+
+    .modern-body .mobile-library-hub-panel {
+      max-height: calc(
+        100svh - env(safe-area-inset-top, 0px) - var(--mobile-tabbar-height) -
+          var(--mobile-dock-height) - 16px
+      );
+    }
+  }
+
+  @media (max-width: 359px) {
+    .modern-body .mobile-tab,
+    .modern-body .mobile-provider-selector > button,
+    .modern-body .mobile-library-hub-header h2,
+    .modern-body .mobile-library-hub-section-heading h3 {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .modern-body .mobile-provider-search,
+    .modern-body .mobile-library-hub-scroll {
+      padding-right: 12px;
+      padding-left: 12px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .modern-body .mobile-provider-selector,
+    .modern-body .mobile-provider-selector *,
+    .modern-body .mobile-provider-search,
+    .modern-body .mobile-library-hub-panel,
+    .modern-body .android-queue-sheet-panel {
+      animation-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+      transition-duration: 0.01ms !important;
+      transform: none !important;
+    }
   }
 
   .modern-body img,
