@@ -132,6 +132,21 @@ async function run() {
   assert.strictEqual(scope.providerSearch.sourceId, 'netease');
   assert.strictEqual(scope.providerSearch.state, 'pending');
 
+  assert(html.includes('data-mobile-provider-search'));
+  assert(html.includes('data-mobile-provider-selector'));
+  assert(html.includes('role="tablist"'));
+  assert(html.includes('aria-label="选择音乐来源"'));
+  assert(html.includes('搜索歌曲、歌手或歌单'));
+  assert(html.includes('providerSearch.skeletonRows'));
+  assert(html.includes('输入关键词后选择来源，结果会显示在这里。'));
+  const providerSurface = html.slice(
+    html.indexOf('data-mobile-provider-search'),
+    html.indexOf('<div ng-include="\'annual_recap.html\'"')
+  );
+  assert.strictEqual(providerSurface.includes('bilibiliSearch'), false);
+  assert.strictEqual(providerSurface.includes('migu'), false);
+  assert.strictEqual(providerSurface.includes('taihe'), false);
+
   const matrix = {
     netease: {
       displayName: '网易云音乐',
