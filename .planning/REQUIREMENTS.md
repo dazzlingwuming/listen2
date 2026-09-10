@@ -28,7 +28,7 @@ Android 保留共享前端，但 native 只提供窄的、版本化、可取消�
 ### 移动 UI（UI）
 
 - [x] **UI-001** [T][P][E] 我能通过手机底部导航、搜索、库、账户、mini-player、播放详情、队列、歌词、歌单和设置完成主流程，并用系统返回安全退出当前层级。
-- [ ] **UI-002** [T][E] 在刘海、状态栏、手势/三键导航、软键盘、横竖屏、字体缩放至至少 200%、高对比度和减少动画条件下，内容、播放栏、输入框和确认面板不被遮挡；主要控件触控目标至少 48 dp。
+- [x] **UI-002** [T][E] 在刘海、状态栏、手势/三键导航、软键盘、横竖屏、字体缩放至至少 200%、高对比度和减少动画条件下，内容、播放栏、输入框和确认面板不被遮挡；主要控件触控目标至少 48 dp。
 - [x] **UI-003** [P][E][S] 桌面浮动歌词、托盘和 thumbbar 在 Android 上由底部/全屏面板、通知、锁屏和系统媒体控件提供等价操作；所有入口由 capability matrix 控制，不显示死按钮、假成功或不可解释空列表。
 
 ### provider 网络（NET）
@@ -176,7 +176,7 @@ Android 保留共享前端，但 native 只提供窄的、版本化、可取消�
 | PERF-002 | Phase 8 | Pending | fixture timing/resource report |
 | PERF-003 | Phase 8 | Pending | process-kill/ANR recovery |
 | UI-001 | Phase 4 | Complete | official-style mobile navigation E2E |
-| UI-002 | Phase 4 | Pending | inset/accessibility test |
+| UI-002 | Phase 4 | Complete | inset/accessibility test |
 | UI-003 | Phase 4 | Complete | Android-equivalent UX matrix |
 | NET-001 | Phase 4 | Complete | typed bridge/origin policy |
 | NET-002 | Phase 4 | Complete | cancel/timeout/error fixture |
