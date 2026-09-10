@@ -21,7 +21,7 @@ Deliver the phone-first navigation, focused player entry, and one consistent fiv
 - System back closes the nearest sheet/player/detail layer before leaving the current top-level destination or Activity.
 
 ### Provider registry and search entry
-- Present NetEase, QQ, Kugou, Kuwo, and Bilibili through one ordered provider contract. Use the official mobile order for the four original sources and append Bilibili as Listen2's fifth source.
+- Present NetEase, Kugou, Kuwo, QQ, and Bilibili through one ordered provider contract. The exact Android primary order is `netease`, `kugou`, `kuwo`, `qq`, `bilibili`, matching the official mobile four-source order and appending Bilibili as Listen2's fifth source.
 - Every source exposes the same semantic surface: identity, display name, searchable state, directory/detail state, playable state, lyric state, account requirement, and a safe actionable error.
 - A source may be visible before its Phase 5 live route is complete only when the UI labels the exact unavailable capability and never renders a dead control or empty-success result.
 - Preserve exact source-prefixed track identity across search, playlists, queue, favorites, backup, and playback; UI code must not infer a provider from a title or URL.

@@ -118,9 +118,9 @@ The only selectable sources, in this exact order, are:
 | Order | Stable ID | Visible label | Initial state rule |
 |------:|-----------|---------------|--------------------|
 | 1 | `netease` | 网易云音乐 | select by default; capability fields decide whether an operation can run |
-| 2 | `qq` | QQ音乐 | visible; shows its exact registry-derived unavailability until its route is proven |
-| 3 | `kugou` | 酷狗音乐 | visible; shows its exact registry-derived unavailability until its route is proven |
-| 4 | `kuwo` | 酷我音乐 | visible; shows its exact registry-derived unavailability until its route is proven |
+| 2 | `kugou` | 酷狗音乐 | visible; shows its exact registry-derived unavailability until its route is proven |
+| 3 | `kuwo` | 酷我音乐 | visible; shows its exact registry-derived unavailability until its route is proven |
+| 4 | `qq` | QQ音乐 | visible; shows its exact registry-derived unavailability until its route is proven |
 | 5 | `bilibili` | 哔哩哔哩 | visible; capability fields decide whether an operation can run |
 
 `migu` and `taihe` remain registry-only unavailable entries during Phase 4. They are not hidden “extra” source tabs, do not appear in the primary selector, and cannot produce a dead selector control, fabricated row, or empty-success state.

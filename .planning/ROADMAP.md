@@ -20,7 +20,7 @@ Those facts reduce implementation work, but none proves that a user can complete
 
 ## Phases
 
-- [ ] **Phase 4: Official Mobile Shell & Unified Provider Registry** - Deliver the official-style phone shell and one declarative provider capability contract for NetEase, QQ, Kugou, Kuwo, and Bilibili.
+- [ ] **Phase 4: Official Mobile Shell & Unified Provider Registry** - Deliver the official-style phone shell and one declarative provider capability contract for NetEase, Kugou, Kuwo, QQ, and Bilibili.
 - [ ] **Phase 5: Five-Source Listen Journey** - Make source-labelled search → detail → authorized playback → lyrics work coherently across the four official mobile sources plus Bilibili.
 - [ ] **Phase 6: Personal Library & Continuity** - Let users own playlists, accounts, local music, backups, and listening history on Android.
 - [ ] **Phase 7: Offline & Advanced Desktop-Equivalent Playback** - Complete cache/offline, MV/PiP/rendition, effects, loudness, and consented translation with truthful Android fallbacks.
@@ -36,7 +36,7 @@ Those facts reduce implementation work, but none proves that a user can complete
 **Success Criteria** (what must be TRUE):
 
   1. A user can move between Home, Search, Library, Account, Settings, mini-player, player detail, queue, lyrics, and playlists through a phone-sized navigation hierarchy; system Back, keyboard, rotation, insets, 200% font scaling, contrast, and 48 dp controls preserve the intended layer rather than exposing a desktop layout.
-  2. In Search, a user sees one source-selector model for NetEase, QQ, Kugou, Kuwo, and Bilibili; the source label, supported actions, login state, and unavailable reason all come from the same capability registry rather than hard-coded per-page switches.
+  2. In Search, a user sees one source-selector model ordered NetEase, Kugou, Kuwo, QQ, and Bilibili; the source label, supported actions, login state, and unavailable reason all come from the same capability registry rather than hard-coded per-page switches.
   3. Migu and Taihe remain represented only as explicitly unavailable capability-matrix entries until they have their own route and device proof; users never encounter a dead source tab, fake result, or empty-success state.
   4. A user can revise or cancel an operation without a stale result, spinner, or error changing the active page; offline, timeout, malformed provider data, and entitlement failures show a source-specific recovery action.
   5. Untrusted pages, frames, navigations, file/content URLs, caller-supplied cookies or headers, and oversized/malformed bridge data cannot gain provider or local-data access, while routine JavaScript/JVM contracts guard the registry and these boundaries.
@@ -51,7 +51,7 @@ Those facts reduce implementation work, but none proves that a user can complete
 **Requirements:** NET-003, NET-004, SRCH-001, SRCH-002, SRCH-003, PLAY-001, PLAY-003, PLAY-004, PLAY-005, PLAY-006, LYR-001, LYR-002, LYR-003
 **Success Criteria** (what must be TRUE):
 
-  1. A user can search NetEase, QQ, Kugou, Kuwo, or Bilibili, paginate or cancel the request, and see source-labelled title, artist, artwork, duration, result kind, and real playable/login/unsupported status without one source's failure erasing another source's result.
+  1. A user can search NetEase, Kugou, Kuwo, QQ, or Bilibili, paginate or cancel the request, and see source-labelled title, artist, artwork, duration, result kind, and real playable/login/unsupported status without one source's failure erasing another source's result.
   2. A user can open a supported source result into its directory, album/playlist, track detail, or Bilibili part list and select the intended track; rotation, Back, artwork failure, bad JSON, and an unavailable route preserve the current context and explain the next action.
   3. A user can play an authorized, device-supported track from each of the five sources; the mini-player, player detail, notification, lock screen, audio focus/noisy/headset/Bluetooth controls, seek, volume, mute, previous/next, and track error all report the same sole-Media3 state.
   4. A user can use play-next, duplicate queue entries, reorder/removal, shuffle, repeat, and real previous history, then close, rotate, or temporarily lose the renderer without silently consuming or duplicating the queue.
