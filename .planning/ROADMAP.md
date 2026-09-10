@@ -41,10 +41,10 @@ Those facts reduce implementation work, but none proves that a user can complete
   4. A user can revise or cancel an operation without a stale result, spinner, or error changing the active page; offline, timeout, malformed provider data, and entitlement failures show a source-specific recovery action.
   5. Untrusted pages, frames, navigations, file/content URLs, caller-supplied cookies or headers, and oversized/malformed bridge data cannot gain provider or local-data access, while routine JavaScript/JVM contracts guard the registry and these boundaries.
 
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 
 - [x] 04-01-PLAN.md
-- [ ] 04-02-PLAN.md
+- [x] 04-02-PLAN.md
 - [ ] 04-03-PLAN.md
 
 **UI hint:** yes
@@ -118,7 +118,7 @@ Those facts reduce implementation work, but none proves that a user can complete
 
 | Phase | Plans Complete | Status | Completed |
 | --- | --- | --- | --- |
-| 4. Official Mobile Shell & Unified Provider Registry | 1/3 | In Progress|  |
+| 4. Official Mobile Shell & Unified Provider Registry | 2/3 | In Progress|  |
 | 5. Five-Source Listen Journey | 0/TBD | Not started | - |
 | 6. Personal Library & Continuity | 0/TBD | Not started | - |
 | 7. Offline & Advanced Desktop-Equivalent Playback | 0/TBD | Not started | - |

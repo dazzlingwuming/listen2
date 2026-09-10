@@ -5,13 +5,13 @@ milestone_name: android-official-mobile-product-pivot
 current_phase: 04
 current_phase_name: official-mobile-shell-unified-provider-registry
 status: executing
-stopped_at: Completed 04-01-PLAN.md
-last_updated: "2026-09-10T09:01:02.994Z"
+stopped_at: Completed 04-02-PLAN.md
+last_updated: "2026-09-10T09:17:40.728Z"
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 3
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 last_activity: 2026-09-10
 last_activity_desc: Reframed Android roadmap around official Listen1 Mobile product behavior and current desktop parity
@@ -31,11 +31,11 @@ See: `.planning/PROJECT.md`
 
 Phase: 04 (official-mobile-shell-unified-provider-registry) — EXECUTING
 
-Plan: 2 of 3
+Plan: 3 of 3
 
 Status: Ready to execute
 
-Progress: [███░░░░░░░] 33%
+Progress: [███████░░░] 67%
 
 ## Performance Metrics
 
@@ -53,6 +53,7 @@ Progress: [███░░░░░░░] 33%
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 04 P01 | 13m | 3 tasks | 9 files |
+| Phase 04 P02 | 10min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -66,6 +67,8 @@ Progress: [███░░░░░░░] 33%
 - Fast iteration uses scoped JavaScript/JVM/contract tests after coherent work. Do not assemble an APK merely to inspect each small change. Phase 8 performs the integrated API 35 emulator, performance, and release-like validation.
 - [Phase ?]: Android primary provider order is netease, kugou, kuwo, qq, bilibili; Migu and Taihe remain registry-only unavailable.
 - [Phase ?]: Missing semantic routes terminate OPERATION_UNAVAILABLE without provider, bridge, MediaService, or transport fallback.
+- [Phase ?]: Android search selects NetEase first and projects all five primary sources from MobileProviderRegistry.
+- [Phase ?]: The shared semantic lifecycle owns deadline, cancellation, stale-reply, and exactly-once terminal settlement; only the existing search seam is dispatched.
 
 ### Pending Todos
 
@@ -89,10 +92,10 @@ Progress: [███░░░░░░░] 33%
 
 ## Session Continuity
 
-**Resume file:** .planning/phases/04-official-mobile-shell-unified-provider-registry/04-01-SUMMARY.md
+**Resume file:** .planning/phases/04-official-mobile-shell-unified-provider-registry/04-02-SUMMARY.md
 
-Last session: 2026-09-10T09:01:02.981Z
+Last session: 2026-09-10T09:17:40.720Z
 
-Stopped at: Completed 04-01-PLAN.md
+Stopped at: Completed 04-02-PLAN.md
 
 Resume with: `$gsd-plan-phase 4`
