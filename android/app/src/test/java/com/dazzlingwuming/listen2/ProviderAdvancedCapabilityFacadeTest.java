@@ -14,7 +14,10 @@ import org.junit.Test;
 import org.json.JSONObject;
 
 import java.net.URI;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
+import java.util.Iterator;
 
 /** Contract coverage for the Android-only provider/account/advanced-media seams. */
 public final class ProviderAdvancedCapabilityFacadeTest {
@@ -44,6 +47,32 @@ public final class ProviderAdvancedCapabilityFacadeTest {
         assertFalse(AndroidRpcContract.parseRequest(
                 "{\"version\":2,\"operation\":\"provider.capabilities\",\"requestId\":\"caps-1\","
                         + "\"pageEpoch\":1,\"payload\":{\"url\":\"https://evil.example\"}}").isValid());
+    }
+
+    @Test
+    public void unavailableProvidersAndCapabilityEnvelopeStayClosed() throws Exception {
+        ProviderCapabilityFacade facade = ProviderCapabilityFacade.production();
+        for (String provider : Arrays.asList("qq", "kugou", "kuwo", "migu", "taihe", "unknown")) {
+            assertFalse(provider, facade.get(provider).isSearchAvailable());
+        }
+
+        JSONObject handshake = facade.toJson();
+        HashSet<String> handshakeKeys = new HashSet<>();
+        Iterator<String> keys = handshake.keys();
+        while (keys.hasNext()) {
+            handshakeKeys.add(keys.next());
+        }
+        assertEquals(new HashSet<>(Arrays.asList(
+                "version", "bilibili", "netease", "deepSeekTranslation")), handshakeKeys);
+        assertFalse(handshake.toString().contains("url"));
+        assertFalse(handshake.toString().contains("header"));
+        assertFalse(handshake.toString().contains("cookie"));
+        assertFalse(AndroidRpcContract.parseRequest(
+                "{\"version\":2,\"operation\":\"provider.capabilities\",\"requestId\":\"caps-2\","
+                        + "\"pageEpoch\":1,\"payload\":{\"headers\":{\"x\":\"y\"}}}").isValid());
+        assertFalse(AndroidRpcContract.parseRequest(
+                "{\"version\":2,\"operation\":\"provider.capabilities\",\"requestId\":\"caps-3\","
+                        + "\"pageEpoch\":1,\"payload\":{\"cookie\":\"no\"}}").isValid());
     }
 
     @Test
