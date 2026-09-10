@@ -4564,7 +4564,7 @@
                         <section
                           class="bilibili-mobile-search mobile-provider-search"
                           data-mobile-provider-search
-                          ng-if="is_window_hidden==1 && current_tag==3"
+                          ng-if="isAndroidTyped() && is_window_hidden==1 && current_tag==3"
                           aria-labelledby="mobile-provider-search-title"
                         >
                           <h1 id="mobile-provider-search-title">发现</h1>
@@ -5235,7 +5235,7 @@
                         <!-- content page: 快速搜索 -->
                         <div
                           class="page"
-                          ng-show="current_tag==3 && is_window_hidden==1"
+                          ng-show="!isAndroidTyped() && current_tag==3 && is_window_hidden==1"
                         >
                           <div class="site-wrapper-innerd">
                             <div class="cover-container">
@@ -5246,7 +5246,6 @@
                               >
                                 <ul class="source-list">
                                   <li
-                                    ng-if="!isAndroidSurface()"
                                     class="source-button"
                                     ng-class="{'active':tab === 'allmusic'}"
                                     ng-click="changeSourceTab('allmusic')"
@@ -5457,7 +5456,7 @@
                                           source-button
                                           offline-download-button
                                         "
-                                        ng-show="options && (!isChrome || isAndroidSurface()) && (song.source === 'bilibili' || song.source === 'netease')"
+                                        ng-show="options && !isChrome && (song.source === 'bilibili' || song.source === 'netease')"
                                         ng-click="downloadTrackForOffline(song)"
                                         ><span aria-hidden="true">⇩</span></a
                                       >

@@ -946,22 +946,22 @@
 /* Phase 1 Android search uses a separate semantic surface instead of shrinking
  * desktop result controls. Keep it constrained to the phone layout. */
 @media screen and (max-width: 760px) {
-  .modern-body,
-  .modern-body .main,
-  .modern-body .main .content,
-  .modern-body .main .content .browser {
+  html[data-listen2-platform='android'] .modern-body,
+  html[data-listen2-platform='android'] .modern-body .main,
+  html[data-listen2-platform='android'] .modern-body .main .content,
+  html[data-listen2-platform='android'] .modern-body .main .content .browser {
     min-width: 0;
     max-width: 100%;
   }
 
-  .modern-body .main .content .browser {
+  html[data-listen2-platform='android'] .modern-body .main .content .browser {
     min-height: 100svh;
     box-sizing: border-box;
     overflow-x: hidden;
     padding: 0 16px calc(128px + env(safe-area-inset-bottom, 0px));
   }
 
-  .modern-body .bilibili-mobile-search {
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-search {
     display: grid;
     gap: 16px;
     min-width: 0;
@@ -970,17 +970,17 @@
     color: var(--ui-text);
   }
 
-  .modern-body .bilibili-mobile-search-source,
-  .modern-body .bilibili-mobile-search-actions,
-  .modern-body .bilibili-mobile-live,
-  .modern-body .bilibili-mobile-results,
-  .modern-body .bilibili-mobile-parts {
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-search-source,
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-search-actions,
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-live,
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-results,
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-parts {
     display: flex;
     min-width: 0;
     gap: 8px;
   }
 
-  .modern-body .bilibili-mobile-search-source {
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-search-source {
     align-items: center;
     color: var(--ui-muted);
     font-size: 12px;
@@ -988,17 +988,17 @@
     line-height: 1.5;
   }
 
-  .modern-body .bilibili-mobile-source-chip,
-  .modern-body .bilibili-mobile-result small,
-  .modern-body .bilibili-mobile-parts small {
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-source-chip,
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-result small,
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-parts small {
     color: var(--ui-accent);
     font-size: 12px;
     font-weight: 400;
     line-height: 1.5;
   }
 
-  .modern-body .bilibili-mobile-search h1,
-  .modern-body .bilibili-mobile-detail h2 {
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-search h1,
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-detail h2 {
     margin: 0;
     color: var(--ui-text);
     font-size: 22px;
@@ -1007,9 +1007,9 @@
     overflow-wrap: anywhere;
   }
 
-  .modern-body .bilibili-mobile-search-intro,
-  .modern-body .bilibili-mobile-live p,
-  .modern-body .bilibili-mobile-detail > p {
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-search-intro,
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-live p,
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-detail > p {
     margin: 0;
     color: var(--ui-muted);
     font-size: 14px;
@@ -1017,18 +1017,18 @@
     line-height: 1.5;
   }
 
-  .modern-body .bilibili-mobile-search-actions,
-  .modern-body .bilibili-mobile-live {
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-search-actions,
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-live {
     flex-wrap: wrap;
     align-items: center;
   }
 
-  .modern-body .bilibili-mobile-search-actions button,
-  .modern-body .bilibili-mobile-live button,
-  .modern-body .bilibili-mobile-back,
-  .modern-body .bilibili-mobile-play,
-  .modern-body .bilibili-mobile-results button,
-  .modern-body .bilibili-mobile-parts button {
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-search-actions button,
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-live button,
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-back,
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-play,
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-results button,
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-parts button {
     min-width: 48px;
     min-height: 48px;
     box-sizing: border-box;
@@ -1041,28 +1041,28 @@
     line-height: 1.35;
   }
 
-  .modern-body .bilibili-mobile-search-actions button:first-child,
-  .modern-body .bilibili-mobile-play {
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-search-actions button:first-child,
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-play {
     border-color: var(--ui-accent);
     background: var(--ui-accent);
     color: #fff;
   }
 
-  .modern-body .bilibili-mobile-play[disabled] {
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-play[disabled] {
     border-color: var(--ui-border);
     background: var(--ui-surface-soft);
     color: var(--ui-muted);
   }
 
-  .modern-body .bilibili-mobile-results,
-  .modern-body .bilibili-mobile-parts {
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-results,
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-parts {
     flex-direction: column;
     margin: 0;
     padding: 0;
     list-style: none;
   }
 
-  .modern-body .bilibili-mobile-results button {
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-results button {
     display: grid;
     width: 100%;
     grid-template-columns: 48px minmax(0, 1fr) 48px;
@@ -1072,7 +1072,7 @@
     text-align: left;
   }
 
-  .modern-body .bilibili-mobile-cover {
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-cover {
     display: grid;
     width: 48px;
     height: 48px;
@@ -1085,15 +1085,15 @@
     font-weight: 600;
   }
 
-  .modern-body .bilibili-mobile-result-copy,
-  .modern-body .bilibili-mobile-result-copy small {
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-result-copy,
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-result-copy small {
     display: grid;
     min-width: 0;
     gap: 2px;
   }
 
-  .modern-body .bilibili-mobile-result-copy strong,
-  .modern-body .bilibili-mobile-result-copy > span {
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-result-copy strong,
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-result-copy > span {
     overflow: hidden;
     font-size: 14px;
     font-weight: 400;
@@ -1102,21 +1102,21 @@
     white-space: nowrap;
   }
 
-  .modern-body .bilibili-mobile-result-copy small {
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-result-copy small {
     grid-auto-flow: column;
     justify-content: start;
     overflow: hidden;
     white-space: nowrap;
   }
 
-  .modern-body .bilibili-mobile-open {
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-open {
     color: var(--ui-accent);
     font-size: 22px;
     font-weight: 600;
     text-align: center;
   }
 
-  .modern-body .bilibili-mobile-detail {
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-detail {
     display: grid;
     gap: 16px;
     min-width: 0;
@@ -1126,7 +1126,7 @@
     background: var(--ui-surface);
   }
 
-  .modern-body .bilibili-mobile-parts button {
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-parts button {
     display: grid;
     width: 100%;
     grid-template-columns: auto minmax(0, 1fr) auto;
@@ -1135,21 +1135,21 @@
     text-align: left;
   }
 
-  .modern-body .bilibili-mobile-parts button.is-selected {
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-parts button.is-selected {
     outline: 2px solid var(--ui-accent);
     outline-offset: 1px;
   }
 
-  .modern-body .bilibili-mobile-parts button.is-selected span:first-child {
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-parts button.is-selected span:first-child {
     color: var(--ui-accent);
     font-size: 12px;
     font-weight: 600;
     line-height: 1.5;
   }
 
-  .modern-body .bilibili-mobile-search button:focus-visible,
-  .modern-body .bilibili-mobile-results button:focus-visible,
-  .modern-body .bilibili-mobile-parts button:focus-visible {
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-search button:focus-visible,
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-results button:focus-visible,
+  html[data-listen2-platform='android'] .modern-body .bilibili-mobile-parts button:focus-visible {
     outline: 3px solid var(--ui-accent);
     outline-offset: 2px;
   }
@@ -9951,27 +9951,26 @@ body.modern-white .audio-effects-summary p {
  * over the older tablet breakpoints above without changing desktop geometry.
  */
 
-.modern-body .mobile-page-heading,
-.modern-body .mobile-tabbar,
-.modern-body .mobile-library-hub {
+html[data-listen2-platform='android'] .modern-body .mobile-page-heading,
+html[data-listen2-platform='android'] .modern-body .mobile-tabbar,
+html[data-listen2-platform='android'] .modern-body .mobile-library-hub {
   display: none;
 }
 
 @media screen and (min-width: 761px) {
-  .modern-body .mobile-page-heading,
-  .modern-body .mobile-tabbar,
-  .modern-body .mobile-library-hub {
+  html[data-listen2-platform='android'] .modern-body .mobile-page-heading,
+  html[data-listen2-platform='android'] .modern-body .mobile-tabbar,
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub {
     display: none !important;
   }
 }
 
 @media screen and (max-width: 760px) {
-  @scope (html[data-listen2-platform='android']) {
   /* The desktop product can be resized below 760px. Only the trusted Android
    * host opts into this scope, so responsive Electron windows retain their
    * existing sidebar, navigation, scroll, and player geometry. */
 
-  .modern-body {
+  html[data-listen2-platform='android'] .modern-body {
     --dock-height: 64px;
     --mobile-tabbar-height: calc(64px + env(safe-area-inset-bottom, 0px));
     --mobile-dock-height: 64px;
@@ -9984,10 +9983,10 @@ body.modern-white .audio-effects-summary p {
     overflow-x: hidden;
   }
 
-  .modern-body .wrap,
-  .modern-body .main,
-  .modern-body .main .content,
-  .modern-body .main .content .browser {
+  html[data-listen2-platform='android'] .modern-body .wrap,
+  html[data-listen2-platform='android'] .modern-body .main,
+  html[data-listen2-platform='android'] .modern-body .main .content,
+  html[data-listen2-platform='android'] .modern-body .main .content .browser {
     width: 100%;
     max-width: 100%;
     min-width: 0;
@@ -9995,7 +9994,7 @@ body.modern-white .audio-effects-summary p {
     overflow-x: hidden;
   }
 
-  .modern-body .wrap {
+  html[data-listen2-platform='android'] .modern-body .wrap {
     height: 100vh;
     height: 100svh;
     min-height: 100vh;
@@ -10003,11 +10002,11 @@ body.modern-white .audio-effects-summary p {
     overflow: hidden;
   }
 
-  .modern-body .main {
+  html[data-listen2-platform='android'] .modern-body .main {
     min-height: 0;
   }
 
-  .modern-body .main .sidebar {
+  html[data-listen2-platform='android'] .modern-body .main .sidebar {
     display: none !important;
     flex: 0 0 0 !important;
     width: 0 !important;
@@ -10018,13 +10017,13 @@ body.modern-white .audio-effects-summary p {
     overflow: hidden !important;
   }
 
-  .modern-body .main .content {
+  html[data-listen2-platform='android'] .modern-body .main .content {
     flex: 1 1 auto;
     min-height: 0;
     padding: 0 !important;
   }
 
-  .modern-body .main .content .navigation {
+  html[data-listen2-platform='android'] .modern-body .main .content .navigation {
     position: relative;
     inset: auto;
     display: flex;
@@ -10040,13 +10039,13 @@ body.modern-white .audio-effects-summary p {
     overflow: hidden;
   }
 
-  .modern-body .topbar-spacer,
-  .modern-body .browser > .topbar-spacer {
+  html[data-listen2-platform='android'] .modern-body .topbar-spacer,
+  html[data-listen2-platform='android'] .modern-body .browser > .topbar-spacer {
     display: none !important;
     height: 0 !important;
   }
 
-  .modern-body .mobile-page-heading {
+  html[data-listen2-platform='android'] .modern-body .mobile-page-heading {
     display: flex;
     flex: 0 0 auto;
     min-width: 0;
@@ -10056,7 +10055,7 @@ body.modern-white .audio-effects-summary p {
     white-space: nowrap;
   }
 
-  .modern-body .mobile-page-heading-mark {
+  html[data-listen2-platform='android'] .modern-body .mobile-page-heading-mark {
     display: inline-flex;
     width: 28px;
     height: 28px;
@@ -10068,24 +10067,24 @@ body.modern-white .audio-effects-summary p {
     color: var(--ui-accent);
   }
 
-  .modern-body .mobile-page-heading-icon {
+  html[data-listen2-platform='android'] .modern-body .mobile-page-heading-icon {
     width: 16px;
     height: 16px;
   }
 
-  .modern-body .mobile-page-heading-title {
+  html[data-listen2-platform='android'] .modern-body .mobile-page-heading-title {
     font-size: 15px;
     font-weight: 760;
     letter-spacing: 0.02em;
   }
 
-  .modern-body .navigation .backfront,
-  .modern-body .navigation .settings,
-  .modern-body .navigation .window-control {
+  html[data-listen2-platform='android'] .modern-body .navigation .backfront,
+  html[data-listen2-platform='android'] .modern-body .navigation .settings,
+  html[data-listen2-platform='android'] .modern-body .navigation .window-control {
     display: none !important;
   }
 
-  .modern-body .navigation .search {
+  html[data-listen2-platform='android'] .modern-body .navigation .search {
     flex: 1 1 auto;
     width: auto;
     min-width: 0;
@@ -10096,13 +10095,13 @@ body.modern-white .audio-effects-summary p {
     border-radius: 12px;
   }
 
-  .modern-body .navigation .search-input {
+  html[data-listen2-platform='android'] .modern-body .navigation .search-input {
     min-width: 0;
     height: 38px;
     font-size: 14px;
   }
 
-  .modern-body .main .content .browser {
+  html[data-listen2-platform='android'] .modern-body .main .content .browser {
     flex: 1 1 auto;
     min-height: 0;
     height: auto;
@@ -10114,26 +10113,26 @@ body.modern-white .audio-effects-summary p {
     overflow-y: auto !important;
   }
 
-  .modern-body .browser > .page,
-  .modern-body .browser > .page > .site-wrapper-innerd,
-  .modern-body .browser > .page > .site-wrapper-innerd > .cover-container,
-  .modern-body .editorial-discovery-page,
-  .modern-body .page .site-wrapper-innerd,
-  .modern-body .page .cover-container {
+  html[data-listen2-platform='android'] .modern-body .browser > .page,
+  html[data-listen2-platform='android'] .modern-body .browser > .page > .site-wrapper-innerd,
+  html[data-listen2-platform='android'] .modern-body .browser > .page > .site-wrapper-innerd > .cover-container,
+  html[data-listen2-platform='android'] .modern-body .editorial-discovery-page,
+  html[data-listen2-platform='android'] .modern-body .page .site-wrapper-innerd,
+  html[data-listen2-platform='android'] .modern-body .page .cover-container {
     width: 100%;
     max-width: 100%;
     min-width: 0;
     box-sizing: border-box;
   }
 
-  .modern-body .editorial-home {
+  html[data-listen2-platform='android'] .modern-body .editorial-home {
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
     padding: 18px 16px 24px;
   }
 
-  .modern-body .editorial-hero {
+  html[data-listen2-platform='android'] .modern-body .editorial-hero {
     min-height: 0;
     grid-template-columns: minmax(0, 1fr);
     margin-bottom: 20px;
@@ -10141,52 +10140,52 @@ body.modern-white .audio-effects-summary p {
     border-radius: 0;
   }
 
-  .modern-body .editorial-hero-art {
+  html[data-listen2-platform='android'] .modern-body .editorial-hero-art {
     display: none;
   }
 
-  .modern-body .editorial-hero h1 {
+  html[data-listen2-platform='android'] .modern-body .editorial-hero h1 {
     max-width: 100%;
     font-size: clamp(27px, 8vw, 34px);
     line-height: 1.15;
   }
 
-  .modern-body .editorial-intro {
+  html[data-listen2-platform='android'] .modern-body .editorial-intro {
     max-width: 100%;
     margin-top: 12px;
     font-size: 13px;
     line-height: 1.65;
   }
 
-  .modern-body .editorial-facts {
+  html[data-listen2-platform='android'] .modern-body .editorial-facts {
     flex-wrap: wrap;
     gap: 7px 10px;
     margin-top: 17px;
     font-size: 11px;
   }
 
-  .modern-body .discovery-sources {
+  html[data-listen2-platform='android'] .modern-body .discovery-sources {
     max-width: 100%;
     margin-right: 0;
     margin-left: 0;
   }
 
-  .modern-body .discovery-genres {
+  html[data-listen2-platform='android'] .modern-body .discovery-genres {
     max-width: 100%;
   }
 
-  .modern-body .discovery-section-heading {
+  html[data-listen2-platform='android'] .modern-body .discovery-section-heading {
     align-items: flex-start;
     flex-direction: column;
     gap: 4px;
     margin-bottom: 14px;
   }
 
-  .modern-body .discovery-section-heading p {
+  html[data-listen2-platform='android'] .modern-body .discovery-section-heading p {
     text-align: left;
   }
 
-  .modern-body .playlist-covers.discovery-card-grid {
+  html[data-listen2-platform='android'] .modern-body .playlist-covers.discovery-card-grid {
     width: 100%;
     max-width: 100%;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -10195,21 +10194,21 @@ body.modern-white .audio-effects-summary p {
     padding: 0 0 20px;
   }
 
-  .modern-body .playlist-covers.discovery-card-grid li {
+  html[data-listen2-platform='android'] .modern-body .playlist-covers.discovery-card-grid li {
     width: auto;
     min-width: 0;
     margin: 0;
   }
 
-  .modern-body .playlist-covers .u-cover,
-  .modern-body .playlist-covers .u-cover img {
+  html[data-listen2-platform='android'] .modern-body .playlist-covers .u-cover,
+  html[data-listen2-platform='android'] .modern-body .playlist-covers .u-cover img {
     width: 100%;
     min-width: 0;
     height: auto;
     aspect-ratio: 1;
   }
 
-  .modern-body .playlist-covers .u-cover .bottom {
+  html[data-listen2-platform='android'] .modern-body .playlist-covers .u-cover .bottom {
     right: 8px;
     bottom: 8px;
     width: 36px;
@@ -10218,19 +10217,19 @@ body.modern-white .audio-effects-summary p {
     transform: none;
   }
 
-  .modern-body .playlist-covers .desc {
+  html[data-listen2-platform='android'] .modern-body .playlist-covers .desc {
     height: 40px;
     padding-top: 8px;
   }
 
-  .modern-body .playlist-covers .desc .title {
+  html[data-listen2-platform='android'] .modern-body .playlist-covers .desc .title {
     font-size: 13px;
     line-height: 1.35;
   }
 
   /* Search and playlist rows use the same touch-sized, no-overflow rhythm. */
 
-  .modern-body .page .searchbox {
+  html[data-listen2-platform='android'] .modern-body .page .searchbox {
     width: 100%;
     max-width: 100%;
     min-width: 0;
@@ -10239,7 +10238,7 @@ body.modern-white .audio-effects-summary p {
     padding: 16px;
   }
 
-  .modern-body .page .searchbox .source-list {
+  html[data-listen2-platform='android'] .modern-body .page .searchbox .source-list {
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
@@ -10248,31 +10247,31 @@ body.modern-white .audio-effects-summary p {
     overflow-x: auto;
   }
 
-  .modern-body .page .searchbox .source-list .buttontext {
+  html[data-listen2-platform='android'] .modern-body .page .searchbox .source-list .buttontext {
     margin: 2px 5px;
     padding: 7px 8px 8px;
     font-size: 12px !important;
     line-height: 17px;
   }
 
-  .modern-body .page .searchbox .source-list .source-button.active .buttontext,
-  .modern-body .page .searchbox .source-list .source-button:hover .buttontext {
+  html[data-listen2-platform='android'] .modern-body .page .searchbox .source-list .source-button.active .buttontext,
+  html[data-listen2-platform='android'] .modern-body .page .searchbox .source-list .source-button:hover .buttontext {
     font-size: 12px !important;
   }
 
-  .modern-body .page .searchbox .source-list .search-type {
+  html[data-listen2-platform='android'] .modern-body .page .searchbox .source-list .search-type {
     min-width: max-content;
     margin-left: auto;
   }
 
-  .modern-body .page .searchbox > h1 {
+  html[data-listen2-platform='android'] .modern-body .page .searchbox > h1 {
     margin: 0 0 14px !important;
     font-size: 20px;
     line-height: 1.35;
     overflow-wrap: anywhere;
   }
 
-  .modern-body ul.detail-songlist.isSearchOne {
+  html[data-listen2-platform='android'] .modern-body ul.detail-songlist.isSearchOne {
     display: block;
     width: 100%;
     max-width: 100%;
@@ -10282,7 +10281,7 @@ body.modern-white .audio-effects-summary p {
     padding: 0 0 20px !important;
   }
 
-  .modern-body ul.detail-songlist.isSearchOne > li.isSearchType {
+  html[data-listen2-platform='android'] .modern-body ul.detail-songlist.isSearchOne > li.isSearchType {
     display: grid;
     width: 100%;
     max-width: 100%;
@@ -10298,7 +10297,7 @@ body.modern-white .audio-effects-summary p {
     border-radius: 0;
   }
 
-  .modern-body ul.detail-songlist.isSearchOne > li.isSearchType > img {
+  html[data-listen2-platform='android'] .modern-body ul.detail-songlist.isSearchOne > li.isSearchType > img {
     grid-area: cover;
     width: 48px;
     height: 48px;
@@ -10307,7 +10306,7 @@ body.modern-white .audio-effects-summary p {
     border-radius: 10px;
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     ul.detail-songlist.isSearchOne
     > li.isSearchType
     .title-and-artist {
@@ -10315,33 +10314,33 @@ body.modern-white .audio-effects-summary p {
     min-width: 0;
   }
 
-  .modern-body ul.detail-songlist.isSearchOne > li.isSearchType .container {
+  html[data-listen2-platform='android'] .modern-body ul.detail-songlist.isSearchOne > li.isSearchType .container {
     min-width: 0;
   }
 
-  .modern-body ul.detail-songlist.isSearchOne > li.isSearchType .title,
-  .modern-body ul.detail-songlist.isSearchOne > li.isSearchType .artist {
+  html[data-listen2-platform='android'] .modern-body ul.detail-songlist.isSearchOne > li.isSearchType .title,
+  html[data-listen2-platform='android'] .modern-body ul.detail-songlist.isSearchOne > li.isSearchType .artist {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .modern-body ul.detail-songlist.isSearchOne > li.isSearchType .title {
+  html[data-listen2-platform='android'] .modern-body ul.detail-songlist.isSearchOne > li.isSearchType .title {
     font-size: 14px;
     line-height: 20px;
   }
 
-  .modern-body ul.detail-songlist.isSearchOne > li.isSearchType .artist {
+  html[data-listen2-platform='android'] .modern-body ul.detail-songlist.isSearchOne > li.isSearchType .artist {
     font-size: 12px;
     line-height: 18px;
   }
 
-  .modern-body ul.detail-songlist.isSearchOne > li.isSearchType > .album {
+  html[data-listen2-platform='android'] .modern-body ul.detail-songlist.isSearchOne > li.isSearchType > .album {
     display: none;
   }
 
-  .modern-body ul.detail-songlist.isSearchOne > li.isSearchType > .tools {
+  html[data-listen2-platform='android'] .modern-body ul.detail-songlist.isSearchOne > li.isSearchType > .tools {
     grid-area: tools;
     display: flex !important;
     width: auto;
@@ -10351,7 +10350,7 @@ body.modern-white .audio-effects-summary p {
     opacity: 1;
   }
 
-  .modern-body ul.detail-songlist.isSearchOne > li.isSearchType > .tools a {
+  html[data-listen2-platform='android'] .modern-body ul.detail-songlist.isSearchOne > li.isSearchType > .tools a {
     display: flex;
     width: 34px;
     height: 34px;
@@ -10359,7 +10358,7 @@ body.modern-white .audio-effects-summary p {
     justify-content: center;
   }
 
-  .modern-body ul.detail-songlist.isSearch {
+  html[data-listen2-platform='android'] .modern-body ul.detail-songlist.isSearch {
     display: grid;
     width: 100%;
     max-width: 100%;
@@ -10371,7 +10370,7 @@ body.modern-white .audio-effects-summary p {
     padding: 0 0 20px !important;
   }
 
-  .modern-body ul.detail-songlist.isSearch > li.playlist-result {
+  html[data-listen2-platform='android'] .modern-body ul.detail-songlist.isSearch > li.playlist-result {
     display: block;
     width: auto;
     min-width: 0;
@@ -10380,8 +10379,8 @@ body.modern-white .audio-effects-summary p {
     padding: 0;
   }
 
-  .modern-body ul.detail-songlist.isSearch > li.playlist-result .u-cover,
-  .modern-body ul.detail-songlist.isSearch > li.playlist-result .u-cover img {
+  html[data-listen2-platform='android'] .modern-body ul.detail-songlist.isSearch > li.playlist-result .u-cover,
+  html[data-listen2-platform='android'] .modern-body ul.detail-songlist.isSearch > li.playlist-result .u-cover img {
     width: 100%;
     min-width: 0;
     height: auto;
@@ -10389,11 +10388,11 @@ body.modern-white .audio-effects-summary p {
     margin: 0;
   }
 
-  .modern-body ul.detail-songlist.isSearch > li.playlist-result .u-cover img {
+  html[data-listen2-platform='android'] .modern-body ul.detail-songlist.isSearch > li.playlist-result .u-cover img {
     border-radius: 12px;
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     ul.detail-songlist.isSearch
     > li.playlist-result
     .u-cover
@@ -10405,14 +10404,14 @@ body.modern-white .audio-effects-summary p {
     opacity: 1;
   }
 
-  .modern-body ul.detail-songlist.isSearch > li.playlist-result .desc {
+  html[data-listen2-platform='android'] .modern-body ul.detail-songlist.isSearch > li.playlist-result .desc {
     width: 100%;
     height: 42px;
     box-sizing: border-box;
     padding-top: 8px;
   }
 
-  .modern-body ul.detail-songlist.isSearch > li.playlist-result .desc .title {
+  html[data-listen2-platform='android'] .modern-body ul.detail-songlist.isSearch > li.playlist-result .desc .title {
     display: block;
     min-width: 0;
     max-width: 100%;
@@ -10424,7 +10423,7 @@ body.modern-white .audio-effects-summary p {
     white-space: nowrap;
   }
 
-  .modern-body ul.detail-songlist.isSearch > li.playlist-result .desc .artist {
+  html[data-listen2-platform='android'] .modern-body ul.detail-songlist.isSearch > li.playlist-result .desc .artist {
     max-width: 100%;
     margin-top: 1px;
     font-size: 11px;
@@ -10434,32 +10433,32 @@ body.modern-white .audio-effects-summary p {
     white-space: nowrap;
   }
 
-  .modern-body .page .playlist-detail {
+  html[data-listen2-platform='android'] .modern-body .page .playlist-detail {
     width: 100%;
     max-width: 100%;
     min-width: 0;
     padding-bottom: 18px;
   }
 
-  .modern-body .page .playlist-detail .detail-head {
+  html[data-listen2-platform='android'] .modern-body .page .playlist-detail .detail-head {
     min-width: 0;
     align-items: center;
     margin: 16px 16px 22px;
   }
 
-  .modern-body .page .playlist-detail .detail-head .detail-head-cover {
+  html[data-listen2-platform='android'] .modern-body .page .playlist-detail .detail-head .detail-head-cover {
     flex: 0 0 112px;
     width: 112px;
     height: 112px;
     margin-left: 0;
   }
 
-  .modern-body .page .playlist-detail .detail-head .detail-head-title {
+  html[data-listen2-platform='android'] .modern-body .page .playlist-detail .detail-head .detail-head-title {
     min-width: 0;
     margin: 0 0 0 16px;
   }
 
-  .modern-body .page .playlist-detail .detail-head .detail-head-title h2 {
+  html[data-listen2-platform='android'] .modern-body .page .playlist-detail .detail-head .detail-head-title h2 {
     max-width: 100%;
     margin: 0 0 10px;
     font-size: 22px;
@@ -10467,18 +10466,18 @@ body.modern-white .audio-effects-summary p {
     overflow-wrap: anywhere;
   }
 
-  .modern-body .page .playlist-detail .playlist-button-list {
+  html[data-listen2-platform='android'] .modern-body .page .playlist-detail .playlist-button-list {
     gap: 6px;
   }
 
-  .modern-body .page .playlist-detail .playlist-button-list .playlist-button {
+  html[data-listen2-platform='android'] .modern-body .page .playlist-detail .playlist-button-list .playlist-button {
     min-height: 36px;
     box-sizing: border-box;
     margin: 0;
     padding: 7px 9px;
   }
 
-  .modern-body ul.detail-songlist.playlist-songlist {
+  html[data-listen2-platform='android'] .modern-body ul.detail-songlist.playlist-songlist {
     width: 100%;
     max-width: 100%;
     min-width: 0;
@@ -10487,7 +10486,7 @@ body.modern-white .audio-effects-summary p {
     padding: 0 16px 20px !important;
   }
 
-  .modern-body ul.detail-songlist.playlist-songlist .playlist-search {
+  html[data-listen2-platform='android'] .modern-body ul.detail-songlist.playlist-songlist .playlist-search {
     position: relative;
     top: auto;
     right: auto;
@@ -10501,14 +10500,14 @@ body.modern-white .audio-effects-summary p {
     border-radius: 12px;
   }
 
-  .modern-body ul.detail-songlist.playlist-songlist .playlist-search-input {
+  html[data-listen2-platform='android'] .modern-body ul.detail-songlist.playlist-songlist .playlist-search-input {
     width: 100%;
     min-width: 0;
     height: 36px;
     font-size: 13px;
   }
 
-  .modern-body ul.detail-songlist.playlist-songlist > li.isSearchType {
+  html[data-listen2-platform='android'] .modern-body ul.detail-songlist.playlist-songlist > li.isSearchType {
     display: grid;
     width: 100%;
     max-width: 100%;
@@ -10524,7 +10523,7 @@ body.modern-white .audio-effects-summary p {
     border-radius: 0;
   }
 
-  .modern-body ul.detail-songlist.playlist-songlist > li.isSearchType > img {
+  html[data-listen2-platform='android'] .modern-body ul.detail-songlist.playlist-songlist > li.isSearchType > img {
     grid-area: cover;
     width: 48px;
     height: 48px;
@@ -10533,7 +10532,7 @@ body.modern-white .audio-effects-summary p {
     border-radius: 10px;
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     ul.detail-songlist.playlist-songlist
     > li.isSearchType
     .title-and-artist {
@@ -10541,37 +10540,37 @@ body.modern-white .audio-effects-summary p {
     min-width: 0;
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     ul.detail-songlist.playlist-songlist
     > li.isSearchType
     .container,
-  .modern-body ul.detail-songlist.playlist-songlist > li.isSearchType .title,
-  .modern-body ul.detail-songlist.playlist-songlist > li.isSearchType .artist {
+  html[data-listen2-platform='android'] .modern-body ul.detail-songlist.playlist-songlist > li.isSearchType .title,
+  html[data-listen2-platform='android'] .modern-body ul.detail-songlist.playlist-songlist > li.isSearchType .artist {
     min-width: 0;
   }
 
-  .modern-body ul.detail-songlist.playlist-songlist > li.isSearchType .title,
-  .modern-body ul.detail-songlist.playlist-songlist > li.isSearchType .artist {
+  html[data-listen2-platform='android'] .modern-body ul.detail-songlist.playlist-songlist > li.isSearchType .title,
+  html[data-listen2-platform='android'] .modern-body ul.detail-songlist.playlist-songlist > li.isSearchType .artist {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .modern-body ul.detail-songlist.playlist-songlist > li.isSearchType .title {
+  html[data-listen2-platform='android'] .modern-body ul.detail-songlist.playlist-songlist > li.isSearchType .title {
     font-size: 14px;
     line-height: 20px;
   }
 
-  .modern-body ul.detail-songlist.playlist-songlist > li.isSearchType .artist {
+  html[data-listen2-platform='android'] .modern-body ul.detail-songlist.playlist-songlist > li.isSearchType .artist {
     font-size: 12px;
     line-height: 18px;
   }
 
-  .modern-body ul.detail-songlist.playlist-songlist > li.isSearchType > .album {
+  html[data-listen2-platform='android'] .modern-body ul.detail-songlist.playlist-songlist > li.isSearchType > .album {
     display: none;
   }
 
-  .modern-body ul.detail-songlist.playlist-songlist > li.isSearchType > .tools {
+  html[data-listen2-platform='android'] .modern-body ul.detail-songlist.playlist-songlist > li.isSearchType > .tools {
     grid-area: tools;
     display: flex !important;
     width: auto;
@@ -10581,7 +10580,7 @@ body.modern-white .audio-effects-summary p {
     opacity: 1;
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     ul.detail-songlist.playlist-songlist
     > li.isSearchType
     > .tools
@@ -10593,7 +10592,7 @@ body.modern-white .audio-effects-summary p {
     justify-content: center;
   }
 
-  .modern-body .footer.player-dock {
+  html[data-listen2-platform='android'] .modern-body .footer.player-dock {
     right: 8px;
     bottom: calc(var(--mobile-tabbar-height) + 7px);
     left: 8px;
@@ -10603,11 +10602,11 @@ body.modern-white .audio-effects-summary p {
     z-index: 150;
   }
 
-  .modern-body .footer.player-dock.footerdef {
+  html[data-listen2-platform='android'] .modern-body .footer.player-dock.footerdef {
     bottom: calc(var(--mobile-tabbar-height) + 7px);
   }
 
-  .modern-body .footer .footer-main.player-dock-surface:not(.slidedown) {
+  html[data-listen2-platform='android'] .modern-body .footer .footer-main.player-dock-surface:not(.slidedown) {
     width: 100%;
     height: var(--mobile-dock-height);
     min-width: 0;
@@ -10615,7 +10614,7 @@ body.modern-white .audio-effects-summary p {
     border-radius: 16px;
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer
     .footer-main.player-dock-surface:not(.slidedown)
     .footerwrap {
@@ -10626,21 +10625,21 @@ body.modern-white .audio-effects-summary p {
     overflow: hidden;
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer.player-dock.footerdef
     .footer-main.player-dock-surface:not(.slidedown)
     .footerwrap {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer.player-dock.footerdef
     .footer-main.player-dock-surface:not(.slidedown)
     .left-control {
     display: none !important;
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer
     .footer-main.player-dock-surface:not(.slidedown)
     .left-control {
@@ -10653,17 +10652,17 @@ body.modern-white .audio-effects-summary p {
     border: 0;
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer
     .footer-main.player-dock-surface:not(.slidedown)
     .left-control
     .playlist-toggle,
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer
     .footer-main.player-dock-surface:not(.slidedown)
     .left-control
     .splitter,
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer
     .footer-main.player-dock-surface:not(.slidedown)
     .left-control
@@ -10671,7 +10670,7 @@ body.modern-white .audio-effects-summary p {
     display: none !important;
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer
     .footer-main.player-dock-surface:not(.slidedown)
     .left-control
@@ -10686,19 +10685,19 @@ body.modern-white .audio-effects-summary p {
     cursor: pointer;
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer
     .footer-main.player-dock-surface:not(.slidedown)
     .left-control
     .detail.mobile-current-track
     .title,
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer
     .footer-main.player-dock-surface:not(.slidedown)
     .left-control
     .detail.mobile-current-track
     .more-info,
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer
     .footer-main.player-dock-surface:not(.slidedown)
     .left-control
@@ -10712,7 +10711,7 @@ body.modern-white .audio-effects-summary p {
     white-space: nowrap;
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer
     .footer-main.player-dock-surface:not(.slidedown)
     .left-control
@@ -10723,7 +10722,7 @@ body.modern-white .audio-effects-summary p {
     line-height: 18px;
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer
     .footer-main.player-dock-surface:not(.slidedown)
     .left-control
@@ -10736,7 +10735,7 @@ body.modern-white .audio-effects-summary p {
     line-height: 16px;
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer
     .footer-main.player-dock-surface:not(.slidedown)
     .main-info {
@@ -10752,7 +10751,7 @@ body.modern-white .audio-effects-summary p {
     overflow: hidden;
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer.player-dock.footerdef
     .footer-main.player-dock-surface:not(.slidedown)
     .main-info {
@@ -10763,7 +10762,7 @@ body.modern-white .audio-effects-summary p {
     padding: 0 16px;
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer.player-dock.footerdef
     .footer-main.player-dock-surface:not(.slidedown)
     .player-empty-state {
@@ -10777,7 +10776,7 @@ body.modern-white .audio-effects-summary p {
     text-align: left;
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer.player-dock.footerdef
     .footer-main.player-dock-surface:not(.slidedown)
     .player-empty-state
@@ -10785,12 +10784,12 @@ body.modern-white .audio-effects-summary p {
     min-width: 0;
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer.player-dock.footerdef
     .footer-main.player-dock-surface:not(.slidedown)
     .player-empty-state
     strong,
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer.player-dock.footerdef
     .footer-main.player-dock-surface:not(.slidedown)
     .player-empty-state
@@ -10801,7 +10800,7 @@ body.modern-white .audio-effects-summary p {
     white-space: nowrap;
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer
     .footer-main.player-dock-surface:not(.slidedown)
     .main-info
@@ -10815,7 +10814,7 @@ body.modern-white .audio-effects-summary p {
     flex: 0 0 48px;
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer
     .footer-main.player-dock-surface:not(.slidedown)
     .main-info
@@ -10831,7 +10830,7 @@ body.modern-white .audio-effects-summary p {
     height: 48px !important;
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer
     .footer-main.player-dock-surface:not(.slidedown)
     .main-info
@@ -10841,7 +10840,7 @@ body.modern-white .audio-effects-summary p {
     display: none !important;
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer
     .footer-main.player-dock-surface:not(.slidedown)
     .main-info
@@ -10859,7 +10858,7 @@ body.modern-white .audio-effects-summary p {
     opacity: 1 !important;
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer
     .footer-main.player-dock-surface:not(.slidedown)
     .main-info
@@ -10872,7 +10871,7 @@ body.modern-white .audio-effects-summary p {
     border-radius: 12px;
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer
     .footer-main.player-dock-surface:not(.slidedown)
     .main-info
@@ -10889,14 +10888,14 @@ body.modern-white .audio-effects-summary p {
     pointer-events: none;
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer
     .footer-main.player-dock-surface:not(.slidedown)
     .main-info
     .cover
     > div.cover-list
     .a,
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer
     .footer-main.player-dock-surface:not(.slidedown)
     .main-info
@@ -10906,7 +10905,7 @@ body.modern-white .audio-effects-summary p {
     display: none !important;
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer
     .footer-main.player-dock-surface:not(.slidedown)
     .main-info
@@ -10927,7 +10926,7 @@ body.modern-white .audio-effects-summary p {
     pointer-events: auto;
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer
     .footer-main.player-dock-surface:not(.slidedown)
     .main-info
@@ -10939,26 +10938,26 @@ body.modern-white .audio-effects-summary p {
     height: 16px !important;
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer
     .footer-main.player-dock-surface:not(.slidedown)
     .main-info
     .footertime,
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer
     .footer-main.player-dock-surface:not(.slidedown)
     .circlemark {
     display: none !important;
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer
     .footer-main.player-dock-surface:not(.slidedown)
     .right-control {
     display: none !important;
   }
 
-  .modern-body .mobile-tabbar {
+  html[data-listen2-platform='android'] .modern-body .mobile-tabbar {
     position: fixed;
     right: 0;
     bottom: 0;
@@ -10980,7 +10979,7 @@ body.modern-white .audio-effects-summary p {
     backdrop-filter: blur(16px) saturate(135%);
   }
 
-  .modern-body .mobile-tab {
+  html[data-listen2-platform='android'] .modern-body .mobile-tab {
     display: flex;
     min-width: 0;
     min-height: 48px;
@@ -10999,13 +10998,13 @@ body.modern-white .audio-effects-summary p {
     -webkit-app-region: no-drag;
   }
 
-  .modern-body .mobile-tab.active {
+  html[data-listen2-platform='android'] .modern-body .mobile-tab.active {
     border-color: rgba(var(--ui-accent-rgb), 0.18);
     background: var(--ui-accent-soft);
     color: var(--ui-accent);
   }
 
-  .modern-body .mobile-tab-icon {
+  html[data-listen2-platform='android'] .modern-body .mobile-tab-icon {
     width: 18px;
     height: 18px;
     flex: 0 0 18px;
@@ -11016,11 +11015,11 @@ body.modern-white .audio-effects-summary p {
     stroke-linejoin: round;
   }
 
-  .modern-body .mobile-tabbar .mobile-tab:active {
+  html[data-listen2-platform='android'] .modern-body .mobile-tabbar .mobile-tab:active {
     transform: scale(0.97);
   }
 
-  .modern-body .mobile-library-hub {
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub {
     position: fixed;
     z-index: 140;
     inset: 0;
@@ -11034,7 +11033,7 @@ body.modern-white .audio-effects-summary p {
       calc(var(--mobile-tabbar-height) + var(--mobile-dock-height) + 8px);
   }
 
-  .modern-body .mobile-library-hub-backdrop {
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-backdrop {
     position: absolute;
     inset: 0;
     width: 100%;
@@ -11044,7 +11043,7 @@ body.modern-white .audio-effects-summary p {
     background: rgba(5, 7, 13, 0.38);
   }
 
-  .modern-body .mobile-library-hub-panel {
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-panel {
     position: relative;
     display: flex;
     width: min(100%, 560px);
@@ -11061,7 +11060,7 @@ body.modern-white .audio-effects-summary p {
     box-shadow: 0 22px 54px rgba(4, 7, 14, 0.32);
   }
 
-  .modern-body .mobile-library-hub-header {
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-header {
     display: flex;
     min-height: 66px;
     align-items: center;
@@ -11071,29 +11070,29 @@ body.modern-white .audio-effects-summary p {
     border-bottom: 1px solid var(--ui-border);
   }
 
-  .modern-body .mobile-library-hub-header p,
-  .modern-body .mobile-library-hub-header h2,
-  .modern-body .mobile-library-hub-section-heading h3,
-  .modern-body .mobile-library-hub-empty {
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-header p,
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-header h2,
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-section-heading h3,
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-empty {
     margin: 0;
   }
 
-  .modern-body .mobile-library-hub-header p {
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-header p {
     color: var(--ui-muted);
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.08em;
   }
 
-  .modern-body .mobile-library-hub-header h2 {
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-header h2 {
     margin-top: 2px;
     color: var(--ui-text);
     font-size: 21px;
     line-height: 1.2;
   }
 
-  .modern-body .mobile-library-hub-close,
-  .modern-body .mobile-library-hub-section-heading button {
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-close,
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-section-heading button {
     display: inline-flex;
     min-width: 48px;
     min-height: 48px;
@@ -11105,16 +11104,16 @@ body.modern-white .audio-effects-summary p {
     color: var(--ui-muted);
   }
 
-  .modern-body .mobile-library-hub-close:active,
-  .modern-body .mobile-library-hub-section-heading button:active,
-  .modern-body .mobile-library-hub-playlist:active,
-  .modern-body .mobile-library-hub-tools button:active {
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-close:active,
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-section-heading button:active,
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-playlist:active,
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-tools button:active {
     background: var(--ui-accent-soft);
     color: var(--ui-accent);
   }
 
-  .modern-body .mobile-library-hub-close svg,
-  .modern-body .mobile-library-hub-section-heading button svg {
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-close svg,
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-section-heading button svg {
     width: 19px;
     height: 19px;
     fill: none;
@@ -11122,16 +11121,16 @@ body.modern-white .audio-effects-summary p {
     stroke-width: 1.8;
   }
 
-  .modern-body .mobile-library-hub-scroll {
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-scroll {
     min-width: 0;
     padding: 12px 14px 18px;
     overflow-x: hidden;
     overflow-y: auto;
   }
 
-  .modern-body .mobile-library-hub-primary,
-  .modern-body .mobile-library-hub-playlist,
-  .modern-body .mobile-library-hub-tools button {
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-primary,
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-playlist,
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-tools button {
     width: 100%;
     min-width: 0;
     min-height: 48px;
@@ -11141,7 +11140,7 @@ body.modern-white .audio-effects-summary p {
     text-align: left;
   }
 
-  .modern-body .mobile-library-hub-primary {
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-primary {
     display: flex;
     align-items: center;
     gap: 11px;
@@ -11151,7 +11150,7 @@ body.modern-white .audio-effects-summary p {
     background: var(--ui-accent-soft);
   }
 
-  .modern-body .mobile-library-hub-primary svg {
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-primary svg {
     width: 20px;
     height: 20px;
     flex: 0 0 20px;
@@ -11160,30 +11159,30 @@ body.modern-white .audio-effects-summary p {
     stroke-width: 1.8;
   }
 
-  .modern-body .mobile-library-hub-primary span {
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-primary span {
     display: grid;
     min-width: 0;
     gap: 2px;
   }
 
-  .modern-body .mobile-library-hub-primary strong,
-  .modern-body .mobile-library-hub-playlist span:first-child {
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-primary strong,
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-playlist span:first-child {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .modern-body .mobile-library-hub-primary small {
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-primary small {
     color: var(--ui-muted);
     font-size: 12px;
   }
 
-  .modern-body .mobile-library-hub-section {
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-section {
     min-width: 0;
     margin-top: 18px;
   }
 
-  .modern-body .mobile-library-hub-section-heading {
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-section-heading {
     display: flex;
     min-width: 0;
     min-height: 44px;
@@ -11192,14 +11191,14 @@ body.modern-white .audio-effects-summary p {
     gap: 10px;
   }
 
-  .modern-body .mobile-library-hub-section-heading h3 {
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-section-heading h3 {
     min-width: 0;
     color: var(--ui-text);
     font-size: 14px;
     line-height: 1.35;
   }
 
-  .modern-body .mobile-library-hub-section-heading button {
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-section-heading button {
     gap: 4px;
     padding: 0 8px;
     color: var(--ui-accent);
@@ -11209,16 +11208,16 @@ body.modern-white .audio-effects-summary p {
     white-space: nowrap;
   }
 
-  .modern-body .mobile-library-hub-section-heading button span {
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-section-heading button span {
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
-  .modern-body .mobile-library-hub-playlists {
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-playlists {
     min-width: 0;
   }
 
-  .modern-body .mobile-library-hub-playlist {
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-playlist {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -11229,17 +11228,17 @@ body.modern-white .audio-effects-summary p {
     font-size: 14px;
   }
 
-  .modern-body .mobile-library-hub-playlist span:first-child {
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-playlist span:first-child {
     min-width: 0;
   }
 
-  .modern-body .mobile-library-hub-playlist span:last-child {
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-playlist span:last-child {
     flex: 0 0 auto;
     color: var(--ui-muted);
     font-size: 20px;
   }
 
-  .modern-body .mobile-library-hub-empty {
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-empty {
     min-height: 48px;
     padding: 14px 10px;
     box-sizing: border-box;
@@ -11248,13 +11247,13 @@ body.modern-white .audio-effects-summary p {
     font-size: 13px;
   }
 
-  .modern-body .mobile-library-hub-tools {
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-tools {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: 8px;
   }
 
-  .modern-body .mobile-library-hub-tools button {
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-tools button {
     padding: 0 12px;
     border: 1px solid var(--ui-border);
     border-radius: 12px;
@@ -11263,13 +11262,13 @@ body.modern-white .audio-effects-summary p {
     font-weight: 700;
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer.player-dock:has(.player-dock-surface.slidedown)
     ~ .mobile-tabbar {
     display: none !important;
   }
 
-  .modern-body .footer.player-dock:has(.player-dock-surface.slidedown) {
+  html[data-listen2-platform='android'] .modern-body .footer.player-dock:has(.player-dock-surface.slidedown) {
     top: 0;
     right: 0;
     bottom: 0;
@@ -11279,7 +11278,7 @@ body.modern-white .audio-effects-summary p {
     margin: 0;
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer.player-dock:has(.player-dock-surface.slidedown)
     .footer-main.player-dock-surface.slidedown {
     width: 100%;
@@ -11287,17 +11286,17 @@ body.modern-white .audio-effects-summary p {
     border-radius: 0;
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer.player-dock:has(.player-dock-surface.slidedown)
     .footerwrap {
     max-width: 100%;
   }
 
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer
     .footer-main.player-dock-surface.slidedown
     .now-playing-layout,
-  .modern-body
+  html[data-listen2-platform='android'] .modern-body
     .footer
     .footer-main.player-dock-surface.slidedown
     .playsong-detail {
@@ -11307,7 +11306,7 @@ body.modern-white .audio-effects-summary p {
 
   /* The five-source selector is one focusable, horizontally scrollable row at
    * compact widths. Long source labels never create a second control row. */
-  .modern-body .mobile-provider-selector {
+  html[data-listen2-platform='android'] .modern-body .mobile-provider-selector {
     display: flex;
     width: 100%;
     min-width: 0;
@@ -11321,7 +11320,7 @@ body.modern-white .audio-effects-summary p {
     scrollbar-width: thin;
   }
 
-  .modern-body .mobile-provider-selector > button {
+  html[data-listen2-platform='android'] .modern-body .mobile-provider-selector > button {
     min-width: max-content;
     min-height: 48px;
     flex: 0 0 auto;
@@ -11329,24 +11328,24 @@ body.modern-white .audio-effects-summary p {
     white-space: nowrap;
   }
 
-  .modern-body .mobile-provider-selector:focus-visible,
-  .modern-body .mobile-provider-selector > button:focus-visible,
-  .modern-body .mobile-library-hub button:focus-visible {
+  html[data-listen2-platform='android'] .modern-body .mobile-provider-selector:focus-visible,
+  html[data-listen2-platform='android'] .modern-body .mobile-provider-selector > button:focus-visible,
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub button:focus-visible {
     outline: 3px solid var(--ui-accent);
     outline-offset: 2px;
   }
 
   /* These are the visible shell layers; transform/opacity keeps the normal
    * transition bounded while the reduced-motion override below removes it. */
-  .modern-body .mobile-provider-search,
-  .modern-body .mobile-library-hub-panel,
-  .modern-body .android-queue-sheet-panel {
+  html[data-listen2-platform='android'] .modern-body .mobile-provider-search,
+  html[data-listen2-platform='android'] .modern-body .mobile-library-hub-panel,
+  html[data-listen2-platform='android'] .modern-body .android-queue-sheet-panel {
     transition: opacity 160ms ease, transform 160ms ease;
   }
 
   @media (orientation: landscape) {
-    .modern-body .mobile-library-hub,
-    .modern-body .android-queue-sheet {
+    html[data-listen2-platform='android'] .modern-body .mobile-library-hub,
+    html[data-listen2-platform='android'] .modern-body .android-queue-sheet {
       padding-top: max(8px, env(safe-area-inset-top, 0px));
       padding-right: max(8px, env(safe-area-inset-right, 0px));
       padding-bottom: calc(
@@ -11355,44 +11354,43 @@ body.modern-white .audio-effects-summary p {
       padding-left: max(8px, env(safe-area-inset-left, 0px));
     }
 
-    .modern-body .mobile-library-hub-panel {
+    html[data-listen2-platform='android'] .modern-body .mobile-library-hub-panel {
       max-height: calc(
         100svh - env(safe-area-inset-top, 0px) - var(--mobile-tabbar-height) -
           var(--mobile-dock-height) - 16px
       );
     }
 
-    html[data-listen2-platform='android']
-      .modern-body:has(.footer.player-dock .player-dock-surface.slidedown)
+    html[data-listen2-platform='android'] .modern-body:has(.footer.player-dock .player-dock-surface.slidedown)
       .android-queue-sheet {
       padding-bottom: max(8px, env(safe-area-inset-bottom, 0px));
     }
   }
 
   @media (max-width: 359px) {
-    .modern-body .mobile-tab,
-    .modern-body .mobile-provider-selector > button,
-    .modern-body .mobile-library-hub-header h2,
-    .modern-body .mobile-library-hub-section-heading h3 {
+    html[data-listen2-platform='android'] .modern-body .mobile-tab,
+    html[data-listen2-platform='android'] .modern-body .mobile-provider-selector > button,
+    html[data-listen2-platform='android'] .modern-body .mobile-library-hub-header h2,
+    html[data-listen2-platform='android'] .modern-body .mobile-library-hub-section-heading h3 {
       min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
 
-    .modern-body .mobile-provider-search,
-    .modern-body .mobile-library-hub-scroll {
+    html[data-listen2-platform='android'] .modern-body .mobile-provider-search,
+    html[data-listen2-platform='android'] .modern-body .mobile-library-hub-scroll {
       padding-right: 12px;
       padding-left: 12px;
     }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .modern-body .mobile-provider-selector,
-    .modern-body .mobile-provider-selector *,
-    .modern-body .mobile-provider-search,
-    .modern-body .mobile-library-hub-panel,
-    .modern-body .android-queue-sheet-panel {
+    html[data-listen2-platform='android'] .modern-body .mobile-provider-selector,
+    html[data-listen2-platform='android'] .modern-body .mobile-provider-selector *,
+    html[data-listen2-platform='android'] .modern-body .mobile-provider-search,
+    html[data-listen2-platform='android'] .modern-body .mobile-library-hub-panel,
+    html[data-listen2-platform='android'] .modern-body .android-queue-sheet-panel {
       animation-duration: 0.01ms !important;
       scroll-behavior: auto !important;
       transition-duration: 0.01ms !important;
@@ -11400,13 +11398,12 @@ body.modern-white .audio-effects-summary p {
     }
   }
 
-  .modern-body img,
-  .modern-body video,
-  .modern-body input,
-  .modern-body select,
-  .modern-body textarea,
-  .modern-body button {
+  html[data-listen2-platform='android'] .modern-body img,
+  html[data-listen2-platform='android'] .modern-body video,
+  html[data-listen2-platform='android'] .modern-body input,
+  html[data-listen2-platform='android'] .modern-body select,
+  html[data-listen2-platform='android'] .modern-body textarea,
+  html[data-listen2-platform='android'] .modern-body button {
     max-width: 100%;
-  }
   }
 }

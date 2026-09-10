@@ -376,15 +376,95 @@ assert.match(
 
 assert.match(css, /@media screen and \(max-width: 760px\)/);
 assert.match(css, /@media screen and \(min-width: 761px\)/);
+const androidMobileSearch = html.slice(
+  html.indexOf('data-mobile-provider-search'),
+  html.indexOf(
+    '<!-- content page: 快速搜索 -->',
+    html.indexOf('data-mobile-provider-search')
+  )
+);
+const desktopSearch = html.slice(
+  html.indexOf(
+    '<!-- content page: 快速搜索 -->',
+    html.indexOf('data-mobile-provider-search')
+  ),
+  html.indexOf(
+    '<!-- content page:',
+    html.indexOf(
+      '<!-- content page: 快速搜索 -->',
+      html.indexOf('data-mobile-provider-search')
+    ) + 1
+  )
+);
+assert.match(
+  androidMobileSearch,
+  /ng-if="isAndroidTyped\(\) && is_window_hidden==1 && current_tag==3"/,
+  'Android must render the provider search surface only through its typed bridge'
+);
+assert.match(
+  desktopSearch,
+  /ng-show="!isAndroidTyped\(\) && current_tag==3 && is_window_hidden==1"/,
+  'Electron must retain only the legacy desktop search page'
+);
+assert.doesNotMatch(
+  desktopSearch,
+  /isAndroidSurface\(\)/,
+  'InstantSearchController exposes isAndroidTyped(), not isAndroidSurface()'
+);
+assert.match(
+  desktopSearch,
+  /changeSearchType\(1\)/,
+  'the legacy desktop page keeps its playlist search control'
+);
+assert.doesNotMatch(
+  androidMobileSearch,
+  /changeSearchType\(1\)|allmusic/,
+  'Android provider search must not expose legacy playlist or all-music controls'
+);
+const earlyAndroidSearchCss = css.slice(
+  css.indexOf('/* Phase 1 Android search uses a separate semantic surface'),
+  css.indexOf('@media (prefers-reduced-motion: reduce)', css.indexOf('/* Phase 1 Android search uses a separate semantic surface'))
+);
+function assertAndroidRooted(cssSubset, label) {
+  cssSubset
+    .split('\n')
+    .filter((line) => line.includes('.modern-body'))
+    .forEach((line) => {
+      assert.match(
+        line,
+        /html\[data-listen2-platform='android'\]/,
+        `${label}: ${line.trim()}`
+      );
+    });
+}
+
+assertAndroidRooted(
+  earlyAndroidSearchCss,
+  'the earlier narrow Android search rules must not match an unmarked Electron window'
+);
+assert.match(
+  earlyAndroidSearchCss,
+  /html\[data-listen2-platform='android'\]\s+\.modern-body \.main \.content \.browser/,
+  'the earlier browser geometry must be rooted at the Android marker'
+);
+assert.doesNotMatch(
+  mobileCss,
+  /@scope\b/,
+  'minSdk 26 WebViews must not depend on unsupported CSS @scope parsing'
+);
+assertAndroidRooted(
+  mobileCss,
+  'every mobile-shell selector must be rooted at the Android platform marker'
+);
+assert.match(
+  mobileCss,
+  /html\[data-listen2-platform='android'\]\s+\.modern-body \.main \.sidebar\s*\{[\s\S]*?display: none !important;/,
+  'marked Android keeps its compact shell while unmarked Electron keeps desktop geometry'
+);
 assert.match(
   read('js/app.js'),
   /data-listen2-platform', 'android'/,
   'only the trusted Android adapter may opt into phone-shell CSS'
-);
-assert.match(
-  mobileCss,
-  /@media screen and \(max-width: 760px\)\s*\{\s*@scope \(html\[data-listen2-platform='android'\]\)/,
-  'the complete phone-shell media block must be rooted at the trusted Android marker'
 );
 assert.doesNotMatch(
   mobileCss,

@@ -143,6 +143,11 @@ async function run() {
     html.indexOf('data-mobile-provider-search'),
     html.indexOf('<div ng-include="\'annual_recap.html\'"')
   );
+  assert.match(
+    providerSurface,
+    /data-mobile-provider-search[\s\S]*?ng-if="isAndroidTyped\(\) && is_window_hidden==1 && current_tag==3"/,
+    'the Android provider surface must not render in Electron'
+  );
   assert.strictEqual(providerSurface.includes('bilibiliSearch'), false);
   assert.strictEqual(providerSurface.includes('migu'), false);
   assert.strictEqual(providerSurface.includes('taihe'), false);
