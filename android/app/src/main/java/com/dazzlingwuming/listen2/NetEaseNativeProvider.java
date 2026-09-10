@@ -162,7 +162,7 @@ final class NetEaseNativeProvider {
         }
         long offset = (long) (page - 1) * PAGE_SIZE;
         String query = "s=" + encode(keyword) + "&type=1&offset=" + offset + "&limit=" + PAGE_SIZE;
-        return request(Route.SEARCH, new URI("https", null, MUSIC_HOST, -1, SEARCH_PATH, query, null),
+        return request(Route.SEARCH, new URI("https://" + MUSIC_HOST + SEARCH_PATH + "?" + query),
                 "", cookies.forWeapi());
     }
 

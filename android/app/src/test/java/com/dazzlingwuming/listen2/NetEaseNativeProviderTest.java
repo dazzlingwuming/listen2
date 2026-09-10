@@ -32,6 +32,21 @@ public final class NetEaseNativeProviderTest {
     }
 
     @Test
+    public void searchRouteEncodesUnicodeKeywordExactlyOnce() throws Exception {
+        NetEaseNativeProvider provider = new NetEaseNativeProvider(
+                request -> new NetEaseNativeProvider.Response(200, "{}"),
+                () -> "0123456789abcdef",
+                new FixedCookies());
+
+        NetEaseNativeProvider.Request request = provider.buildSearchRequest("青花瓷", 1);
+
+        assertEquals("s=%E9%9D%92%E8%8A%B1%E7%93%B7&type=1&offset=0&limit=20",
+                request.uri.getRawQuery());
+        assertFalse(request.uri.getRawQuery().contains("%25"));
+        assertTrue(NetEaseNativeProvider.isApprovedRequest(request));
+    }
+
+    @Test
     public void weapiAndEapiRoutesHaveOnlyFixedHostsPathsAndFormKeys() throws Exception {
         NetEaseNativeProvider provider = new NetEaseNativeProvider(
                 request -> new NetEaseNativeProvider.Response(200, "{}"),
