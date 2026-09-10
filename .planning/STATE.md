@@ -5,15 +5,16 @@ milestone_name: android-official-mobile-product-pivot
 current_phase: 4
 current_phase_name: Official Mobile Shell & Unified Provider Registry
 status: roadmap_reframed_ready_for_phase_4_planning
-stopped_at: Five-stage user-journey roadmap written; Phase 4 is next
-last_updated: "2026-09-10T00:00:00+08:00"
-last_activity: 2026-09-10
-last_activity_desc: Reframed Android roadmap around official Listen1 Mobile product behavior and current desktop parity
+stopped_at: Phase 4 UI-SPEC approved
+last_updated: "2026-09-10T07:34:44.426Z"
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
+  percent: 0
+last_activity: 2026-09-10
+last_activity_desc: Reframed Android roadmap around official Listen1 Mobile product behavior and current desktop parity
 ---
 
 # Project State
@@ -81,8 +82,10 @@ Progress: Historical Phase 1–3 work is retained only as a foundation. It is no
 
 ## Session Continuity
 
-Last session: 2026-09-10
+**Resume file:** .planning/phases/04-official-mobile-shell-unified-provider-registry/04-UI-SPEC.md
 
-Stopped at: Approved roadmap pivot completed; the next safe implementation entry point is Phase 4 planning.
+Last session: 2026-09-10T07:34:44.416Z
+
+Stopped at: Phase 4 UI-SPEC approved
 
 Resume with: `$gsd-plan-phase 4`
