@@ -29,12 +29,12 @@ Android 保留共享前端，但 native 只提供窄的、版本化、可取消�
 
 - [ ] **UI-001** [T][P][E] 我能通过手机底部导航、搜索、库、账户、mini-player、播放详情、队列、歌词、歌单和设置完成主流程，并用系统返回安全退出当前层级。
 - [ ] **UI-002** [T][E] 在刘海、状态栏、手势/三键导航、软键盘、横竖屏、字体缩放至至少 200%、高对比度和减少动画条件下，内容、播放栏、输入框和确认面板不被遮挡；主要控件触控目标至少 48 dp。
-- [ ] **UI-003** [P][E][S] 桌面浮动歌词、托盘和 thumbbar 在 Android 上由底部/全屏面板、通知、锁屏和系统媒体控件提供等价操作；所有入口由 capability matrix 控制，不显示死按钮、假成功或不可解释空列表。
+- [x] **UI-003** [P][E][S] 桌面浮动歌词、托盘和 thumbbar 在 Android 上由底部/全屏面板、通知、锁屏和系统媒体控件提供等价操作；所有入口由 capability matrix 控制，不显示死按钮、假成功或不可解释空列表。
 
 ### provider 网络（NET）
 
-- [ ] **NET-001** [T][S] 前端与 native 使用带协议版本、operation、request id、page epoch、结果或结构化错误的类型化 RPC；仅接受可信 appassets 主 frame/source 和精确 HTTPS provider allow-list，拒绝任意 URL、重定向、明文、caller header/cookie、文件 URI 和原始媒体代理。
-- [ ] **NET-002** [T][E][S] 我能取消搜索、目录、媒体、歌词和登录请求；每次调用都有请求/响应大小上限、deadline、有限退避和真正取消，取消、超时、页面销毁和过期响应各返回一次 terminal result。
+- [x] **NET-001** [T][S] 前端与 native 使用带协议版本、operation、request id、page epoch、结果或结构化错误的类型化 RPC；仅接受可信 appassets 主 frame/source 和精确 HTTPS provider allow-list，拒绝任意 URL、重定向、明文、caller header/cookie、文件 URI 和原始媒体代理。
+- [x] **NET-002** [T][E][S] 我能取消搜索、目录、媒体、歌词和登录请求；每次调用都有请求/响应大小上限、deadline、有限退避和真正取消，取消、超时、页面销毁和过期响应各返回一次 terminal result。
 - [ ] **NET-003** [P][T][E] 在实际授权范围内，我能完成 Bilibili 搜索 → 详情/分 P → 媒体 manifest/音质 → 播放 → 主歌词入口闭环；adapter 校验 schema、CID、MIME、权限和过期时间，并对无结果、网络/TLS、接口变更、登录和权限错误给出真实恢复动作。
 - [ ] **NET-004** [P][T][E] 在实际授权范围内，我能完成 NetEase 搜索 → 详情/歌单曲目 → 媒体清单 → 播放 → 主歌词入口闭环；QQ、Kugou、Kuwo、Migu、Taihe 各有独立的搜索、目录、详情、媒体、歌词、fallback、登录和权限字段，未经 fixture/设备证据的字段保持未启用。
 
@@ -110,14 +110,14 @@ Android 保留共享前端，但 native 只提供窄的、版本化、可取消�
 
 ### 安全（SEC）
 
-- [ ] **SEC-001** [T][S] bridge 仅接受固定 appassets HTTPS origin、主 frame、可信 source 和当前 epoch；跨 origin/iframe/旧页面消息以及 javascript、file、content、intent 等危险导航被拒绝或交给安全系统策略。
-- [ ] **SEC-002** [T][S] WebView 在 debug 与 release-like 配置均关闭 file/universal-file access、混合内容、地理位置和不必要多窗口；provider 网络禁止 cleartext，外部导航不携带 token/cookie。
-- [ ] **SEC-003** [T][S] operation、字段类型、长度、枚举、请求/响应大小、URL、HTML/SVG/metadata sink 和 provider 数据逐项 allow-list/安全编码；恶意标题、歌词、封面和 JSON 不可执行脚本、原型污染或提升 bridge 权限。
+- [x] **SEC-001** [T][S] bridge 仅接受固定 appassets HTTPS origin、主 frame、可信 source 和当前 epoch；跨 origin/iframe/旧页面消息以及 javascript、file、content、intent 等危险导航被拒绝或交给安全系统策略。
+- [x] **SEC-002** [T][S] WebView 在 debug 与 release-like 配置均关闭 file/universal-file access、混合内容、地理位置和不必要多窗口；provider 网络禁止 cleartext，外部导航不携带 token/cookie。
+- [x] **SEC-003** [T][S] operation、字段类型、长度、枚举、请求/响应大小、URL、HTML/SVG/metadata sink 和 provider 数据逐项 allow-list/安全编码；恶意标题、歌词、封面和 JSON 不可执行脚本、原型污染或提升 bridge 权限。
 - [ ] **SEC-004** [T][P][S] source、APK、assets、WebView storage、日志、崩溃报告、备份和测试产物扫描不打印 secret 值；所有播放、下载、MV、离线和质量选择尊重实际 entitlement、会员、地区、DRM 和账号权限，拒绝时如实失败或降级。
 
 ### 测试/验收（TEST）
 
-- [ ] **TEST-001** [T][P] JavaScript contract tests 和 Android JVM policy tests 覆盖 provider registry、搜索、播放、队列、歌词、歌单、备份、缓存、历史、origin/HTTPS、schema、大小、timeout、redirect、redaction 的成功、取消、竞态和错误分支。
+- [x] **TEST-001** [T][P] JavaScript contract tests 和 Android JVM policy tests 覆盖 provider registry、搜索、播放、队列、歌词、歌单、备份、缓存、历史、origin/HTTPS、schema、大小、timeout、redirect、redaction 的成功、取消、竞态和错误分支。
 - [ ] **TEST-002** [T][E] WebView/Media3/storage instrumentation 覆盖真实 WebMessage handshake、取消、页面销毁、renderer recovery、唯一 player、通知/锁屏、audio focus/noisy、SAF grant、Room migration、Keystore session、缓存完整性和进程恢复。
 - [ ] **TEST-003** [T][P][E] Android 模拟器 E2E 必须复现冷启动/移动布局、Bilibili 与 NetEase 搜索/结果播放/歌词翻译、登录状态、歌单/队列/历史、缓存离线、SAF 本地音乐、备份恢复、屏幕关闭后台播放、旋转/进程回收、断网恢复和外部导航。
 - [ ] **TEST-004** [T][E][S] 每份证据记录日期、API、设备/模拟器、网络、构建变体、fixture、命令、结果、未覆盖项和恢复路径；TalkBack、字体/对比度、性能指标、secret/cleartext 扫描和失败日志均脱敏可复核。
@@ -177,9 +177,9 @@ Android 保留共享前端，但 native 只提供窄的、版本化、可取消�
 | PERF-003 | Phase 8 | Pending | process-kill/ANR recovery |
 | UI-001 | Phase 4 | Pending | official-style mobile navigation E2E |
 | UI-002 | Phase 4 | Pending | inset/accessibility test |
-| UI-003 | Phase 4 | Pending | Android-equivalent UX matrix |
-| NET-001 | Phase 4 | Pending | typed bridge/origin policy |
-| NET-002 | Phase 4 | Pending | cancel/timeout/error fixture |
+| UI-003 | Phase 4 | Complete | Android-equivalent UX matrix |
+| NET-001 | Phase 4 | Complete | typed bridge/origin policy |
+| NET-002 | Phase 4 | Complete | cancel/timeout/error fixture |
 | NET-003 | Phase 5 | Pending | Bilibili closed-loop E2E |
 | NET-004 | Phase 5 | Pending | NetEase/QQ/Kugou/Kuwo/Bilibili matrix |
 | SRCH-001 | Phase 5 | Pending | five-source query/paging/cancel contract |
@@ -219,11 +219,11 @@ Android 保留共享前端，但 native 只提供窄的、版本化、可取消�
 | AI-001 | Phase 7 | Pending | key settings/Keystore |
 | AI-002 | Phase 7 | Pending | confirmation/no-call test |
 | AI-003 | Phase 7 | Pending | alignment/cache/secret scan |
-| SEC-001 | Phase 4 | Pending | origin/navigation policy |
-| SEC-002 | Phase 4 | Pending | cleartext/WebView config scan |
-| SEC-003 | Phase 4 | Pending | schema/sink negative test |
+| SEC-001 | Phase 4 | Complete | origin/navigation policy |
+| SEC-002 | Phase 4 | Complete | cleartext/WebView config scan |
+| SEC-003 | Phase 4 | Complete | schema/sink negative test |
 | SEC-004 | Phase 7 | Pending | secret/entitlement audit |
-| TEST-001 | Phase 4 | Pending | JS/JVM registry and boundary suites |
+| TEST-001 | Phase 4 | Complete | JS/JVM registry and boundary suites |
 | TEST-002 | Phase 8 | Pending | integrated WebView/Media3/storage suite |
 | TEST-003 | Phase 8 | Pending | API 35 emulator E2E evidence |
 | TEST-004 | Phase 8 | Pending | accessibility/perf/redaction report |

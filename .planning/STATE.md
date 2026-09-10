@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: android-official-mobile-product-pivot
-current_phase: 4
-current_phase_name: Official Mobile Shell & Unified Provider Registry
-status: roadmap_reframed_ready_for_phase_4_planning
-stopped_at: Phase 4 UI-SPEC approved
-last_updated: "2026-09-10T08:43:14.830Z"
+current_phase: 04
+current_phase_name: official-mobile-shell-unified-provider-registry
+status: executing
+stopped_at: Completed 04-01-PLAN.md
+last_updated: "2026-09-10T09:01:02.994Z"
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 3
-  completed_plans: 0
+  completed_plans: 1
   percent: 0
 last_activity: 2026-09-10
 last_activity_desc: Reframed Android roadmap around official Listen1 Mobile product behavior and current desktop parity
@@ -25,17 +25,17 @@ See: `.planning/PROJECT.md`
 
 **Core value:** Android users reliably complete an authorized end-to-end music journey from search through playback, lyrics, and later control.
 
-**Current focus:** Phase 4 — rework the phone shell and source registry around the original Listen1 Mobile product behavior before adding any more provider-specific Android code.
+**Current focus:** Phase 04 — official-mobile-shell-unified-provider-registry
 
 ## Current Position
 
-Phase: 4 — Official Mobile Shell & Unified Provider Registry
+Phase: 04 (official-mobile-shell-unified-provider-registry) — EXECUTING
 
-Plan: Not yet created; next entry is `$gsd-plan-phase 4`.
+Plan: 2 of 3
 
-Status: Roadmap reframed after explicit user direction. Product implementation for the new five-stage plan has not started.
+Status: Ready to execute
 
-Progress: Historical Phase 1–3 work is retained only as a foundation. It is not counted as a completed product phase and does not close requirements or device acceptance.
+Progress: [███░░░░░░░] 33%
 
 ## Performance Metrics
 
@@ -48,6 +48,11 @@ Progress: Historical Phase 1–3 work is retained only as a foundation. It is no
 | 6. Personal Library & Continuity | TBD | Not started |
 | 7. Offline & Advanced Desktop-Equivalent Playback | TBD | Not started |
 | 8. Integrated API 35 Acceptance & Release-Like Evidence | TBD | Not started |
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 04 P01 | 13m | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -59,6 +64,8 @@ Progress: Historical Phase 1–3 work is retained only as a foundation. It is no
 - The latest desktop `main` capability set remains the v1 promise. A desktop-only form is rendered as Android-equivalent UX or reported as unavailable with a real reason; it is not silently dropped.
 - Current bridge, Media3, Room, SAF, cache, Bilibili/NetEase and lyric code are foundation facts. They are neither a five-source product claim nor final E2E acceptance.
 - Fast iteration uses scoped JavaScript/JVM/contract tests after coherent work. Do not assemble an APK merely to inspect each small change. Phase 8 performs the integrated API 35 emulator, performance, and release-like validation.
+- [Phase ?]: Android primary provider order is netease, kugou, kuwo, qq, bilibili; Migu and Taihe remain registry-only unavailable.
+- [Phase ?]: Missing semantic routes terminate OPERATION_UNAVAILABLE without provider, bridge, MediaService, or transport fallback.
 
 ### Pending Todos
 
@@ -82,10 +89,10 @@ Progress: Historical Phase 1–3 work is retained only as a foundation. It is no
 
 ## Session Continuity
 
-**Resume file:** .planning/phases/04-official-mobile-shell-unified-provider-registry/04-UI-SPEC.md
+**Resume file:** .planning/phases/04-official-mobile-shell-unified-provider-registry/04-01-SUMMARY.md
 
-Last session: 2026-09-10T07:34:44.416Z
+Last session: 2026-09-10T09:01:02.981Z
 
-Stopped at: Phase 4 UI-SPEC approved
+Stopped at: Completed 04-01-PLAN.md
 
 Resume with: `$gsd-plan-phase 4`
