@@ -24,6 +24,7 @@ Android 用户能够在其账号和平台实际授权范围内，从搜索到播
 - ✓ **Android 安全壳**：Java WebView host 通过 `WebViewAssetLoader` 从固定 `appassets` origin 加载显式 allow-list 资源；file/universal-file access、混合内容、地理位置和多窗口等危险边界已关闭，外部链接按导航策略交给系统浏览器或阻断。
 - ✓ **Android 搜索 bridge**：`Listen2AndroidHttp` 使用版本化 `WebMessage` 协议，只允许可信 appassets origin 下的 HTTPS GET；当前精确覆盖 Bilibili API 和网易云搜索路径，具备请求/响应大小、参数、超时、HTTP/JSON 错误和无重定向约束，不提供 caller headers 或 `addJavascriptInterface` fallback。
 - ✓ **Android 移动壳与响应式 UI**：共享前端已接入 Android host，已有移动布局、手机导航/库访问和 Bilibili/网易云搜索适配及对应的前端/JVM 契约测试；当前实现仍是前台 WebView 播放样例，不应误称为完整平价。
+- ✓ **Phase 4 手机壳与统一来源契约**：Android primary source 已按原作者移动端顺序统一为网易云、酷狗、酷我、QQ、哔哩哔哩；Migu/Taihe 保持 registry-only unavailable。共享前端已具备 fail-closed capability projection、五类可取消语义生命周期、Android/桌面搜索面隔离、最近层 Back 和手机布局/无障碍 backstop contracts。真实 API 35 WebView、IME、TalkBack 与触控体验仍由 Phase 8 验收，不据此宣称设备端完成。
 
 ### Active
 
@@ -117,7 +118,7 @@ Android 用户能够在其账号和平台实际授权范围内，从搜索到播
 | 共享前端 + 窄 native bridge | 保留桌面已验证的 provider/UI/player 投资，同时让 Android 网络、文件、账号和生命周期能力保持最小权限、可校验、可测试。 | — Pending |
 | 优先端到端垂直切片 | 先证明启动 → 搜索 → 详情 → 播放 → 歌词/恢复的完整旅程，再扩展 provider 和周边功能，避免“页面平价但核心不可用”。 | — Pending |
 | 官方 `listen1/listen1_mobile@v0.8.2` 仅作行为与数据契约证据，不盲目复制 | 旧版 RN 工程使用过时依赖和明文网络，且没有当前 Bilibili、歌词、下载、登录等能力；可复用其 provider/队列/备份模型和移动交互预期，但当前 main 的功能、安全与 Android 15 生命周期优先。 | — Pending |
-| 用 capability matrix 驱动声明与降级 | Android 当前只覆盖部分搜索路由，必须让 UI 与实际能力一致，不能继续展示未实现的登录、播放或歌词入口。 | — Pending |
+| 用 capability matrix 驱动声明与降级 | Android 当前只覆盖部分搜索路由，必须让 UI 与实际能力一致，不能继续展示未实现的登录、播放或歌词入口。 | ✓ Good — Phase 4 建立统一 registry 与 fail-closed UI；真实 route 在后续阶段逐项启用。 |
 | 模拟器端到端验收为必需门禁 | 现有策略/JVM 测试无法证明 WebView、Media3、网络、生命周期和真实用户旅程。 | — Pending |
 | 只使用实际权限，不做访问控制绕过 | 保护用户账号、平台条款和项目合规边界；权限错误应可诊断、可恢复或明确不可用。 | ✓ Good |
 
@@ -134,6 +135,7 @@ PROJECT.md 是随项目演进的 living context。每次阶段转换时：
 | Date | Trigger | Update |
 |------|---------|--------|
 | 2026-08-30 | Brownfield onboarding / parity scope approved | 记录桌面 v2.34.0 时代基线、已落地 Android 安全壳/搜索 bridge/响应式 UI、Android 平价目标、模拟器验收门禁及 merge/deploy/signing 边界。 |
+| 2026-09-10 | Phase 4 verified | 统一五来源 registry、手机搜索壳、最近层 Back、平台隔离和安全生命周期契约通过自动验证；真实设备与集成 APK 体验继续由 Phase 8 负责。 |
 
 ---
-*Last updated: 2026-08-30 after brownfield codebase mapping and approved Android parity scope.*
+*Last updated: 2026-09-10 after Phase 4 official mobile shell and provider registry verification.*
