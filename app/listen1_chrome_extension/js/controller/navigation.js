@@ -773,22 +773,37 @@ angular.module('listenone').controller('NavigationController', [
       $scope.mobileCapabilityNotice = '';
     };
 
+    const isFocusedMobileSearch = () => {
+      const {activeElement} = document;
+      return Boolean(
+        activeElement &&
+          ['search-input', 'mobile-provider-query'].includes(activeElement.id)
+      );
+    };
+    const closeMobileProductLayer = () => {
+      const layer = $scope.mobileProductPage;
+      // Invalidate local-page replies before the owning sheet disappears. The
+      // matching broadcast lets a future owner cancel a native handle without
+      // making this coordinator a second router or request dispatcher.
+      mobileLocalEpoch += 1;
+      $rootScope.$broadcast('android:mobile-layer-back', {
+        cancel: true,
+        layer: `product:${layer}`,
+      });
+      $scope.closeMobileProductPage();
+    };
+
     // Native Android owns Activity navigation, while this packaged page owns
     // its transient UI stack. This hook answers synchronously and schedules
     // scope changes through Angular; it never pauses or releases playback.
     const handleAndroidPlaybackBack = () => {
-      const playbackBack = { handled: false };
-      $rootScope.$broadcast('android:playback-back', playbackBack);
-      if (playbackBack.handled) {
-        $scope.$applyAsync();
+      // IME dismissal must retain the query and current source/result context.
+      if (isFocusedMobileSearch()) {
+        document.activeElement.blur();
         return true;
       }
-      const searchBack = { handled: false };
-      $rootScope.$broadcast('android:search-back', searchBack);
-      if (searchBack.handled) {
-        $scope.$applyAsync();
-        return true;
-      }
+      // Confirmations have priority over the player so Back can never execute
+      // a pending destructive, translation, or queue action by falling through.
       const translationConfirmation = document.querySelector(
         '[data-lyric-translation-confirm]'
       );
@@ -801,20 +816,41 @@ angular.module('listenone').controller('NavigationController', [
         });
         return true;
       }
-      if ($scope.mobileProductPage) {
-        $scope.$applyAsync(() => $scope.closeMobileProductPage());
-        return true;
-      }
       if ($scope.is_dialog_hidden === 0) {
         $scope.$applyAsync(() => $scope.closeDialog());
         return true;
       }
-      if ($scope.is_window_hidden === 0 || $scope.window_url_stack.length) {
+      const playbackBack = { handled: false };
+      $rootScope.$broadcast('android:playback-back', playbackBack);
+      if (playbackBack.handled) {
+        $scope.$applyAsync();
+        return true;
+      }
+      // Keep the legacy queue as a child sheet when the native player layer is
+      // not active; it must still close before a full-player route.
+      if (!$scope.menuHidden && typeof $scope.togglePlaylist === 'function') {
+        $scope.$applyAsync(() => $scope.togglePlaylist());
+        return true;
+      }
+      if (
+        typeof $scope.getCurrentUrl === 'function' &&
+        $scope.getCurrentUrl() === '/now_playing'
+      ) {
         $scope.$applyAsync(() => $scope.popWindow());
         return true;
       }
-      if (!$scope.menuHidden && typeof $scope.togglePlaylist === 'function') {
-        $scope.$applyAsync(() => $scope.togglePlaylist());
+      const searchBack = { handled: false };
+      $rootScope.$broadcast('android:search-back', searchBack);
+      if (searchBack.handled) {
+        $scope.$applyAsync();
+        return true;
+      }
+      if ($scope.mobileProductPage) {
+        $scope.$applyAsync(() => closeMobileProductLayer());
+        return true;
+      }
+      if ($scope.is_window_hidden === 0 || $scope.window_url_stack.length) {
+        $scope.$applyAsync(() => $scope.popWindow());
         return true;
       }
       return false;
@@ -823,7 +859,9 @@ angular.module('listenone').controller('NavigationController', [
       window.Listen2AndroidPlaybackBack = handleAndroidPlaybackBack;
     }
     $scope.focusMobileSearch = () => {
-      const input = document.getElementById('search-input');
+      const input =
+        document.getElementById('mobile-provider-query') ||
+        document.getElementById('search-input');
       if (input && typeof input.focus === 'function') input.focus();
     };
     $scope.openMobileCapability = (capability) => {

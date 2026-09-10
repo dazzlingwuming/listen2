@@ -3,6 +3,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
 const read = (relativePath) =>
@@ -17,6 +18,186 @@ const mobileLibraryHub = modernBody.slice(mobileLibraryHubStart);
 const mobileMarker = '/*\n * Mobile shell contract';
 const mobileCssStart = css.indexOf(mobileMarker);
 const mobileCss = css.slice(mobileCssStart);
+const navigationSource = read('js/controller/navigation.js');
+
+function loadNavigationController() {
+  let factory;
+  const context = {
+    angular: {
+      module() {
+        return {
+          controller(name, definition) {
+            if (name === 'NavigationController') {
+              factory = definition[definition.length - 1];
+            }
+          },
+        };
+      },
+    },
+    MediaService: {},
+    l1Player: { status: {} },
+    lastfm: {},
+    localStorage: { getObject: () => null, setObject() {} },
+    document: {},
+    window: {},
+    isElectron: () => false,
+    hotkeys() {},
+    console,
+    setTimeout,
+    clearTimeout,
+  };
+  vm.createContext(context);
+  vm.runInContext(navigationSource, context, {
+    filename: 'navigation.js',
+  });
+  assert.strictEqual(typeof factory, 'function');
+  return { context, factory };
+}
+
+function createNavigationHarness() {
+  const { context, factory } = loadNavigationController();
+  const broadcasts = [];
+  const handlers = {};
+  const input = {
+    id: 'search-input',
+    value: '保留中的搜索词',
+    blurred: false,
+    blur() {
+      this.blurred = true;
+    },
+  };
+  let confirmation = null;
+  context.document = {
+    activeElement: null,
+    getElementById: (id) => (id === 'search-input' ? input : null),
+    getElementsByClassName: () => [],
+    querySelector: () => confirmation,
+  };
+  context.window = {
+    Listen2AndroidHttpAdapter: { isAvailable: () => true },
+  };
+  const scope = {
+    $on() {
+      return () => {};
+    },
+    $applyAsync(callback) {
+      if (callback) callback();
+    },
+    $evalAsync(callback) {
+      if (callback) callback();
+    },
+  };
+  const rootScope = {
+    $broadcast(name, payload) {
+      broadcasts.push(name);
+      (handlers[name] || []).forEach((handler) => handler(payload));
+    },
+  };
+  const timeout = () => ({});
+  timeout.cancel = () => {};
+  factory(scope, timeout, rootScope);
+  return {
+    broadcasts,
+    context,
+    input,
+    on(name, handler) {
+      handlers[name] = handlers[name] || [];
+      handlers[name].push(handler);
+      return () => {
+        handlers[name] = handlers[name].filter((item) => item !== handler);
+      };
+    },
+    setConfirmation(value) {
+      confirmation = value;
+    },
+    scope,
+  };
+}
+
+function testNearestLayerBack() {
+  const harness = createNavigationHarness();
+  const callback = harness.context.window.Listen2AndroidPlaybackBack;
+  assert.strictEqual(typeof callback, 'function');
+
+  harness.context.document.activeElement = harness.input;
+  assert.strictEqual(
+    callback(),
+    true,
+    'focused search must consume Back first'
+  );
+  assert.strictEqual(harness.input.blurred, true);
+  assert.strictEqual(harness.input.value, '保留中的搜索词');
+  assert.deepStrictEqual(harness.broadcasts, []);
+  harness.context.document.activeElement = null;
+
+  harness.setConfirmation({ offsetParent: {} });
+  const removeConfirmationGuard = harness.on('android:playback-back', () => {
+    throw new Error('confirmation must close before player layers');
+  });
+  assert.strictEqual(callback(), true, 'confirmation must consume Back');
+  assert.deepStrictEqual(harness.broadcasts, [
+    'android:close-transient-overlay',
+  ]);
+  harness.setConfirmation(null);
+  removeConfirmationGuard();
+
+  harness.broadcasts.length = 0;
+  const removePlaybackHandler = harness.on('android:playback-back', (back) => {
+    Object.assign(back, { handled: true });
+  });
+  const removeSearchGuard = harness.on('android:search-back', () => {
+    throw new Error('a consumed player child must not close search detail');
+  });
+  assert.strictEqual(callback(), true, 'player child sheet must consume Back');
+  assert.deepStrictEqual(harness.broadcasts, ['android:playback-back']);
+  removePlaybackHandler();
+  removeSearchGuard();
+
+  harness.broadcasts.length = 0;
+  harness.scope.window_url_stack = [{ url: '/now_playing' }];
+  harness.scope.is_window_hidden = 0;
+  harness.scope.getCurrentUrl = () => '/now_playing';
+  let fullPlayerPops = 0;
+  harness.scope.popWindow = () => {
+    fullPlayerPops += 1;
+    harness.scope.window_url_stack = [];
+    harness.scope.is_window_hidden = 1;
+  };
+  assert.strictEqual(callback(), true, 'full player must close before detail');
+  assert.strictEqual(fullPlayerPops, 1);
+  harness.scope.getCurrentUrl = () => '/search';
+
+  harness.broadcasts.length = 0;
+  harness.scope.mobileProductPage = 'cache';
+  assert.strictEqual(callback(), true, 'product sheet must consume Back');
+  assert.strictEqual(harness.scope.mobileProductPage, '');
+  assert.ok(
+    harness.broadcasts.includes('android:mobile-layer-back'),
+    'closing an owning layer must broadcast cancellation before hiding it'
+  );
+
+  harness.broadcasts.length = 0;
+  harness.scope.window_url_stack = [{ url: '/playlist?id=1' }];
+  harness.scope.is_window_hidden = 0;
+  harness.scope.getCurrentUrl = () => '/playlist?id=1';
+  let childPops = 0;
+  harness.scope.popWindow = () => {
+    childPops += 1;
+    harness.scope.window_url_stack = [];
+    harness.scope.is_window_hidden = 1;
+  };
+  assert.strictEqual(
+    callback(),
+    true,
+    'real child route must pop after layers'
+  );
+  assert.strictEqual(childPops, 1);
+  assert.strictEqual(
+    callback(),
+    false,
+    'clean top-level Back must fall through'
+  );
+}
 
 assert.ok(modernBodyStart >= 0, 'modern theme shell should remain present');
 assert.ok(
@@ -169,5 +350,7 @@ assert.match(
   /\.modern-body \.footer\.player-dock:has\(\.player-dock-surface\.slidedown\)/,
   'the existing full-screen now-playing state should have a mobile viewport rule'
 );
+
+testNearestLayerBack();
 
 process.stdout.write('mobile UI contract tests passed\n');
