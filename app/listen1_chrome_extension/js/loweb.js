@@ -1,5 +1,5 @@
 /* global async LRUCache setPrototypeOfLocalStorage getLocalStorageValue */
-/* global netease xiami qq kugou kuwo bilibili migu taihe localmusic myplaylist */
+/* global netease xiami qq kugou kuwo bilibili migu taihe localmusic myplaylist MobileProviderRegistry */
 /* global isElectron require */
 /* eslint-disable global-require */
 /* eslint-disable import/no-extraneous-dependencies */
@@ -80,8 +80,17 @@ const PROVIDERS = [
   },
 ];
 
+function getMobileProviderRegistry() {
+  return typeof MobileProviderRegistry !== 'undefined'
+    ? MobileProviderRegistry
+    : null;
+}
+
 function getProviderByName(sourceName) {
-  return (PROVIDERS.find((i) => i.name === sourceName) || {}).instance;
+  const registry = getMobileProviderRegistry();
+  const registrySource = registry && registry.descriptorFor(sourceName);
+  const providerName = registrySource ? registrySource.id : sourceName;
+  return (PROVIDERS.find((i) => i.name === providerName) || {}).instance;
 }
 
 function getAllProviders() {
@@ -94,12 +103,20 @@ function getAllSearchProviders() {
 
 function getProviderNameByItemId(itemId) {
   if (String(itemId || '').startsWith('local.track.')) return 'localmusic';
+  const registry = getMobileProviderRegistry();
+  const mobileSource =
+    registry && registry.sourceForItemId(String(itemId || ''));
+  if (mobileSource) return mobileSource;
   const prefix = itemId.slice(0, 2);
   return (PROVIDERS.find((i) => i.id === prefix) || {}).name;
 }
 
 function getProviderByItemId(itemId) {
   if (String(itemId || '').startsWith('local.track.')) return localmusic;
+  const registry = getMobileProviderRegistry();
+  const mobileSource =
+    registry && registry.sourceForItemId(String(itemId || ''));
+  if (mobileSource) return getProviderByName(mobileSource);
   const prefix = itemId.slice(0, 2);
   return (PROVIDERS.find((i) => i.id === prefix) || {}).instance;
 }
@@ -145,36 +162,11 @@ function mapAndroidDeepSeekStatus(status, styleHint) {
   };
 }
 
-const ANDROID_PROVIDER_CAPABILITY_FIELDS = [
-  'search',
-  'directory',
-  'detail',
-  'media',
-  'lyric',
-  'manualLyric',
-  'fallback',
-  'login',
-  'permission',
-];
-
-const ANDROID_UNVERIFIED_PROVIDERS = ['qq', 'kugou', 'kuwo', 'migu', 'taihe'];
-
-function unavailableAndroidCapabilities() {
-  return ANDROID_PROVIDER_CAPABILITY_FIELDS.reduce(
-    (result, field) => ({ ...result, [field]: false }),
-    {}
-  );
-}
-
 function getAndroidProviderCapabilities() {
   const adapter = getAndroidTypedAdapter();
   if (!adapter) return null;
-  const empty = unavailableAndroidCapabilities();
-  const matrix = PROVIDERS.reduce(
-    (result, provider) =>
-      provider.hidden ? result : { ...result, [provider.name]: { ...empty } },
-    {}
-  );
+  const registry = getMobileProviderRegistry();
+  if (!registry) return null;
   let handshake = null;
   try {
     handshake =
@@ -184,34 +176,21 @@ function getAndroidProviderCapabilities() {
   } catch (error) {
     handshake = null;
   }
-  if (handshake && typeof handshake === 'object' && !Array.isArray(handshake)) {
-    ['bilibili', 'netease'].forEach((name) => {
-      const provider = handshake[name];
-      if (
-        !provider ||
-        typeof provider !== 'object' ||
-        Array.isArray(provider)
-      ) {
-        return;
-      }
-      matrix[name] = ANDROID_PROVIDER_CAPABILITY_FIELDS.reduce(
-        (result, field) => ({
-          ...result,
-          [field]: provider[field] === true,
-        }),
-        {}
-      );
-    });
-  }
-  // These names are intentionally explicit: no fallback or legacy desktop
-  // provider can become callable merely because Android hosts the page.
-  ANDROID_UNVERIFIED_PROVIDERS.forEach((name) => {
-    if (matrix[name]) matrix[name] = { ...empty };
-  });
-  matrix.deepSeekTranslation = Boolean(
-    handshake && handshake.deepSeekTranslation === true
+  const capabilityEpoch = Number.isSafeInteger(handshake && handshake.epoch)
+    ? handshake.epoch
+    : 0;
+  const matrix = registry.projectCapabilityMatrix(
+    handshake && typeof handshake === 'object' && !Array.isArray(handshake)
+      ? handshake
+      : {},
+    capabilityEpoch
   );
-  return matrix;
+  return {
+    ...matrix,
+    deepSeekTranslation: Boolean(
+      handshake && handshake.deepSeekTranslation === true
+    ),
+  };
 }
 
 function startAndroidProviderCapabilities(options) {
