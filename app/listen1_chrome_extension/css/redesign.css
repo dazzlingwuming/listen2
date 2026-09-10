@@ -9966,6 +9966,25 @@ body.modern-white .audio-effects-summary p {
 }
 
 @media screen and (max-width: 760px) {
+  /* The desktop product can be resized below 760px. Only the trusted Android
+   * host opts into the phone shell, so responsive Electron windows retain
+   * their existing sidebar and navigation geometry. */
+  html:not([data-listen2-platform='android']) .modern-body .main .sidebar {
+    display: flex !important;
+    flex: initial !important;
+    width: auto !important;
+    min-width: initial !important;
+    max-width: initial !important;
+    margin: initial !important;
+    padding: initial !important;
+    overflow: initial !important;
+  }
+
+  html:not([data-listen2-platform='android']) .modern-body .mobile-tabbar,
+  html:not([data-listen2-platform='android']) .modern-body .mobile-library-hub {
+    display: none !important;
+  }
+
   .modern-body {
     --dock-height: 64px;
     --mobile-tabbar-height: calc(64px + env(safe-area-inset-bottom, 0px));
@@ -11355,6 +11374,12 @@ body.modern-white .audio-effects-summary p {
         100svh - env(safe-area-inset-top, 0px) - var(--mobile-tabbar-height) -
           var(--mobile-dock-height) - 16px
       );
+    }
+
+    html[data-listen2-platform='android']
+      .modern-body:has(.footer.player-dock .player-dock-surface.slidedown)
+      .android-queue-sheet {
+      padding-bottom: max(8px, env(safe-area-inset-bottom, 0px));
     }
   }
 

@@ -27,7 +27,7 @@
     kuwo: /^kwtrack_[1-9][0-9]{0,17}$/,
     qq: /^qqtrack_[A-Za-z0-9_-]{1,256}$/,
     bilibili:
-      /^(?:bitrack_[1-9][0-9]{0,17}|bitrack_v_BV[0-9A-Za-z]{10}-[1-9][0-9]{0,18})$/,
+      /^(?:bitrack_[1-9][0-9]{0,17}|bitrack_v_BV[0-9A-Za-z]{6,32}(?:-[1-9][0-9]{0,18})?)$/,
   };
 
   function freezeSource(source) {
@@ -100,18 +100,20 @@
     'migu',
     'taihe',
   ]);
-  const SOURCE_BY_ID = Object.freeze(
-    REGISTRY_SOURCES.reduce(
-      (result, source) => ({ ...result, [source.id]: source }),
-      {}
-    )
-  );
+  const sourceById = Object.create(null);
+  REGISTRY_SOURCES.forEach((source) => {
+    sourceById[source.id] = source;
+  });
+  const SOURCE_BY_ID = Object.freeze(sourceById);
   const DESKTOP_SOURCES = Object.freeze(
     DESKTOP_SOURCE_ORDER.map((sourceId) => SOURCE_BY_ID[sourceId])
   );
 
   function descriptorFor(sourceId) {
-    return SOURCE_BY_ID[sourceId] || null;
+    return typeof sourceId === 'string' &&
+      Object.prototype.hasOwnProperty.call(SOURCE_BY_ID, sourceId)
+      ? SOURCE_BY_ID[sourceId]
+      : null;
   }
 
   function sourceForItemId(itemId) {
@@ -135,7 +137,7 @@
     const identityVariant = typeof variant === 'string' ? variant : 'audio';
     if (!source.identityVariants.includes(identityVariant)) return null;
     if (sourceId === 'bilibili') {
-      const videoPart = itemId.indexOf('bitrack_v_') === 0;
+      const videoPart = /^bitrack_v_BV[0-9A-Za-z]{6,32}-/.test(itemId);
       if (
         (videoPart && identityVariant !== 'video-part') ||
         (!videoPart && identityVariant !== 'audio')
@@ -246,7 +248,7 @@
     );
   }
 
-  function validPayload(operation, payload) {
+  function validPayload(operation, payload, sourceId) {
     let allowed = [];
     if (operation === 'search') allowed = ['keyword', 'page'];
     if (operation === 'directory') allowed = ['id', 'page'];
@@ -271,16 +273,21 @@
             payload.page <= 1000))
       );
     if (operation === 'media')
-      return (
-        validText(payload.itemId, 512) &&
-        (!Object.prototype.hasOwnProperty.call(payload, 'variant') ||
-          validText(payload.variant, 64))
+      return Boolean(
+        toTrackIdentity(
+          sourceId,
+          payload.itemId,
+          Object.prototype.hasOwnProperty.call(payload, 'variant')
+            ? payload.variant
+            : 'audio'
+        )
       );
-    if (operation === 'lyric') return validText(payload.itemId, 512);
+    if (operation === 'lyric')
+      return Boolean(toTrackIdentity(sourceId, payload.itemId, 'audio'));
     return true;
   }
 
-  function validResult(operation, result) {
+  function validResult(operation, result, sourceId) {
     if (!isPlainObject(result)) return false;
     if (operation === 'search') {
       return (
@@ -290,8 +297,8 @@
         result.rows.every(
           (row) =>
             hasExactKeys(row, ['sourceId', 'itemId', 'title', 'artist']) &&
-            validText(row.sourceId, 64) &&
-            validText(row.itemId, 512) &&
+            row.sourceId === sourceId &&
+            Boolean(toTrackIdentity(sourceId, row.itemId, 'audio')) &&
             validText(row.title, 512) &&
             validText(row.artist, 512)
         )
@@ -304,6 +311,22 @@
         byteLength(result.content) <= 262144
       );
     return hasExactKeys(result, []);
+  }
+
+  function freezeResult(operation, result) {
+    if (operation !== 'search') return Object.freeze({ ...result });
+    return Object.freeze({
+      rows: Object.freeze(
+        result.rows.map((row) =>
+          Object.freeze({
+            sourceId: row.sourceId,
+            itemId: row.itemId,
+            title: row.title,
+            artist: row.artist,
+          })
+        )
+      ),
+    });
   }
 
   function createTerminal(request, terminal, code, result) {
@@ -348,16 +371,21 @@
       const { pageEpoch } = value;
       const { deadlineMs } = value;
       const { payload } = value;
+      const source = descriptorFor(sourceId);
+      const operationIsKnown = OPERATIONS.includes(operation);
+      const sourceIsPrimary = Boolean(source && source.primary === true);
+      const payloadIsValid =
+        operationIsKnown && validPayload(operation, payload, sourceId);
       const valid =
-        OPERATIONS.includes(operation) &&
-        descriptorFor(sourceId) &&
+        operationIsKnown &&
+        sourceIsPrimary &&
         Number.isSafeInteger(pageEpoch) &&
         pageEpoch >= 0 &&
         pageEpoch <= 2147483647 &&
         Number.isSafeInteger(deadlineMs) &&
         deadlineMs >= 1 &&
         deadlineMs <= 30000 &&
-        validPayload(operation, payload);
+        payloadIsValid;
       const request = Object.freeze({
         operation: valid ? operation : 'search',
         sourceId: valid ? sourceId : '',
@@ -378,11 +406,23 @@
         cancel: null,
       };
       let timer = null;
+      let abort = null;
+      let aborted = false;
+      const abortExecutor = () => {
+        if (aborted || typeof abort !== 'function') return;
+        aborted = true;
+        try {
+          abort();
+        } catch (error) {
+          // Executor cancellation is best-effort; terminal settlement remains local.
+        }
+      };
       const settle = (terminal) => {
         if (handle.terminal) {
           handle.ignoredReplies += 1;
           return false;
         }
+        if (terminal.terminal !== 'ok') abortExecutor();
         handle.terminal = terminal;
         active.delete(handle);
         if (timer) clearTimer(timer);
@@ -395,8 +435,23 @@
         value.capabilities[operation] !== true ||
         typeof value.executor !== 'function';
       if (unavailable) {
+        const invalidRequest =
+          operationIsKnown &&
+          sourceIsPrimary &&
+          (!payloadIsValid ||
+            !Number.isSafeInteger(pageEpoch) ||
+            pageEpoch < 0 ||
+            pageEpoch > 2147483647 ||
+            !Number.isSafeInteger(deadlineMs) ||
+            deadlineMs < 1 ||
+            deadlineMs > 30000);
         settle(
-          createTerminal(request, 'unavailable', 'OPERATION_UNAVAILABLE', null)
+          createTerminal(
+            request,
+            invalidRequest ? 'error' : 'unavailable',
+            invalidRequest ? 'INVALID_REQUEST' : 'OPERATION_UNAVAILABLE',
+            null
+          )
         );
         return handle;
       }
@@ -423,14 +478,14 @@
           reply.terminal === 'ok' &&
           reply.status === 'ok' &&
           reply.code === null &&
-          validResult(operation, reply.result)
+          validResult(operation, reply.result, request.sourceId)
         )
           return settle(
             createTerminal(
               request,
               'ok',
               null,
-              Object.freeze({ ...reply.result })
+              freezeResult(operation, reply.result)
             )
           );
         if (
@@ -449,17 +504,7 @@
       };
       try {
         const cancellation = value.executor(request, accept);
-        if (typeof cancellation === 'function') {
-          const { cancel } = handle;
-          handle.cancel = () => {
-            try {
-              cancellation();
-            } catch (error) {
-              // Cancellation is best-effort; the lifecycle still owns settlement.
-            }
-            return cancel();
-          };
-        }
+        if (typeof cancellation === 'function') abort = cancellation;
       } catch (error) {
         settle(createTerminal(request, 'error', 'PROVIDER_ERROR', null));
       }

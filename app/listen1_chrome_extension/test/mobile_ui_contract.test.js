@@ -54,7 +54,7 @@ function loadNavigationController() {
   return { context, factory };
 }
 
-function createNavigationHarness() {
+function createNavigationHarness(options = {}) {
   const { context, factory } = loadNavigationController();
   const broadcasts = [];
   const handlers = {};
@@ -81,7 +81,8 @@ function createNavigationHarness() {
       return () => {};
     },
     $applyAsync(callback) {
-      if (callback) callback();
+      if (options.deferApply) options.deferApply.push(callback || (() => {}));
+      else if (callback) callback();
     },
     $evalAsync(callback) {
       if (callback) callback();
@@ -130,7 +131,7 @@ function testNearestLayerBack() {
   assert.deepStrictEqual(harness.broadcasts, []);
   harness.context.document.activeElement = null;
 
-  harness.setConfirmation({ offsetParent: {} });
+  harness.setConfirmation({ offsetParent: null });
   const removeConfirmationGuard = harness.on('android:playback-back', () => {
     throw new Error('confirmation must close before player layers');
   });
@@ -196,6 +197,30 @@ function testNearestLayerBack() {
     callback(),
     false,
     'clean top-level Back must fall through'
+  );
+}
+
+function testDeferredBackConsumesOnlyOneLayer() {
+  const deferredApply = [];
+  const harness = createNavigationHarness({ deferApply: deferredApply });
+  const callback = harness.context.window.Listen2AndroidPlaybackBack;
+  harness.scope.window_url_stack = [{ url: '/now_playing' }];
+  harness.scope.is_window_hidden = 0;
+  harness.scope.getCurrentUrl = () => '/now_playing';
+  let pops = 0;
+  harness.scope.popWindow = () => {
+    pops += 1;
+    harness.scope.window_url_stack = [];
+    harness.scope.is_window_hidden = 1;
+  };
+  assert.strictEqual(callback(), true);
+  assert.strictEqual(callback(), true, 'a pending Back transition is consumed');
+  assert.strictEqual(deferredApply.length, 1, 'only one close is queued');
+  deferredApply.shift()();
+  assert.strictEqual(
+    pops,
+    1,
+    'rapid Back cannot cascade through a parent layer'
   );
 }
 
@@ -295,9 +320,29 @@ assert.match(
 assert.match(css, /@media screen and \(max-width: 760px\)/);
 assert.match(css, /@media screen and \(min-width: 761px\)/);
 assert.match(
+  read('js/app.js'),
+  /data-listen2-platform', 'android'/,
+  'only the trusted Android adapter may opt into phone-shell CSS'
+);
+assert.match(
+  mobileCss,
+  /html:not\(\[data-listen2-platform='android'\]\) \.modern-body \.main \.sidebar[\s\S]*?display: flex !important;/,
+  'a 600–760px Electron window keeps its desktop sidebar'
+);
+assert.match(
+  mobileCss,
+  /html:not\(\[data-listen2-platform='android'\]\) \.modern-body \.mobile-tabbar[\s\S]*?display: none !important;/,
+  'a narrow Electron window cannot gain Android fixed navigation'
+);
+assert.match(
   mobileCss,
   /\.modern-body \.main \.sidebar\s*\{[\s\S]*?display: none !important;/,
   'the mobile shell must remove the desktop sidebar'
+);
+assert.match(
+  mobileCss,
+  /html\[data-listen2-platform='android'\] \.modern-body:has\(.footer\.player-dock \.player-dock-surface\.slidedown\) \.android-queue-sheet[\s\S]*?safe-area-inset-bottom/,
+  'landscape full-player queues reserve only their visible safe-area control'
 );
 assert.match(
   mobileCss,
@@ -413,5 +458,6 @@ assert.doesNotMatch(
 );
 
 testNearestLayerBack();
+testDeferredBackConsumesOnlyOneLayer();
 
 process.stdout.write('mobile UI contract tests passed\n');

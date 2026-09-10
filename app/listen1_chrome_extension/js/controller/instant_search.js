@@ -12,6 +12,7 @@ angular.module('listenone').controller('InstantSearchController', [
           window.Listen2AndroidHttpAdapter.isAvailable &&
           window.Listen2AndroidHttpAdapter.isAvailable()
       );
+    $scope.isAndroidTyped = isAndroidTyped;
     const cancelHandle = (handle) => {
       if (handle && typeof handle.cancel === 'function') handle.cancel();
     };
@@ -383,7 +384,11 @@ angular.module('listenone').controller('InstantSearchController', [
                   })),
                 },
               });
-              updateTotalPage((data && data.total) || 0);
+              // A provider handle may reply after its semantic lifecycle has
+              // timed out or been cancelled. Only the still-current request
+              // owns pagination as well as visible rows.
+              if (currentSearch(epoch, sourceId, query, request.payload.page))
+                updateTotalPage((data && data.total) || 0);
             },
             () =>
               reply({
@@ -598,6 +603,25 @@ angular.module('listenone').controller('InstantSearchController', [
       } else $scope.loading = false;
     };
     $scope.changeSearchType = (type) => {
+      if (isAndroidTyped()) {
+        // Phase 4 only proves typed song search. Do not let a visible legacy
+        // playlist choice create an untyped fallback request or retain rows.
+        $scope.cancelProviderSearch();
+        $scope.searchType = 0;
+        $scope.result = [];
+        $scope.providerSearch = {
+          ...$scope.providerSearch,
+          epoch: $scope.providerSearch.epoch + 1,
+          page: 1,
+          state: 'idle',
+          message: '',
+          action: '',
+          skeletonRows: [],
+        };
+        updateCurrentPage(-1);
+        updateTotalPage(-1);
+        return;
+      }
       $scope.searchType = type;
       updateCurrentPage();
       updateTotalPage();

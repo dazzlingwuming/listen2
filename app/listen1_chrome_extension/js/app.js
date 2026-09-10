@@ -14,6 +14,13 @@ const sourceList = MobileProviderRegistry.desktopSources.map((source) => ({
 }));
 
 const main = () => {
+  if (
+    window.Listen2AndroidHttpAdapter &&
+    typeof window.Listen2AndroidHttpAdapter.isAvailable === 'function' &&
+    window.Listen2AndroidHttpAdapter.isAvailable()
+  ) {
+    document.documentElement.setAttribute('data-listen2-platform', 'android');
+  }
   const app = angular.module('listenone', []);
   setPrototypeOfLocalStorage();
   app.config([

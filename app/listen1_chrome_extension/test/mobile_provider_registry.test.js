@@ -13,6 +13,7 @@ const IDENTITIES = [
   ['kuwo', 'kwtrack_123', 'audio'],
   ['qq', 'qqtrack_abc', 'audio'],
   ['bilibili', 'bitrack_123', 'audio'],
+  ['bilibili', 'bitrack_v_BV1xx411c7mD', 'audio'],
   ['bilibili', 'bitrack_v_BV1xx411c7mD-101', 'video-part'],
 ];
 
@@ -55,6 +56,31 @@ function testRegistryAndIdentity() {
   assert.strictEqual(
     MobileProviderRegistry.sourceForItemId('https://unsafe.example'),
     null
+  );
+  ['__proto__', 'constructor'].forEach((sourceId) => {
+    assert.strictEqual(MobileProviderRegistry.descriptorFor(sourceId), null);
+  });
+  ['migu', 'taihe'].forEach((sourceId) => {
+    assert.strictEqual(
+      MobileProviderRegistry.descriptorFor(sourceId).primary,
+      false
+    );
+  });
+  assert.strictEqual(
+    MobileProviderRegistry.toTrackIdentity(
+      'bilibili',
+      'bitrack_v_BV123456',
+      'audio'
+    ).itemId,
+    'bitrack_v_BV123456'
+  );
+  assert.strictEqual(
+    MobileProviderRegistry.toTrackIdentity(
+      'bilibili',
+      `bitrack_v_BV${'a'.repeat(32)}`,
+      'audio'
+    ).sourceId,
+    'bilibili'
   );
 
   const appSource = fs.readFileSync(
@@ -214,7 +240,43 @@ async function testLifecycle() {
   assert.strictEqual(unavailable.terminal.terminal, 'unavailable');
   assert.strictEqual((await unavailable.promise).code, 'OPERATION_UNAVAILABLE');
 
+  const unexpectedExecutor = () => {
+    invoked += 1;
+  };
+  for (const sourceId of ['migu', 'taihe', '__proto__', 'constructor']) {
+    const blocked = lifecycle.start({
+      operation: 'search',
+      sourceId,
+      pageEpoch: 4,
+      deadlineMs: 10,
+      payload: { keyword: 'safe', page: 1 },
+      capabilities: { search: true },
+      executor: unexpectedExecutor,
+    });
+    assert.strictEqual((await blocked.promise).code, 'OPERATION_UNAVAILABLE');
+  }
+  assert.strictEqual(
+    invoked,
+    0,
+    'non-primary/prototype sources never dispatch'
+  );
+
+  const invalidIdentity = lifecycle.start({
+    operation: 'media',
+    sourceId: 'netease',
+    pageEpoch: 4,
+    deadlineMs: 10,
+    payload: { itemId: 'https://unsafe.example' },
+    capabilities: { media: true },
+    executor: () => {
+      invoked += 1;
+    },
+  });
+  assert.strictEqual((await invalidIdentity.promise).code, 'INVALID_REQUEST');
+  assert.strictEqual(invoked, 0, 'transport-shaped identities never dispatch');
+
   let timeoutReply;
+  let abortCount = 0;
   const timeout = lifecycle.start({
     operation: 'lyric',
     sourceId: 'netease',
@@ -224,10 +286,18 @@ async function testLifecycle() {
     capabilities: { lyric: true },
     executor: (_request, reply) => {
       timeoutReply = reply;
+      return () => {
+        abortCount += 1;
+      };
     },
   });
   timers.pop()();
   assert.strictEqual((await timeout.promise).code, 'DEADLINE_EXCEEDED');
+  assert.strictEqual(
+    abortCount,
+    1,
+    'deadline aborts the executor before settling'
+  );
   timeoutReply({
     ...timeout.request,
     terminal: 'ok',
@@ -236,6 +306,68 @@ async function testLifecycle() {
     result: {},
   });
   assert.strictEqual(timeout.ignoredReplies, 1);
+
+  let crossSourceReply;
+  const crossSource = lifecycle.start({
+    operation: 'search',
+    sourceId: 'netease',
+    pageEpoch: 5,
+    deadlineMs: 10,
+    payload: { keyword: 'safe', page: 1 },
+    capabilities: { search: true },
+    executor: (_request, reply) => {
+      crossSourceReply = reply;
+    },
+  });
+  crossSourceReply({
+    ...crossSource.request,
+    terminal: 'ok',
+    status: 'ok',
+    code: null,
+    result: {
+      rows: [
+        {
+          sourceId: 'qq',
+          itemId: 'qqtrack_unsafe',
+          title: 'wrong source',
+          artist: 'wrong source',
+        },
+      ],
+    },
+  });
+  assert.strictEqual((await crossSource.promise).code, 'INVALID_RESPONSE');
+
+  let immutableReply;
+  const immutable = lifecycle.start({
+    operation: 'search',
+    sourceId: 'netease',
+    pageEpoch: 5,
+    deadlineMs: 10,
+    payload: { keyword: 'safe', page: 1 },
+    capabilities: { search: true },
+    executor: (_request, reply) => {
+      immutableReply = reply;
+    },
+  });
+  immutableReply({
+    ...immutable.request,
+    terminal: 'ok',
+    status: 'ok',
+    code: null,
+    result: {
+      rows: [
+        {
+          sourceId: 'netease',
+          itemId: 'netrack_42',
+          title: 'safe',
+          artist: 'safe',
+        },
+      ],
+    },
+  });
+  const immutableTerminal = await immutable.promise;
+  assert(Object.isFrozen(immutableTerminal.result.rows));
+  assert(Object.isFrozen(immutableTerminal.result.rows[0]));
 
   const cancelled = lifecycle.start({
     operation: 'media',

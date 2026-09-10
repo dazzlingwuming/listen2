@@ -137,6 +137,13 @@ angular.module('listenone').controller('NavigationController', [
         if (epoch === mobileLocalEpoch) update();
       });
     };
+    const mobileLocalHandles = new Set();
+    const cancelMobileLocalHandles = () => {
+      mobileLocalHandles.forEach((handle) => {
+        if (handle && typeof handle.cancel === 'function') handle.cancel();
+      });
+      mobileLocalHandles.clear();
+    };
     const localDataRequest = (kind, action, payload = {}) => {
       const adapter = getAndroidAdapter();
       if (
@@ -149,9 +156,20 @@ angular.module('listenone').controller('NavigationController', [
       const handle = adapter.localData[kind](action, payload, {
         pageEpoch: mobileLocalEpoch,
       });
-      return handle && handle.promise
-        ? handle.promise
-        : Promise.resolve(handle);
+      if (handle && typeof handle.cancel === 'function')
+        mobileLocalHandles.add(handle);
+      const promise =
+        handle && handle.promise ? handle.promise : Promise.resolve(handle);
+      return promise.then(
+        (reply) => {
+          mobileLocalHandles.delete(handle);
+          return reply;
+        },
+        (error) => {
+          mobileLocalHandles.delete(handle);
+          return Promise.reject(error);
+        }
+      );
     };
     const hasLocalCapability = (name) =>
       $scope.mobileLocalData.capabilities &&
@@ -302,7 +320,8 @@ angular.module('listenone').controller('NavigationController', [
               $scope.mobileLocalData.overwriteConfirmationOpen = false;
             }
           });
-          if (refreshPage) $scope.loadMobileLocalPage(refreshPage);
+          if (refreshPage && reply && reply.ok && epoch === mobileLocalEpoch)
+            $scope.loadMobileLocalPage(refreshPage);
           return reply;
         })
         .catch((error) => {
@@ -768,35 +787,46 @@ angular.module('listenone').controller('NavigationController', [
       const browser = document.getElementsByClassName('browser')[0];
       if (browser) browser.scrollTop = 0;
     };
-    $scope.closeMobileProductPage = () => {
-      $scope.mobileProductPage = '';
-      $scope.mobileCapabilityNotice = '';
-    };
-
-    const isFocusedMobileSearch = () => {
-      const {activeElement} = document;
-      return Boolean(
-        activeElement &&
-          ['search-input', 'mobile-provider-query'].includes(activeElement.id)
-      );
-    };
     const closeMobileProductLayer = () => {
       const layer = $scope.mobileProductPage;
-      // Invalidate local-page replies before the owning sheet disappears. The
-      // matching broadcast lets a future owner cancel a native handle without
-      // making this coordinator a second router or request dispatcher.
+      if (!layer) return;
+      // All close affordances invalidate this owner before hiding it. Queries
+      // expose cancellation; completed write commands intentionally settle via
+      // their epoch rather than being misrepresented as cancellable.
+      cancelMobileLocalHandles();
       mobileLocalEpoch += 1;
       $rootScope.$broadcast('android:mobile-layer-back', {
         cancel: true,
         layer: `product:${layer}`,
       });
-      $scope.closeMobileProductPage();
+      $scope.mobileProductPage = '';
+      $scope.mobileCapabilityNotice = '';
     };
+    $scope.closeMobileProductPage = () => closeMobileProductLayer();
 
+    const isFocusedMobileSearch = () => {
+      const { activeElement } = document;
+      return Boolean(
+        activeElement &&
+          ['search-input', 'mobile-provider-query'].includes(activeElement.id)
+      );
+    };
     // Native Android owns Activity navigation, while this packaged page owns
     // its transient UI stack. This hook answers synchronously and schedules
     // scope changes through Angular; it never pauses or releases playback.
+    let backTransitionPending = false;
+    const deferBackTransition = (callback) => {
+      backTransitionPending = true;
+      $scope.$applyAsync(() => {
+        try {
+          callback();
+        } finally {
+          backTransitionPending = false;
+        }
+      });
+    };
     const handleAndroidPlaybackBack = () => {
+      if (backTransitionPending) return true;
       // IME dismissal must retain the query and current source/result context.
       if (isFocusedMobileSearch()) {
         document.activeElement.blur();
@@ -809,48 +839,48 @@ angular.module('listenone').controller('NavigationController', [
       );
       if (
         translationConfirmation &&
-        translationConfirmation.offsetParent !== null
+        translationConfirmation.getAttribute?.('aria-hidden') !== 'true'
       ) {
-        $scope.$applyAsync(() => {
+        deferBackTransition(() => {
           $rootScope.$broadcast('android:close-transient-overlay');
         });
         return true;
       }
       if ($scope.is_dialog_hidden === 0) {
-        $scope.$applyAsync(() => $scope.closeDialog());
+        deferBackTransition(() => $scope.closeDialog());
         return true;
       }
       const playbackBack = { handled: false };
       $rootScope.$broadcast('android:playback-back', playbackBack);
       if (playbackBack.handled) {
-        $scope.$applyAsync();
+        deferBackTransition(() => {});
         return true;
       }
       // Keep the legacy queue as a child sheet when the native player layer is
       // not active; it must still close before a full-player route.
       if (!$scope.menuHidden && typeof $scope.togglePlaylist === 'function') {
-        $scope.$applyAsync(() => $scope.togglePlaylist());
+        deferBackTransition(() => $scope.togglePlaylist());
         return true;
       }
       if (
         typeof $scope.getCurrentUrl === 'function' &&
         $scope.getCurrentUrl() === '/now_playing'
       ) {
-        $scope.$applyAsync(() => $scope.popWindow());
+        deferBackTransition(() => $scope.popWindow());
         return true;
       }
       const searchBack = { handled: false };
       $rootScope.$broadcast('android:search-back', searchBack);
       if (searchBack.handled) {
-        $scope.$applyAsync();
+        deferBackTransition(() => {});
         return true;
       }
       if ($scope.mobileProductPage) {
-        $scope.$applyAsync(() => closeMobileProductLayer());
+        deferBackTransition(() => closeMobileProductLayer());
         return true;
       }
       if ($scope.is_window_hidden === 0 || $scope.window_url_stack.length) {
-        $scope.$applyAsync(() => $scope.popWindow());
+        deferBackTransition(() => $scope.popWindow());
         return true;
       }
       return false;
