@@ -1,5 +1,5 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
-import type { Track } from '../types/music';
+import type { PlayableTrack as Track } from '../types/music';
 import { playerController } from '../player/playerController';
 
 /**
@@ -161,6 +161,32 @@ const playerSlice = createSlice({
         state.playNextQueue.splice(action.payload, 1);
       }
     },
+    removeTrackReferences(state, action: PayloadAction<string>) {
+      const id = action.payload;
+      const removedCurrent = state.nowPlaying?.id === id;
+      state.playlist = state.playlist.filter(track => track.id !== id);
+      state.tracks = state.playlist;
+      state.queue = state.playlist;
+      state.playNextQueue = state.playNextQueue.filter(
+        track => track.id !== id,
+      );
+      state.history = state.history.filter(entry => entry.track.id !== id);
+      state.shuffleOrder = shuffleIndexes(state.playlist.length);
+      if (removedCurrent) {
+        state.nowPlaying = null;
+        state.currentTrack = null;
+        state.currentIndex = -1;
+        state.isPlaying = false;
+        state.position = 0;
+        state.duration = 0;
+        state.bufferedPosition = 0;
+      } else if (state.nowPlaying) {
+        state.currentIndex = state.playlist.findIndex(
+          track => track.id === state.nowPlaying?.id,
+        );
+      }
+      state.shuffleCursor = state.shuffleOrder.indexOf(state.currentIndex);
+    },
     clearPlayNextQueue(state) {
       state.playNextQueue = [];
     },
@@ -250,6 +276,7 @@ export const {
   cyclePlayModeSnapshot,
   enqueueNext,
   removeQueuedNext,
+  removeTrackReferences,
   replacePlaylist,
   restoreHistory,
   setError,
@@ -304,5 +331,7 @@ export const addNextTrack = (track: Track) => (dispatch: Dispatch) => {
 };
 export const playQueuedTrack = (index: number) => (dispatch: Dispatch) =>
   playerController.playQueuedAt(dispatch, index);
+export const forgetTrack = (track: Track) => (dispatch: Dispatch) =>
+  playerController.forgetTrack(dispatch, track);
 
 export default playerSlice.reducer;

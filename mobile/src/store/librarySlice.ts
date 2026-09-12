@@ -1,23 +1,30 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
-import type { Track } from '../types/music';
+import type { LocalTrack, PlayableTrack } from '../types/music';
 
 const MAX_RECENT_TRACKS = 200;
+const MAX_LOCAL_TRACKS = 5000;
 
 export type LibraryState = {
-  favorites: Track[];
-  recentTracks: Track[];
+  favorites: PlayableTrack[];
+  recentTracks: PlayableTrack[];
   playlists: LibraryPlaylist[];
+  localTracks: LocalTrack[];
 };
 
-export type LibraryPlaylist = { id: string; title: string; tracks: Track[] };
+export type LibraryPlaylist = {
+  id: string;
+  title: string;
+  tracks: PlayableTrack[];
+};
 
 const initialState: LibraryState = {
   favorites: [],
   recentTracks: [],
   playlists: [],
+  localTracks: [],
 };
 
-function sameTrack(left: Track, right: Track) {
+function sameTrack(left: PlayableTrack, right: PlayableTrack) {
   return left.id === right.id && left.source === right.source;
 }
 
@@ -25,14 +32,14 @@ const librarySlice = createSlice({
   name: 'library',
   initialState,
   reducers: {
-    toggleFavorite(state, action: PayloadAction<Track>) {
+    toggleFavorite(state, action: PayloadAction<PlayableTrack>) {
       const index = state.favorites.findIndex(track =>
         sameTrack(track, action.payload),
       );
       if (index >= 0) state.favorites.splice(index, 1);
       else state.favorites.unshift(action.payload);
     },
-    recordRecent(state, action: PayloadAction<Track>) {
+    recordRecent(state, action: PayloadAction<PlayableTrack>) {
       state.recentTracks = [
         action.payload,
         ...state.recentTracks.filter(
@@ -43,10 +50,55 @@ const librarySlice = createSlice({
     clearRecent(state) {
       state.recentTracks = [];
     },
+    importLocalTracks(state, action: PayloadAction<LocalTrack[]>) {
+      action.payload.slice(0, 500).forEach(track => {
+        if (!track.contentUri) return;
+        const existing = state.localTracks.find(
+          item => item.contentUri === track.contentUri,
+        );
+        if (existing) {
+          // Re-selecting a repaired document refreshes metadata and access.
+          Object.assign(existing, track, {
+            id: existing.id,
+            accessStatus: 'available',
+          });
+          return;
+        }
+        if (
+          state.localTracks.length >= MAX_LOCAL_TRACKS ||
+          state.localTracks.some(item => item.id === track.id)
+        )
+          return;
+        state.localTracks.push(track);
+      });
+    },
+    removeLocalTrack(state, action: PayloadAction<string>) {
+      state.localTracks = state.localTracks.filter(
+        track => track.id !== action.payload,
+      );
+      // Local tracks can also appear in favorites, history, and a user playlist
+      // during this session. Remove those dangling references with the library
+      // record so a released content URI is never offered for playback again.
+      state.favorites = state.favorites.filter(
+        track => track.id !== action.payload,
+      );
+      state.recentTracks = state.recentTracks.filter(
+        track => track.id !== action.payload,
+      );
+      state.playlists.forEach(playlist => {
+        playlist.tracks = playlist.tracks.filter(
+          track => track.id !== action.payload,
+        );
+      });
+    },
+    markLocalTrackNeedsRepair(state, action: PayloadAction<string>) {
+      const track = state.localTracks.find(item => item.id === action.payload);
+      if (track) track.accessStatus = 'needs-repair';
+    },
     restoreLibrary(
       state,
       action: PayloadAction<{
-        favorites: Track[];
+        favorites: PlayableTrack[];
         playlists: LibraryPlaylist[];
       }>,
     ) {
@@ -74,7 +126,7 @@ const librarySlice = createSlice({
     },
     addTrackToPlaylist(
       state,
-      action: PayloadAction<{ playlistId: string; track: Track }>,
+      action: PayloadAction<{ playlistId: string; track: PlayableTrack }>,
     ) {
       const playlist = state.playlists.find(
         item => item.id === action.payload.playlistId,
@@ -88,7 +140,7 @@ const librarySlice = createSlice({
     },
     removeTrackFromPlaylist(
       state,
-      action: PayloadAction<{ playlistId: string; track: Track }>,
+      action: PayloadAction<{ playlistId: string; track: PlayableTrack }>,
     ) {
       const playlist = state.playlists.find(
         item => item.id === action.payload.playlistId,
@@ -107,6 +159,9 @@ export const {
   createPlaylist,
   deletePlaylist,
   recordRecent,
+  importLocalTracks,
+  markLocalTrackNeedsRepair,
+  removeLocalTrack,
   removeTrackFromPlaylist,
   restoreLibrary,
   toggleFavorite,

@@ -30,7 +30,7 @@ import { providerLabels } from '../components/SourceTabs';
 import { Sheet } from '../components/Sheet';
 import { providerClient } from '../api/client';
 import { toggleFavorite } from '../store/librarySlice';
-import type { Track } from '../types/music';
+import { isLocalTrack } from '../types/music';
 import type { Lyric } from '../types/provider';
 import { findActiveLyricIndex, parseLyricTimeline } from '../lyrics/timeline';
 
@@ -72,6 +72,10 @@ export function PlayerScreen() {
   const openLyrics = async () => {
     setShowLyrics(true);
     if (!current || lyrics || lyricsLoading) return;
+    if (isLocalTrack(current)) {
+      setLyricsUnavailable(true);
+      return;
+    }
     lyricRequest.current?.abort();
     const controller = new AbortController();
     lyricRequest.current = controller;
@@ -187,7 +191,7 @@ export function PlayerScreen() {
             </Pressable>
             <Pressable
               accessibilityLabel={favorite ? '取消收藏' : '收藏当前歌曲'}
-              onPress={() => dispatch(toggleFavorite(current as Track))}
+              onPress={() => dispatch(toggleFavorite(current))}
               style={styles.action}
             >
               <Text style={styles.actionText}>
@@ -226,6 +230,7 @@ export function PlayerScreen() {
         lyrics={lyrics}
         loading={lyricsLoading}
         unavailable={lyricsUnavailable}
+        localAudio={Boolean(current && isLocalTrack(current))}
         visible={showLyrics}
         position={state.position ?? state.progress ?? 0}
         onClose={() => setShowLyrics(false)}
@@ -312,6 +317,7 @@ function LyricsSheet({
   lyrics,
   loading,
   unavailable,
+  localAudio,
   position,
 }: {
   visible: boolean;
@@ -320,6 +326,7 @@ function LyricsSheet({
   lyrics: Lyric | null;
   loading: boolean;
   unavailable: boolean;
+  localAudio: boolean;
   position: number;
 }) {
   const lines = useMemo(
@@ -395,10 +402,16 @@ function LyricsSheet({
         ) : (
           <View style={styles.noLyrics}>
             <Text style={text.heading}>
-              {unavailable ? '该来源暂无可用歌词' : '暂时没有歌词'}
+              {localAudio
+                ? '本地音频暂不提供网络歌词'
+                : unavailable
+                ? '该来源暂无可用歌词'
+                : '暂时没有歌词'}
             </Text>
             <Text style={text.meta}>
-              歌词不可用不会影响播放。请稍后重试或选择其他歌曲。
+              {localAudio
+                ? '播放不受影响；为了保护本地文件信息，应用不会为它请求网络歌词。'
+                : '歌词不可用不会影响播放。请稍后重试或选择其他歌曲。'}
             </Text>
           </View>
         )}

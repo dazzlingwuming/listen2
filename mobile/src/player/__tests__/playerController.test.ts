@@ -8,6 +8,7 @@ const mockNativePlayer = {
   seekTo: jest.fn().mockResolvedValue(undefined),
   play: jest.fn().mockResolvedValue(undefined),
   pause: jest.fn().mockResolvedValue(undefined),
+  stop: jest.fn().mockResolvedValue(undefined),
 };
 const mockBootstrapTrack = jest.fn();
 
@@ -25,6 +26,7 @@ jest.mock('react-native-track-player', () => ({
     seekTo: (...args: unknown[]) => mockNativePlayer.seekTo(...args),
     play: (...args: unknown[]) => mockNativePlayer.play(...args),
     pause: (...args: unknown[]) => mockNativePlayer.pause(...args),
+    stop: (...args: unknown[]) => mockNativePlayer.stop(...args),
   },
   Capability: {
     Play: 'play',
@@ -53,6 +55,7 @@ import {
   playerController,
 } from '../playerController';
 import type { Track } from '../../types/music';
+import type { LocalTrack } from '../../types/music';
 import { Platform } from 'react-native';
 
 const track = (id: string): Track => ({
@@ -60,6 +63,14 @@ const track = (id: string): Track => ({
   source: 'netease',
   title: id,
   artist: 'Listen2',
+});
+const localTrack = (id: string): LocalTrack => ({
+  id,
+  source: 'local',
+  title: id,
+  artist: '本地音频',
+  contentUri: `content://documents/${id}`,
+  fileName: `${id}.mp3`,
 });
 
 describe('PlayerController queue transitions', () => {
@@ -147,5 +158,55 @@ describe('PlayerController queue transitions', () => {
     expect(state.playNextQueue.map(item => item.id)).toEqual([queued.id]);
     expect(state.error).toBe('native-load-failed');
     expect(state.isPlaying).toBe(false);
+  });
+
+  it('plays a local content URI without calling the provider bootstrap', async () => {
+    const local = localTrack('local_1');
+    state = reducer(
+      state,
+      playerActions.replacePlaylist({ tracks: [track('netrack_1')] }),
+    );
+    state = reducer(state, playerActions.enqueueNext(local));
+
+    await playerController.next(dispatch);
+
+    expect(mockBootstrapTrack).not.toHaveBeenCalled();
+    expect(state.currentTrack?.id).toBe(local.id);
+    expect(state.playNextQueue).toEqual([]);
+    expect(mockNativePlayer.add).toHaveBeenCalledWith(
+      expect.objectContaining({ url: local.contentUri }),
+    );
+  });
+
+  it('does not consume a local queued track when native loading fails', async () => {
+    const local = localTrack('local_2');
+    state = reducer(
+      state,
+      playerActions.replacePlaylist({ tracks: [track('netrack_1')] }),
+    );
+    state = reducer(state, playerActions.enqueueNext(local));
+    mockNativePlayer.add.mockRejectedValueOnce(new Error('native-load-failed'));
+
+    await playerController.next(dispatch);
+
+    expect(mockBootstrapTrack).not.toHaveBeenCalled();
+    expect(state.playNextQueue.map(item => item.id)).toEqual([local.id]);
+    expect(state.error).toBe('native-load-failed');
+  });
+
+  it('stops native playback and purges a forgotten current local track', async () => {
+    const local = localTrack('local_3');
+    state = reducer(
+      state,
+      playerActions.replacePlaylist({ tracks: [local, track('netrack_1')] }),
+    );
+    state = reducer(state, playerActions.enqueueNext(local));
+
+    await playerController.forgetTrack(dispatch, local);
+
+    expect(mockNativePlayer.stop).toHaveBeenCalledTimes(1);
+    expect(state.currentTrack).toBeNull();
+    expect(state.playlist.map(item => item.id)).toEqual(['netrack_1']);
+    expect(state.playNextQueue).toEqual([]);
   });
 });

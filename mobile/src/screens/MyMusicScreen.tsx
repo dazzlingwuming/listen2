@@ -13,17 +13,48 @@ import type { RootState } from '../store';
 import { ScreenLayout, sectionStyles } from './ScreenLayout';
 import { colors, spacing, text } from '../theme';
 import { createPlaylist } from '../store/librarySlice';
+import { importLocalTracks } from '../store/librarySlice';
+import { pickLocalAudio } from '../localAudio/picker';
 
 export function MyMusicScreen() {
   const navigation = useNavigation<any>();
   const dispatch = useDispatch();
   const [creating, setCreating] = useState(false);
   const [playlistTitle, setPlaylistTitle] = useState('');
+  const [localImportStatus, setLocalImportStatus] = useState<string | null>(
+    null,
+  );
+  const [importingLocalAudio, setImportingLocalAudio] = useState(false);
   const favorites = useSelector((state: RootState) => state.library.favorites);
   const recentTracks = useSelector(
     (state: RootState) => state.library.recentTracks,
   );
   const playlists = useSelector((state: RootState) => state.library.playlists);
+  const localTracks = useSelector(
+    (state: RootState) => state.library.localTracks,
+  );
+  const importAudio = async () => {
+    if (importingLocalAudio) return;
+    setImportingLocalAudio(true);
+    setLocalImportStatus(null);
+    const result = await pickLocalAudio();
+    setImportingLocalAudio(false);
+    if (result.status === 'cancelled') return;
+    if (result.status === 'error') {
+      setLocalImportStatus('无法取得长期访问权限，未导入任何音频。');
+      return;
+    }
+    if (result.tracks.length) dispatch(importLocalTracks(result.tracks));
+    if (!result.tracks.length) {
+      setLocalImportStatus('未导入音频：请选择可长期访问的真实音频文件。');
+      return;
+    }
+    setLocalImportStatus(
+      result.rejected
+        ? `已导入 ${result.tracks.length} 首，跳过 ${result.rejected} 个不可用或重复文件。`
+        : `已导入 ${result.tracks.length} 首本地音频。`,
+    );
+  };
   const submitPlaylist = () => {
     const title = playlistTitle.trim();
     if (!title) return;
@@ -50,6 +81,26 @@ export function MyMusicScreen() {
         </Pressable>
       </View>
       <View style={styles.grid}>
+        <Pressable
+          accessibilityLabel="打开本地音乐"
+          onPress={() =>
+            navigation.navigate('PlaylistDetail', {
+              sourceId: 'local',
+              title: '本地音乐',
+              tracks: localTracks,
+              libraryCollection: 'local',
+            })
+          }
+          style={styles.tile}
+        >
+          <Text style={styles.tileIcon}>♫</Text>
+          <Text style={styles.tileTitle}>本地音乐</Text>
+          <Text style={text.meta}>
+            {localTracks.length
+              ? `${localTracks.length} 首已导入`
+              : '从设备选择音频'}
+          </Text>
+        </Pressable>
         <Pressable
           accessibilityLabel="打开我喜欢的音乐"
           onPress={() =>
@@ -88,6 +139,29 @@ export function MyMusicScreen() {
               : '还没有播放记录'}
           </Text>
         </Pressable>
+      </View>
+      <View style={sectionStyles.section}>
+        <Text style={text.heading}>本地音频</Text>
+        <View style={sectionStyles.card}>
+          <Text style={text.meta}>
+            从系统文件选择器导入；音频不会复制到应用，也不会请求媒体库权限。
+          </Text>
+          <Pressable
+            accessibilityLabel="导入本地音频"
+            disabled={importingLocalAudio}
+            onPress={importAudio}
+            style={sectionStyles.button}
+          >
+            <Text style={sectionStyles.buttonText}>
+              {importingLocalAudio ? '正在打开选择器…' : '导入本地音频'}
+            </Text>
+          </Pressable>
+          {localImportStatus ? (
+            <Text accessibilityRole="alert" style={text.meta}>
+              {localImportStatus}
+            </Text>
+          ) : null}
+        </View>
       </View>
       <View style={sectionStyles.section}>
         <View style={styles.sectionTitle}>

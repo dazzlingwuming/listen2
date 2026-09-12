@@ -29,6 +29,7 @@ import {
   type ImportMode,
   type ImportPlan,
 } from '../backup/backupCodec';
+import { createPortableBackupState } from '../localAudio/backup';
 
 export function SettingsScreen() {
   const dispatch = useDispatch<AppDispatch>();
@@ -45,11 +46,8 @@ export function SettingsScreen() {
   const [backupError, setBackupError] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
 
-  const currentBackupState = (): BackupImportState => ({
-    favorites: library.favorites,
-    playlists: library.playlists,
-    ...currentQueue(player),
-  });
+  const currentBackupState = (): BackupImportState =>
+    createPortableBackupState(library, player);
 
   const resetImport = () => {
     setImportText('');
@@ -181,7 +179,7 @@ export function SettingsScreen() {
         <Text style={text.heading}>数据备份</Text>
         <View style={sectionStyles.card}>
           <Text style={text.meta}>
-            仅包含收藏、自建歌单和当前播放队列。不会导出登录凭据、本地路径、歌词或设置。
+            仅包含收藏、自建歌单和当前播放队列。本地音频不会导出，也不会导出登录凭据、本地路径、歌词或设置。
           </Text>
           <View style={styles.backupActions}>
             <Pressable
@@ -301,16 +299,6 @@ export function SettingsScreen() {
       </Modal>
     </ScreenLayout>
   );
-}
-
-function currentQueue(player: RootState['player']): {
-  queue: RootState['player']['playlist'];
-  queueMode: 'playlist' | 'play-next';
-} {
-  if (player.playNextQueue.length) {
-    return { queue: player.playNextQueue, queueMode: 'play-next' };
-  }
-  return { queue: player.playlist, queueMode: 'playlist' };
 }
 
 function applyQueuePlan(dispatch: AppDispatch, plan: ImportPlan) {

@@ -6,7 +6,7 @@
 
 **新版入口：** `mobile/`
 
-**状态：** React Native 第二批源码能力已接入，整体仍在开发中；未生成新的验收 APK。
+**状态：** React Native 第三批本地音乐源码能力已接入，整体仍在开发中；未生成新的验收 APK。
 
 ## 1. 已确认的方向
 
@@ -17,6 +17,10 @@
 为了能在当前 Android 工具链上维护，实现使用 React Native 0.87.1、React 19、
 Redux Toolkit/Redux Persist 和 `react-native-track-player` 4.1.2，不照搬原项目已过时的
 RN 0.59/Gradle 5/JDK 8 依赖。
+
+原作者 `listen1_mobile` 没有本地音频或离线缓存能力，`local` 仅用于 JSON 备份。本批
+将本地音频作为移动端的显式扩展：通过 Android SAF 保留用户授权的 `content://` URI，
+但不把它误称为网络音频离线缓存。
 
 开发节奏也已确认：
 
@@ -42,6 +46,12 @@ RN 0.59/Gradle 5/JDK 8 依赖。
 - 播放列表、独立 FIFO “下一首播放”、真实上一首历史和位置恢复。
 - 队列切换按事务语义处理：provider 解析和原生加载成功后才切换并消费待播项；失败不再提前丢掉 FIFO 歌曲。
 - 本地收藏、最近播放、自建歌单、加入/移除歌曲，经 AsyncStorage 持久化。
+- 第三批本地音乐使用 `@react-native-documents/picker` 12.0.2，通过 Android SAF
+  `open`、audio、multi、long-term 模式导入；不申请媒体库权限，不复制或删除用户原文件，
+  只持久化获得长期授权的 `content://` URI。
+- 本地曲目可持久化并由 TrackPlayer 直接播放，参与队列和历史；移除时清理应用内引用并
+  释放 URI 授权，访问失效时标记为 `needs-repair`。本地曲目不请求网络歌词，也不进入可携
+  JSON 备份。
 - 版本化 JSON 备份包含收藏、自建歌单和当前队列，支持分享导出、粘贴导入；默认合并，覆盖需要二次确认，并拒绝凭据、本地路径、未知字段和超限内容。
 
 ### Provider 能力
@@ -74,10 +84,11 @@ URL、header、Cookie 或 token。未证明的能力返回 typed unavailable，�
 ## 4. 当前验证
 
 - 格式检查、TypeScript 和 ESLint：通过。
-- mobile Jest：7 suites，40 tests 通过。
-- Android production Metro bundle：成功，1,456,166 bytes，19 assets。
-- 原生 compile-only：因访问 `plugins.gradle.org` 时 TLS 握手失败而 `not verified`；不能据此声称 Kotlin/Java 编译通过。
-- 未生成 APK；未完成模拟器端到端验收。
+- mobile Jest：9 suites，49 tests 通过。
+- Android production Metro bundle：成功，1,471,170 bytes，19 assets。
+- 未生成 APK，未完成 Gradle/原生 compile-only，也未完成模拟器端到端验收。
+- 原生 compile-only 仍因访问 `plugins.gradle.org` 时 TLS 握手失败而 `not verified`；不能据此声称 Kotlin/Java 编译通过。
+- 真实 `content://` URI 的后台播放与重启后播放：`not verified`。
 
 ## 5. 仍未完成
 
@@ -85,17 +96,17 @@ URL、header、Cookie 或 token。未证明的能力返回 typed unavailable，�
 
 - 在模拟器上验证网易云、酷狗和哔哩哔哩的首播、切歌、后台和通知。
 - 网易公开歌单详情仍有“摘要 35 首、详情样本 10 首”的完整性限制。
-- 本地音乐导入、离线下载/缓存、账号登录、Bilibili 分 P/MV、
-  DeepSeek 翻译、音效/可视化/响度等桌面高级能力尚未迁移。
+- 本地音乐导入已接入，但离线下载/缓存、账号登录、Bilibili 分 P/MV、
+  DeepSeek 翻译、音效/可视化/响度等桌面高级能力尚未迁移；本地 URI 的后台与重启后播放仍待实机验证。
 - QQ 匿名播放仍不可用；酷我播放仍需 Cookie/Secret。
 - release 签名未配置；正式凭据必须由用户在仓库外提供。
 
 ## 6. 下次继续的顺序
 
-1. 先恢复 `plugins.gradle.org` 依赖访问并完成原生 compile-only 验证。
-2. 完成一批整合功能后只做一次 Android 构建，安装到模拟器验收搜索、播放、歌词、队列和备份主链。
-3. 继续补本地音乐、离线缓存、登录和其他需授权的 provider 能力。
-4. 根据真实 APK 与模拟器结果集中修改差异。
+1. 继续按已确认的节奏先铺功能蓝本；离线缓存可以作为下一批功能，但不能把 SAF 本地引用当作离线缓存。
+2. 恢复 `plugins.gradle.org` 依赖访问并完成 Gradle/原生 compile-only 验证。
+3. 完成一批整合功能后只做一次 Android 构建，安装到模拟器验收远程与本地搜索/播放、后台通知、歌词、队列和备份主链；最终集成 APK 与模拟器验收是必须门禁，不能省略。
+4. 根据真实 APK 与模拟器结果集中修改差异，并继续补登录和其他需授权的 provider 能力。
 
 ## 7. 重要文件
 
@@ -103,6 +114,7 @@ URL、header、Cookie 或 token。未证明的能力返回 typed unavailable，�
 - `mobile/src/api/`：受控 provider client。
 - `mobile/src/player/`：TrackPlayer 所有者和后台 service。
 - `mobile/src/lyrics/`：LRC 时间轴与翻译配对。
+- `mobile/src/localAudio/`：SAF 本地音频选择、授权释放与备份隔离。
 - `mobile/src/backup/`：版本化 JSON 备份编解码与导入计划。
 - `mobile/src/store/`：播放和本地音乐库持久化。
 - `mobile/src/screens/`：手机界面。
@@ -112,5 +124,6 @@ URL、header、Cookie 或 token。未证明的能力返回 typed unavailable，�
 
 - 当前不能说 Android 版已完成或已与桌面端完全等价。
 - mocked tests、Metro bundle 或 API 单样本成功不等于模拟器真实播放通过。
-- 当前没有 APK，也没有模拟器端到端验收；原生 compile-only 因 `plugins.gradle.org` TLS 握手失败而 `not verified`。
+- 当前没有 APK，也没有模拟器端到端验收；Gradle/原生 compile-only 因 `plugins.gradle.org` TLS 握手失败而 `not verified`。
+- 真实 `content://` URI 的后台播放与重启后播放尚未验证；本地音频引用也不等于网络音频离线缓存。
 - QQ 匿名播放仍不可用，酷我播放仍需 Cookie/Secret；未授权、VIP、DRM 或地区受限内容不会被绕过。

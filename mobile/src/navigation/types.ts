@@ -1,5 +1,5 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
-import type { SourceId, Track } from '../types/music';
+import type { PlayableTrack, SourceId } from '../types/music';
 
 export type TabParamList = {
   My: undefined;
@@ -14,11 +14,11 @@ export type RootStackParamList = {
     /** Local collections use this label; remote provider calls use SourceId. */
     sourceId: SourceId | 'local';
     title: string;
-    tracks?: Track[];
+    tracks?: PlayableTrack[];
     /** A semantic provider playlist id, never a URL or a caller-provided route. */
     remotePlaylistId?: string;
     libraryPlaylistId?: string;
-    libraryCollection?: 'favorites' | 'recent';
+    libraryCollection?: 'favorites' | 'recent' | 'local';
   };
   Player: undefined;
 };

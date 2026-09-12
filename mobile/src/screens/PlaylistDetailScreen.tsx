@@ -13,10 +13,11 @@ import {
   addTrackToPlaylist,
   deletePlaylist,
   removeTrackFromPlaylist,
+  removeLocalTrack,
   toggleFavorite,
 } from '../store/librarySlice';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import type { PlaylistDetail, Track } from '../types/music';
+import type { PlayableTrack, PlaylistDetail } from '../types/music';
 import * as playerActions from '../store/playerSlice';
 import { colors, spacing, text } from '../theme';
 import { providerLabels } from '../components/SourceTabs';
@@ -24,6 +25,8 @@ import { TrackRow, type PresentableTrack } from '../components/TrackRow';
 import { ScreenLayout, sectionStyles } from './ScreenLayout';
 import { PROVIDER_CAPABILITIES, providerClient } from '../api/client';
 import { Sheet } from '../components/Sheet';
+import { releaseLocalAudioAccess } from '../localAudio/access';
+import { isLocalTrack } from '../types/music';
 
 type RemotePlaylistStatus = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -44,6 +47,9 @@ export function PlaylistDetailScreen() {
     (state: RootState) => state.library.recentTracks,
   );
   const playlists = useSelector((state: RootState) => state.library.playlists);
+  const localTracks = useSelector(
+    (state: RootState) => state.library.localTracks,
+  );
   const [remoteDetail, setRemoteDetail] = useState<PlaylistDetail | null>(null);
   const [remoteStatus, setRemoteStatus] = useState<RemotePlaylistStatus>(
     remotePlaylistId ? 'loading' : 'idle',
@@ -57,9 +63,11 @@ export function PlaylistDetailScreen() {
       ? favorites
       : libraryCollection === 'recent'
       ? recentTracks
+      : libraryCollection === 'local'
+      ? localTracks
       : tracks
   ) as PresentableTrack[];
-  const [addTarget, setAddTarget] = useState<Track | null>(null);
+  const [addTarget, setAddTarget] = useState<PlayableTrack | null>(null);
   const loadRemotePlaylist = useCallback(
     async (signal: AbortSignal) => {
       if (!remotePlaylistId || sourceId === 'local') return;
@@ -91,7 +99,7 @@ export function PlaylistDetailScreen() {
   const play = (track: PresentableTrack, index: number) => {
     const playTracks = (playerActions as any).playTracks;
     if (playTracks) {
-      dispatch(playTracks(playableTracks as Track[], index));
+      dispatch(playTracks(playableTracks as PlayableTrack[], index));
       navigation.navigate('Player');
       return;
     }
@@ -99,18 +107,18 @@ export function PlaylistDetailScreen() {
       (playerActions as any).playTrack ||
       (playerActions as any).setCurrentTrack ||
       (playerActions as any).selectTrack;
-    if (action) dispatch(action(track as Track));
+    if (action) dispatch(action(track as PlayableTrack));
     navigation.navigate('Player');
   };
+  const canPlayTrack = (track: PresentableTrack) =>
+    isLocalTrack(track) ||
+    PROVIDER_CAPABILITIES[track.source as keyof typeof PROVIDER_CAPABILITIES]
+      ?.playback === true;
   const playAll = () => {
-    const index = playableTracks.findIndex(
-      track => PROVIDER_CAPABILITIES[track.source].playback,
-    );
+    const index = playableTracks.findIndex(canPlayTrack);
     if (index >= 0) play(playableTracks[index], index);
   };
-  const hasPlayableTrack = playableTracks.some(
-    track => PROVIDER_CAPABILITIES[track.source].playback,
-  );
+  const hasPlayableTrack = playableTracks.some(canPlayTrack);
   const detailTitle = remoteDetail?.title || title || '音乐详情';
   const displaySource = remoteDetail?.source || sourceId;
   return (
@@ -195,7 +203,7 @@ export function PlaylistDetailScreen() {
             const favorite = favorites.some(
               item => item.id === track.id && item.source === track.source,
             );
-            const canPlay = PROVIDER_CAPABILITIES[track.source].playback;
+            const canPlay = canPlayTrack(track);
             return (
               <View key={`${track.id || index}`} style={styles.trackBlock}>
                 <TrackRow
@@ -203,12 +211,17 @@ export function PlaylistDetailScreen() {
                   onPress={canPlay ? () => play(track, index) : undefined}
                   track={track}
                 />
+                {isLocalTrack(track) && track.accessStatus !== 'available' ? (
+                  <Text accessibilityRole="alert" style={styles.accessWarning}>
+                    本地文件访问可能已失效，请重新导入该音频。
+                  </Text>
+                ) : null}
                 <View style={styles.trackActions}>
                   <Pressable
                     accessibilityLabel={
                       favorite ? `取消收藏${track.title}` : `收藏${track.title}`
                     }
-                    onPress={() => dispatch(toggleFavorite(track as Track))}
+                    onPress={() => dispatch(toggleFavorite(track))}
                     style={styles.favorite}
                   >
                     <Text style={styles.favoriteText}>
@@ -222,7 +235,7 @@ export function PlaylistDetailScreen() {
                         dispatch(
                           removeTrackFromPlaylist({
                             playlistId: libraryPlaylistId,
-                            track: track as Track,
+                            track,
                           }),
                         )
                       }
@@ -233,12 +246,40 @@ export function PlaylistDetailScreen() {
                   ) : (
                     <Pressable
                       accessibilityLabel={`将${track.title}加入歌单`}
-                      onPress={() => setAddTarget(track as Track)}
+                      onPress={() => setAddTarget(track)}
                       style={styles.favorite}
                     >
                       <Text style={styles.favoriteText}>＋ 歌单</Text>
                     </Pressable>
                   )}
+                  {libraryCollection === 'local' && isLocalTrack(track) ? (
+                    <Pressable
+                      accessibilityLabel={`删除本地音频${track.title}`}
+                      onPress={() =>
+                        Alert.alert(
+                          '从本地音乐移除？',
+                          '只会移除 Listen2 记录，不会删除设备上的原文件。',
+                          [
+                            { text: '取消', style: 'cancel' },
+                            {
+                              text: '移除',
+                              style: 'destructive',
+                              onPress: async () => {
+                                const forget = (playerActions as any)
+                                  .forgetTrack;
+                                if (forget) await dispatch(forget(track));
+                                dispatch(removeLocalTrack(track.id));
+                                await releaseLocalAudioAccess(track);
+                              },
+                            },
+                          ],
+                        )
+                      }
+                      style={styles.favorite}
+                    >
+                      <Text style={styles.deleteText}>删除</Text>
+                    </Pressable>
+                  ) : null}
                 </View>
               </View>
             );
@@ -321,6 +362,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   favoriteText: { ...text.meta, color: colors.accent },
+  accessWarning: { ...text.meta, color: colors.danger },
   delete: {
     alignSelf: 'flex-end',
     minHeight: 44,

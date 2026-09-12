@@ -1,10 +1,10 @@
 import React from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
-import type { Track } from '../types/music';
+import type { PlayableTrack } from '../types/music';
 import { colors, spacing, text } from '../theme';
 import { providerLabels } from './SourceTabs';
 
-export type PresentableTrack = Track & {
+export type PresentableTrack = PlayableTrack & {
   id?: string;
   title?: string;
   name?: string;

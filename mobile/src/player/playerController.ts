@@ -5,8 +5,7 @@ import TrackPlayer, {
 } from 'react-native-track-player';
 import { PermissionsAndroid, Platform } from 'react-native';
 import { providerClient } from '../api/client';
-import type { Track } from '../types/music';
-import type { BootstrapTrack } from '../types/provider';
+import { isLocalTrack, type PlayableTrack } from '../types/music';
 import {
   PLAY_MODE,
   type HistoryEntry,
@@ -44,13 +43,13 @@ function emit(dispatch: Dispatch | undefined, type: string, payload?: unknown) {
   return send(payload === undefined ? { type } : { type, payload });
 }
 
-function trackId(track: Track): string {
-  const id = (track as Track & { id?: unknown }).id;
+function trackId(track: PlayableTrack): string {
+  const id = (track as PlayableTrack & { id?: unknown }).id;
   return id === undefined || id === null ? '' : String(id);
 }
 
-function trackText(track: Track, keys: string[]): string | undefined {
-  const candidate = track as Track & Record<string, unknown>;
+function trackText(track: PlayableTrack, keys: string[]): string | undefined {
+  const candidate = track as PlayableTrack & Record<string, unknown>;
   for (const key of keys) {
     if (typeof candidate[key] === 'string' && candidate[key])
       return candidate[key] as string;
@@ -77,7 +76,10 @@ function shuffledIndexes(length: number): number[] {
   return indexes;
 }
 
-async function resolveTrackUrl(track: Track) {
+async function resolveTrackUrl(track: PlayableTrack) {
+  if (isLocalTrack(track)) {
+    return { url: track.contentUri };
+  }
   const candidate = await providerClient.bootstrapTrack(track);
   const { url } = candidate;
   if (!url || typeof url !== 'string') throw new Error('provider-unavailable');
@@ -85,7 +87,7 @@ async function resolveTrackUrl(track: Track) {
 }
 
 function asNativeTrack(
-  track: Track,
+  track: PlayableTrack,
   media: { url: string; headers?: Readonly<Record<string, string>> },
 ) {
   return {
@@ -164,9 +166,9 @@ async function configureNativeSnapshot(state: PlayerState) {
 
 async function loadAndPlay(
   dispatch: Dispatch | undefined,
-  track: Track,
+  track: PlayableTrack,
   position: number,
-  resolvedMedia?: BootstrapTrack,
+  resolvedMedia?: { url: string; headers?: Readonly<Record<string, string>> },
 ): Promise<boolean> {
   try {
     await ensurePlayer();
@@ -181,6 +183,8 @@ async function loadAndPlay(
     return true;
   } catch (error) {
     emit(dispatch, 'player/setPlaying', false);
+    if (isLocalTrack(track))
+      emit(dispatch, 'library/markLocalTrackNeedsRepair', track.id);
     emit(
       dispatch,
       'player/setError',
@@ -193,7 +197,7 @@ async function loadAndPlay(
 async function transition(
   dispatch: Dispatch | undefined,
   payload: {
-    track: Track;
+    track: PlayableTrack;
     playlistIndex: number;
     source: 'playlist' | 'play-next';
     rememberCurrent?: boolean;
@@ -205,7 +209,7 @@ async function transition(
     appendToPlaylist?: boolean;
   },
 ) {
-  let media: BootstrapTrack;
+  let media: { url: string; headers?: Readonly<Record<string, string>> };
   try {
     media = await resolveTrackUrl(payload.track);
   } catch (error) {
@@ -308,7 +312,7 @@ class PlayerController {
     return this.play(dispatch);
   }
 
-  async playTrack(dispatch: Dispatch | undefined, track: Track) {
+  async playTrack(dispatch: Dispatch | undefined, track: PlayableTrack) {
     const state = playerState();
     let playlistIndex = state.playlist.indexOf(track);
     if (playlistIndex < 0)
@@ -330,12 +334,12 @@ class PlayerController {
 
   async playTracks(
     dispatch: Dispatch | undefined,
-    tracks: Track[],
+    tracks: PlayableTrack[],
     startIndex = 0,
   ) {
     const target = tracks[startIndex];
     if (!target) return;
-    let media: BootstrapTrack;
+    let media: { url: string; headers?: Readonly<Record<string, string>> };
     try {
       media = await resolveTrackUrl(target);
     } catch (error) {
@@ -396,7 +400,7 @@ class PlayerController {
     const entry = state.history[state.history.length - 1];
     if (!entry) return;
     const remaining = state.history.slice(0, -1);
-    let media: BootstrapTrack;
+    let media: { url: string; headers?: Readonly<Record<string, string>> };
     try {
       media = await resolveTrackUrl(entry.track);
     } catch (error) {
@@ -475,6 +479,19 @@ class PlayerController {
         error instanceof Error ? error.message : 'mode-unavailable',
       );
     }
+  }
+
+  async forgetTrack(dispatch: Dispatch | undefined, track: PlayableTrack) {
+    if (playerState().nowPlaying?.id === track.id) {
+      try {
+        await ensurePlayer();
+        await TrackPlayer.stop();
+        await TrackPlayer.reset();
+      } catch {
+        // The catalog must still forget an item if native playback is gone.
+      }
+    }
+    emit(dispatch, 'player/removeTrackReferences', track.id);
   }
 
   onProgress(position: number, duration: number, bufferedPosition: number) {

@@ -33,6 +33,20 @@ application has passed integrated emulator acceptance.
   the pending queue item.
 - Local favorites, recent-play history and user playlists persisted with
   AsyncStorage.
+- Local audio import uses `@react-native-documents/picker` 12.0.2 with Android
+  SAF `open`/audio/multi/long-term access. It persists authorized `content://`
+  URIs without requesting media-library permission or copying/deleting the
+  user's original files.
+- Imported local tracks persist in the library, play directly through
+  TrackPlayer, and participate in the queue and recent-play history. Removing
+  one clears app references and releases its URI access; unavailable access is
+  marked `needs-repair`. Local tracks never request network lyrics and are
+  excluded from portable JSON backups.
+
+The original `listen1_mobile` had no local-audio or offline-cache capability;
+its `local` concept was only part of JSON backup. This local-audio slice is an
+explicit mobile extension, and it is not the same as downloading network audio
+for offline playback.
 
 Provider access is intentionally bounded: UI code cannot supply URLs, headers,
 cookies or tokens. Membership, DRM, region and account restrictions are not
@@ -72,14 +86,17 @@ npm run mobile:test
 npm --prefix mobile run lint -- --quiet
 ```
 
-### Second-batch verification
+### Third-batch verification
 
 - Formatting, TypeScript and ESLint checks: passed.
-- Jest: 7 suites, 40 tests: passed.
-- Android production Metro bundle: passed; 1,456,166 bytes and 19 assets.
-- Native compile-only: `not verified` because the TLS handshake to
-  `plugins.gradle.org` failed. This does not establish Kotlin/Java compilation.
-- No APK was generated and no Android emulator end-to-end test was completed.
+- Jest: 9 suites, 49 tests: passed.
+- Android production Metro bundle: passed; 1,471,170 bytes and 19 assets.
+- No APK, Gradle/native compile-only, or Android emulator end-to-end test was
+  completed. Native compile-only remains `not verified` because the TLS
+  handshake to `plugins.gradle.org` failed; this does not establish
+  Kotlin/Java compilation.
+- Real `content://` URI playback in the background and after app restart:
+  `not verified`.
 
 APK assembly is intentionally deferred until an integrated feature slice is
 ready; it is not repeated after every source-level change.
