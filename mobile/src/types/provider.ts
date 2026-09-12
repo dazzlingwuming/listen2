@@ -12,6 +12,7 @@ export const SOURCE_IDS = [
 
 export type SourceId = (typeof SOURCE_IDS)[number];
 export type ProviderOperation = 'search' | 'playlist' | 'bootstrap' | 'lyric';
+export type SearchKind = 'track' | 'playlist';
 
 export function isSourceId(value: unknown): value is SourceId {
   return (
@@ -30,12 +31,31 @@ export interface Track {
   artworkUrl?: string;
 }
 
+/** A compact, non-playable remote playlist identity returned by search. */
+export interface PlaylistSummary {
+  id: string;
+  source: SourceId;
+  title: string;
+  author?: string;
+  trackCount?: number;
+  artworkUrl?: string;
+}
+
+/**
+ * Search results are deliberately wrapped in a discriminated union so UI
+ * callers cannot accidentally treat a playlist as a playable track.
+ */
+export type SearchResult =
+  | { kind: 'track'; track: Track }
+  | { kind: 'playlist'; playlist: PlaylistSummary };
+
 export interface SearchPage {
   source: SourceId;
   query: string;
   page: number;
   total: number;
-  tracks: Track[];
+  kind: SearchKind;
+  results: SearchResult[];
 }
 
 export interface PlaylistDetail {
@@ -90,4 +110,9 @@ export interface ProviderErrorShape {
 export interface ProviderRequestOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
+}
+
+export interface SearchRequestOptions extends ProviderRequestOptions {
+  /** Defaults to tracks. Only provider-approved kinds are selectable. */
+  kind?: SearchKind;
 }

@@ -139,7 +139,7 @@ Listen2 是 [Listen1](https://github.com/listen1/listen1) 的社区增强版本�
 | macOS Intel / Apple Silicon | 已构建并验证 | 支持 x64、arm64 与 Universal DMG；当前未签名或公证                    |
 | Windows ia32 / arm64        | 保留构建能力 | 尚未在对应设备上完成系统性回归                                        |
 | Linux                       | 保留构建能力 | 不是当前版本的主要测试平台                                            |
-| Android API 24+             | 重构中       | 采用原作者的独立 React Native 手机端路线；尚未发布                    |
+| Android API 24+             | 开发中       | 采用独立 React Native 手机端路线；第二批源码能力已接入，尚未生成 APK |
 
 ## Android 移动端
 
@@ -148,11 +148,20 @@ Android 端正在改为与原作者 `listen1_mobile` 同类的独立 React Nativ
 
 - 手机端导航、搜索、播放详情、迷你播放器、队列、收藏和最近播放。
 - `react-native-track-player` 原生后台播放、系统媒体通知、audio focus 和播放恢复。
-- 网易云、酷狗和哔哩哔哩的搜索/播放主链，网易云歌词/歌单详情，以及 QQ 音乐歌词；其他高级能力仍在逐项接入。
+- 网易云歌曲与远程歌单搜索、歌单详情和播放；公开歌单详情样本可能只返回 10 首，而摘要显示 35 首，完整性仍受公开接口限制。
+- LRC 歌词时间轴、原文/译文按时间配对、当前行高亮和自动滚动；普通无时间戳文本仍只展示、不参与高亮。
+- 版本化 JSON 备份，包含收藏、自建歌单和当前队列；支持分享导出、粘贴导入，默认合并，覆盖导入需要二次确认，并限制为安全的元数据字段。
+- 酷狗与哔哩哔哩播放主链，以及 QQ 音乐歌词；QQ 匿名播放仍不可用，酷我播放仍需 Cookie/Secret。
+- 播放器队列按事务语义处理：provider 解析和原生加载成功后才切换并消费待播项，失败时保留队列。
 - 固定、受控的 provider 网络契约；不接受页面传入的任意 URL、header、Cookie 或 token。
 
 旧 [`android/`](android/) WebView 工程暂时保留为迁移参考，不是新版发布入口。
-当前状态是开发中，还不能宣称与桌面端功能完全等价。
+新 canonical 入口是 [`mobile/`](mobile/)；当前状态仍是开发中，还不能宣称与桌面端功能完全等价。
+
+第二批源码验证结果：格式检查、TypeScript 和 ESLint 通过；Jest 为 7 suites、40 tests
+全部通过；Metro Android production bundle 成功，大小为 1,456,166 bytes，包含 19 assets。
+尚未生成 APK，也未完成模拟器端到端验收。原生 compile-only 因访问
+`plugins.gradle.org` 时 TLS 握手失败而 `not verified`，不能据此声称 Kotlin/Java 编译通过。
 
 ## 使用提示
 
@@ -252,7 +261,10 @@ listen2/
 - 逐词高亮需要歌词源提供逐词时间戳；普通 LRC 只能可靠地逐行同步。
 - 机器翻译需要用户自行配置 DeepSeek API 密钥并明确同意；React Native Android 版尚未接入该能力。
 - Electron 桌面离线缓存只覆盖已成功播放并完整缓存的 Bilibili 音频；React Native Android 版尚未实现离线下载。
-- React Native Android 版的多来源高级能力、登录、MV、PiP、音效、可视化和响度分析仍在迁移；当前不对这些能力做完成声明。
+- React Native Android 版的登录、MV、PiP、音效、可视化、响度分析和离线下载仍在迁移；当前不对这些能力做完成声明。
+- 网易公开歌单详情的本次样本只返回 10 首歌曲，而摘要显示 35 首；这是公开接口样本限制，不代表完整歌单已验证。
+- QQ 匿名播放仍不可用；酷我播放仍需 Cookie/Secret，不能以匿名搜索成功推断可播放。
+- 第二批尚未生成 APK，也未完成模拟器端到端验收；原生 compile-only 因 `plugins.gradle.org` TLS 握手失败而 `not verified`，Kotlin/Java 编译状态未确认。
 - 响度分析器会把解码器支持的来源采样率统一重采样到 48 kHz 分析域；超过时长或资源限制、无法解码的完整 Bilibili 缓存保持原音量。
 
 ## 贡献

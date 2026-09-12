@@ -2,8 +2,11 @@ import type {
   BootstrapTrack,
   Lyric,
   PlaylistDetail,
+  PlaylistSummary,
   ProviderRequestOptions,
   SearchPage,
+  SearchKind,
+  SearchRequestOptions,
   SourceId,
   Track,
 } from '../types';
@@ -23,7 +26,7 @@ interface ProviderAdapter {
   search(
     query: string,
     page: number,
-    options?: ProviderRequestOptions,
+    options?: SearchRequestOptions,
   ): Promise<SearchPage>;
 }
 
@@ -129,6 +132,22 @@ function neteasePlaylistProviderId(value: string): string | null {
   return match ? match[1] : null;
 }
 
+function requestedSearchKind(
+  source: SourceId,
+  options?: SearchRequestOptions,
+): SearchKind {
+  const kind = options?.kind ?? 'track';
+  if (kind !== 'track' && kind !== 'playlist') {
+    throw new ProviderClientError('INVALID_REQUEST', source, 'search', {
+      retryable: false,
+    });
+  }
+  if (kind === 'playlist' && source !== 'netease') {
+    throw unavailable(source, 'search', 'ROUTE_UNAVAILABLE');
+  }
+  return kind;
+}
+
 function neteaseTrack(value: unknown): Track | null {
   const row = asObject(value);
   const id = positive(row?.id);
@@ -170,7 +189,7 @@ function secondsToMs(value: unknown): number | undefined {
     : undefined;
 }
 
-function page(
+function trackPage(
   source: SourceId,
   query: string,
   pageNumber: number,
@@ -182,7 +201,25 @@ function page(
     query,
     page: pageNumber,
     total: Math.max(tracks.length, positive(total) ?? tracks.length),
-    tracks,
+    kind: 'track',
+    results: tracks.map(track => ({ kind: 'track', track })),
+  };
+}
+
+function playlistPage(
+  source: SourceId,
+  query: string,
+  pageNumber: number,
+  total: unknown,
+  playlists: PlaylistSummary[],
+): SearchPage {
+  return {
+    source,
+    query,
+    page: pageNumber,
+    total: Math.max(playlists.length, positive(total) ?? playlists.length),
+    kind: 'playlist',
+    results: playlists.map(playlist => ({ kind: 'playlist', playlist })),
   };
 }
 
@@ -193,9 +230,10 @@ function invalidResponse(source: SourceId): never {
 const netease: ProviderAdapter = {
   async search(query, pageNumber, options) {
     const value = checkedSearchInput('netease', query, pageNumber);
+    const kind = requestedSearchKind('netease', options);
     const params = new URLSearchParams({
       s: value,
-      type: '1',
+      type: kind === 'playlist' ? '1000' : '1',
       offset: String((pageNumber - 1) * PAGE_SIZE),
       limit: String(PAGE_SIZE),
     });
@@ -208,6 +246,34 @@ const netease: ProviderAdapter = {
       ),
     );
     const result = asObject(data?.result);
+    if (kind === 'playlist') {
+      const rows = result?.playlists;
+      if (!Array.isArray(rows) || rows.length > MAX_ROWS)
+        invalidResponse('netease');
+      const playlists = rows.flatMap((entry): PlaylistSummary[] => {
+        const row = asObject(entry);
+        const id = positive(row?.id);
+        const title = text(row?.name);
+        if (!id || !title) return [];
+        return [
+          {
+            id: `neplaylist_${id}`,
+            source: 'netease',
+            title,
+            author: text(asObject(row?.creator)?.nickname) ?? undefined,
+            trackCount: positive(row?.trackCount),
+            artworkUrl: safeArtwork(row?.coverImgUrl),
+          },
+        ];
+      });
+      return playlistPage(
+        'netease',
+        value,
+        pageNumber,
+        result?.playlistCount,
+        playlists,
+      );
+    }
     const songs = result?.songs;
     if (!Array.isArray(songs) || songs.length > MAX_ROWS)
       invalidResponse('netease');
@@ -231,7 +297,7 @@ const netease: ProviderAdapter = {
         },
       ];
     });
-    return page('netease', value, pageNumber, result?.songCount, tracks);
+    return trackPage('netease', value, pageNumber, result?.songCount, tracks);
   },
 };
 
@@ -423,6 +489,7 @@ export async function getQqLyric(
 const bilibili: ProviderAdapter = {
   async search(query, pageNumber, options) {
     const value = checkedSearchInput('bilibili', query, pageNumber);
+    requestedSearchKind('bilibili', options);
     const params = new URLSearchParams({
       search_type: 'video',
       page: String(pageNumber),
@@ -464,7 +531,7 @@ const bilibili: ProviderAdapter = {
         },
       ];
     });
-    return page('bilibili', value, pageNumber, data?.numResults, tracks);
+    return trackPage('bilibili', value, pageNumber, data?.numResults, tracks);
   },
 };
 
@@ -604,6 +671,7 @@ export async function bootstrapBilibiliTrack(
 const qq: ProviderAdapter = {
   async search(query, pageNumber, options) {
     const value = checkedSearchInput('qq', query, pageNumber);
+    requestedSearchKind('qq', options);
     const body = JSON.stringify({
       comm: { ct: '19', cv: '1859', uin: '0' },
       req: {
@@ -648,13 +716,20 @@ const qq: ProviderAdapter = {
         },
       ];
     });
-    return page('qq', value, pageNumber, asObject(result?.meta)?.sum, tracks);
+    return trackPage(
+      'qq',
+      value,
+      pageNumber,
+      asObject(result?.meta)?.sum,
+      tracks,
+    );
   },
 };
 
 const kugou: ProviderAdapter = {
   async search(query, pageNumber, options) {
     const value = checkedSearchInput('kugou', query, pageNumber);
+    requestedSearchKind('kugou', options);
     const params = new URLSearchParams({
       keyword: value,
       page: String(pageNumber),
@@ -688,13 +763,14 @@ const kugou: ProviderAdapter = {
         },
       ];
     });
-    return page('kugou', value, pageNumber, data?.total, tracks);
+    return trackPage('kugou', value, pageNumber, data?.total, tracks);
   },
 };
 
 const kuwo: ProviderAdapter = {
   async search(query, pageNumber, options) {
     const value = checkedSearchInput('kuwo', query, pageNumber);
+    requestedSearchKind('kuwo', options);
     const params = new URLSearchParams({
       vipver: '1',
       client: 'kt',
@@ -740,7 +816,7 @@ const kuwo: ProviderAdapter = {
         },
       ];
     });
-    return page('kuwo', value, pageNumber, Number(root?.HIT), tracks);
+    return trackPage('kuwo', value, pageNumber, Number(root?.HIT), tracks);
   },
 };
 

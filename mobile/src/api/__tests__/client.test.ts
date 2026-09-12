@@ -40,15 +40,19 @@ describe('providerClient', () => {
       query: 'hello world',
       page: 2,
       total: 1,
-      tracks: [
+      kind: 'track',
+      results: [
         {
-          id: 'netrack_42',
-          source: 'netease',
-          title: 'Song',
-          artist: 'Artist',
-          album: 'Album',
-          durationMs: 123000,
-          artworkUrl: 'https://img.example/cover.jpg',
+          kind: 'track',
+          track: {
+            id: 'netrack_42',
+            source: 'netease',
+            title: 'Song',
+            artist: 'Artist',
+            album: 'Album',
+            durationMs: 123000,
+            artworkUrl: 'https://img.example/cover.jpg',
+          },
         },
       ],
     });
@@ -59,6 +63,59 @@ describe('providerClient', () => {
     expect((globalThis.fetch as jest.Mock).mock.calls[0][0]).toContain(
       's=hello+world',
     );
+  });
+
+  it('uses the fixed public NetEase playlist search route and returns a discriminated summary', async () => {
+    globalThis.fetch = jest.fn().mockResolvedValue(
+      jsonResponse({
+        result: {
+          playlistCount: 1,
+          playlists: [
+            {
+              id: 77,
+              name: 'My playlist',
+              coverImgUrl: 'https://img.example/playlist.jpg',
+              trackCount: 12,
+              creator: { nickname: 'Creator' },
+            },
+          ],
+        },
+      }),
+    );
+
+    await expect(
+      providerClient.search('netease', 'hello world', 2, {
+        kind: 'playlist',
+      }),
+    ).resolves.toEqual({
+      source: 'netease',
+      query: 'hello world',
+      page: 2,
+      total: 1,
+      kind: 'playlist',
+      results: [
+        {
+          kind: 'playlist',
+          playlist: {
+            id: 'neplaylist_77',
+            source: 'netease',
+            title: 'My playlist',
+            artworkUrl: 'https://img.example/playlist.jpg',
+            trackCount: 12,
+            author: 'Creator',
+          },
+        },
+      ],
+    });
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('https://music.163.com/api/search/get/web?'),
+      expect.objectContaining({ method: 'GET' }),
+    );
+    const url = (globalThis.fetch as jest.Mock).mock.calls[0][0] as string;
+    expect(url).toContain('type=1000');
+    expect(url).toContain('s=hello+world');
+    expect(url).toContain('offset=20');
+    expect(url).toContain('limit=20');
   });
 
   it('uses the Android-proven Bilibili search query and removes display markup', async () => {
@@ -84,11 +141,14 @@ describe('providerClient', () => {
       providerClient.search('bilibili', 'live', 1),
     ).resolves.toMatchObject({
       source: 'bilibili',
-      tracks: [
+      results: [
         expect.objectContaining({
-          id: 'bitrack_v_BV1xx411c7mD',
-          title: 'Live Song',
-          durationMs: 182000,
+          kind: 'track',
+          track: expect.objectContaining({
+            id: 'bitrack_v_BV1xx411c7mD',
+            title: 'Live Song',
+            durationMs: 182000,
+          }),
         }),
       ],
     });
@@ -167,15 +227,19 @@ describe('providerClient', () => {
       query: '晴天',
       page: 2,
       total: 1,
-      tracks: [
+      kind: 'track',
+      results: [
         {
-          id: 'kwtrack_228908',
-          source: 'kuwo',
-          title: '晴天',
-          artist: '周杰伦',
-          album: '叶惠美',
-          durationMs: 269000,
-          artworkUrl: 'https://img3.kuwo.cn/cover.jpg',
+          kind: 'track',
+          track: {
+            id: 'kwtrack_228908',
+            source: 'kuwo',
+            title: '晴天',
+            artist: '周杰伦',
+            album: '叶惠美',
+            durationMs: 269000,
+            artworkUrl: 'https://img3.kuwo.cn/cover.jpg',
+          },
         },
       ],
     });
@@ -223,10 +287,20 @@ describe('providerClient', () => {
       .mockResolvedValueOnce(jsonResponse(qqPayload))
       .mockResolvedValueOnce(jsonResponse(kugouPayload));
     await expect(providerClient.search('qq', 'qq')).resolves.toMatchObject({
-      tracks: [expect.objectContaining({ id: 'qqtrack_qq-mid' })],
+      results: [
+        expect.objectContaining({
+          kind: 'track',
+          track: expect.objectContaining({ id: 'qqtrack_qq-mid' }),
+        }),
+      ],
     });
     await expect(providerClient.search('kugou', 'kg')).resolves.toMatchObject({
-      tracks: [expect.objectContaining({ id: 'kgtrack_AABBCCDDEEFF0011' })],
+      results: [
+        expect.objectContaining({
+          kind: 'track',
+          track: expect.objectContaining({ id: 'kgtrack_AABBCCDDEEFF0011' }),
+        }),
+      ],
     });
     expect((globalThis.fetch as jest.Mock).mock.calls[0][0]).toBe(
       'https://u.y.qq.com/cgi-bin/musicu.fcg',
@@ -451,6 +525,16 @@ describe('providerClient', () => {
   });
 
   it('keeps unproven playback, playlist, and lyric transports closed', async () => {
+    globalThis.fetch = jest.fn();
+    for (const source of ['qq', 'kugou', 'kuwo', 'bilibili'] as const) {
+      await expect(
+        providerClient.search(source, 'playlist', 1, { kind: 'playlist' }),
+      ).rejects.toMatchObject({
+        code: 'ROUTE_UNAVAILABLE',
+        source,
+        operation: 'search',
+      });
+    }
     await expect(
       providerClient.bootstrapTrack({
         id: 'qqtrack_001',
@@ -471,5 +555,6 @@ describe('providerClient', () => {
     expect(
       new ProviderClientError('NETWORK_ERROR', 'qq', 'search').action,
     ).toBe('retry');
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });

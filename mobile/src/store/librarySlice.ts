@@ -6,8 +6,10 @@ const MAX_RECENT_TRACKS = 200;
 export type LibraryState = {
   favorites: Track[];
   recentTracks: Track[];
-  playlists: { id: string; title: string; tracks: Track[] }[];
+  playlists: LibraryPlaylist[];
 };
+
+export type LibraryPlaylist = { id: string; title: string; tracks: Track[] };
 
 const initialState: LibraryState = {
   favorites: [],
@@ -40,6 +42,21 @@ const librarySlice = createSlice({
     },
     clearRecent(state) {
       state.recentTracks = [];
+    },
+    restoreLibrary(
+      state,
+      action: PayloadAction<{
+        favorites: Track[];
+        playlists: LibraryPlaylist[];
+      }>,
+    ) {
+      // Backup validation happens before this action is dispatched.  Copy the
+      // arrays so the persisted slice never retains references to modal state.
+      state.favorites = action.payload.favorites.slice();
+      state.playlists = action.payload.playlists.map(playlist => ({
+        ...playlist,
+        tracks: playlist.tracks.slice(),
+      }));
     },
     createPlaylist(
       state,
@@ -91,6 +108,7 @@ export const {
   deletePlaylist,
   recordRecent,
   removeTrackFromPlaylist,
+  restoreLibrary,
   toggleFavorite,
 } = librarySlice.actions;
 export default librarySlice.reducer;

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   Pressable,
@@ -16,14 +16,16 @@ import {
   toggleFavorite,
 } from '../store/librarySlice';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import type { Track } from '../types/music';
+import type { PlaylistDetail, Track } from '../types/music';
 import * as playerActions from '../store/playerSlice';
 import { colors, spacing, text } from '../theme';
 import { providerLabels } from '../components/SourceTabs';
 import { TrackRow, type PresentableTrack } from '../components/TrackRow';
 import { ScreenLayout, sectionStyles } from './ScreenLayout';
-import { PROVIDER_CAPABILITIES } from '../api/client';
+import { PROVIDER_CAPABILITIES, providerClient } from '../api/client';
 import { Sheet } from '../components/Sheet';
+
+type RemotePlaylistStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 export function PlaylistDetailScreen() {
   const route = useRoute<any>();
@@ -33,6 +35,7 @@ export function PlaylistDetailScreen() {
     title,
     sourceId,
     tracks = [],
+    remotePlaylistId,
     libraryPlaylistId,
     libraryCollection,
   } = route.params || {};
@@ -41,8 +44,14 @@ export function PlaylistDetailScreen() {
     (state: RootState) => state.library.recentTracks,
   );
   const playlists = useSelector((state: RootState) => state.library.playlists);
+  const [remoteDetail, setRemoteDetail] = useState<PlaylistDetail | null>(null);
+  const [remoteStatus, setRemoteStatus] = useState<RemotePlaylistStatus>(
+    remotePlaylistId ? 'loading' : 'idle',
+  );
   const playableTracks = (
-    libraryPlaylistId
+    remotePlaylistId
+      ? remoteDetail?.tracks ?? []
+      : libraryPlaylistId
       ? playlists.find(item => item.id === libraryPlaylistId)?.tracks ?? []
       : libraryCollection === 'favorites'
       ? favorites
@@ -51,7 +60,41 @@ export function PlaylistDetailScreen() {
       : tracks
   ) as PresentableTrack[];
   const [addTarget, setAddTarget] = useState<Track | null>(null);
-  const play = (track: PresentableTrack) => {
+  const loadRemotePlaylist = useCallback(
+    async (signal: AbortSignal) => {
+      if (!remotePlaylistId || sourceId === 'local') return;
+      setRemoteStatus('loading');
+      try {
+        const detail = await providerClient.getPlaylist(remotePlaylistId, {
+          signal,
+        });
+        if (signal.aborted) return;
+        setRemoteDetail(detail);
+        setRemoteStatus('ready');
+      } catch {
+        if (signal.aborted) return;
+        setRemoteStatus('error');
+      }
+    },
+    [remotePlaylistId, sourceId],
+  );
+  useEffect(() => {
+    if (!remotePlaylistId || sourceId === 'local') return;
+    const controller = new AbortController();
+    loadRemotePlaylist(controller.signal);
+    return () => controller.abort();
+  }, [loadRemotePlaylist, remotePlaylistId, sourceId]);
+  const retryRemotePlaylist = () => {
+    const controller = new AbortController();
+    loadRemotePlaylist(controller.signal);
+  };
+  const play = (track: PresentableTrack, index: number) => {
+    const playTracks = (playerActions as any).playTracks;
+    if (playTracks) {
+      dispatch(playTracks(playableTracks as Track[], index));
+      navigation.navigate('Player');
+      return;
+    }
     const action =
       (playerActions as any).playTrack ||
       (playerActions as any).setCurrentTrack ||
@@ -59,10 +102,21 @@ export function PlaylistDetailScreen() {
     if (action) dispatch(action(track as Track));
     navigation.navigate('Player');
   };
+  const playAll = () => {
+    const index = playableTracks.findIndex(
+      track => PROVIDER_CAPABILITIES[track.source].playback,
+    );
+    if (index >= 0) play(playableTracks[index], index);
+  };
+  const hasPlayableTrack = playableTracks.some(
+    track => PROVIDER_CAPABILITIES[track.source].playback,
+  );
+  const detailTitle = remoteDetail?.title || title || '音乐详情';
+  const displaySource = remoteDetail?.source || sourceId;
   return (
     <ScreenLayout
-      subtitle={providerLabels[sourceId] || sourceId}
-      title={title || '音乐详情'}
+      subtitle={providerLabels[displaySource] || displaySource}
+      title={detailTitle}
     >
       <Pressable
         accessibilityLabel="返回上一页"
@@ -76,15 +130,35 @@ export function PlaylistDetailScreen() {
           <Text style={styles.coverNote}>♫</Text>
         </View>
         <View style={styles.summaryCopy}>
-          <Text style={text.heading}>{title || '音乐详情'}</Text>
+          <Text style={text.heading}>{detailTitle}</Text>
           <Text style={text.meta}>
-            {providerLabels[sourceId] || sourceId} ·{' '}
+            {providerLabels[displaySource] || displaySource} ·{' '}
             {playableTracks.length
               ? `${playableTracks.length} 首歌曲`
+              : remoteStatus === 'loading'
+              ? '正在加载歌单'
               : '歌曲详情'}
           </Text>
         </View>
       </View>
+      {remoteStatus === 'loading' ? (
+        <View accessibilityLabel="正在加载远程歌单" style={styles.remoteState}>
+          <Text style={text.meta}>正在加载歌单歌曲…</Text>
+        </View>
+      ) : null}
+      {remoteStatus === 'error' ? (
+        <View style={[sectionStyles.card, styles.remoteState]}>
+          <Text style={text.heading}>暂时无法加载这个歌单</Text>
+          <Text style={text.meta}>请检查网络后重试，或返回搜索结果。</Text>
+          <Pressable
+            accessibilityLabel="重试加载歌单"
+            onPress={retryRemotePlaylist}
+            style={sectionStyles.button}
+          >
+            <Text style={sectionStyles.buttonText}>重试</Text>
+          </Pressable>
+        </View>
+      ) : null}
       {libraryPlaylistId ? (
         <Pressable
           accessibilityLabel="删除当前歌单"
@@ -108,6 +182,15 @@ export function PlaylistDetailScreen() {
       ) : null}
       {playableTracks.length ? (
         <View>
+          {hasPlayableTrack ? (
+            <Pressable
+              accessibilityLabel="播放全部歌曲"
+              onPress={playAll}
+              style={[sectionStyles.button, styles.playAll]}
+            >
+              <Text style={sectionStyles.buttonText}>▶ 播放全部</Text>
+            </Pressable>
+          ) : null}
           {playableTracks.map((track, index) => {
             const favorite = favorites.some(
               item => item.id === track.id && item.source === track.source,
@@ -116,8 +199,8 @@ export function PlaylistDetailScreen() {
             return (
               <View key={`${track.id || index}`} style={styles.trackBlock}>
                 <TrackRow
-                  onPlay={canPlay ? () => play(track) : undefined}
-                  onPress={canPlay ? () => play(track) : undefined}
+                  onPlay={canPlay ? () => play(track, index) : undefined}
+                  onPress={canPlay ? () => play(track, index) : undefined}
                   track={track}
                 />
                 <View style={styles.trackActions}>
@@ -161,14 +244,14 @@ export function PlaylistDetailScreen() {
             );
           })}
         </View>
-      ) : (
+      ) : remoteStatus !== 'loading' && remoteStatus !== 'error' ? (
         <View style={[sectionStyles.card, styles.empty]}>
           <Text style={text.heading}>暂无可展示的歌曲</Text>
           <Text style={text.meta}>
             这个详情没有返回可播放的歌曲。请返回搜索结果或选择其他来源。
           </Text>
         </View>
-      )}
+      ) : null}
       <Sheet
         onClose={() => setAddTarget(null)}
         title="加入歌单"
@@ -228,6 +311,8 @@ const styles = StyleSheet.create({
   coverNote: { color: colors.muted, fontSize: 30 },
   summaryCopy: { flex: 1, gap: spacing.sm },
   empty: { gap: spacing.sm, minHeight: 140, justifyContent: 'center' },
+  remoteState: { gap: spacing.sm, minHeight: 72, justifyContent: 'center' },
+  playAll: { alignSelf: 'flex-start', marginBottom: spacing.sm },
   trackBlock: { position: 'relative', paddingBottom: spacing.sm },
   favorite: {
     alignSelf: 'flex-end',

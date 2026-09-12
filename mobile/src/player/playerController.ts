@@ -205,36 +205,32 @@ async function transition(
     appendToPlaylist?: boolean;
   },
 ) {
-  const previousTrack = playerState().nowPlaying;
   let media: BootstrapTrack;
   try {
     media = await resolveTrackUrl(payload.track);
   } catch (error) {
-    if (!previousTrack) {
-      if (payload.appendToPlaylist)
-        emit(dispatch, 'player/appendPlaylistTrack', payload.track);
-      emit(dispatch, 'player/activateTrack', payload);
-      emit(
-        dispatch,
-        'player/setError',
-        error instanceof Error ? error.message : 'playback-unavailable',
-      );
-    }
+    emit(
+      dispatch,
+      'player/setError',
+      error instanceof Error ? error.message : 'playback-unavailable',
+    );
     return false;
   }
-  if (payload.appendToPlaylist)
-    emit(dispatch, 'player/appendPlaylistTrack', payload.track);
-  emit(dispatch, 'player/activateTrack', payload);
-  if (payload.consumePlayNext) emit(dispatch, 'player/consumeQueuedNext');
-  if (payload.consumePlayNextIndex !== undefined)
-    emit(dispatch, 'player/removeQueuedNext', payload.consumePlayNextIndex);
   const started = await loadAndPlay(
     dispatch,
     payload.track,
     payload.position || 0,
     media,
   );
-  if (started) emit(dispatch, 'library/recordRecent', payload.track);
+  if (started) {
+    if (payload.appendToPlaylist)
+      emit(dispatch, 'player/appendPlaylistTrack', payload.track);
+    emit(dispatch, 'player/activateTrack', payload);
+    if (payload.consumePlayNext) emit(dispatch, 'player/consumeQueuedNext');
+    if (payload.consumePlayNextIndex !== undefined)
+      emit(dispatch, 'player/removeQueuedNext', payload.consumePlayNextIndex);
+    emit(dispatch, 'library/recordRecent', payload.track);
+  }
   return started;
 }
 
@@ -350,16 +346,11 @@ class PlayerController {
       );
       return;
     }
-    emit(dispatch, 'player/replacePlaylist', { tracks, startIndex });
-    const state = playerState();
-    if (!state.nowPlaying) return;
-    const started = await loadAndPlay(
-      dispatch,
-      state.nowPlaying,
-      state.position,
-      media,
-    );
-    if (started) emit(dispatch, 'library/recordRecent', state.nowPlaying);
+    const started = await loadAndPlay(dispatch, target, 0, media);
+    if (started) {
+      emit(dispatch, 'player/replacePlaylist', { tracks, startIndex });
+      emit(dispatch, 'library/recordRecent', target);
+    }
   }
 
   async next(dispatch?: Dispatch) {
@@ -416,8 +407,13 @@ class PlayerController {
       );
       return;
     }
-    emit(dispatch, 'player/restoreHistory', { entry, remaining });
-    await loadAndPlay(dispatch, entry.track, entry.position, media);
+    const started = await loadAndPlay(
+      dispatch,
+      entry.track,
+      entry.position,
+      media,
+    );
+    if (started) emit(dispatch, 'player/restoreHistory', { entry, remaining });
   }
 
   async seek(dispatch: Dispatch | undefined, position: number) {

@@ -9,7 +9,13 @@ import {
 } from 'react-native';
 import { useDispatch } from 'react-redux';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import type { SearchPage, SourceId, Track } from '../types/music';
+import type {
+  SearchKind,
+  SearchPage,
+  SearchResult,
+  SourceId,
+  Track,
+} from '../types/music';
 import { PROVIDER_CAPABILITIES, providerClient } from '../api/client';
 import * as playerActions from '../store/playerSlice';
 import { colors, spacing, text } from '../theme';
@@ -34,7 +40,8 @@ export function SearchScreen() {
     route.params?.sourceId || ('netease' as SourceId),
   );
   const [query, setQuery] = useState(route.params?.query || '');
-  const [items, setItems] = useState<PresentableTrack[]>([]);
+  const [searchKind, setSearchKind] = useState<SearchKind>('track');
+  const [items, setItems] = useState<SearchResult[]>([]);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [status, setStatus] = useState<SearchStatus>('guide');
@@ -47,6 +54,7 @@ export function SearchScreen() {
       nextPage = 1,
       requestedSource = sourceId,
       requestedQuery = query,
+      requestedKind = searchKind,
     ) => {
       const trimmed = requestedQuery.trim();
       if (!trimmed) {
@@ -65,9 +73,10 @@ export function SearchScreen() {
           trimmed,
           nextPage,
           controller.signal,
+          requestedKind,
         );
         if (epoch !== requestEpoch.current) return;
-        const resultItems = normalizedItems(response, requestedSource);
+        const resultItems = response.results;
         const previousCount = nextPage === 1 ? 0 : items.length;
         const uniqueItems =
           nextPage === 1
@@ -96,7 +105,7 @@ export function SearchScreen() {
           setStatus(controller.signal.aborted ? 'cancelled' : 'error');
       }
     },
-    [items, query, sourceId],
+    [items, query, searchKind, sourceId],
   );
 
   useEffect(() => {
@@ -124,6 +133,15 @@ export function SearchScreen() {
     requestController.current?.abort();
     requestEpoch.current += 1;
     setStatus('cancelled');
+  };
+  const selectSearchKind = (kind: SearchKind) => {
+    requestController.current?.abort();
+    requestEpoch.current += 1;
+    setSearchKind(kind);
+    setItems([]);
+    setPage(1);
+    setHasMore(false);
+    setStatus('guide');
   };
   const play = (track: PresentableTrack) => {
     const creator =
@@ -172,6 +190,46 @@ export function SearchScreen() {
         </Pressable>
       </View>
       <SourceTabs onChange={selectSource} value={sourceId} />
+      <View accessibilityRole="tablist" style={styles.kindTabs}>
+        <Pressable
+          accessibilityLabel="搜索歌曲"
+          accessibilityRole="tab"
+          accessibilityState={{ selected: searchKind === 'track' }}
+          onPress={() => selectSearchKind('track')}
+          style={[
+            styles.kindTab,
+            searchKind === 'track' && styles.kindSelected,
+          ]}
+        >
+          <Text
+            style={[
+              styles.kindText,
+              searchKind === 'track' && styles.kindSelectedText,
+            ]}
+          >
+            歌曲
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityLabel="搜索歌单"
+          accessibilityRole="tab"
+          accessibilityState={{ selected: searchKind === 'playlist' }}
+          onPress={() => selectSearchKind('playlist')}
+          style={[
+            styles.kindTab,
+            searchKind === 'playlist' && styles.kindSelected,
+          ]}
+        >
+          <Text
+            style={[
+              styles.kindText,
+              searchKind === 'playlist' && styles.kindSelectedText,
+            ]}
+          >
+            歌单
+          </Text>
+        </Pressable>
+      </View>
       {status === 'loading' || status === 'loadingMore' ? (
         <View style={styles.loadingLine}>
           <ActivityIndicator color={colors.accent} />
@@ -194,13 +252,14 @@ export function SearchScreen() {
       <SearchSurface
         items={items}
         onPlay={play}
-        onSelect={track =>
+        onSelectPlaylist={playlist =>
           navigation.navigate('PlaylistDetail', {
-            sourceId: (track.sourceId || sourceId) as SourceId,
-            title: track.title || track.name || '音乐详情',
-            tracks: [track],
+            sourceId: playlist.source,
+            title: playlist.title,
+            remotePlaylistId: playlist.id,
           })
         }
+        searchKind={searchKind}
         sourceId={sourceId}
         status={status}
       />
@@ -221,20 +280,29 @@ function SearchSurface({
   status,
   sourceId,
   items,
-  onSelect,
+  searchKind,
+  onSelectPlaylist,
   onPlay,
 }: {
   status: SearchStatus;
   sourceId: SourceId;
-  items: PresentableTrack[];
-  onSelect: (track: PresentableTrack) => void;
+  searchKind: SearchKind;
+  items: SearchResult[];
+  onSelectPlaylist: (
+    playlist: Extract<SearchResult, { kind: 'playlist' }>['playlist'],
+  ) => void;
   onPlay: (track: PresentableTrack) => void;
 }) {
   if (status === 'guide')
     return (
       <View style={[sectionStyles.card, styles.state]}>
         <Text style={text.heading}>开始搜索</Text>
-        <Text style={text.meta}>输入关键词后选择来源，结果会显示在这里。</Text>
+        <Text style={text.meta}>
+          {searchKind === 'playlist' &&
+          !PROVIDER_CAPABILITIES[sourceId].playlistSearch
+            ? `${providerLabels[sourceId]}暂不提供经过验证的公开歌单搜索。`
+            : '输入关键词后选择来源，结果会显示在这里。'}
+        </Text>
       </View>
     );
   if (status === 'loading' && !items.length)
@@ -273,18 +341,49 @@ function SearchSurface({
     );
   return (
     <View>
-      {items.map((track, index) => (
-        <TrackRow
-          key={`${identity(track)}-${index}`}
-          onPlay={
-            PROVIDER_CAPABILITIES[sourceOf(track)].playback
-              ? () => onPlay(track)
-              : undefined
-          }
-          onPress={() => onSelect(track)}
-          track={track}
-        />
-      ))}
+      {items.map((item, index) =>
+        item.kind === 'track' ? (
+          <TrackRow
+            key={`${identity(item)}-${index}`}
+            onPlay={
+              PROVIDER_CAPABILITIES[item.track.source].playback
+                ? () => onPlay(item.track)
+                : undefined
+            }
+            onPress={
+              PROVIDER_CAPABILITIES[item.track.source].playback
+                ? () => onPlay(item.track)
+                : undefined
+            }
+            track={item.track}
+          />
+        ) : (
+          <Pressable
+            accessibilityLabel={`打开歌单${item.playlist.title}`}
+            key={`${identity(item)}-${index}`}
+            onPress={() => onSelectPlaylist(item.playlist)}
+            style={[sectionStyles.card, styles.playlistResult]}
+          >
+            <View style={styles.playlistMark}>
+              <Text style={styles.playlistMarkText}>♫</Text>
+            </View>
+            <View style={styles.playlistCopy}>
+              <Text style={text.body}>{item.playlist.title}</Text>
+              <Text style={text.meta}>
+                {[
+                  item.playlist.author,
+                  item.playlist.trackCount
+                    ? `${item.playlist.trackCount} 首`
+                    : undefined,
+                ]
+                  .filter(Boolean)
+                  .join(' · ') || providerLabels[item.playlist.source]}
+              </Text>
+            </View>
+            <Text style={styles.playlistArrow}>›</Text>
+          </Pressable>
+        ),
+      )}
     </View>
   );
 }
@@ -294,36 +393,14 @@ async function searchProvider(
   query: string,
   page: number,
   signal: AbortSignal,
-): Promise<SearchPage | unknown> {
-  const client: any = providerClient as any;
-  if (typeof client.search === 'function')
-    return client.search(sourceId, query, page, { signal });
-  if (typeof client.searchTracks === 'function')
-    return client.searchTracks({ sourceId, query, page });
-  if (client.providers?.[sourceId]?.search)
-    return client.providers[sourceId].search({ query, page });
-  throw new Error('Search capability is unavailable');
+  kind: SearchKind,
+): Promise<SearchPage> {
+  return providerClient.search(sourceId, query, page, { signal, kind });
 }
-
-function normalizedItems(result: any, sourceId: SourceId): PresentableTrack[] {
-  const records =
-    result?.tracks || result?.items || result?.results || result?.data || [];
-  return Array.isArray(records)
-    ? records.map((record: any) => ({
-        ...record,
-        sourceId: record.sourceId || record.source || sourceId,
-      }))
-    : [];
-}
-function identity(track: PresentableTrack) {
-  return String(
-    track.id ||
-      (track as any).trackId ||
-      `${track.sourceId}:${track.title || track.name}`,
-  );
-}
-function sourceOf(track: PresentableTrack): SourceId {
-  return (track.sourceId || track.source || 'netease') as SourceId;
+function identity(item: SearchResult) {
+  return item.kind === 'track'
+    ? `track:${item.track.source}:${item.track.id}`
+    : `playlist:${item.playlist.source}:${item.playlist.id}`;
 }
 
 const styles = StyleSheet.create({
@@ -373,7 +450,39 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   cancelText: { color: colors.accent, fontSize: 12 },
+  kindTabs: { flexDirection: 'row', gap: spacing.sm },
+  kindTab: {
+    minHeight: 40,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  kindSelected: {
+    backgroundColor: colors.accentSoft,
+    borderColor: colors.accent,
+  },
+  kindText: { ...text.meta, color: colors.muted },
+  kindSelectedText: { color: colors.text, fontWeight: '600' },
   skeletons: { gap: spacing.sm },
   skeleton: { height: 76, borderRadius: 12, backgroundColor: colors.surface },
   state: { gap: spacing.sm, minHeight: 132, justifyContent: 'center' },
+  playlistResult: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  playlistMark: {
+    width: 48,
+    height: 48,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.placeholder,
+  },
+  playlistMarkText: { color: colors.muted, fontSize: 22 },
+  playlistCopy: { flex: 1, gap: spacing.xs },
+  playlistArrow: { color: colors.muted, fontSize: 28 },
 });

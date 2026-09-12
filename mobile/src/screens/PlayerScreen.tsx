@@ -1,4 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   Image,
   Pressable,
@@ -26,6 +32,7 @@ import { providerClient } from '../api/client';
 import { toggleFavorite } from '../store/librarySlice';
 import type { Track } from '../types/music';
 import type { Lyric } from '../types/provider';
+import { findActiveLyricIndex, parseLyricTimeline } from '../lyrics/timeline';
 
 export function PlayerScreen() {
   const navigation = useNavigation<any>();
@@ -220,6 +227,7 @@ export function PlayerScreen() {
         loading={lyricsLoading}
         unavailable={lyricsUnavailable}
         visible={showLyrics}
+        position={state.position ?? state.progress ?? 0}
         onClose={() => setShowLyrics(false)}
       />
     </View>
@@ -304,6 +312,7 @@ function LyricsSheet({
   lyrics,
   loading,
   unavailable,
+  position,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -311,12 +320,38 @@ function LyricsSheet({
   lyrics: Lyric | null;
   loading: boolean;
   unavailable: boolean;
+  position: number;
 }) {
-  const lines = toLines(lyrics?.text);
-  const translationLines = toLines(lyrics?.translation);
+  const lines = useMemo(
+    () => parseLyricTimeline(lyrics?.text, lyrics?.translation),
+    [lyrics?.text, lyrics?.translation],
+  );
+  const activeIndex = findActiveLyricIndex(lines, playbackPositionMs(position));
+  const scrollView = useRef<React.ComponentRef<typeof ScrollView>>(null);
+  const lineOffsets = useRef<Record<number, number>>({});
+  const scrollToLine = useCallback((index: number) => {
+    const offset = lineOffsets.current[index];
+    if (offset === undefined) return;
+    scrollView.current?.scrollTo({
+      y: Math.max(0, offset - 120),
+      animated: true,
+    });
+  }, []);
+
+  useEffect(() => {
+    // Layout coordinates belong to the previous lyric document after a track
+    // change, so never reuse them for the next request's timeline.
+    lineOffsets.current = {};
+  }, [lines]);
+
+  useEffect(() => {
+    if (!visible || activeIndex < 0) return;
+    scrollToLine(activeIndex);
+  }, [activeIndex, scrollToLine, visible]);
+
   return (
     <Sheet onClose={onClose} title="歌词" visible={visible}>
-      <ScrollView contentContainerStyle={styles.lyrics}>
+      <ScrollView contentContainerStyle={styles.lyrics} ref={scrollView}>
         {current ? (
           <Text style={styles.lyricMeta}>
             {trackTitle(current)} ·{' '}
@@ -328,23 +363,34 @@ function LyricsSheet({
         ) : lines.length ? (
           <>
             {lines.map((line, index) => (
-              <Text key={`${line}-${index}`} style={styles.lyricLine}>
-                {line}
-              </Text>
-            ))}
-            {translationLines.length ? (
-              <View style={styles.translation}>
-                <Text style={styles.translationTitle}>译文</Text>
-                {translationLines.map((line, index) => (
+              <View
+                key={`${line.timestampMs ?? 'plain'}-${line.text}-${index}`}
+                onLayout={event => {
+                  lineOffsets.current[index] = event.nativeEvent.layout.y;
+                  if (visible && index === activeIndex) scrollToLine(index);
+                }}
+                style={styles.lyricRow}
+              >
+                <Text
+                  style={[
+                    styles.lyricLine,
+                    index === activeIndex && styles.activeLyricLine,
+                  ]}
+                >
+                  {line.text}
+                </Text>
+                {line.translation ? (
                   <Text
-                    key={`translation-${line}-${index}`}
-                    style={styles.translationLine}
+                    style={[
+                      styles.translationLine,
+                      index === activeIndex && styles.activeTranslationLine,
+                    ]}
                   >
-                    {line}
+                    {line.translation}
                   </Text>
-                ))}
+                ) : null}
               </View>
-            ) : null}
+            ))}
           </>
         ) : (
           <View style={styles.noLyrics}>
@@ -361,17 +407,10 @@ function LyricsSheet({
   );
 }
 
-function toLines(value: any): string[] {
-  if (Array.isArray(value))
-    return value
-      .map(line => (typeof line === 'string' ? line : line?.text))
-      .filter(Boolean);
-  if (typeof value === 'string')
-    return value
-      .split('\n')
-      .map(line => line.replace(/^\[[^\]]+\]/, '').trim())
-      .filter(Boolean);
-  return [];
+function playbackPositionMs(position: number): number {
+  if (!Number.isFinite(position)) return 0;
+  // Track Player and the Redux player state use seconds; the LRC axis uses ms.
+  return Math.max(0, position * 1_000);
 }
 function invoke(dispatch: any, names: string[]) {
   for (const name of names) {
@@ -483,17 +522,11 @@ const styles = StyleSheet.create({
   },
   lyrics: { gap: spacing.lg, alignItems: 'center', padding: spacing.lg },
   lyricMeta: text.meta,
+  lyricRow: { width: '100%', alignItems: 'center', gap: spacing.xs },
   lyricLine: { ...text.body, textAlign: 'center' },
-  translation: {
-    width: '100%',
-    gap: spacing.md,
-    marginTop: spacing.lg,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
-    paddingTop: spacing.lg,
-  },
-  translationTitle: { ...text.heading, textAlign: 'center' },
+  activeLyricLine: { color: colors.accent, fontWeight: '700' },
   translationLine: { ...text.meta, textAlign: 'center' },
+  activeTranslationLine: { color: colors.text },
   noLyrics: {
     alignItems: 'center',
     gap: spacing.sm,

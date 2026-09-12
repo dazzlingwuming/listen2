@@ -3,7 +3,10 @@ export type {
   BootstrapTrack,
   Lyric,
   PlaylistDetail,
+  PlaylistSummary,
   SearchPage,
+  SearchResult,
+  SearchKind,
   SourceId,
   Track,
 } from './provider';

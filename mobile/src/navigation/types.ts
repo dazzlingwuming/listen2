@@ -10,6 +10,15 @@ export type TabParamList = {
 
 export type RootStackParamList = {
   MainTabs: NavigatorScreenParams<TabParamList> | undefined;
-  PlaylistDetail: { sourceId: SourceId; title: string; tracks?: Track[] };
+  PlaylistDetail: {
+    /** Local collections use this label; remote provider calls use SourceId. */
+    sourceId: SourceId | 'local';
+    title: string;
+    tracks?: Track[];
+    /** A semantic provider playlist id, never a URL or a caller-provided route. */
+    remotePlaylistId?: string;
+    libraryPlaylistId?: string;
+    libraryCollection?: 'favorites' | 'recent';
+  };
   Player: undefined;
 };

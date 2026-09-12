@@ -4,6 +4,7 @@ import type {
   PlaylistDetail,
   ProviderRequestOptions,
   SearchPage,
+  SearchRequestOptions,
   SourceId,
   Track,
 } from '../types';
@@ -23,14 +24,50 @@ import {
 export const PROVIDER_CAPABILITIES: Readonly<
   Record<
     SourceId,
-    { search: boolean; playback: boolean; lyric: boolean; playlist: boolean }
+    {
+      search: boolean;
+      playlistSearch: boolean;
+      playback: boolean;
+      lyric: boolean;
+      playlist: boolean;
+    }
   >
 > = Object.freeze({
-  netease: { search: true, playback: true, lyric: true, playlist: true },
-  kugou: { search: true, playback: true, lyric: false, playlist: false },
-  kuwo: { search: true, playback: false, lyric: false, playlist: false },
-  qq: { search: true, playback: false, lyric: true, playlist: false },
-  bilibili: { search: true, playback: true, lyric: false, playlist: false },
+  netease: {
+    search: true,
+    playlistSearch: true,
+    playback: true,
+    lyric: true,
+    playlist: true,
+  },
+  kugou: {
+    search: true,
+    playlistSearch: false,
+    playback: true,
+    lyric: false,
+    playlist: false,
+  },
+  kuwo: {
+    search: true,
+    playlistSearch: false,
+    playback: false,
+    lyric: false,
+    playlist: false,
+  },
+  qq: {
+    search: true,
+    playlistSearch: false,
+    playback: false,
+    lyric: true,
+    playlist: false,
+  },
+  bilibili: {
+    search: true,
+    playlistSearch: false,
+    playback: true,
+    lyric: false,
+    playlist: false,
+  },
 });
 
 /**
@@ -43,7 +80,7 @@ export const providerClient = {
     source: SourceId,
     query: string,
     page = 1,
-    options?: ProviderRequestOptions,
+    options?: SearchRequestOptions,
   ): Promise<SearchPage> {
     if (!isSourceId(source))
       throw new ProviderClientError('UNKNOWN_SOURCE', 'netease', 'search');
