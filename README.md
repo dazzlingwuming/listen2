@@ -139,23 +139,20 @@ Listen2 是 [Listen1](https://github.com/listen1/listen1) 的社区增强版本�
 | macOS Intel / Apple Silicon | 已构建并验证 | 支持 x64、arm64 与 Universal DMG；当前未签名或公证                    |
 | Windows ia32 / arm64        | 保留构建能力 | 尚未在对应设备上完成系统性回归                                        |
 | Linux                       | 保留构建能力 | 不是当前版本的主要测试平台                                            |
-| Android API 26+             | 开发/验收中  | 复用移动 WebView 界面并接入 native 播放、Room、SAF 与受控 provider bridge；发布前必须通过 API 35 模拟器 |
+| Android API 24+             | 重构中       | 采用原作者的独立 React Native 手机端路线；尚未发布                    |
 
 ## Android 移动端
 
-Android 端不是 Electron 的直接移植，而是“共享 Listen1 前端 + 窄 native bridge”：
+Android 端正在改为与原作者 `listen1_mobile` 同类的独立 React Native 应用，
+不再把桌面端页面放进 WebView。新入口位于 [`mobile/`](mobile/)，当前已包含：
 
-- 已接入移动首页、发现、设置、播放队列、歌单/收藏和本机音乐库布局，并处理安全区、窄屏滚动和触控尺寸。
-- Bilibili 支持搜索、视频详情/分 P、音频目录、播放、主歌词和 native QR 扫码登录；NetEase 支持搜索、歌单详情、默认音频播放和主歌词。NetEase 手动歌词搜索当前保持 fail-closed，不伪造结果。
-- 可通过 Android SAF 选择音频文件或目录，读取受控的音频元数据；目录授权下支持同目录同名 `.lrc`，授权失效会进入修复状态。
-- Media3 `MediaSessionService`/ExoPlayer 负责后台播放、系统媒体通知、audio focus、屏幕关闭和队列恢复；Room 保存播放检查点、歌词、歌单、收藏、历史、缓存目录和 SAF 本机曲目等数据。
-- Bilibili 与 NetEase 支持 native 显式下载、校验后的应用私有离线缓存、取消/删除/清理和容量淘汰；缓存候选、URI、Cookie 和路径不经过页面。
-- 支持通过系统文件选择器导出/导入受限的歌单/收藏 JSON，默认可合并，覆盖需要二次确认；备份不包含凭据、API key、SAF URI、本地路径、缓存、歌词或历史。
-- DeepSeek 翻译使用 Android Keystore 保存 key，只有用户明确同意歌词、歌名、歌手、费用、取消和失败影响后才会请求；安全存储不可用或同意不完整时保持不可用。
-- 画质/高级音质选择、MV、PiP、音效、WebAudio 可视化和响度分析/标准化当前由 capability 矩阵明确关闭；Bilibili 分 P 选择不代表 MV 或画质能力。
+- 手机端导航、搜索、播放详情、迷你播放器、队列、收藏和最近播放。
+- `react-native-track-player` 原生后台播放、系统媒体通知、audio focus 和播放恢复。
+- 网易云、酷狗和哔哩哔哩的搜索/播放主链，网易云歌词/歌单详情，以及 QQ 音乐歌词；其他高级能力仍在逐项接入。
+- 固定、受控的 provider 网络契约；不接受页面传入的任意 URL、header、Cookie 或 token。
 
-Android 的完整边界、失败状态、JVM/Node 快速循环和最后一次 API 35 模拟器门禁见
-[`android/README.md`](android/README.md)。
+旧 [`android/`](android/) WebView 工程暂时保留为迁移参考，不是新版发布入口。
+当前状态是开发中，还不能宣称与桌面端功能完全等价。
 
 ## 使用提示
 
@@ -170,7 +167,7 @@ Android 的完整边界、失败状态、JVM/Node 快速循环和最后一次 AP
 3. 在翻译确认面板查看说明，主动确认后才会发起翻译。
 4. 如不再使用，可在设置中清除密钥。
 
-机器翻译在 Electron 桌面客户端和 Android（用户自行配置密钥并明确确认）提供，Chrome 扩展模式不支持该能力。
+机器翻译当前由 Electron 桌面客户端提供；React Native Android 版尚未接入。
 
 ## 本地开发与构建
 
@@ -179,7 +176,7 @@ Android 的完整边界、失败状态、JVM/Node 快速循环和最后一次 AP
 - Node.js 18 或更高版本
 - npm
 - Windows、macOS 或 Linux 桌面系统
-- 如需 Android：JDK 17、Android SDK Platform 35、Build Tools 35.0.0 和 Gradle 8.10.2
+- 如需 Android：Node.js 22.13+ 或 24.3+、JDK 17、Android SDK Platform 37 和 Build Tools 37.0.0
 
 ### 运行开发版
 
@@ -194,11 +191,9 @@ npm run start
 
 ### Android 移动端构建与验证
 
-Android 开发先运行 `android/` 下的 JVM 测试和 `app/listen1_chrome_extension/` 下的 Node
-契约测试，快速迭代阶段不反复组装 APK。两者通过后，再在已启动的 API 35 模拟器上进行
-最后一次 `assembleDebug` 与 instrumentation/系统媒体验收；JVM、Node 或 APK 组装成功都
-不能替代模拟器端到端结果。命令和 `not verified` 记录规则见
-[`android/README.md`](android/README.md)。
+快速迭代使用 `npm run mobile:typecheck`、`npm run mobile:test` 和 mobile lint，不为每个小功能
+反复组装 APK。整合功能完成后，再启动 Metro 并使用 `npm run mobile:android` 在
+模拟器上验收搜索、播放、后台通知、歌词和队列。详细说明见 [`mobile/README.md`](mobile/README.md)。
 
 ### 构建安装包
 
@@ -239,7 +234,8 @@ listen2/
 │  ├─ machineTranslation.js     # DeepSeek 歌词翻译与结果校验
 │  ├─ floatingWindow.html       # 桌面歌词窗口
 │  └─ listen1_chrome_extension/ # 共用播放器前端与音乐平台适配
-├─ android/                       # Android WebView、native bridge、Media3 与 Room
+├─ mobile/                        # 新版 React Native Android 应用（发布入口）
+├─ android/                       # 旧 WebView 迁移参考（暂保留）
 ├─ build/                        # 应用图标与打包资源
 ├─ docs/                         # 设计、验证与实现文档
 ├─ 图片/                         # README 界面预览
@@ -254,9 +250,9 @@ listen2/
 - 登录只使用账号实际拥有的访问权限，不保证获得固定音质或画质。
 - MV 可用性受视频、地区、CDN 和设备解码能力影响；不可用时请继续使用纯音频模式。
 - 逐词高亮需要歌词源提供逐词时间戳；普通 LRC 只能可靠地逐行同步。
-- 机器翻译需要用户自行配置 DeepSeek API 密钥并明确同意，翻译准确性和费用由对应服务决定；Android 另受 Keystore 可用性约束。
-- Electron 桌面离线缓存只覆盖已成功播放并完整缓存的 Bilibili 音频；Android native 下载/缓存可覆盖 Bilibili 与 NetEase，但仍需 provider 权限、网络和最终模拟器验证。
-- Android 的 MV、PiP、音效、WebAudio 可视化、响度分析/标准化和 NetEase 手动歌词搜索明确不可用，不会通过任意 URL 或浏览器 CORS 降级。
+- 机器翻译需要用户自行配置 DeepSeek API 密钥并明确同意；React Native Android 版尚未接入该能力。
+- Electron 桌面离线缓存只覆盖已成功播放并完整缓存的 Bilibili 音频；React Native Android 版尚未实现离线下载。
+- React Native Android 版的多来源高级能力、登录、MV、PiP、音效、可视化和响度分析仍在迁移；当前不对这些能力做完成声明。
 - 响度分析器会把解码器支持的来源采样率统一重采样到 48 kHz 分析域；超过时长或资源限制、无法解码的完整 Bilibili 缓存保持原音量。
 
 ## 贡献

@@ -4,6 +4,11 @@
   "description": "A modern Listen1 desktop experience with enhanced Bilibili, lyrics, and visualizations",
   "main": "app/main.js",
   "scripts": {
+    "mobile:install": "npm --prefix mobile install",
+    "mobile:start": "npm --prefix mobile start",
+    "mobile:android": "npm --prefix mobile run android",
+    "mobile:test": "npm --prefix mobile test -- --runInBand",
+    "mobile:typecheck": "cd mobile && npx tsc --noEmit",
     "postinstall": "electron-builder install-app-deps",
     "start": "electron ./app --enable-logging",
     "dev": "NODE_ENV='development' npm run start",
