@@ -21,6 +21,8 @@ import {
   getNetEaseDiscover,
   getQqLyric,
   getNetEasePlaylist,
+  getKugouChart,
+  getKugouDiscover,
   providerFor,
 } from './providers';
 
@@ -90,13 +92,7 @@ export const providerClient = {
     options?: ProviderRequestOptions,
   ): Promise<DiscoverPage> {
     if (source === 'netease') return getNetEaseDiscover(options);
-    return {
-      source: 'kugou',
-      sections: [
-        { kind: 'featured', status: 'unavailable', reason: 'unverified-route' },
-        { kind: 'charts', status: 'unavailable', reason: 'unverified-route' },
-      ],
-    };
+    return getKugouDiscover(options);
   },
 
   async search(
@@ -118,6 +114,7 @@ export const providerClient = {
     if (!source)
       throw new ProviderClientError('UNKNOWN_TRACK', 'netease', 'playlist');
     if (source === 'netease') return getNetEasePlaylist(id, options);
+    if (id.startsWith('kgchart_')) return getKugouChart(id, options);
     throw unavailable(source, 'playlist', 'ROUTE_UNAVAILABLE');
   },
 

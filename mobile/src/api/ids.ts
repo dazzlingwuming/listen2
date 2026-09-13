@@ -17,6 +17,8 @@ const PLAYLIST_ID_PATTERNS: Readonly<Record<SourceId, RegExp>> = {
   bilibili: /^biplaylist_[1-9][0-9]{0,17}$/,
 };
 
+const KUGOU_CHART_ID_PATTERN = /^kgchart_[1-9][0-9]{0,17}$/;
+
 export function sourceForTrackId(value: string): SourceId | null {
   const sourceIds = Object.keys(TRACK_ID_PATTERNS) as SourceId[];
   return (
@@ -25,6 +27,7 @@ export function sourceForTrackId(value: string): SourceId | null {
 }
 
 export function sourceForPlaylistId(value: string): SourceId | null {
+  if (KUGOU_CHART_ID_PATTERN.test(value)) return 'kugou';
   const sourceIds = Object.keys(PLAYLIST_ID_PATTERNS) as SourceId[];
   return (
     sourceIds.find(source => PLAYLIST_ID_PATTERNS[source].test(value)) ?? null

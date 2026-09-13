@@ -36,6 +36,9 @@ const MAX_VIDEO_PAGES = 50;
 const MAX_AUDIO_VARIANTS = 4;
 const MAX_PLAYLIST_TRACKS = 1_000;
 const MAX_DISCOVER_ROWS = 12;
+const NETEASE_DETAIL_BATCH_SIZE = 50;
+const MAX_DETAIL_CONCURRENCY = 3;
+const MAX_KUGOU_DETAIL_PAGES = 40;
 const MAX_LYRIC_CHARS = 512 * 1024;
 
 function checkedSearchInput(
@@ -130,11 +133,80 @@ function neteaseDiscoverSummary(value: unknown): PlaylistSummary | null {
   };
 }
 
+function kugouChartArtwork(value: unknown): string | undefined {
+  const candidate = text(value, 2048);
+  if (!candidate) return undefined;
+  try {
+    const url = new URL(candidate.replace('{size}', '400'));
+    if (
+      (url.protocol !== 'http:' && url.protocol !== 'https:') ||
+      url.hostname !== 'imge.kugou.com' ||
+      url.port ||
+      url.username ||
+      url.password ||
+      url.hash
+    ) {
+      return undefined;
+    }
+    return `https://imge.kugou.com${url.pathname}${url.search}`;
+  } catch {
+    return undefined;
+  }
+}
+
+function kugouChartSummary(value: unknown): PlaylistSummary | null {
+  const row = asObject(value);
+  const id = decimalPositive(row?.rankid);
+  const title = cleanTitle(row?.rankname);
+  if (!id || !title) return null;
+  return {
+    id: `kgchart_${id}`,
+    source: 'kugou',
+    title,
+    artworkUrl: kugouChartArtwork(row?.imgurl),
+  };
+}
+
+function cancellation(error: unknown): boolean {
+  return error instanceof ProviderClientError && error.code === 'CANCELLED';
+}
+
+async function mapSettledDiscoverSection(
+  kind: 'featured' | 'charts',
+  request: Promise<PlaylistSummary[]>,
+): Promise<DiscoverSection> {
+  try {
+    return { kind, status: 'ready', items: await request };
+  } catch (error) {
+    if (cancellation(error)) throw error;
+    return error instanceof ProviderClientError
+      ? { kind, status: 'error', code: error.code, retryable: error.retryable }
+      : { kind, status: 'error', code: 'NETWORK_ERROR', retryable: true };
+  }
+}
+
+function boundedDiscoverRows(
+  source: SourceId,
+  rows: unknown,
+  mapper: (row: unknown) => PlaylistSummary | null,
+): PlaylistSummary[] {
+  if (!Array.isArray(rows) || rows.length > MAX_DISCOVER_ROWS) {
+    throw new ProviderClientError('INVALID_RESPONSE', source, 'discover');
+  }
+  const items = rows
+    .map(mapper)
+    .filter((item): item is PlaylistSummary => item !== null);
+  if (rows.length > 0 && items.length === 0) {
+    throw new ProviderClientError('INVALID_RESPONSE', source, 'discover');
+  }
+  return items;
+}
+
 /** Fixed, anonymous NetEase directory route. No caller transport crosses here. */
 export async function getNetEaseDiscover(
   options?: ProviderRequestOptions,
 ): Promise<DiscoverPage> {
-  try {
+  const featured = (async (): Promise<PlaylistSummary[]> => {
     const params = new URLSearchParams({
       cat: '全部',
       order: 'hot',
@@ -153,49 +225,56 @@ export async function getNetEaseDiscover(
     if (root?.code !== 200) {
       throw new ProviderClientError('INVALID_RESPONSE', 'netease', 'discover');
     }
-    const rows = root.playlists;
-    if (!Array.isArray(rows) || rows.length > MAX_DISCOVER_ROWS) {
+    return boundedDiscoverRows(
+      'netease',
+      root.playlists,
+      neteaseDiscoverSummary,
+    );
+  })();
+  const charts = (async (): Promise<PlaylistSummary[]> => {
+    const root = asObject(
+      await requestJson(
+        { url: 'https://music.163.com/api/toplist' },
+        'netease',
+        'discover',
+        options,
+      ),
+    );
+    if (root?.code !== 200) {
       throw new ProviderClientError('INVALID_RESPONSE', 'netease', 'discover');
     }
-    const items = rows
-      .map(neteaseDiscoverSummary)
-      .filter((item): item is PlaylistSummary => item !== null);
-    if (rows.length > 0 && items.length === 0) {
-      throw new ProviderClientError('INVALID_RESPONSE', 'netease', 'discover');
-    }
-    return {
-      source: 'netease',
-      sections: [
-        { kind: 'featured', status: 'ready', items },
-        { kind: 'charts', status: 'unavailable', reason: 'unverified-route' },
-      ],
-    };
-  } catch (error) {
-    if (error instanceof ProviderClientError && error.code === 'CANCELLED') {
-      throw error;
-    }
-    const errorSection: DiscoverSection =
-      error instanceof ProviderClientError
-        ? {
-            kind: 'featured',
-            status: 'error',
-            code: error.code,
-            retryable: error.retryable,
-          }
-        : {
-            kind: 'featured',
-            status: 'error',
-            code: 'NETWORK_ERROR',
-            retryable: true,
-          };
-    return {
-      source: 'netease',
-      sections: [
-        errorSection,
-        { kind: 'charts', status: 'unavailable', reason: 'unverified-route' },
-      ],
-    };
-  }
+    return boundedDiscoverRows('netease', root.list, neteaseDiscoverSummary);
+  })();
+  const sections = await Promise.all([
+    mapSettledDiscoverSection('featured', featured),
+    mapSettledDiscoverSection('charts', charts),
+  ]);
+  return { source: 'netease', sections };
+}
+
+export async function getKugouDiscover(
+  options?: ProviderRequestOptions,
+): Promise<DiscoverPage> {
+  const charts = (async (): Promise<PlaylistSummary[]> => {
+    const root = asObject(
+      await requestJson(
+        { url: 'https://m.kugou.com/rank/list?json=true' },
+        'kugou',
+        'discover',
+        options,
+      ),
+    );
+    const data = asObject(root?.data);
+    const rows = data?.info ?? data?.list ?? asObject(root?.rank)?.list;
+    return boundedDiscoverRows('kugou', rows, kugouChartSummary);
+  })();
+  return {
+    source: 'kugou',
+    sections: [
+      { kind: 'featured', status: 'unavailable', reason: 'unverified-route' },
+      await mapSettledDiscoverSection('charts', charts),
+    ],
+  };
 }
 
 function neteaseProviderId(value: string): string | null {
@@ -216,6 +295,39 @@ function qqProviderId(value: string): string | null {
 function neteasePlaylistProviderId(value: string): string | null {
   const match = /^neplaylist_([1-9][0-9]{0,17})$/.exec(value);
   return match ? match[1] : null;
+}
+
+function kugouChartProviderId(value: string): string | null {
+  const match = /^kgchart_([1-9][0-9]{0,17})$/.exec(value);
+  return match ? match[1] : null;
+}
+
+function nonNegative(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+    ? value
+    : undefined;
+}
+
+async function boundedConcurrentMap<T, R>(
+  values: readonly T[],
+  mapper: (value: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(values.length);
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < values.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await mapper(values[index]);
+    }
+  };
+  await Promise.all(
+    Array.from(
+      { length: Math.min(MAX_DETAIL_CONCURRENCY, values.length) },
+      () => worker(),
+    ),
+  );
+  return results;
 }
 
 function requestedSearchKind(
@@ -462,23 +574,174 @@ export async function getNetEasePlaylist(
     throw new ProviderClientError('INVALID_RESPONSE', 'netease', 'playlist');
   }
   const title = text(playlist?.name);
-  const rows = playlist?.tracks;
-  if (!title || !Array.isArray(rows) || rows.length > MAX_PLAYLIST_TRACKS) {
+  const rows = playlist?.trackIds;
+  const declaredTrackCount = nonNegative(playlist?.trackCount);
+  if (!title || !Array.isArray(rows) || declaredTrackCount === undefined) {
     throw new ProviderClientError('INVALID_RESPONSE', 'netease', 'playlist');
   }
-  const tracks = rows
-    .map(neteaseTrack)
-    .filter((track): track is Track => track !== null);
-  if (rows.length > 0 && tracks.length === 0) {
+  const allIds = rows.map(row => positive(asObject(row)?.id));
+  if (allIds.some(id => !id) || new Set(allIds).size !== allIds.length) {
     throw new ProviderClientError('INVALID_RESPONSE', 'netease', 'playlist');
   }
+  const acceptedIds = (allIds as number[]).slice(0, MAX_PLAYLIST_TRACKS);
+  const batches: number[][] = [];
+  for (
+    let index = 0;
+    index < acceptedIds.length;
+    index += NETEASE_DETAIL_BATCH_SIZE
+  ) {
+    batches.push(acceptedIds.slice(index, index + NETEASE_DETAIL_BATCH_SIZE));
+  }
+  const hydrated = await boundedConcurrentMap(batches, async batch => {
+    const ids = batch.map(id => String(id));
+    const params = new URLSearchParams({
+      c: JSON.stringify(batch.map(id => ({ id }))),
+      ids: JSON.stringify(ids),
+    });
+    const detail = asObject(
+      await requestJson(
+        { url: `https://music.163.com/api/v3/song/detail?${params}` },
+        'netease',
+        'playlist',
+        options,
+      ),
+    );
+    if (detail?.code !== 200 || !Array.isArray(detail?.songs)) {
+      throw new ProviderClientError('INVALID_RESPONSE', 'netease', 'playlist');
+    }
+    const expected = new Set(batch);
+    const mapped = detail.songs.map(neteaseTrack);
+    if (
+      mapped.some(track => !track) ||
+      new Set(mapped.map(track => track?.id)).size !== mapped.length ||
+      mapped.some(
+        track => !expected.has(Number(track?.id.slice('netrack_'.length))),
+      )
+    ) {
+      throw new ProviderClientError('INVALID_RESPONSE', 'netease', 'playlist');
+    }
+    return mapped.filter((track): track is Track => track !== null);
+  });
+  const byId = new Map(
+    hydrated
+      .flat()
+      .map(track => [Number(track.id.slice('netrack_'.length)), track]),
+  );
+  const tracks = acceptedIds.flatMap(id => {
+    const track = byId.get(id);
+    return track ? [track] : [];
+  });
   return {
     id: playlistId,
     source: 'netease',
     title,
     tracks,
-    completeness: tracks.length === rows.length ? 'complete' : 'partial',
-    declaredTrackCount: rows.length,
+    completeness:
+      rows.length <= MAX_PLAYLIST_TRACKS &&
+      declaredTrackCount === acceptedIds.length &&
+      tracks.length === acceptedIds.length
+        ? 'complete'
+        : 'partial',
+    declaredTrackCount,
+  };
+}
+
+function kugouChartTrack(value: unknown): Track | null {
+  const row = asObject(value);
+  const hash = text(row?.hash, 128);
+  const title = cleanTitle(row?.songname);
+  const authors = Array.isArray(row?.authors) ? row?.authors : [];
+  const artist = cleanTitle(asObject(authors[0])?.author_name);
+  if (!hash || !/^[A-Za-z0-9]{8,128}$/.test(hash) || !title || !artist) {
+    return null;
+  }
+  return {
+    id: `kgtrack_${hash}`,
+    source: 'kugou',
+    title,
+    artist,
+    durationMs: secondsToMs(row?.duration),
+    artworkUrl: kugouChartArtwork(row?.img),
+  };
+}
+
+interface KugouChartPage {
+  total: number;
+  pageSize: number;
+  rows: unknown[];
+}
+
+async function getKugouChartPage(
+  rankId: string,
+  page: number,
+  options?: ProviderRequestOptions,
+): Promise<KugouChartPage> {
+  const params = new URLSearchParams({
+    rankid: rankId,
+    page: String(page),
+    json: 'true',
+  });
+  const root = asObject(
+    await requestJson(
+      { url: `https://m.kugou.com/rank/info/?${params}` },
+      'kugou',
+      'playlist',
+      options,
+    ),
+  );
+  const songs = asObject(root?.songs);
+  const total = nonNegative(songs?.total);
+  const pageSize = positive(songs?.pagesize);
+  const rows = songs?.list;
+  if (total === undefined || !pageSize || !Array.isArray(rows)) {
+    throw new ProviderClientError('INVALID_RESPONSE', 'kugou', 'playlist');
+  }
+  return { total, pageSize, rows };
+}
+
+export async function getKugouChart(
+  playlistId: string,
+  options?: ProviderRequestOptions,
+): Promise<PlaylistDetail> {
+  const rankId = kugouChartProviderId(playlistId);
+  if (!rankId) {
+    throw new ProviderClientError('UNKNOWN_TRACK', 'kugou', 'playlist');
+  }
+  const first = await getKugouChartPage(rankId, 1, options);
+  const expected = Math.min(first.total, MAX_PLAYLIST_TRACKS);
+  const totalPages = Math.ceil(expected / first.pageSize);
+  const pagesToRequest = Math.min(totalPages, MAX_KUGOU_DETAIL_PAGES);
+  const pageNumbers = Array.from(
+    { length: Math.max(0, pagesToRequest - 1) },
+    (_, index) => index + 2,
+  );
+  const laterPages = await boundedConcurrentMap(pageNumbers, async page => {
+    const result = await getKugouChartPage(rankId, page, options);
+    if (result.total !== first.total || result.pageSize !== first.pageSize) {
+      throw new ProviderClientError('INVALID_RESPONSE', 'kugou', 'playlist');
+    }
+    return result;
+  });
+  const tracks: Track[] = [];
+  const seen = new Set<string>();
+  for (const row of [first, ...laterPages].flatMap(page => page.rows)) {
+    const track = kugouChartTrack(row);
+    if (!track || seen.has(track.id)) continue;
+    seen.add(track.id);
+    if (tracks.length < MAX_PLAYLIST_TRACKS) tracks.push(track);
+  }
+  return {
+    id: playlistId,
+    source: 'kugou',
+    title: `酷狗榜单 ${rankId}`,
+    tracks,
+    completeness:
+      first.total <= MAX_PLAYLIST_TRACKS &&
+      totalPages <= MAX_KUGOU_DETAIL_PAGES &&
+      tracks.length === expected
+        ? 'complete'
+        : 'partial',
+    declaredTrackCount: first.total,
   };
 }
 
