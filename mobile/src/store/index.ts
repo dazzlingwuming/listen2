@@ -12,6 +12,8 @@ import {
 } from 'redux-persist/es/constants';
 import playerReducer from './playerSlice';
 import libraryReducer from './librarySlice';
+import downloadReducer, { downloadActions } from './downloadSlice';
+import { offlineAudio } from '../offline/offlineAudio';
 import { configurePlayerController } from '../player/playerController';
 
 const persistConfig = {
@@ -33,6 +35,7 @@ export const store = configureStore({
   reducer: {
     player: persistedPlayerReducer,
     library: persistedLibraryReducer,
+    downloads: downloadReducer,
   },
   middleware: getDefaultMiddleware =>
     getDefaultMiddleware({
@@ -46,6 +49,9 @@ configurePlayerController({
   getPlayerState: () => store.getState().player,
   dispatch: store.dispatch,
 });
+offlineAudio.subscribe(snapshot =>
+  store.dispatch(downloadActions.received(snapshot)),
+);
 
 export const persistor = persistStore(store, undefined, () => {
   import('../player/playerController').then(({ playerController }) => {

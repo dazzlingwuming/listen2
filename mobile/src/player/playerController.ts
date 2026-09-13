@@ -7,6 +7,10 @@ import { PermissionsAndroid, Platform } from 'react-native';
 import { providerClient } from '../api/client';
 import { isLocalTrack, type PlayableTrack } from '../types/music';
 import {
+  isOfflineDownloadEligible,
+  offlineAudio,
+} from '../offline/offlineAudio';
+import {
   PLAY_MODE,
   type HistoryEntry,
   type PlayerState,
@@ -79,6 +83,10 @@ function shuffledIndexes(length: number): number[] {
 async function resolveTrackUrl(track: PlayableTrack) {
   if (isLocalTrack(track)) {
     return { url: track.contentUri };
+  }
+  if (isOfflineDownloadEligible(track)) {
+    const cached = await offlineAudio.resolveVerified(track.source, track.id);
+    if (cached.status === 'hit') return { url: cached.uri };
   }
   const candidate = await providerClient.bootstrapTrack(track);
   const { url } = candidate;
@@ -182,6 +190,23 @@ async function loadAndPlay(
     emit(dispatch, 'player/setPlaying', true);
     return true;
   } catch (error) {
+    if (
+      !isLocalTrack(track) &&
+      resolvedMedia?.url.startsWith('content://') &&
+      isOfflineDownloadEligible(track)
+    ) {
+      await offlineAudio.invalidate(track.source, track.id);
+      try {
+        return await loadAndPlay(
+          dispatch,
+          track,
+          position,
+          await providerClient.bootstrapTrack(track),
+        );
+      } catch {
+        /* stable error below */
+      }
+    }
     emit(dispatch, 'player/setPlaying', false);
     if (isLocalTrack(track))
       emit(dispatch, 'library/markLocalTrackNeedsRepair', track.id);
