@@ -92,6 +92,10 @@ describe('PlayerController queue transitions', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockBootstrapTrack.mockReset();
+    mockNativePlayer.add.mockReset().mockResolvedValue(undefined);
+    mockNativePlayer.reset.mockReset().mockResolvedValue(undefined);
+    mockNativePlayer.play.mockReset().mockResolvedValue(undefined);
     mockResolveVerified.mockResolvedValue({ status: 'miss' });
     Object.defineProperty(Platform, 'Version', {
       value: 32,
@@ -208,6 +212,25 @@ describe('PlayerController queue transitions', () => {
     );
   });
 
+  it('uses exactly one online bootstrap after a cache miss or corrupt result', async () => {
+    const queued = track('netrack_2');
+    state = reducer(
+      state,
+      playerActions.replacePlaylist({ tracks: [track('netrack_1')] }),
+    );
+    state = reducer(state, playerActions.enqueueNext(queued));
+    mockResolveVerified.mockResolvedValueOnce({ status: 'corrupt' });
+    mockBootstrapTrack.mockResolvedValueOnce({
+      url: 'https://music.example/track.mp3',
+    });
+
+    await playerController.next(dispatch);
+
+    expect(mockResolveVerified).toHaveBeenCalledWith('netease', queued.id);
+    expect(mockBootstrapTrack).toHaveBeenCalledTimes(1);
+    expect(state.playNextQueue).toEqual([]);
+  });
+
   it('invalidates a cache load failure and performs one online fallback', async () => {
     const queued = track('netrack_2');
     state = reducer(
@@ -228,6 +251,48 @@ describe('PlayerController queue transitions', () => {
     expect(mockInvalidate).toHaveBeenCalledWith('netease', queued.id);
     expect(mockBootstrapTrack).toHaveBeenCalledTimes(1);
     expect(state.playNextQueue).toEqual([]);
+  });
+
+  it('keeps the transaction unchanged when cache fallback and online bootstrap fail', async () => {
+    const current = track('netrack_1');
+    const queued = track('netrack_2');
+    state = reducer(
+      state,
+      playerActions.replacePlaylist({ tracks: [current] }),
+    );
+    state = reducer(state, playerActions.setPlaying(true));
+    state = reducer(state, playerActions.enqueueNext(queued));
+    mockResolveVerified.mockResolvedValueOnce({
+      status: 'hit',
+      uri: 'content://cache/abc',
+      mimeType: 'audio/mpeg',
+    });
+    mockNativePlayer.add.mockRejectedValueOnce(new Error('cache-load-failed'));
+    mockBootstrapTrack.mockRejectedValueOnce(new Error('online-failed'));
+
+    await playerController.next(dispatch);
+
+    expect(mockInvalidate).toHaveBeenCalledWith('netease', queued.id);
+    expect(mockBootstrapTrack).toHaveBeenCalledTimes(1);
+    expect(state.currentTrack?.id).toBe(current.id);
+    expect(state.playNextQueue.map(item => item.id)).toEqual([queued.id]);
+  });
+
+  it('does not query offline storage for an unsupported provider', async () => {
+    const unsupported = { ...track('qqtrack_1'), source: 'qq' as const };
+    state = reducer(
+      state,
+      playerActions.replacePlaylist({ tracks: [track('netrack_1')] }),
+    );
+    state = reducer(state, playerActions.enqueueNext(unsupported));
+    mockBootstrapTrack.mockResolvedValueOnce({
+      url: 'https://music.example/track.mp3',
+    });
+
+    await playerController.next(dispatch);
+
+    expect(mockResolveVerified).not.toHaveBeenCalled();
+    expect(mockBootstrapTrack).toHaveBeenCalledWith(unsupported);
   });
 
   it('does not consume a local queued track when native loading fails', async () => {
