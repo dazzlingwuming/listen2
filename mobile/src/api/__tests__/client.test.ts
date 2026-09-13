@@ -160,6 +160,58 @@ describe('providerClient', () => {
     expect(url).toContain('page_size=20');
   });
 
+  it('retries one transient Bilibili search rejection on the same fixed route', async () => {
+    globalThis.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 412 }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          code: 0,
+          data: {
+            numResults: 1,
+            result: [
+              {
+                bvid: 'BV1xx411c7mD',
+                title: '<em>Retry</em> Song',
+                author: 'Uploader',
+              },
+            ],
+          },
+        }),
+      );
+
+    await expect(
+      providerClient.search('bilibili', 'retryable', 1),
+    ).resolves.toMatchObject({
+      results: [
+        expect.objectContaining({
+          kind: 'track',
+          track: expect.objectContaining({ title: 'Retry Song' }),
+        }),
+      ],
+    });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    expect((globalThis.fetch as jest.Mock).mock.calls[0][0]).toBe(
+      (globalThis.fetch as jest.Mock).mock.calls[1][0],
+    );
+  });
+
+  it('keeps a repeated Bilibili rejection bounded and typed', async () => {
+    globalThis.fetch = jest
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 412 }));
+
+    await expect(
+      providerClient.search('bilibili', 'retryable', 1),
+    ).rejects.toMatchObject({
+      code: 'PROVIDER_ERROR',
+      source: 'bilibili',
+      operation: 'search',
+      retryable: true,
+    });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+  });
+
   it('rejects oversized or malformed provider payloads with a safe typed error', async () => {
     globalThis.fetch = jest
       .fn()

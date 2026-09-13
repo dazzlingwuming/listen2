@@ -7,6 +7,7 @@ import { ProviderClientError } from './errors';
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 10_000;
+const BILIBILI_SEARCH_MAX_ATTEMPTS = 2;
 
 function utf8ByteLength(value: string): number {
   // Works in JavaScriptCore/Hermes without assuming TextEncoder typings.
@@ -49,8 +50,17 @@ function providerErrorForStatus(
       ? 'REGION_RESTRICTED'
       : 'PROVIDER_ERROR';
   return new ProviderClientError(code, source, operation, {
-    retryable: status === 429 || status >= 500,
+    retryable: status === 412 || status === 429 || status >= 500,
   });
+}
+
+function maxAttemptsFor(
+  source: SourceId,
+  operation: ProviderOperation,
+): number {
+  return source === 'bilibili' && operation === 'search'
+    ? BILIBILI_SEARCH_MAX_ATTEMPTS
+    : 1;
 }
 
 /**
@@ -77,35 +87,51 @@ export async function requestJson(
   options.signal?.addEventListener('abort', cancel, { once: true });
 
   try {
-    const response = await fetch(request.url, {
-      method: request.method ?? 'GET',
-      body: request.body,
-      headers: {
-        ...(request.profile === 'bilibili' ? BILIBILI_HEADERS : {}),
-        ...(request.profile === 'qq' ? QQ_HEADERS : {}),
-        ...(request.body ? { 'content-type': 'application/json' } : {}),
-      },
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      throw providerErrorForStatus(response.status, source, operation);
+    const maxAttempts = maxAttemptsFor(source, operation);
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      try {
+        const response = await fetch(request.url, {
+          method: request.method ?? 'GET',
+          body: request.body,
+          headers: {
+            ...(request.profile === 'bilibili' ? BILIBILI_HEADERS : {}),
+            ...(request.profile === 'qq' ? QQ_HEADERS : {}),
+            ...(request.body ? { 'content-type': 'application/json' } : {}),
+          },
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          throw providerErrorForStatus(response.status, source, operation);
+        }
+        const declaredLength = Number(
+          response.headers.get('content-length') ?? 0,
+        );
+        if (
+          Number.isFinite(declaredLength) &&
+          declaredLength > MAX_RESPONSE_BYTES
+        ) {
+          throw new ProviderClientError('INVALID_RESPONSE', source, operation);
+        }
+        const text = await response.text();
+        if (utf8ByteLength(text) > MAX_RESPONSE_BYTES) {
+          throw new ProviderClientError('INVALID_RESPONSE', source, operation);
+        }
+        try {
+          return JSON.parse(text) as unknown;
+        } catch {
+          throw new ProviderClientError('INVALID_RESPONSE', source, operation);
+        }
+      } catch (error) {
+        if (
+          !(error instanceof ProviderClientError) ||
+          !error.retryable ||
+          attempt + 1 === maxAttempts
+        ) {
+          throw error;
+        }
+      }
     }
-    const declaredLength = Number(response.headers.get('content-length') ?? 0);
-    if (
-      Number.isFinite(declaredLength) &&
-      declaredLength > MAX_RESPONSE_BYTES
-    ) {
-      throw new ProviderClientError('INVALID_RESPONSE', source, operation);
-    }
-    const text = await response.text();
-    if (utf8ByteLength(text) > MAX_RESPONSE_BYTES) {
-      throw new ProviderClientError('INVALID_RESPONSE', source, operation);
-    }
-    try {
-      return JSON.parse(text) as unknown;
-    } catch {
-      throw new ProviderClientError('INVALID_RESPONSE', source, operation);
-    }
+    throw new ProviderClientError('PROVIDER_ERROR', source, operation);
   } catch (error) {
     if (error instanceof ProviderClientError) throw error;
     if (timedOut)
