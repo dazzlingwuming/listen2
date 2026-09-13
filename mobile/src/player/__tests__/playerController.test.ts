@@ -11,6 +11,8 @@ const mockNativePlayer = {
   stop: jest.fn().mockResolvedValue(undefined),
 };
 const mockBootstrapTrack = jest.fn();
+const mockResolveVerified = jest.fn().mockResolvedValue({ status: 'miss' });
+const mockInvalidate = jest.fn().mockResolvedValue({});
 
 jest.mock('react-native-track-player', () => ({
   __esModule: true,
@@ -43,6 +45,14 @@ jest.mock('react-native-track-player', () => ({
 jest.mock('../../api/client', () => ({
   providerClient: {
     bootstrapTrack: (...args: unknown[]) => mockBootstrapTrack(...args),
+  },
+}));
+jest.mock('../../offline/offlineAudio', () => ({
+  isOfflineDownloadEligible: (value: any) =>
+    value?.source === 'netease' || value?.source === 'kugou',
+  offlineAudio: {
+    resolveVerified: (...args: unknown[]) => mockResolveVerified(...args),
+    invalidate: (...args: unknown[]) => mockInvalidate(...args),
   },
 }));
 
@@ -82,6 +92,7 @@ describe('PlayerController queue transitions', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockResolveVerified.mockResolvedValue({ status: 'miss' });
     Object.defineProperty(Platform, 'Version', {
       value: 32,
       configurable: true,
@@ -176,6 +187,47 @@ describe('PlayerController queue transitions', () => {
     expect(mockNativePlayer.add).toHaveBeenCalledWith(
       expect.objectContaining({ url: local.contentUri }),
     );
+  });
+
+  it('uses a verified cache hit before provider bootstrap', async () => {
+    const queued = track('netrack_2');
+    state = reducer(
+      state,
+      playerActions.replacePlaylist({ tracks: [track('netrack_1')] }),
+    );
+    state = reducer(state, playerActions.enqueueNext(queued));
+    mockResolveVerified.mockResolvedValueOnce({
+      status: 'hit',
+      uri: 'content://cache/abc',
+      mimeType: 'audio/mpeg',
+    });
+    await playerController.next(dispatch);
+    expect(mockBootstrapTrack).not.toHaveBeenCalled();
+    expect(mockNativePlayer.add).toHaveBeenCalledWith(
+      expect.objectContaining({ url: 'content://cache/abc' }),
+    );
+  });
+
+  it('invalidates a cache load failure and performs one online fallback', async () => {
+    const queued = track('netrack_2');
+    state = reducer(
+      state,
+      playerActions.replacePlaylist({ tracks: [track('netrack_1')] }),
+    );
+    state = reducer(state, playerActions.enqueueNext(queued));
+    mockResolveVerified.mockResolvedValueOnce({
+      status: 'hit',
+      uri: 'content://cache/abc',
+      mimeType: 'audio/mpeg',
+    });
+    mockNativePlayer.add.mockRejectedValueOnce(new Error('cache-load-failed'));
+    mockBootstrapTrack.mockResolvedValueOnce({
+      url: 'https://music.example/track.mp3',
+    });
+    await playerController.next(dispatch);
+    expect(mockInvalidate).toHaveBeenCalledWith('netease', queued.id);
+    expect(mockBootstrapTrack).toHaveBeenCalledTimes(1);
+    expect(state.playNextQueue).toEqual([]);
   });
 
   it('does not consume a local queued track when native loading fails', async () => {
