@@ -5,8 +5,8 @@ milestone_name: android-official-mobile-product-pivot
 current_phase: 5
 current_phase_name: Five-Source Listen Journey
 status: implementation
-stopped_at: Completed quick task 260913-g8n; Android runtime verification pending
-last_updated: "2026-09-13T05:23:46Z"
+stopped_at: Completed quick task 260913-jlv; integrated Android runtime verification pending
+last_updated: "2026-09-13T08:11:00Z"
 progress:
   total_phases: 5
   completed_phases: 1
@@ -14,7 +14,7 @@ progress:
   completed_plans: 3
   percent: 20
 last_activity: 2026-09-13
-last_activity_desc: Completed the standalone React Native NetEase/Kugou offline-download implementation; JDK/emulator verification remains
+last_activity_desc: Replaced the placeholder Discover page with bounded NetEase playlists/charts, Kugou charts, truthful detail, and rollback-safe play-all
 ---
 
 # Project State
@@ -25,7 +25,7 @@ See: `.planning/PROJECT.md`
 
 **Core value:** Android users reliably complete an authorized end-to-end music journey from search through playback, lyrics, and later control.
 
-**Current focus:** Standalone React Native mobile parity; offline-download implementation complete, native runtime acceptance pending
+**Current focus:** Standalone React Native mobile parity; offline downloads and real Discover collections implemented, integrated runtime acceptance pending
 
 ## Current Position
 
@@ -93,6 +93,7 @@ Progress: [██████████] 100%
 | # | Description | Date | Commit | Status | Directory |
 |---|-------------|------|--------|--------|-----------|
 | 260913-g8n | NetEase/Kugou verified offline downloads, cache-first playback, and download management | 2026-09-13 | 5ae3984 | Needs Review | [260913-g8n-implement-the-first-production-offline-d](./quick/260913-g8n-implement-the-first-production-offline-d/) |
+| 260913-jlv | Real NetEase/Kugou Discover collections, truthful detail, and rollback-safe play-all | 2026-09-13 | 770a116 | Needs Review | [260913-jlv-replace-the-placeholder-react-native-dis](./quick/260913-jlv-replace-the-placeholder-react-native-dis/) |
 
 ## Deferred Items
 
@@ -104,8 +105,8 @@ Progress: [██████████] 100%
 
 **Resume file:** None
 
-Last session: 2026-09-13T05:23:46Z
+Last session: 2026-09-13T08:11:00Z
 
-Stopped at: Quick task 260913-g8n code complete; JDK 17 and emulator/device acceptance pending
+Stopped at: Quick task 260913-jlv code complete; JDK 17 and integrated emulator/device acceptance pending
 
 Resume with: install/select JDK 17, run the focused offline Kotlin contract, then perform one integrated Android emulator/device acceptance
