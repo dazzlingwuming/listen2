@@ -12,6 +12,9 @@ application has passed integrated emulator acceptance.
 ## Current scope
 
 - Mobile tabs for My Music, Discover, Search and Settings.
+- Real Discover content from bounded anonymous provider routes: NetEase featured
+  playlists and charts, plus Kugou charts. Remote detail reports incomplete
+  provider data honestly and disables play-all when the collection is partial.
 - Search adapters for NetEase, Kugou, QQ Music and Bilibili, including NetEase
   remote playlist search and detail navigation. Unsupported provider operations
   fail visibly instead of returning fake empty results.
@@ -42,6 +45,13 @@ application has passed integrated emulator acceptance.
   one clears app references and releases its URI access; unavailable access is
   marked `needs-repair`. Local tracks never request network lyrics and are
   excluded from portable JSON backups.
+- Explicit NetEase and Kugou downloads use an app-private, size-bounded native
+  cache with atomic SHA-256 publication, sanitized progress/error state and
+  Settings controls. Playback checks verified offline media before provider
+  bootstrap; Bilibili is intentionally excluded from this cache path.
+- Starting a discovered collection waits for the first native track to load.
+  A destructive transition failure restores the prior bounded native item,
+  position, volume, repeat mode and play/pause state before reporting failure.
 
 The original `listen1_mobile` had no local-audio or offline-cache capability;
 its `local` concept was only part of JSON backup. This local-audio slice is an
@@ -86,15 +96,18 @@ npm run mobile:test
 npm --prefix mobile run lint -- --quiet
 ```
 
-### Third-batch verification
+### Current source verification
 
 - Formatting, TypeScript and ESLint checks: passed.
-- Jest: 9 suites, 49 tests: passed.
-- Android production Metro bundle: passed; 1,471,170 bytes and 19 assets.
+- Focused provider, Discover, playback rollback, offline-cache and UI Jest
+  suites: passed, including 53 Discover/provider/rollback checks and 17 offline
+  cache/player checks.
+- Android production Metro bundles for the offline and Discover slices: passed
+  with 19 assets.
 - No APK, Gradle/native compile-only, or Android emulator end-to-end test was
-  completed. Native compile-only remains `not verified` because the TLS
-  handshake to `plugins.gradle.org` failed; this does not establish
-  Kotlin/Java compilation.
+  completed. The focused Kotlin/JVM offline contract remains `not verified`
+  because this host has no Java Runtime/JDK 17; this does not establish native
+  Kotlin compilation or content-provider playback.
 - Real `content://` URI playback in the background and after app restart:
   `not verified`.
 

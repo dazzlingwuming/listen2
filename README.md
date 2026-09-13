@@ -159,15 +159,17 @@ Android 端正在改为与原作者 `listen1_mobile` 同类的独立 React Nativ
 - 固定、受控的 provider 网络契约；不接受页面传入的任意 URL、header、Cookie 或 token。
 - 本地音乐使用 `@react-native-documents/picker` 12.0.2 通过 Android SAF 的 `open`、audio、multi、long-term 模式导入；不申请媒体库权限，不复制或删除用户原文件，只持久化受授权保护的 `content://` URI。
 - 本地曲目可持久化、由 TrackPlayer 播放并进入队列/历史；移除时清理应用内引用并释放 URI 授权，失效访问标记为 `needs-repair`。本地曲目不请求网络歌词，也不进入可携 JSON 备份。
+- 发现页已接入真实且有界的网易热门歌单/榜单和酷狗榜单；详情数据不完整时明确标记并禁用整单播放，完整列表只有在第一首原生加载成功后才进入播放器，失败会尝试恢复原播放状态。
+- 网易与酷狗支持用户主动离线下载：媒体存入应用私有目录，经大小限制、SHA-256 校验和原子发布后才可播放；设置页可查看进度、取消、重试、移除和清空。哔哩哔哩暂不进入离线缓存路径。
 
 旧 [`android/`](android/) WebView 工程暂时保留为迁移参考，不是新版发布入口。
 新 canonical 入口是 [`mobile/`](mobile/)；当前状态仍是开发中，还不能宣称与桌面端功能完全等价。
 
-第三批源码验证结果：格式检查、TypeScript 和 ESLint 通过；Jest 为 9 suites、49 tests
-全部通过；Metro Android production bundle 成功，大小为 1,471,170 bytes，包含 19 assets。
-仍未生成 APK、未完成 Gradle/原生 compile-only，也未完成模拟器端到端验收；真实
-`content://` URI 的后台播放与重启后播放仍 `not verified`。原生 compile-only 仍因访问
-`plugins.gradle.org` 时 TLS 握手失败而受阻，不能据此声称 Kotlin/Java 编译通过。
+当前源码验证结果：离线缓存相关聚焦测试 17 个、发现页/provider/播放回滚聚焦测试 53 个，
+TypeScript、作用域 ESLint/Prettier 和 Android production Metro bundle 均通过。
+仍未生成整合 APK，也未完成模拟器端到端验收；真实 `content://` URI、原生缓存 provider、
+后台/重启播放和 TrackPlayer 回滚仍 `not verified`。本机缺少 Java Runtime/JDK 17，
+因此不能据此声称 Kotlin 原生编译或 JVM contract 已通过。
 
 ## 使用提示
 
@@ -266,11 +268,11 @@ listen2/
 - MV 可用性受视频、地区、CDN 和设备解码能力影响；不可用时请继续使用纯音频模式。
 - 逐词高亮需要歌词源提供逐词时间戳；普通 LRC 只能可靠地逐行同步。
 - 机器翻译需要用户自行配置 DeepSeek API 密钥并明确同意；React Native Android 版尚未接入该能力。
-- Electron 桌面离线缓存只覆盖已成功播放并完整缓存的 Bilibili 音频；React Native Android 版目前只有 SAF 本地文件引用，尚未实现把网络音频下载为离线缓存。
-- React Native Android 版的登录、MV、PiP、音效、可视化、响度分析和离线下载仍在迁移；当前不对这些能力做完成声明。
+- React Native Android 版已实现网易与酷狗的主动离线下载源码，但 Kotlin 编译、真实下载、重启修复和离线 TrackPlayer 播放仍待 JDK 17 与模拟器/真机统一验收；Bilibili 离线缓存尚未接入。
+- React Native Android 版的登录、MV、PiP、音效、可视化和响度分析仍在迁移；当前不对这些能力做完成声明。
 - 网易公开歌单详情的本次样本只返回 10 首歌曲，而摘要显示 35 首；这是公开接口样本限制，不代表完整歌单已验证。
 - QQ 匿名播放仍不可用；酷我播放仍需 Cookie/Secret，不能以匿名搜索成功推断可播放。
-- 第三批尚未生成 APK，也未完成模拟器端到端验收；真实 `content://` URI 的后台与重启后播放未验证；原生 compile-only 仍因 `plugins.gradle.org` TLS 握手失败而 `not verified`，Kotlin/Java 编译状态未确认。
+- 尚未生成整合 APK，也未完成模拟器端到端验收；本机缺少 JDK 17，因此 Kotlin/JVM contract、真实 `content://` 后台与重启播放、原生缓存和 TrackPlayer 回滚仍为 `not verified`。
 - 响度分析器会把解码器支持的来源采样率统一重采样到 48 kHz 分析域；超过时长或资源限制、无法解码的完整 Bilibili 缓存保持原音量。
 
 ## 贡献
