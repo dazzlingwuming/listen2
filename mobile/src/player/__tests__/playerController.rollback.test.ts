@@ -155,4 +155,29 @@ describe('collection playback rollback', () => {
     expect(state.isPlaying).toBe(false);
     expect(JSON.stringify(state)).not.toContain('https://media.example');
   });
+
+  it('does not destructively reset when the rollback snapshot is unavailable', async () => {
+    mockNative.getActiveTrack.mockResolvedValue(undefined);
+
+    await expect(
+      playerController.playTracks(dispatch, [track('netrack_2')]),
+    ).resolves.toBe(false);
+
+    expect(mockNative.reset).not.toHaveBeenCalled();
+    expect(mockNative.add).not.toHaveBeenCalled();
+    expect(state.currentTrack?.id).toBe('netrack_1');
+    expect(state.error).toBe('playback-transition-unavailable');
+  });
+
+  it('returns true only after native load and then commits the replacement playlist', async () => {
+    await expect(
+      playerController.playTracks(dispatch, [track('netrack_2')]),
+    ).resolves.toBe(true);
+
+    expect(mockNative.reset).toHaveBeenCalledTimes(1);
+    expect(mockNative.add).toHaveBeenCalledTimes(1);
+    expect(mockNative.play).toHaveBeenCalledTimes(1);
+    expect(state.playlist.map(item => item.id)).toEqual(['netrack_2']);
+    expect(state.currentTrack?.id).toBe('netrack_2');
+  });
 });

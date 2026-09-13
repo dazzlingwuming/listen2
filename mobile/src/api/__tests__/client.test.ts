@@ -671,6 +671,59 @@ describe('providerClient', () => {
     expect(urls).toContain('https://music.163.com/api/toplist');
   });
 
+  it('retains the first 12 valid rows from real-sized NetEase and Kugou directories', async () => {
+    const neteaseCharts = Array.from({ length: 63 }, (_, index) => ({
+      id: index + 1,
+      name: `榜单 ${index + 1}`,
+    }));
+    globalThis.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ code: 200, playlists: [] }))
+      .mockResolvedValueOnce(jsonResponse({ code: 200, list: neteaseCharts }));
+    const neteasePage = await providerClient.getDiscover('netease');
+    const neteaseSection = neteasePage.sections[1];
+    expect(neteaseSection).toMatchObject({ kind: 'charts', status: 'ready' });
+    expect(
+      neteaseSection.status === 'ready' && neteaseSection.items,
+    ).toHaveLength(12);
+    expect(
+      neteaseSection.status === 'ready' && neteaseSection.items[11].id,
+    ).toBe('neplaylist_12');
+
+    const kugouRanks = Array.from({ length: 55 }, (_, index) => ({
+      rankid: index + 1,
+      rankname: `酷狗榜 ${index + 1}`,
+    }));
+    globalThis.fetch = jest
+      .fn()
+      .mockResolvedValue(jsonResponse({ data: { info: kugouRanks } }));
+    const kugouPage = await providerClient.getDiscover('kugou');
+    const kugouSection = kugouPage.sections[1];
+    expect(kugouSection).toMatchObject({ kind: 'charts', status: 'ready' });
+    expect(kugouSection.status === 'ready' && kugouSection.items).toHaveLength(
+      12,
+    );
+    expect(kugouSection.status === 'ready' && kugouSection.items[11].id).toBe(
+      'kgchart_12',
+    );
+  });
+
+  it('rejects fractional numeric identities instead of truncating them', async () => {
+    globalThis.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({ code: 200, playlists: [{ id: 1.5, name: 'Bad id' }] }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ code: 200, list: [] }));
+    const page = await providerClient.getDiscover('netease');
+    expect(page.sections[0]).toMatchObject({
+      kind: 'featured',
+      status: 'error',
+      code: 'INVALID_RESPONSE',
+    });
+    expect(JSON.stringify(page)).not.toContain('neplaylist_1');
+  });
+
   it('hydrates ordered NetEase track IDs through fixed 50-id detail batches', async () => {
     const trackIds = Array.from({ length: 51 }, (_, index) => ({
       id: index + 1,
@@ -740,5 +793,32 @@ describe('providerClient', () => {
       source: 'kugou',
     });
     expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects a Kugou chart detail page that does not echo the requested page', async () => {
+    const song = (hash: string) => ({
+      hash,
+      songname: hash,
+      authors: [{ author_name: 'Artist' }],
+      duration: 120,
+    });
+    globalThis.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          songs: { total: 2, pagesize: 1, page: 1, list: [song('AABBCCDD')] },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          songs: { total: 2, pagesize: 1, page: 1, list: [song('EEFF0011')] },
+        }),
+      );
+    await expect(providerClient.getPlaylist('kgchart_9')).rejects.toMatchObject(
+      {
+        code: 'INVALID_RESPONSE',
+        source: 'kugou',
+      },
+    );
   });
 });

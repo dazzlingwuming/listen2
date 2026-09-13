@@ -36,6 +36,7 @@ const MAX_VIDEO_PAGES = 50;
 const MAX_AUDIO_VARIANTS = 4;
 const MAX_PLAYLIST_TRACKS = 1_000;
 const MAX_DISCOVER_ROWS = 12;
+const MAX_DIRECTORY_INPUT_ROWS = 200;
 const NETEASE_DETAIL_BATCH_SIZE = 50;
 const MAX_DETAIL_CONCURRENCY = 3;
 const MAX_KUGOU_DETAIL_PAGES = 40;
@@ -83,8 +84,8 @@ function text(value: unknown, maximum = 512): string | null {
 }
 
 function positive(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0
-    ? Math.floor(value)
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0
+    ? value
     : undefined;
 }
 
@@ -190,12 +191,15 @@ function boundedDiscoverRows(
   rows: unknown,
   mapper: (row: unknown) => PlaylistSummary | null,
 ): PlaylistSummary[] {
-  if (!Array.isArray(rows) || rows.length > MAX_DISCOVER_ROWS) {
+  if (!Array.isArray(rows) || rows.length > MAX_DIRECTORY_INPUT_ROWS) {
     throw new ProviderClientError('INVALID_RESPONSE', source, 'discover');
   }
-  const items = rows
-    .map(mapper)
-    .filter((item): item is PlaylistSummary => item !== null);
+  const items: PlaylistSummary[] = [];
+  for (const row of rows) {
+    const item = mapper(row);
+    if (item) items.push(item);
+    if (items.length === MAX_DISCOVER_ROWS) break;
+  }
   if (rows.length > 0 && items.length === 0) {
     throw new ProviderClientError('INVALID_RESPONSE', source, 'discover');
   }
@@ -668,6 +672,7 @@ function kugouChartTrack(value: unknown): Track | null {
 interface KugouChartPage {
   total: number;
   pageSize: number;
+  currentPage: number;
   rows: unknown[];
 }
 
@@ -692,11 +697,17 @@ async function getKugouChartPage(
   const songs = asObject(root?.songs);
   const total = nonNegative(songs?.total);
   const pageSize = positive(songs?.pagesize);
+  const currentPage = positive(songs?.page);
   const rows = songs?.list;
-  if (total === undefined || !pageSize || !Array.isArray(rows)) {
+  if (
+    total === undefined ||
+    !pageSize ||
+    currentPage !== page ||
+    !Array.isArray(rows)
+  ) {
     throw new ProviderClientError('INVALID_RESPONSE', 'kugou', 'playlist');
   }
-  return { total, pageSize, rows };
+  return { total, pageSize, currentPage, rows };
 }
 
 export async function getKugouChart(
