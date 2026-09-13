@@ -131,6 +131,94 @@ function asNativeTrack(
   };
 }
 
+type NativeRollbackSnapshot = {
+  track: PlayableTrack;
+  media: { url: string; headers?: Readonly<Record<string, string>> };
+  position: number;
+  repeatMode: RepeatMode;
+  volume: number;
+  playing: boolean;
+};
+
+function boundedNativeMedia(value: unknown): {
+  url: string;
+  headers?: Readonly<Record<string, string>>;
+} | null {
+  if (!value || typeof value !== 'object') return null;
+  const candidate = value as { url?: unknown; headers?: unknown };
+  if (
+    typeof candidate.url !== 'string' ||
+    !candidate.url ||
+    candidate.url.length > 4096 ||
+    /[\u0000-\u001f]/.test(candidate.url)
+  ) {
+    return null;
+  }
+  if (candidate.headers === undefined) return { url: candidate.url };
+  if (!candidate.headers || typeof candidate.headers !== 'object') return null;
+  const entries = Object.entries(candidate.headers as Record<string, unknown>);
+  if (entries.length > 8) return null;
+  const headers: Record<string, string> = {};
+  for (const [key, value] of entries) {
+    if (
+      !key ||
+      key.length > 64 ||
+      /[\u0000-\u001f]/.test(key) ||
+      typeof value !== 'string' ||
+      value.length > 1024 ||
+      /[\u0000-\u001f]/.test(value)
+    ) {
+      return null;
+    }
+    headers[key] = value;
+  }
+  return { url: candidate.url, headers };
+}
+
+async function captureRollbackSnapshot(
+  state: PlayerState,
+): Promise<NativeRollbackSnapshot | null> {
+  if (!state.nowPlaying) return null;
+  const active = boundedNativeMedia(await TrackPlayer.getActiveTrack());
+  const progress = await TrackPlayer.getProgress();
+  const playback = await TrackPlayer.getPlaybackState();
+  if (!active || !progress || !Number.isFinite(progress.position)) {
+    throw new Error('snapshot-unavailable');
+  }
+  return {
+    track: state.nowPlaying,
+    media: active,
+    position: Math.max(0, progress.position),
+    repeatMode:
+      state.playMode === PLAY_MODE.REPEAT_ONE
+        ? RepeatMode.Track
+        : RepeatMode.Off,
+    volume: state.muted ? 0 : state.volume,
+    playing: playback.state === State.Playing,
+  };
+}
+
+async function restoreRollbackSnapshot(snapshot: NativeRollbackSnapshot) {
+  await TrackPlayer.reset();
+  await TrackPlayer.add(asNativeTrack(snapshot.track, snapshot.media) as any);
+  await TrackPlayer.setRepeatMode(snapshot.repeatMode);
+  await TrackPlayer.setVolume(snapshot.volume);
+  if (snapshot.position > 0) await TrackPlayer.seekTo(snapshot.position);
+  if (snapshot.playing) await TrackPlayer.play();
+  else await TrackPlayer.pause();
+}
+
+async function replaceNativeTrack(
+  track: PlayableTrack,
+  media: { url: string; headers?: Readonly<Record<string, string>> },
+  state: PlayerState,
+) {
+  await TrackPlayer.reset();
+  await TrackPlayer.add(asNativeTrack(track, media) as any);
+  await configureNativeSnapshot(state);
+  await TrackPlayer.play();
+}
+
 async function ensurePlayer(): Promise<void> {
   if (!setupPromise) {
     setupPromise = (async () => {
@@ -385,9 +473,9 @@ class PlayerController {
     dispatch: Dispatch | undefined,
     tracks: PlayableTrack[],
     startIndex = 0,
-  ) {
+  ): Promise<boolean> {
     const target = tracks[startIndex];
-    if (!target) return;
+    if (!target) return false;
     let media: { url: string; headers?: Readonly<Record<string, string>> };
     try {
       media = await resolveTrackUrl(target);
@@ -397,13 +485,46 @@ class PlayerController {
         'player/setError',
         safePlayerError(error, 'playback-unavailable'),
       );
-      return;
+      return false;
     }
-    const started = await loadAndPlay(dispatch, target, 0, media);
-    if (started) {
-      emit(dispatch, 'player/replacePlaylist', { tracks, startIndex });
-      emit(dispatch, 'library/recordRecent', target);
+
+    const state = playerState();
+    let snapshot: NativeRollbackSnapshot | null;
+    try {
+      await ensurePlayer();
+      snapshot = await captureRollbackSnapshot(state);
+    } catch {
+      emit(dispatch, 'player/setError', 'playback-transition-unavailable');
+      return false;
     }
+
+    try {
+      await replaceNativeTrack(target, media, state);
+    } catch {
+      if (!snapshot) {
+        emit(dispatch, 'player/setPlaying', false);
+        emit(dispatch, 'player/setError', 'playback-unavailable');
+        return false;
+      }
+      try {
+        await restoreRollbackSnapshot(snapshot);
+        emit(dispatch, 'player/setPlaying', snapshot.playing);
+        emit(dispatch, 'player/setError', 'playback-unavailable');
+      } catch {
+        try {
+          await TrackPlayer.pause();
+        } catch {
+          // Recovery is bounded to one best-effort native pause.
+        }
+        emit(dispatch, 'player/setPlaying', false);
+        emit(dispatch, 'player/setError', 'playback-recovery-required');
+      }
+      return false;
+    }
+    emit(dispatch, 'player/setPlaying', true);
+    emit(dispatch, 'player/replacePlaylist', { tracks, startIndex });
+    emit(dispatch, 'library/recordRecent', target);
+    return true;
   }
 
   async next(dispatch?: Dispatch) {

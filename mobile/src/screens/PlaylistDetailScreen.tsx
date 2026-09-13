@@ -68,6 +68,7 @@ export function PlaylistDetailScreen() {
       : tracks
   ) as PresentableTrack[];
   const [addTarget, setAddTarget] = useState<PlayableTrack | null>(null);
+  const [startingPlayback, setStartingPlayback] = useState(false);
   const loadRemotePlaylist = useCallback(
     async (signal: AbortSignal) => {
       if (!remotePlaylistId || sourceId === 'local') return;
@@ -96,27 +97,29 @@ export function PlaylistDetailScreen() {
     const controller = new AbortController();
     loadRemotePlaylist(controller.signal);
   };
-  const play = (track: PresentableTrack, index: number) => {
-    const playTracks = (playerActions as any).playTracks;
-    if (playTracks) {
-      dispatch(playTracks(playableTracks as PlayableTrack[], index));
-      navigation.navigate('Player');
-      return;
+  const play = async (_track: PresentableTrack, index: number) => {
+    if (startingPlayback) return;
+    setStartingPlayback(true);
+    try {
+      const started = await dispatch(
+        playerActions.playTracks(playableTracks as PlayableTrack[], index),
+      );
+      if (started === true) navigation.navigate('Player');
+    } catch {
+      // The controller stores only a fixed product-safe error code.
+    } finally {
+      setStartingPlayback(false);
     }
-    const action =
-      (playerActions as any).playTrack ||
-      (playerActions as any).setCurrentTrack ||
-      (playerActions as any).selectTrack;
-    if (action) dispatch(action(track as PlayableTrack));
-    navigation.navigate('Player');
   };
   const canPlayTrack = (track: PresentableTrack) =>
     isLocalTrack(track) ||
     PROVIDER_CAPABILITIES[track.source as keyof typeof PROVIDER_CAPABILITIES]
       ?.playback === true;
+  const partialRemoteDetail = remoteDetail?.completeness === 'partial';
   const playAll = () => {
+    if (partialRemoteDetail) return;
     const index = playableTracks.findIndex(canPlayTrack);
-    if (index >= 0) play(playableTracks[index], index);
+    if (index >= 0) void play(playableTracks[index], index);
   };
   const hasPlayableTrack = playableTracks.some(canPlayTrack);
   const detailTitle = remoteDetail?.title || title || '音乐详情';
@@ -141,7 +144,9 @@ export function PlaylistDetailScreen() {
           <Text style={text.heading}>{detailTitle}</Text>
           <Text style={text.meta}>
             {providerLabels[displaySource] || displaySource} ·{' '}
-            {playableTracks.length
+            {remoteDetail
+              ? `${playableTracks.length}/${remoteDetail.declaredTrackCount} 首歌曲`
+              : playableTracks.length
               ? `${playableTracks.length} 首歌曲`
               : remoteStatus === 'loading'
               ? '正在加载歌单'
@@ -165,6 +170,17 @@ export function PlaylistDetailScreen() {
           >
             <Text style={sectionStyles.buttonText}>重试</Text>
           </Pressable>
+        </View>
+      ) : null}
+      {partialRemoteDetail ? (
+        <View
+          accessibilityRole="alert"
+          style={[sectionStyles.card, styles.remoteState]}
+        >
+          <Text style={text.heading}>歌单内容不完整</Text>
+          <Text style={text.meta}>
+            仅显示音源本次返回的歌曲，不能播放全部。
+          </Text>
         </View>
       ) : null}
       {libraryPlaylistId ? (
@@ -192,9 +208,18 @@ export function PlaylistDetailScreen() {
         <View>
           {hasPlayableTrack ? (
             <Pressable
-              accessibilityLabel="播放全部歌曲"
+              accessibilityLabel={`${detailTitle}播放全部歌曲`}
+              accessibilityState={{
+                disabled: partialRemoteDetail || startingPlayback,
+              }}
+              disabled={partialRemoteDetail || startingPlayback}
               onPress={playAll}
-              style={[sectionStyles.button, styles.playAll]}
+              style={[
+                sectionStyles.button,
+                styles.playAll,
+                (partialRemoteDetail || startingPlayback) &&
+                  styles.playAllDisabled,
+              ]}
             >
               <Text style={sectionStyles.buttonText}>▶ 播放全部</Text>
             </Pressable>
@@ -207,8 +232,8 @@ export function PlaylistDetailScreen() {
             return (
               <View key={`${track.id || index}`} style={styles.trackBlock}>
                 <TrackRow
-                  onPlay={canPlay ? () => play(track, index) : undefined}
-                  onPress={canPlay ? () => play(track, index) : undefined}
+                  onPlay={canPlay ? () => void play(track, index) : undefined}
+                  onPress={canPlay ? () => void play(track, index) : undefined}
                   track={track}
                 />
                 {isLocalTrack(track) && track.accessStatus !== 'available' ? (
@@ -354,6 +379,7 @@ const styles = StyleSheet.create({
   empty: { gap: spacing.sm, minHeight: 140, justifyContent: 'center' },
   remoteState: { gap: spacing.sm, minHeight: 72, justifyContent: 'center' },
   playAll: { alignSelf: 'flex-start', marginBottom: spacing.sm },
+  playAllDisabled: { opacity: 0.45 },
   trackBlock: { position: 'relative', paddingBottom: spacing.sm },
   favorite: {
     alignSelf: 'flex-end',
