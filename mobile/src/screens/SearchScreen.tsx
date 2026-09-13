@@ -7,7 +7,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type {
   SearchKind,
@@ -22,6 +22,9 @@ import { colors, spacing, text } from '../theme';
 import { SourceTabs, providerLabels } from '../components/SourceTabs';
 import { TrackRow, type PresentableTrack } from '../components/TrackRow';
 import { ScreenLayout, sectionStyles } from './ScreenLayout';
+import { isOfflineDownloadEligible } from '../offline/offlineAudio';
+import { requestDownload } from '../store/downloadSlice';
+import type { RootState } from '../store';
 
 type SearchStatus =
   | 'guide'
@@ -36,6 +39,7 @@ export function SearchScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const dispatch = useDispatch<any>();
+  const downloads = useSelector((state: RootState) => state.downloads.entries);
   const [sourceId, setSourceId] = useState<SourceId>(
     route.params?.sourceId || ('netease' as SourceId),
   );
@@ -252,6 +256,8 @@ export function SearchScreen() {
       <SearchSurface
         items={items}
         onPlay={play}
+        downloads={downloads}
+        onDownload={track => dispatch(requestDownload(track as Track))}
         onSelectPlaylist={playlist =>
           navigation.navigate('PlaylistDetail', {
             sourceId: playlist.source,
@@ -283,6 +289,8 @@ function SearchSurface({
   searchKind,
   onSelectPlaylist,
   onPlay,
+  downloads,
+  onDownload,
 }: {
   status: SearchStatus;
   sourceId: SourceId;
@@ -292,6 +300,8 @@ function SearchSurface({
     playlist: Extract<SearchResult, { kind: 'playlist' }>['playlist'],
   ) => void;
   onPlay: (track: PresentableTrack) => void;
+  downloads: RootState['downloads']['entries'];
+  onDownload: (track: PresentableTrack) => void;
 }) {
   if (status === 'guide')
     return (
@@ -356,6 +366,18 @@ function SearchSurface({
                 : undefined
             }
             track={item.track}
+            onDownload={
+              isOfflineDownloadEligible(item.track)
+                ? () => onDownload(item.track)
+                : undefined
+            }
+            downloadStatus={
+              downloads.find(
+                entry =>
+                  entry.source === item.track.source &&
+                  entry.trackId === item.track.id,
+              )?.status
+            }
           />
         ) : (
           <Pressable

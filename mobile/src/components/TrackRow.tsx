@@ -37,10 +37,14 @@ export function TrackRow({
   track,
   onPress,
   onPlay,
+  onDownload,
+  downloadStatus,
 }: {
   track: PresentableTrack;
   onPress?: () => void;
   onPlay?: () => void;
+  onDownload?: () => void;
+  downloadStatus?: string;
 }) {
   const source = trackSource(track);
   return (
@@ -88,6 +92,26 @@ export function TrackRow({
       ) : (
         <Text style={styles.unavailable}>暂不可播</Text>
       )}
+      {onDownload ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`下载${trackTitle(track)}`}
+          hitSlop={8}
+          onPress={event => {
+            event.stopPropagation();
+            onDownload();
+          }}
+          style={styles.play}
+        >
+          <Text style={styles.playText}>
+            {downloadStatus === 'downloading'
+              ? '下载中'
+              : downloadStatus === 'ready'
+              ? '已下载'
+              : '下载'}
+          </Text>
+        </Pressable>
+      ) : null}
     </Pressable>
   );
 }

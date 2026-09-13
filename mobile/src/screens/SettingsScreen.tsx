@@ -30,11 +30,19 @@ import {
   type ImportPlan,
 } from '../backup/backupCodec';
 import { createPortableBackupState } from '../localAudio/backup';
+import {
+  cancelDownload,
+  clearDownloads,
+  hydrateDownloads,
+  removeDownload,
+  retryDownload,
+} from '../store/downloadSlice';
 
 export function SettingsScreen() {
   const dispatch = useDispatch<AppDispatch>();
   const library = useSelector((state: RootState) => state.library);
   const player = useSelector((state: RootState) => state.player);
+  const downloads = useSelector((state: RootState) => state.downloads);
   const [importVisible, setImportVisible] = useState(false);
   const [importText, setImportText] = useState('');
   const [importDocument, setImportDocument] = useState<BackupDocument | null>(
@@ -45,6 +53,18 @@ export function SettingsScreen() {
   >(null);
   const [backupError, setBackupError] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
+  React.useEffect(() => {
+    dispatch(hydrateDownloads());
+  }, [dispatch]);
+  const confirmClearDownloads = () =>
+    Alert.alert('清空全部下载？', '已下载的离线媒体将从本机移除。', [
+      { text: '取消', style: 'cancel' },
+      {
+        text: '确认清空',
+        style: 'destructive',
+        onPress: () => dispatch(clearDownloads()),
+      },
+    ]);
 
   const currentBackupState = (): BackupImportState =>
     createPortableBackupState(library, player);
@@ -175,6 +195,78 @@ export function SettingsScreen() {
       >
         <Text style={sectionStyles.secondaryText}>清空最近播放</Text>
       </Pressable>
+      <View style={sectionStyles.section}>
+        <Text style={text.heading}>下载管理</Text>
+        <View style={sectionStyles.card}>
+          <Text style={text.meta}>
+            已用 {Math.floor(downloads.usedBytes / 1024 / 1024)} MiB /{' '}
+            {Math.floor(downloads.quotaBytes / 1024 / 1024)} MiB
+          </Text>
+          {downloads.entries.length === 0 ? (
+            <Text style={text.meta}>暂无离线下载。</Text>
+          ) : (
+            downloads.entries.map(entry => (
+              <View key={`${entry.source}:${entry.trackId}`} style={styles.row}>
+                <View style={{ flex: 1 }}>
+                  <Text style={text.body}>{entry.title}</Text>
+                  <Text style={text.meta}>
+                    {entry.artist} · {entry.source} ·{' '}
+                    {entry.status === 'ready'
+                      ? '已下载'
+                      : entry.status === 'downloading'
+                      ? '下载中'
+                      : entry.status === 'queued'
+                      ? '等待下载'
+                      : entry.status === 'cancelled'
+                      ? '已取消'
+                      : '下载失败'}{' '}
+                    {entry.totalBytes > 0
+                      ? `${Math.min(
+                          100,
+                          Math.floor(
+                            (entry.downloadedBytes / entry.totalBytes) * 100,
+                          ),
+                        )}%`
+                      : ''}
+                  </Text>
+                </View>
+                {entry.status === 'queued' || entry.status === 'downloading' ? (
+                  <Pressable
+                    accessibilityLabel={`取消下载${entry.title}`}
+                    onPress={() => dispatch(cancelDownload(entry.operationId))}
+                  >
+                    <Text style={styles.status}>取消</Text>
+                  </Pressable>
+                ) : entry.status === 'failed' ||
+                  entry.status === 'cancelled' ? (
+                  <Pressable
+                    accessibilityLabel={`重试下载${entry.title}`}
+                    onPress={() => dispatch(retryDownload(entry))}
+                  >
+                    <Text style={styles.status}>重试</Text>
+                  </Pressable>
+                ) : (
+                  <Pressable
+                    accessibilityLabel={`移除下载${entry.title}`}
+                    onPress={() => dispatch(removeDownload(entry))}
+                  >
+                    <Text style={styles.status}>移除</Text>
+                  </Pressable>
+                )}
+              </View>
+            ))
+          )}
+          {downloads.entries.length ? (
+            <Pressable
+              accessibilityLabel="清空全部下载"
+              onPress={confirmClearDownloads}
+              style={sectionStyles.secondaryButton}
+            >
+              <Text style={sectionStyles.secondaryText}>清空全部下载</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      </View>
       <View style={sectionStyles.section}>
         <Text style={text.heading}>数据备份</Text>
         <View style={sectionStyles.card}>
