@@ -536,13 +536,23 @@ describe('providerClient', () => {
   });
 
   it('maps a bounded NetEase playlist through its fixed detail route', async () => {
-    globalThis.fetch = jest.fn().mockResolvedValue(
-      jsonResponse({
-        code: 200,
-        playlist: {
-          id: 77,
-          name: 'My playlist',
-          tracks: [
+    globalThis.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          code: 200,
+          playlist: {
+            id: 77,
+            name: 'My playlist',
+            trackCount: 1,
+            trackIds: [{ id: 42 }],
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          code: 200,
+          songs: [
             {
               id: 42,
               name: 'Song',
@@ -550,11 +560,9 @@ describe('providerClient', () => {
               al: { name: 'Album', picUrl: 'https://img.example/cover.jpg' },
               dt: 123000,
             },
-            { id: 'bad' },
           ],
-        },
-      }),
-    );
+        }),
+      );
     await expect(providerClient.getPlaylist('neplaylist_77')).resolves.toEqual({
       id: 'neplaylist_77',
       source: 'netease',
@@ -570,6 +578,8 @@ describe('providerClient', () => {
           artworkUrl: 'https://img.example/cover.jpg',
         },
       ],
+      completeness: 'complete',
+      declaredTrackCount: 1,
     });
     expect((globalThis.fetch as jest.Mock).mock.calls[0][0]).toBe(
       'https://music.163.com/api/v3/playlist/detail?id=77&n=1000',
@@ -607,6 +617,128 @@ describe('providerClient', () => {
     expect(
       new ProviderClientError('NETWORK_ERROR', 'qq', 'search').action,
     ).toBe('retry');
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('uses fixed bounded NetEase discovery routes and semantic chart identities', async () => {
+    globalThis.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          code: 200,
+          playlists: [
+            {
+              id: 11,
+              name: 'Featured',
+              trackCount: 3,
+              creator: { nickname: 'A' },
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          code: 200,
+          list: [{ id: 12, name: 'Chart', trackCount: 4 }],
+        }),
+      );
+
+    await expect(providerClient.getDiscover('netease')).resolves.toEqual({
+      source: 'netease',
+      sections: [
+        {
+          kind: 'featured',
+          status: 'ready',
+          items: [
+            expect.objectContaining({ id: 'neplaylist_11', title: 'Featured' }),
+          ],
+        },
+        {
+          kind: 'charts',
+          status: 'ready',
+          items: [
+            expect.objectContaining({ id: 'neplaylist_12', title: 'Chart' }),
+          ],
+        },
+      ],
+    });
+    const urls = (globalThis.fetch as jest.Mock).mock.calls.map(
+      call => call[0],
+    );
+    expect(urls).toContain(
+      'https://music.163.com/api/playlist/list?cat=%E5%85%A8%E9%83%A8&order=hot&limit=12&offset=0&total=true',
+    );
+    expect(urls).toContain('https://music.163.com/api/toplist');
+  });
+
+  it('hydrates ordered NetEase track IDs through fixed 50-id detail batches', async () => {
+    const trackIds = Array.from({ length: 51 }, (_, index) => ({
+      id: index + 1,
+    }));
+    const songs = (start: number, end: number) =>
+      Array.from({ length: end - start + 1 }, (_, offset) => ({
+        id: end - offset,
+        name: `Song ${end - offset}`,
+        ar: [{ name: 'Artist' }],
+      }));
+    globalThis.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          code: 200,
+          playlist: { id: 77, name: 'Bounded', trackCount: 51, trackIds },
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ code: 200, songs: songs(1, 50) }))
+      .mockResolvedValueOnce(jsonResponse({ code: 200, songs: songs(51, 51) }));
+
+    const detail = await providerClient.getPlaylist('neplaylist_77');
+    expect(detail.tracks).toHaveLength(51);
+    expect(detail.tracks[0].id).toBe('netrack_1');
+    expect(detail.tracks[50].id).toBe('netrack_51');
+    expect(detail.completeness).toBe('complete');
+    expect(detail.declaredTrackCount).toBe(51);
+    expect((globalThis.fetch as jest.Mock).mock.calls).toHaveLength(3);
+    expect((globalThis.fetch as jest.Mock).mock.calls[1][0]).toContain(
+      'https://music.163.com/api/v3/song/detail?',
+    );
+  });
+
+  it('keeps Kugou discovery chart-only and rejects legacy playlist routing without fetch', async () => {
+    globalThis.fetch = jest.fn().mockResolvedValue(
+      jsonResponse({
+        data: {
+          info: [
+            {
+              rankid: 9,
+              rankname: 'Top',
+              imgurl: 'http://imge.kugou.com/{size}/top.jpg',
+            },
+          ],
+        },
+      }),
+    );
+    const page = await providerClient.getDiscover('kugou');
+    expect(page.sections).toEqual([
+      { kind: 'featured', status: 'unavailable', reason: 'unverified-route' },
+      {
+        kind: 'charts',
+        status: 'ready',
+        items: [
+          expect.objectContaining({
+            id: 'kgchart_9',
+            artworkUrl: 'https://imge.kugou.com/400/top.jpg',
+          }),
+        ],
+      },
+    ]);
+    (globalThis.fetch as jest.Mock).mockClear();
+    await expect(
+      providerClient.getPlaylist('kgplaylist_9'),
+    ).rejects.toMatchObject({
+      code: 'ROUTE_UNAVAILABLE',
+      source: 'kugou',
+    });
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });
