@@ -29,6 +29,7 @@ const mockReactNative = () => {
 
 import type { DownloadSnapshot } from '../offlineAudio';
 import type { DownloadEntry } from '../offlineAudio';
+import { offlineDownloadErrorCopy } from '../offlineErrorCopy';
 
 let offlineAudio: typeof import('../offlineAudio').offlineAudio;
 let isOfflineDownloadEligible: typeof import('../offlineAudio').isOfflineDownloadEligible;
@@ -157,5 +158,32 @@ describe('offline download adapter and volatile catalog projection', () => {
       quotaBytes: 512 * 1024 * 1024,
       entries: [],
     });
+  });
+
+  it('maps stable download failures to fixed actionable Chinese copy', () => {
+    expect(offlineDownloadErrorCopy('QUEUE_FULL')).toBe(
+      '下载任务已满，请等待当前任务完成后重试。',
+    );
+    expect(offlineDownloadErrorCopy('CAPACITY_EXCEEDED')).toBe(
+      '离线空间不足，请删除已下载内容后重试。',
+    );
+    expect(offlineDownloadErrorCopy('FILE_TOO_LARGE')).toBe(
+      '文件超过离线下载大小限制，请选择其他音源。',
+    );
+    expect(offlineDownloadErrorCopy('CANCELLED')).toBe(
+      '下载已取消，可随时重新下载。',
+    );
+    expect(offlineDownloadErrorCopy('NETWORK')).toBe(
+      '网络连接不稳定，请检查网络后重试。',
+    );
+    expect(offlineDownloadErrorCopy('PROVIDER_REJECTED')).toBe(
+      '音源暂不可下载，请稍后重试或更换音源。',
+    );
+    expect(offlineDownloadErrorCopy('CORRUPT')).toBe(
+      '离线文件不可用，请移除后重新下载。',
+    );
+    expect(offlineDownloadErrorCopy('https://private.example')).toBe(
+      '下载失败，请重试。',
+    );
   });
 });

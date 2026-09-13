@@ -37,6 +37,7 @@ import {
   removeDownload,
   retryDownload,
 } from '../store/downloadSlice';
+import { offlineDownloadErrorCopy } from '../offline/offlineErrorCopy';
 
 export function SettingsScreen() {
   const dispatch = useDispatch<AppDispatch>();
@@ -205,56 +206,68 @@ export function SettingsScreen() {
           {downloads.entries.length === 0 ? (
             <Text style={text.meta}>暂无离线下载。</Text>
           ) : (
-            downloads.entries.map(entry => (
-              <View key={`${entry.source}:${entry.trackId}`} style={styles.row}>
-                <View style={{ flex: 1 }}>
-                  <Text style={text.body}>{entry.title}</Text>
-                  <Text style={text.meta}>
-                    {entry.artist} · {entry.source} ·{' '}
-                    {entry.status === 'ready'
-                      ? '已下载'
-                      : entry.status === 'downloading'
-                      ? '下载中'
-                      : entry.status === 'queued'
-                      ? '等待下载'
-                      : entry.status === 'cancelled'
-                      ? '已取消'
-                      : '下载失败'}{' '}
-                    {entry.totalBytes > 0
-                      ? `${Math.min(
-                          100,
-                          Math.floor(
-                            (entry.downloadedBytes / entry.totalBytes) * 100,
-                          ),
-                        )}%`
-                      : ''}
-                  </Text>
+            downloads.entries.map(entry => {
+              const failureCopy = offlineDownloadErrorCopy(entry.errorCode);
+              return (
+                <View
+                  key={`${entry.source}:${entry.trackId}`}
+                  style={styles.row}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={text.body}>{entry.title}</Text>
+                    <Text style={text.meta}>
+                      {entry.artist} · {entry.source} ·{' '}
+                      {entry.status === 'ready'
+                        ? '已下载'
+                        : entry.status === 'downloading'
+                        ? '下载中'
+                        : entry.status === 'queued'
+                        ? '等待下载'
+                        : entry.status === 'cancelled'
+                        ? '已取消'
+                        : '下载失败'}{' '}
+                      {entry.totalBytes > 0
+                        ? `${Math.min(
+                            100,
+                            Math.floor(
+                              (entry.downloadedBytes / entry.totalBytes) * 100,
+                            ),
+                          )}%`
+                        : ''}
+                    </Text>
+                    {failureCopy ? (
+                      <Text style={text.meta}>{failureCopy}</Text>
+                    ) : null}
+                  </View>
+                  {entry.status === 'queued' ||
+                  entry.status === 'downloading' ? (
+                    <Pressable
+                      accessibilityLabel={`取消下载${entry.title}`}
+                      onPress={() =>
+                        dispatch(cancelDownload(entry.operationId))
+                      }
+                    >
+                      <Text style={styles.status}>取消</Text>
+                    </Pressable>
+                  ) : entry.status === 'failed' ||
+                    entry.status === 'cancelled' ? (
+                    <Pressable
+                      accessibilityLabel={`重试下载${entry.title}`}
+                      onPress={() => dispatch(retryDownload(entry))}
+                    >
+                      <Text style={styles.status}>重试</Text>
+                    </Pressable>
+                  ) : (
+                    <Pressable
+                      accessibilityLabel={`移除下载${entry.title}`}
+                      onPress={() => dispatch(removeDownload(entry))}
+                    >
+                      <Text style={styles.status}>移除</Text>
+                    </Pressable>
+                  )}
                 </View>
-                {entry.status === 'queued' || entry.status === 'downloading' ? (
-                  <Pressable
-                    accessibilityLabel={`取消下载${entry.title}`}
-                    onPress={() => dispatch(cancelDownload(entry.operationId))}
-                  >
-                    <Text style={styles.status}>取消</Text>
-                  </Pressable>
-                ) : entry.status === 'failed' ||
-                  entry.status === 'cancelled' ? (
-                  <Pressable
-                    accessibilityLabel={`重试下载${entry.title}`}
-                    onPress={() => dispatch(retryDownload(entry))}
-                  >
-                    <Text style={styles.status}>重试</Text>
-                  </Pressable>
-                ) : (
-                  <Pressable
-                    accessibilityLabel={`移除下载${entry.title}`}
-                    onPress={() => dispatch(removeDownload(entry))}
-                  >
-                    <Text style={styles.status}>移除</Text>
-                  </Pressable>
-                )}
-              </View>
-            ))
+              );
+            })
           )}
           {downloads.entries.length ? (
             <Pressable

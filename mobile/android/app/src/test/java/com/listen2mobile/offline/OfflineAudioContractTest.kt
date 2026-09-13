@@ -2,6 +2,8 @@ package com.listen2mobile.offline
 
 import java.io.ByteArrayInputStream
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 import java.nio.file.Files
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -16,6 +18,8 @@ class OfflineAudioContractTest {
         assertTrue(OfflinePolicy.accepted("kugou", "kgtrack_abcdefgh"))
         assertFalse(OfflinePolicy.accepted("bilibili", "bitrack_1"))
         assertFalse(OfflineRoute.KUGOU_MEDIA.permits(java.net.URL("https://example.com/audio.mp3")))
+        assertFalse(OfflineRoute.KUGOU_MEDIA.permits(java.net.URL("https://fs.w.kugou.com/audio.mp3")))
+        assertFalse(OfflineRoute.KUGOU_MEDIA.permits(java.net.URL("https://webfs.kugou.com/audio.mp3")))
         assertFalse(OfflineRoute.NETEASE_MEDIA.permits(java.net.URL("http://music.163.com/song/media/outer/url?id=1")))
         assertTrue(OfflineRoute.KUGOU_BOOTSTRAP.permits(java.net.URL("https://wwwapi.kugou.com/yy/index.php?r=play/getdata&hash=abcdefgh")))
     }
@@ -27,6 +31,44 @@ class OfflineAudioContractTest {
             throw AssertionError("expected bounded read failure")
         } catch (expected: java.io.IOException) {
             assertEquals("BODY_TOO_LARGE", expected.message)
+        }
+    }
+
+    @Test fun transportAllowsNoMoreThanTwoValidatedRedirects() {
+        val first = URL("https://music.163.com/song/media/outer/url?id=1.mp3")
+        val second = URL("https://m7.music.126.net/a.mp3")
+        val third = URL("https://m8.music.126.net/b.mp3")
+        val responses = mutableListOf(
+            RedirectConnection(first, 302, second.toString()),
+            RedirectConnection(second, 302, third.toString()),
+            RedirectConnection(third, 200, null),
+        )
+        HttpOfflineTransport { responses.removeAt(0) }
+            .fetch(first.toString(), OfflineRoute.NETEASE_MEDIA, System.nanoTime() / 1_000_000 + 1_000)
+            .close()
+        assertTrue(responses.isEmpty())
+
+        val overflow = mutableListOf(
+            RedirectConnection(first, 302, second.toString()),
+            RedirectConnection(second, 302, third.toString()),
+            RedirectConnection(third, 302, second.toString()),
+        )
+        try {
+            HttpOfflineTransport { overflow.removeAt(0) }
+                .fetch(first.toString(), OfflineRoute.NETEASE_MEDIA, System.nanoTime() / 1_000_000 + 1_000)
+            throw AssertionError("expected redirect rejection")
+        } catch (expected: java.io.IOException) {
+            assertEquals("REDIRECT_REJECTED", expected.message)
+        }
+        assertTrue(overflow.isEmpty())
+
+        try {
+            HttpOfflineTransport {
+                RedirectConnection(first, 302, "https://sharefs.kugou.com/not-a-netease-hop.mp3")
+            }.fetch(first.toString(), OfflineRoute.NETEASE_MEDIA, System.nanoTime() / 1_000_000 + 1_000)
+            throw AssertionError("expected cross-provider redirect rejection")
+        } catch (expected: java.io.IOException) {
+            assertEquals("REDIRECT_REJECTED", expected.message)
         }
     }
 
@@ -71,7 +113,38 @@ class OfflineAudioContractTest {
         coordinator.retry("netease", "netrack_1")
         coordinator.enqueue("netease", "netrack_2", "t", "a")
         executor.runAll()
-        assertTrue(coordinator.snapshot().any { it.errorCode == "QUOTA_EXCEEDED" })
+        assertTrue(coordinator.snapshot().any { it.errorCode == "CAPACITY_EXCEEDED" })
+    }
+
+    @Test fun understatedPositiveContentLengthCannotOverrunQuotaOrPublishReady() {
+        val executor = ManualExecutor()
+        val transport = FakeTransport().apply { neteaseMedia = audio(12); neteaseContentLength = 4 }
+        val coordinator = OfflineCoordinator(
+            Files.createTempDirectory("offline-contract").toFile(), transport, executor,
+            { 7L }, OfflineLimits(fileBytes = 16, totalBytes = 20, bootstrapBytes = 8),
+        )
+        coordinator.enqueue("netease", "netrack_1", "t", "a")
+        executor.runAll()
+        val entry = coordinator.snapshot().single()
+        assertEquals(OfflineStatus.FAILED, entry.status)
+        assertEquals("PROVIDER_REJECTED", entry.errorCode)
+        assertNull(coordinator.resolve("netease", "netrack_1"))
+    }
+
+    @Test fun absoluteDeadlineAppliesAcrossProviderAndMediaSteps() {
+        var now = 0L
+        val executor = ManualExecutor()
+        val transport = FakeTransport().apply {
+            neteaseMedia = audio()
+            afterFetch = { now = 11L }
+        }
+        val coordinator = OfflineCoordinator(
+            Files.createTempDirectory("offline-contract").toFile(), transport, executor,
+            { 7L }, OfflineLimits(fileBytes = 32, totalBytes = 32, bootstrapBytes = 8, transferDeadlineMillis = 10), { now },
+        )
+        coordinator.enqueue("netease", "netrack_1", "t", "a")
+        executor.runAll()
+        assertEquals("NETWORK", coordinator.snapshot().single().errorCode)
     }
 
     @Test fun cancellationTombstonesWorkerAndEmitsProgressAndTerminalSnapshots() {
@@ -139,11 +212,26 @@ class OfflineAudioContractTest {
     private class FakeTransport : OfflineTransport {
         val routes = mutableListOf<OfflineRoute>()
         var neteaseMedia: ByteArray = audio(); var kugouBootstrap: ByteArray = ByteArray(0); var kugouMedia: ByteArray = audio()
-        override fun fetch(url: String, route: OfflineRoute): OfflineResponse {
+        var neteaseContentLength: Long? = null
+        var afterFetch: (() -> Unit)? = null
+        override fun fetch(url: String, route: OfflineRoute, deadlineMillis: Long): OfflineResponse {
             routes += route
             val body = when (route) { OfflineRoute.NETEASE_MEDIA -> neteaseMedia; OfflineRoute.KUGOU_BOOTSTRAP -> kugouBootstrap; OfflineRoute.KUGOU_MEDIA -> kugouMedia }
-            return OfflineResponse(ByteArrayInputStream(body), if (route == OfflineRoute.KUGOU_BOOTSTRAP) "application/json" else "audio/mpeg", body.size.toLong())
+            afterFetch?.invoke()
+            val declaredLength = if (route == OfflineRoute.NETEASE_MEDIA) neteaseContentLength ?: body.size.toLong() else body.size.toLong()
+            return OfflineResponse(ByteArrayInputStream(body), if (route == OfflineRoute.KUGOU_BOOTSTRAP) "application/json" else "audio/mpeg", declaredLength)
         }
+    }
+
+    private class RedirectConnection(url: URL, private val code: Int, private val location: String?) : HttpURLConnection(url) {
+        init { contentLength = 24 }
+        override fun connect() = Unit
+        override fun disconnect() = Unit
+        override fun usingProxy() = false
+        override fun getResponseCode() = code
+        override fun getHeaderField(name: String?) = if (name == "Location") location else null
+        override fun getInputStream() = ByteArrayInputStream(audio())
+        override fun getContentType() = "audio/mpeg"
     }
 
     private companion object {

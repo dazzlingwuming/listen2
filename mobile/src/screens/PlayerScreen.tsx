@@ -18,6 +18,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { RootState } from '../store';
 import * as playerActions from '../store/playerSlice';
 import { colors, spacing, text } from '../theme';
+import { playerErrorCopy } from '../player/playerErrorCopy';
 import {
   artwork,
   formatDuration,
@@ -48,7 +49,9 @@ export function PlayerScreen() {
   ) as PresentableTrack[];
   const showingPlayNext = Boolean(state.playNextQueue?.length);
   const playing = Boolean(state.isPlaying ?? state.playing);
-  const error = typeof state.error === 'string' ? state.error : null;
+  const error = playerErrorCopy(
+    typeof state.error === 'string' ? state.error : null,
+  );
   const favorites = useSelector((root: RootState) => root.library.favorites);
   const [showQueue, setShowQueue] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);

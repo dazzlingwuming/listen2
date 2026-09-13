@@ -67,6 +67,7 @@ import {
 import type { Track } from '../../types/music';
 import type { LocalTrack } from '../../types/music';
 import { Platform } from 'react-native';
+import { playerErrorCopy } from '../playerErrorCopy';
 
 const track = (id: string): Track => ({
   id,
@@ -171,7 +172,7 @@ describe('PlayerController queue transitions', () => {
 
     expect(state.currentTrack?.id).toBe(current.id);
     expect(state.playNextQueue.map(item => item.id)).toEqual([queued.id]);
-    expect(state.error).toBe('native-load-failed');
+    expect(state.error).toBe('playback-unavailable');
     expect(state.isPlaying).toBe(false);
   });
 
@@ -278,6 +279,30 @@ describe('PlayerController queue transitions', () => {
     expect(state.playNextQueue.map(item => item.id)).toEqual([queued.id]);
   });
 
+  it('never stores content or provider locations from rejected playback errors', async () => {
+    const queued = track('netrack_2');
+    state = reducer(
+      state,
+      playerActions.replacePlaylist({ tracks: [track('netrack_1')] }),
+    );
+    state = reducer(state, playerActions.enqueueNext(queued));
+    mockBootstrapTrack.mockRejectedValueOnce(
+      new Error(
+        'https://provider.example/path?token=secret content://cache/private',
+      ),
+    );
+
+    await playerController.next(dispatch);
+
+    expect(state.error).toBe('playback-unavailable');
+    expect(state.error).not.toContain('https://');
+    expect(state.error).not.toContain('content://');
+    expect(playerErrorCopy(state.error)).toBe('播放暂不可用，请稍后重试。');
+    expect(playerErrorCopy('https://provider.example/private')).toBe(
+      '播放暂不可用，请稍后重试。',
+    );
+  });
+
   it('does not query offline storage for an unsupported provider', async () => {
     const unsupported = { ...track('qqtrack_1'), source: 'qq' as const };
     state = reducer(
@@ -308,7 +333,7 @@ describe('PlayerController queue transitions', () => {
 
     expect(mockBootstrapTrack).not.toHaveBeenCalled();
     expect(state.playNextQueue.map(item => item.id)).toEqual([local.id]);
-    expect(state.error).toBe('native-load-failed');
+    expect(state.error).toBe('local-media-unavailable');
   });
 
   it('stops native playback and purges a forgotten current local track', async () => {

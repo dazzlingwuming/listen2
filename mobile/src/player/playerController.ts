@@ -47,6 +47,23 @@ function emit(dispatch: Dispatch | undefined, type: string, payload?: unknown) {
   return send(payload === undefined ? { type } : { type, payload });
 }
 
+const SAFE_TYPED_PLAYER_ERRORS = new Set([
+  'NETWORK_ERROR',
+  'PROVIDER_ERROR',
+  'ROUTE_UNAVAILABLE',
+  'PLAYBACK_UNAVAILABLE',
+]);
+
+function safePlayerError(error: unknown, fallback: string): string {
+  const code =
+    error && typeof error === 'object' && 'code' in error
+      ? (error as { code?: unknown }).code
+      : undefined;
+  return typeof code === 'string' && SAFE_TYPED_PLAYER_ERRORS.has(code)
+    ? code
+    : fallback;
+}
+
 function trackId(track: PlayableTrack): string {
   const id = (track as PlayableTrack & { id?: unknown }).id;
   return id === undefined || id === null ? '' : String(id);
@@ -213,7 +230,14 @@ async function loadAndPlay(
     emit(
       dispatch,
       'player/setError',
-      error instanceof Error ? error.message : 'playback-unavailable',
+      safePlayerError(
+        error,
+        isLocalTrack(track)
+          ? 'local-media-unavailable'
+          : resolvedMedia?.url.startsWith('content://')
+          ? 'offline-media-unavailable'
+          : 'playback-unavailable',
+      ),
     );
     return false;
   }
@@ -241,7 +265,7 @@ async function transition(
     emit(
       dispatch,
       'player/setError',
-      error instanceof Error ? error.message : 'playback-unavailable',
+      safePlayerError(error, 'playback-unavailable'),
     );
     return false;
   }
@@ -318,7 +342,7 @@ class PlayerController {
       emit(
         dispatch,
         'player/setError',
-        error instanceof Error ? error.message : 'playback-unavailable',
+        safePlayerError(error, 'playback-unavailable'),
       );
     }
   }
@@ -371,7 +395,7 @@ class PlayerController {
       emit(
         dispatch,
         'player/setError',
-        error instanceof Error ? error.message : 'playback-unavailable',
+        safePlayerError(error, 'playback-unavailable'),
       );
       return;
     }
@@ -432,7 +456,7 @@ class PlayerController {
       emit(
         dispatch,
         'player/setError',
-        error instanceof Error ? error.message : 'playback-unavailable',
+        safePlayerError(error, 'playback-unavailable'),
       );
       return;
     }
@@ -455,7 +479,7 @@ class PlayerController {
       emit(
         dispatch,
         'player/setError',
-        error instanceof Error ? error.message : 'seek-unavailable',
+        safePlayerError(error, 'seek-unavailable'),
       );
     }
   }
@@ -473,7 +497,7 @@ class PlayerController {
       emit(
         dispatch,
         'player/setError',
-        error instanceof Error ? error.message : 'volume-unavailable',
+        safePlayerError(error, 'volume-unavailable'),
       );
     }
   }
@@ -487,7 +511,7 @@ class PlayerController {
       emit(
         dispatch,
         'player/setError',
-        error instanceof Error ? error.message : 'volume-unavailable',
+        safePlayerError(error, 'volume-unavailable'),
       );
     }
   }
@@ -501,7 +525,7 @@ class PlayerController {
       emit(
         dispatch,
         'player/setError',
-        error instanceof Error ? error.message : 'mode-unavailable',
+        safePlayerError(error, 'mode-unavailable'),
       );
     }
   }

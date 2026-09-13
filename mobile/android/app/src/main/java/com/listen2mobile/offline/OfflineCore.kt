@@ -22,7 +22,12 @@ import java.util.concurrent.TimeUnit
 import org.json.JSONArray
 import org.json.JSONObject
 
-internal data class OfflineLimits(val fileBytes: Long, val totalBytes: Long, val bootstrapBytes: Int) {
+internal data class OfflineLimits(
+    val fileBytes: Long,
+    val totalBytes: Long,
+    val bootstrapBytes: Int,
+    val transferDeadlineMillis: Long = 15L * 60 * 1000,
+) {
     companion object { val DEFAULT = OfflineLimits(128L * 1024 * 1024, 512L * 1024 * 1024, 64 * 1024) }
 }
 
@@ -62,32 +67,35 @@ internal enum class OfflineRoute {
         return when (this) {
             NETEASE_MEDIA -> (url.host == "music.163.com" && path == "/song/media/outer/url") || (url.host in NETEASE_CDNS && path.startsWith("/"))
             KUGOU_BOOTSTRAP -> url.host == "wwwapi.kugou.com" && path == "/yy/index.php" && query(url, "r") == "play/getdata" && query(url, "hash")?.matches(Regex("[A-Za-z0-9]{8,128}")) == true
-            KUGOU_MEDIA -> url.host in KUGOU_MEDIA_HOSTS && path.startsWith("/")
+            KUGOU_MEDIA -> url.host == "sharefs.kugou.com" && path.startsWith("/")
         }
     }
     private fun query(url: URL, name: String) = url.query?.split('&')?.map { it.split('=', limit = 2) }?.firstOrNull { it.firstOrNull() == name }?.getOrNull(1)
     private companion object {
         val NETEASE_CDNS = setOf("m7.music.126.net", "m8.music.126.net", "m10.music.126.net", "m704.music.126.net", "m801.music.126.net")
-        val KUGOU_MEDIA_HOSTS = setOf("sharefs.kugou.com", "fs.w.kugou.com", "webfs.kugou.com")
     }
 }
 
 internal class OfflineResponse(val input: InputStream, val contentType: String?, val contentLength: Long, private val closeAction: () -> Unit = {}) : Closeable {
     override fun close() { try { input.close() } finally { closeAction() } }
 }
-internal interface OfflineTransport { @Throws(IOException::class) fun fetch(url: String, route: OfflineRoute): OfflineResponse }
+internal interface OfflineTransport { @Throws(IOException::class) fun fetch(url: String, route: OfflineRoute, deadlineMillis: Long): OfflineResponse }
 
 /** HttpURLConnection automatic redirects stay disabled, so every response hop gets revalidated. */
-internal class HttpOfflineTransport : OfflineTransport {
-    override fun fetch(raw: String, route: OfflineRoute): OfflineResponse {
+internal class HttpOfflineTransport(
+    private val openConnection: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection },
+) : OfflineTransport {
+    override fun fetch(raw: String, route: OfflineRoute, deadlineMillis: Long): OfflineResponse {
         var current = URL(raw)
-        repeat(4) {
+        // Three requests permit the original target plus no more than two redirects.
+        repeat(3) {
+            val remaining = remainingMillis(deadlineMillis)
             if (!route.permits(current)) throw IOException("ROUTE_UNAVAILABLE")
-            val connection = (current.openConnection() as HttpURLConnection).apply {
-                instanceFollowRedirects = false; connectTimeout = 15_000; readTimeout = 30_000; requestMethod = "GET"; useCaches = false
+            val connection = openConnection(current).apply {
+                instanceFollowRedirects = false; connectTimeout = minOf(15_000, remaining); readTimeout = minOf(30_000, remaining); requestMethod = "GET"; useCaches = false
             }
             when (val code = connection.responseCode) {
-                in 200..299 -> return OfflineResponse(BufferedInputStream(connection.inputStream), connection.contentType, connection.contentLengthLong) { connection.disconnect() }
+                in 200..299 -> return OfflineResponse(DeadlineInputStream(BufferedInputStream(connection.inputStream), deadlineMillis), connection.contentType, connection.contentLengthLong) { connection.disconnect() }
                 401, 403 -> { connection.disconnect(); throw IOException("ENTITLEMENT") }
                 in 300..399 -> {
                     val location = connection.getHeaderField("Location"); connection.disconnect()
@@ -99,7 +107,21 @@ internal class HttpOfflineTransport : OfflineTransport {
         }
         throw IOException("REDIRECT_REJECTED")
     }
+
+    private fun remainingMillis(deadlineMillis: Long): Int {
+        val remaining = deadlineMillis - monotonicMillis()
+        if (remaining <= 0) throw IOException("DEADLINE_EXCEEDED")
+        return remaining.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+    }
 }
+
+private fun monotonicMillis() = System.nanoTime() / 1_000_000
+private class DeadlineInputStream(private val delegate: InputStream, private val deadlineMillis: Long) : InputStream() {
+    override fun read(): Int { checkDeadline(deadlineMillis); val value = delegate.read(); checkDeadline(deadlineMillis); return value }
+    override fun read(bytes: ByteArray, offset: Int, length: Int): Int { checkDeadline(deadlineMillis); val count = delegate.read(bytes, offset, length); checkDeadline(deadlineMillis); return count }
+    override fun close() = delegate.close()
+}
+private fun checkDeadline(deadlineMillis: Long, now: Long = monotonicMillis()) { if (now >= deadlineMillis) throw IOException("DEADLINE_EXCEEDED") }
 
 internal object BoundedRead {
     fun bytes(input: InputStream, maximum: Int): ByteArray {
@@ -125,6 +147,7 @@ private data class ActiveWork(val operationId: String, var reservation: Long = 0
 internal class OfflineCoordinator(
     private val root: File, private val transport: OfflineTransport = HttpOfflineTransport(), private val executor: OfflineExecutor = ThreadOfflineExecutor(),
     private val clock: () -> Long = { System.currentTimeMillis() }, private val limits: OfflineLimits = OfflineLimits.DEFAULT,
+    private val monotonicClock: () -> Long = ::monotonicMillis,
 ) {
     private val lock = Any()
     private val entries = LinkedHashMap<String, OfflineEntry>()
@@ -215,13 +238,14 @@ internal class OfflineCoordinator(
         val entry = markDownloading(key, work) ?: return
         val part = File(root, "$key.${work.operationId}.part")
         try {
-            val media = mediaUrl(entry)
-            transport.fetch(media, if (entry.source == "netease") OfflineRoute.NETEASE_MEDIA else OfflineRoute.KUGOU_MEDIA).use { response ->
+            val deadline = monotonicClock() + limits.transferDeadlineMillis
+            val media = mediaUrl(entry, deadline)
+            transport.fetch(media, if (entry.source == "netease") OfflineRoute.NETEASE_MEDIA else OfflineRoute.KUGOU_MEDIA, deadline).use { response ->
                 val mime = response.contentType?.substringBefore(';')?.lowercase() ?: ""
                 if (mime !in AUDIO_TYPES) throw IOException("INVALID_MEDIA")
                 if (response.contentLength > limits.fileBytes) throw IOException("FILE_TOO_LARGE")
                 reserveKnown(key, work, response.contentLength)
-                stream(key, work, response.input, part, response.contentLength)
+                stream(key, work, response.input, part, response.contentLength, deadline)
                 if (!mediaSignature(part)) throw IOException("INVALID_MEDIA")
                 commitReady(key, work, entry, part, mime)
             }
@@ -242,24 +266,25 @@ internal class OfflineCoordinator(
         if (length <= 0) return
         val event = synchronized(lock) {
             val entry = currentLocked(key, work) ?: throw InterruptedIOException()
-            if (committedLocked() + reservedLocked() - work.reservation + length > limits.totalBytes) throw IOException("QUOTA_EXCEEDED")
+            if (committedLocked() + reservedLocked() - work.reservation + length > limits.totalBytes) throw IOException("CAPACITY_EXCEEDED")
             work.reservation = length; entry.totalBytes = length; entry.updatedAt = clock(); persistLocked(); snapshotLocked()
         }
         publish(event)
     }
-    private fun stream(key: String, work: ActiveWork, input: InputStream, part: File, length: Long) {
+    private fun stream(key: String, work: ActiveWork, input: InputStream, part: File, length: Long, deadline: Long) {
         FileOutputStream(part).use { output ->
             val buffer = ByteArray(8192); var downloaded = 0L
             while (true) {
                 if (Thread.currentThread().isInterrupted) throw InterruptedIOException()
-                val count = input.read(buffer); if (count < 0) break; downloaded += count
+                checkDeadline(deadline, monotonicClock())
+                val count = input.read(buffer); checkDeadline(deadline, monotonicClock()); if (count < 0) break; downloaded += count
                 if (downloaded > limits.fileBytes) throw IOException("FILE_TOO_LARGE")
+                if (length > 0 && downloaded > length) throw IOException("PROVIDER_REJECTED")
                 val event = synchronized(lock) {
                     val entry = currentLocked(key, work) ?: throw InterruptedIOException()
-                    if (length <= 0) {
-                        if (committedLocked() + reservedLocked() - work.reservation + downloaded > limits.totalBytes) throw IOException("QUOTA_EXCEEDED")
-                        work.reservation = downloaded
-                    }
+                    val nextReservation = maxOf(work.reservation, downloaded)
+                    if (committedLocked() + reservedLocked() - work.reservation + nextReservation > limits.totalBytes) throw IOException("CAPACITY_EXCEEDED")
+                    work.reservation = nextReservation
                     entry.downloadedBytes = downloaded; entry.totalBytes = if (length > 0) length else downloaded; entry.updatedAt = clock(); persistLocked(); snapshotLocked()
                 }
                 output.write(buffer, 0, count); publish(event)
@@ -288,16 +313,18 @@ internal class OfflineCoordinator(
         publish(event)
     }
 
-    private fun mediaUrl(entry: OfflineEntry): String = when (entry.source) {
+    private fun mediaUrl(entry: OfflineEntry, deadline: Long): String = when (entry.source) {
         "netease" -> "https://music.163.com/song/media/outer/url?id=${entry.trackId.removePrefix("netrack_")}.mp3"
-        "kugou" -> kugouMediaUrl(entry.trackId.removePrefix("kgtrack_"))
+        "kugou" -> kugouMediaUrl(entry.trackId.removePrefix("kgtrack_"), deadline)
         else -> throw IOException("ROUTE_UNAVAILABLE")
     }
-    private fun kugouMediaUrl(hash: String): String {
+    private fun kugouMediaUrl(hash: String, deadline: Long): String {
         val url = "https://wwwapi.kugou.com/yy/index.php?r=play/getdata&hash=$hash"
-        transport.fetch(url, OfflineRoute.KUGOU_BOOTSTRAP).use { response ->
+        transport.fetch(url, OfflineRoute.KUGOU_BOOTSTRAP, deadline).use { response ->
+            checkDeadline(deadline, monotonicClock())
             if (response.contentLength > limits.bootstrapBytes) throw IOException("BODY_TOO_LARGE")
             val candidate = try { JSONObject(String(BoundedRead.bytes(response.input, limits.bootstrapBytes), StandardCharsets.UTF_8)).optString("play_url", "") } catch (_: Exception) { "" }
+            checkDeadline(deadline, monotonicClock())
             val media = try { URL(candidate) } catch (_: Exception) { throw IOException("ROUTE_UNAVAILABLE") }
             if (!OfflineRoute.KUGOU_MEDIA.permits(media)) throw IOException("ROUTE_UNAVAILABLE")
             return media.toString()
@@ -310,8 +337,10 @@ internal class OfflineCoordinator(
     private fun publish(value: List<OfflineEntry>?) { if (value != null) observer?.invoke(value) }
     private fun failed(source: String, trackId: String, title: String, artist: String, code: String) = OfflineEntry(UUID.randomUUID().toString(), source, trackId, title.take(256), artist.take(256), OfflineStatus.FAILED, errorCode = code, updatedAt = clock())
     private fun safeCode(value: String?) = when (value) {
-        "ROUTE_UNAVAILABLE", "REDIRECT_REJECTED", "BODY_TOO_LARGE", "FILE_TOO_LARGE", "QUOTA_EXCEEDED", "ENTITLEMENT", "INVALID_MEDIA", "COMMIT_FAILED" -> value
-        else -> "DOWNLOAD_FAILED"
+        "FILE_TOO_LARGE", "CAPACITY_EXCEEDED", "CANCELLED" -> value
+        "ROUTE_UNAVAILABLE", "REDIRECT_REJECTED", "BODY_TOO_LARGE", "ENTITLEMENT", "INVALID_MEDIA", "PROVIDER_REJECTED" -> "PROVIDER_REJECTED"
+        "DEADLINE_EXCEEDED", "COMMIT_FAILED" -> "NETWORK"
+        else -> "NETWORK"
     }
     private fun mediaSignature(file: File) = FileInputStream(file).use { input ->
         val bytes = ByteArray(12); val count = input.read(bytes)
