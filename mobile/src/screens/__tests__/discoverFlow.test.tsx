@@ -59,4 +59,34 @@ describe('Discover flow', () => {
       remotePlaylistId: 'neplaylist_1',
     });
   });
+
+  it('switches to the closed Kugou featured state without exposing a transport value', async () => {
+    (providerClient.getDiscover as jest.Mock)
+      .mockResolvedValueOnce({
+        source: 'netease',
+        sections: [
+          { kind: 'featured', status: 'ready', items: [] },
+          { kind: 'charts', status: 'ready', items: [] },
+        ],
+      })
+      .mockResolvedValueOnce({
+        source: 'kugou',
+        sections: [
+          { kind: 'featured', status: 'unavailable', reason: 'unverified-route' },
+          { kind: 'charts', status: 'ready', items: [] },
+        ],
+      });
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<DiscoverScreen />);
+    });
+    await act(async () => {
+      tree.root.findByProps({ accessibilityLabel: '切换至酷狗音乐' }).props.onPress();
+    });
+    expect(providerClient.getDiscover).toHaveBeenLastCalledWith(
+      'kugou',
+      expect.objectContaining({ signal: expect.any(Object) }),
+    );
+    expect(tree.root.findByProps({ children: '该内容暂未提供经过验证的公开来源。' })).toBeTruthy();
+  });
 });
