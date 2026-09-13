@@ -1,5 +1,7 @@
 import type {
   BootstrapTrack,
+  DiscoverPage,
+  DiscoverSource,
   Lyric,
   PlaylistDetail,
   ProviderRequestOptions,
@@ -16,6 +18,7 @@ import {
   bootstrapKugouTrack,
   bootstrapNetEaseTrack,
   getNetEaseLyric,
+  getNetEaseDiscover,
   getQqLyric,
   getNetEasePlaylist,
   providerFor,
@@ -30,6 +33,7 @@ export const PROVIDER_CAPABILITIES: Readonly<
       playback: boolean;
       lyric: boolean;
       playlist: boolean;
+      discover: boolean;
     }
   >
 > = Object.freeze({
@@ -39,6 +43,7 @@ export const PROVIDER_CAPABILITIES: Readonly<
     playback: true,
     lyric: true,
     playlist: true,
+    discover: true,
   },
   kugou: {
     search: true,
@@ -46,6 +51,7 @@ export const PROVIDER_CAPABILITIES: Readonly<
     playback: true,
     lyric: false,
     playlist: false,
+    discover: true,
   },
   kuwo: {
     search: true,
@@ -53,6 +59,7 @@ export const PROVIDER_CAPABILITIES: Readonly<
     playback: false,
     lyric: false,
     playlist: false,
+    discover: false,
   },
   qq: {
     search: true,
@@ -60,6 +67,7 @@ export const PROVIDER_CAPABILITIES: Readonly<
     playback: false,
     lyric: true,
     playlist: false,
+    discover: false,
   },
   bilibili: {
     search: true,
@@ -67,6 +75,7 @@ export const PROVIDER_CAPABILITIES: Readonly<
     playback: true,
     lyric: false,
     playlist: false,
+    discover: false,
   },
 });
 
@@ -76,6 +85,20 @@ export const PROVIDER_CAPABILITIES: Readonly<
  * to choose a provider without inheriting its HTTP details.
  */
 export const providerClient = {
+  async getDiscover(
+    source: DiscoverSource,
+    options?: ProviderRequestOptions,
+  ): Promise<DiscoverPage> {
+    if (source === 'netease') return getNetEaseDiscover(options);
+    return {
+      source: 'kugou',
+      sections: [
+        { kind: 'featured', status: 'unavailable', reason: 'unverified-route' },
+        { kind: 'charts', status: 'unavailable', reason: 'unverified-route' },
+      ],
+    };
+  },
+
   async search(
     source: SourceId,
     query: string,

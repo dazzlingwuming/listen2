@@ -1,5 +1,7 @@
 import type {
   BootstrapTrack,
+  DiscoverPage,
+  DiscoverSection,
   Lyric,
   PlaylistDetail,
   PlaylistSummary,
@@ -33,6 +35,7 @@ interface ProviderAdapter {
 const MAX_VIDEO_PAGES = 50;
 const MAX_AUDIO_VARIANTS = 4;
 const MAX_PLAYLIST_TRACKS = 1_000;
+const MAX_DISCOVER_ROWS = 12;
 const MAX_LYRIC_CHARS = 512 * 1024;
 
 function checkedSearchInput(
@@ -109,6 +112,89 @@ function safeArtwork(value: unknown): string | undefined {
       : undefined;
   } catch {
     return undefined;
+  }
+}
+
+function neteaseDiscoverSummary(value: unknown): PlaylistSummary | null {
+  const row = asObject(value);
+  const id = positive(row?.id);
+  const title = text(row?.name);
+  if (!id || !title) return null;
+  return {
+    id: `neplaylist_${id}`,
+    source: 'netease',
+    title,
+    author: text(asObject(row?.creator)?.nickname) ?? undefined,
+    trackCount: positive(row?.trackCount),
+    artworkUrl: safeArtwork(row?.coverImgUrl ?? row?.picUrl),
+  };
+}
+
+/** Fixed, anonymous NetEase directory route. No caller transport crosses here. */
+export async function getNetEaseDiscover(
+  options?: ProviderRequestOptions,
+): Promise<DiscoverPage> {
+  try {
+    const params = new URLSearchParams({
+      cat: '全部',
+      order: 'hot',
+      limit: String(MAX_DISCOVER_ROWS),
+      offset: '0',
+      total: 'true',
+    });
+    const root = asObject(
+      await requestJson(
+        { url: `https://music.163.com/api/playlist/list?${params}` },
+        'netease',
+        'discover',
+        options,
+      ),
+    );
+    if (root?.code !== 200) {
+      throw new ProviderClientError('INVALID_RESPONSE', 'netease', 'discover');
+    }
+    const rows = root.playlists;
+    if (!Array.isArray(rows) || rows.length > MAX_DISCOVER_ROWS) {
+      throw new ProviderClientError('INVALID_RESPONSE', 'netease', 'discover');
+    }
+    const items = rows
+      .map(neteaseDiscoverSummary)
+      .filter((item): item is PlaylistSummary => item !== null);
+    if (rows.length > 0 && items.length === 0) {
+      throw new ProviderClientError('INVALID_RESPONSE', 'netease', 'discover');
+    }
+    return {
+      source: 'netease',
+      sections: [
+        { kind: 'featured', status: 'ready', items },
+        { kind: 'charts', status: 'unavailable', reason: 'unverified-route' },
+      ],
+    };
+  } catch (error) {
+    if (error instanceof ProviderClientError && error.code === 'CANCELLED') {
+      throw error;
+    }
+    const errorSection: DiscoverSection =
+      error instanceof ProviderClientError
+        ? {
+            kind: 'featured',
+            status: 'error',
+            code: error.code,
+            retryable: error.retryable,
+          }
+        : {
+            kind: 'featured',
+            status: 'error',
+            code: 'NETWORK_ERROR',
+            retryable: true,
+          };
+    return {
+      source: 'netease',
+      sections: [
+        errorSection,
+        { kind: 'charts', status: 'unavailable', reason: 'unverified-route' },
+      ],
+    };
   }
 }
 
@@ -386,7 +472,14 @@ export async function getNetEasePlaylist(
   if (rows.length > 0 && tracks.length === 0) {
     throw new ProviderClientError('INVALID_RESPONSE', 'netease', 'playlist');
   }
-  return { id: playlistId, source: 'netease', title, tracks };
+  return {
+    id: playlistId,
+    source: 'netease',
+    title,
+    tracks,
+    completeness: tracks.length === rows.length ? 'complete' : 'partial',
+    declaredTrackCount: rows.length,
+  };
 }
 
 function safeKugouMediaUrl(value: unknown): string | null {

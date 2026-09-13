@@ -11,8 +11,38 @@ export const SOURCE_IDS = [
 ] as const;
 
 export type SourceId = (typeof SOURCE_IDS)[number];
-export type ProviderOperation = 'search' | 'playlist' | 'bootstrap' | 'lyric';
+export type ProviderOperation =
+  | 'search'
+  | 'playlist'
+  | 'bootstrap'
+  | 'lyric'
+  | 'discover';
 export type SearchKind = 'track' | 'playlist';
+export type DiscoverSource = 'netease' | 'kugou';
+export type DiscoverSectionKind = 'featured' | 'charts';
+
+export type DiscoverSection =
+  | {
+      kind: DiscoverSectionKind;
+      status: 'ready';
+      items: PlaylistSummary[];
+    }
+  | {
+      kind: DiscoverSectionKind;
+      status: 'error';
+      code: ProviderErrorCode;
+      retryable: boolean;
+    }
+  | {
+      kind: DiscoverSectionKind;
+      status: 'unavailable';
+      reason: 'unverified-route';
+    };
+
+export interface DiscoverPage {
+  source: DiscoverSource;
+  sections: DiscoverSection[];
+}
 
 export function isSourceId(value: unknown): value is SourceId {
   return (
@@ -63,6 +93,8 @@ export interface PlaylistDetail {
   source: SourceId;
   title: string;
   tracks: Track[];
+  completeness: 'complete' | 'partial';
+  declaredTrackCount: number;
 }
 
 export interface Lyric {
