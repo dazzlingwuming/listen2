@@ -6,11 +6,11 @@ current_phase: 5
 current_phase_name: Five-Source Listen Journey
 status: implementation
 stopped_at: Completed quick task 260913-jlv; integrated Android runtime verification pending
-last_updated: "2026-09-13T08:11:00Z"
+last_updated: "2026-09-13T08:20:00Z"
 progress:
   total_phases: 5
   completed_phases: 1
-  total_plans: 3
+  total_plans: 12
   completed_plans: 3
   percent: 20
 last_activity: 2026-09-13
@@ -94,6 +94,7 @@ Progress: [██████████] 100%
 |---|-------------|------|--------|--------|-----------|
 | 260913-g8n | NetEase/Kugou verified offline downloads, cache-first playback, and download management | 2026-09-13 | 5ae3984 | Needs Review | [260913-g8n-implement-the-first-production-offline-d](./quick/260913-g8n-implement-the-first-production-offline-d/) |
 | 260913-jlv | Real NetEase/Kugou Discover collections, truthful detail, and rollback-safe play-all | 2026-09-13 | 770a116 | Needs Review | [260913-jlv-replace-the-placeholder-react-native-dis](./quick/260913-jlv-replace-the-placeholder-react-native-dis/) |
+| 3 | Refresh Android mobile progress documentation after offline and Discover implementation | 2026-09-13 | 0ad8ef4 | — | — |
 
 ## Deferred Items
 
