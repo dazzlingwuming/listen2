@@ -169,6 +169,49 @@ describe('collection playback rollback', () => {
     expect(state.error).toBe('playback-transition-unavailable');
   });
 
+  it.each([
+    [
+      'progress capture rejects',
+      () =>
+        mockNative.getProgress.mockRejectedValue(new Error('progress failed')),
+    ],
+    [
+      'playback-state capture rejects',
+      () =>
+        mockNative.getPlaybackState.mockRejectedValue(
+          new Error('playback state failed'),
+        ),
+    ],
+    [
+      'active URL exceeds the rollback bound',
+      () =>
+        mockNative.getActiveTrack.mockResolvedValue({
+          url: `https://media.example/${'a'.repeat(4097)}`,
+        }),
+    ],
+    [
+      'active headers exceed the rollback bound',
+      () =>
+        mockNative.getActiveTrack.mockResolvedValue({
+          url: 'https://media.example/old.mp3',
+          headers: Object.fromEntries(
+            Array.from({ length: 9 }, (_, index) => [`Header-${index}`, 'ok']),
+          ),
+        }),
+    ],
+  ])('does not reset when %s', async (_case, makeSnapshotInvalid) => {
+    makeSnapshotInvalid();
+
+    await expect(
+      playerController.playTracks(dispatch, [track('netrack_2')]),
+    ).resolves.toBe(false);
+
+    expect(mockNative.reset).not.toHaveBeenCalled();
+    expect(mockNative.add).not.toHaveBeenCalled();
+    expect(state.currentTrack?.id).toBe('netrack_1');
+    expect(state.error).toBe('playback-transition-unavailable');
+  });
+
   it('returns true only after native load and then commits the replacement playlist', async () => {
     await expect(
       playerController.playTracks(dispatch, [track('netrack_2')]),

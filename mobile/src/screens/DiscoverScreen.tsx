@@ -84,7 +84,7 @@ export function DiscoverScreen() {
   );
 
   useEffect(() => {
-    void load(source);
+    load(source).catch(() => undefined);
     return () => controller.current?.abort();
   }, [load, source]);
 
@@ -113,7 +113,9 @@ export function DiscoverScreen() {
       <Pressable
         accessibilityLabel={`刷新${SOURCE_LABELS[source]}发现内容`}
         disabled={loading || refreshing}
-        onPress={() => void load(source, true)}
+        onPress={() => {
+          load(source, true).catch(() => undefined);
+        }}
         style={styles.refresh}
       >
         <Text style={text.body}>{refreshing ? '正在刷新…' : '刷新'}</Text>
@@ -153,7 +155,9 @@ export function DiscoverScreen() {
               {section.status === 'error' ? (
                 <Pressable
                   accessibilityLabel={`重试${titleFor(source, section)}`}
-                  onPress={() => void load(source, true)}
+                  onPress={() => {
+                    load(source, true).catch(() => undefined);
+                  }}
                   style={styles.retry}
                 >
                   <Text style={text.body}>重试</Text>

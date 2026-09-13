@@ -13,6 +13,7 @@ import type {
   Track,
 } from '../types';
 import { ProviderClientError, unavailable } from './errors';
+import { isCanonicalPositiveSafeIntegerText } from './ids';
 import { requestJson, requestMediaAvailability } from './http';
 
 const PAGE_SIZE = 20;
@@ -75,10 +76,14 @@ function asObject(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+function hasControlCharacter(value: string): boolean {
+  return Array.from(value).some(character => character.charCodeAt(0) <= 0x1f);
+}
+
 function text(value: unknown, maximum = 512): string | null {
   return typeof value === 'string' &&
     value.length <= maximum &&
-    !/[\u0000-\u001f]/.test(value)
+    !hasControlCharacter(value)
     ? value.trim()
     : null;
 }
@@ -195,9 +200,13 @@ function boundedDiscoverRows(
     throw new ProviderClientError('INVALID_RESPONSE', source, 'discover');
   }
   const items: PlaylistSummary[] = [];
+  const seenIds = new Set<string>();
   for (const row of rows) {
     const item = mapper(row);
-    if (item) items.push(item);
+    if (item && !seenIds.has(item.id)) {
+      seenIds.add(item.id);
+      items.push(item);
+    }
     if (items.length === MAX_DISCOVER_ROWS) break;
   }
   if (rows.length > 0 && items.length === 0) {
@@ -297,13 +306,15 @@ function qqProviderId(value: string): string | null {
 }
 
 function neteasePlaylistProviderId(value: string): string | null {
-  const match = /^neplaylist_([1-9][0-9]{0,17})$/.exec(value);
-  return match ? match[1] : null;
+  const prefix = 'neplaylist_';
+  const providerId = value.startsWith(prefix) ? value.slice(prefix.length) : '';
+  return isCanonicalPositiveSafeIntegerText(providerId) ? providerId : null;
 }
 
 function kugouChartProviderId(value: string): string | null {
-  const match = /^kgchart_([1-9][0-9]{0,17})$/.exec(value);
-  return match ? match[1] : null;
+  const prefix = 'kgchart_';
+  const providerId = value.startsWith(prefix) ? value.slice(prefix.length) : '';
+  return isCanonicalPositiveSafeIntegerText(providerId) ? providerId : null;
 }
 
 function nonNegative(value: unknown): number | undefined {
@@ -376,7 +387,10 @@ function neteaseTrack(value: unknown): Track | null {
 function neteaseLyricText(value: unknown): string | null {
   if (typeof value !== 'string' || value.length > MAX_LYRIC_CHARS) return null;
   // Keep line timing intact, but normalize legacy control/space artifacts.
-  return value.replace(/\u0008/g, '').replace(/[\u2005]+/g, ' ');
+  return value
+    .split(String.fromCharCode(8))
+    .join('')
+    .replace(/[\u2005]+/g, ' ');
 }
 
 function secondsToMs(value: unknown): number | undefined {
@@ -598,13 +612,13 @@ export async function getNetEasePlaylist(
   }
   const hydrated = await boundedConcurrentMap(batches, async batch => {
     const ids = batch.map(id => String(id));
-    const params = new URLSearchParams({
+    const detailParams = new URLSearchParams({
       c: JSON.stringify(batch.map(id => ({ id }))),
       ids: JSON.stringify(ids),
     });
     const detail = asObject(
       await requestJson(
-        { url: `https://music.163.com/api/v3/song/detail?${params}` },
+        { url: `https://music.163.com/api/v3/song/detail?${detailParams}` },
         'netease',
         'playlist',
         options,

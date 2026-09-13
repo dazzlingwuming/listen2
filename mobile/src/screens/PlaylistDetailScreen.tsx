@@ -119,7 +119,7 @@ export function PlaylistDetailScreen() {
   const playAll = () => {
     if (partialRemoteDetail) return;
     const index = playableTracks.findIndex(canPlayTrack);
-    if (index >= 0) void play(playableTracks[index], index);
+    if (index >= 0) play(playableTracks[index], index).catch(() => undefined);
   };
   const hasPlayableTrack = playableTracks.some(canPlayTrack);
   const detailTitle = remoteDetail?.title || title || '音乐详情';
@@ -232,8 +232,20 @@ export function PlaylistDetailScreen() {
             return (
               <View key={`${track.id || index}`} style={styles.trackBlock}>
                 <TrackRow
-                  onPlay={canPlay ? () => void play(track, index) : undefined}
-                  onPress={canPlay ? () => void play(track, index) : undefined}
+                  onPlay={
+                    canPlay
+                      ? () => {
+                          play(track, index).catch(() => undefined);
+                        }
+                      : undefined
+                  }
+                  onPress={
+                    canPlay
+                      ? () => {
+                          play(track, index).catch(() => undefined);
+                        }
+                      : undefined
+                  }
                   track={track}
                 />
                 {isLocalTrack(track) && track.accessStatus !== 'available' ? (

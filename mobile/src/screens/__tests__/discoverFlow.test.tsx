@@ -2,9 +2,13 @@ import React from 'react';
 import renderer, { act } from 'react-test-renderer';
 
 import { DiscoverScreen } from '../DiscoverScreen';
+import { PlaylistDetailScreen } from '../PlaylistDetailScreen';
 import { providerClient } from '../../api/client';
+import * as playerActions from '../../store/playerSlice';
 
 const mockNavigate = jest.fn();
+const mockDispatch = jest.fn();
+let mockRoute: { params?: Record<string, unknown> } = {};
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -18,15 +22,60 @@ function deferred<T>() {
 
 jest.mock('@react-navigation/native', () => ({
   useNavigation: () => ({ navigate: mockNavigate }),
+  useRoute: () => mockRoute,
 }));
 
 jest.mock('../../api/client', () => ({
-  providerClient: { getDiscover: jest.fn() },
+  PROVIDER_CAPABILITIES: { netease: { playback: true } },
+  providerClient: { getDiscover: jest.fn(), getPlaylist: jest.fn() },
+}));
+
+jest.mock('react-redux', () => ({
+  useDispatch: () => mockDispatch,
+  useSelector: (selector: (state: unknown) => unknown) =>
+    selector({
+      library: {
+        favorites: [],
+        recentTracks: [],
+        playlists: [],
+        localTracks: [],
+      },
+    }),
+}));
+
+jest.mock('../../store/playerSlice', () => ({ playTracks: jest.fn() }));
+jest.mock('../../store/librarySlice', () => ({
+  addTrackToPlaylist: jest.fn(),
+  deletePlaylist: jest.fn(),
+  removeLocalTrack: jest.fn(),
+  removeTrackFromPlaylist: jest.fn(),
+  toggleFavorite: jest.fn(),
+}));
+jest.mock('../../components/SourceTabs', () => ({
+  providerLabels: { netease: '网易云音乐' },
+}));
+jest.mock('../../components/TrackRow', () => ({ TrackRow: () => null }));
+jest.mock('../ScreenLayout', () => ({
+  ScreenLayout: ({ children }: { children: React.ReactNode }) => (
+    <>{children}</>
+  ),
+  sectionStyles: {
+    button: {},
+    buttonText: {},
+    card: {},
+  },
+}));
+jest.mock('../../components/Sheet', () => ({
+  Sheet: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+jest.mock('../../localAudio/access', () => ({
+  releaseLocalAudioAccess: jest.fn(),
 }));
 
 describe('Discover flow', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockRoute = {};
   });
 
   it('loads NetEase featured collections and opens semantic detail', async () => {
@@ -108,10 +157,11 @@ describe('Discover flow', () => {
     ).toBeTruthy();
   });
 
-  it('retains cards only during refresh and ignores stale success or failure', async () => {
+  it('retains cards during refresh, aborts stale requests, and ignores stale success', async () => {
     const refresh = deferred<any>();
     const stale = deferred<any>();
     const kugou = deferred<any>();
+    let staleSignal: AbortSignal | undefined;
     (providerClient.getDiscover as jest.Mock)
       .mockResolvedValueOnce({
         source: 'netease',
@@ -125,7 +175,11 @@ describe('Discover flow', () => {
         ],
       })
       .mockReturnValueOnce(refresh.promise)
-      .mockReturnValueOnce(stale.promise)
+      .mockImplementationOnce((_source, options) => {
+        expect(options.signal).toBeInstanceOf(AbortSignal);
+        staleSignal = options.signal;
+        return stale.promise;
+      })
       .mockReturnValueOnce(kugou.promise);
     let tree!: renderer.ReactTestRenderer;
     await act(async () => {
@@ -157,9 +211,26 @@ describe('Discover flow', () => {
         .findByProps({ accessibilityLabel: '切换至酷狗音乐' })
         .props.onPress();
     });
+    expect(staleSignal?.aborted).toBe(true);
     await act(async () => {
-      stale.reject(new Error('late provider text must not render'));
-      await Promise.resolve();
+      stale.resolve({
+        source: 'netease',
+        sections: [
+          {
+            kind: 'featured',
+            status: 'ready',
+            items: [
+              {
+                id: 'neplaylist_2',
+                source: 'netease',
+                title: '过期成功不得显示',
+              },
+            ],
+          },
+          { kind: 'charts', status: 'ready', items: [] },
+        ],
+      });
+      await stale.promise;
       kugou.resolve({
         source: 'kugou',
         sections: [
@@ -177,7 +248,74 @@ describe('Discover flow', () => {
       tree.root.findByProps({ children: '该内容暂未提供经过验证的公开来源。' }),
     ).toBeTruthy();
     expect(() =>
-      tree.root.findByProps({ children: 'late provider text must not render' }),
+      tree.root.findByProps({ children: '过期成功不得显示' }),
     ).toThrow();
+  });
+
+  it('opens Player only when play-all dispatch confirms native playback', async () => {
+    mockRoute = {
+      params: {
+        sourceId: 'netease',
+        title: '可播放歌单',
+        tracks: [
+          {
+            id: 'netrack_1',
+            source: 'netease',
+            title: 'Song',
+            artist: 'Artist',
+          },
+        ],
+      },
+    };
+    (playerActions.playTracks as jest.Mock).mockReturnValue('play-all-action');
+    mockDispatch.mockResolvedValue(true);
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<PlaylistDetailScreen />);
+    });
+
+    await act(async () => {
+      tree.root
+        .findByProps({ accessibilityLabel: '可播放歌单播放全部歌曲' })
+        .props.onPress();
+      await Promise.resolve();
+    });
+    expect(mockDispatch).toHaveBeenCalledWith('play-all-action');
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).toHaveBeenCalledWith('Player');
+  });
+
+  it.each([
+    ['returns false', () => Promise.resolve(false)],
+    ['rejects', () => Promise.reject(new Error('native transition failed'))],
+  ])('never opens Player when play-all %s', async (_case, createOutcome) => {
+    mockRoute = {
+      params: {
+        sourceId: 'netease',
+        title: '不可确认歌单',
+        tracks: [
+          {
+            id: 'netrack_1',
+            source: 'netease',
+            title: 'Song',
+            artist: 'Artist',
+          },
+        ],
+      },
+    };
+    (playerActions.playTracks as jest.Mock).mockReturnValue('play-all-action');
+    mockDispatch.mockImplementation(() => createOutcome());
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<PlaylistDetailScreen />);
+    });
+
+    await act(async () => {
+      tree.root
+        .findByProps({ accessibilityLabel: '不可确认歌单播放全部歌曲' })
+        .props.onPress();
+      await Promise.resolve();
+    });
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 });

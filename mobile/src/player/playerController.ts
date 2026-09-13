@@ -140,6 +140,10 @@ type NativeRollbackSnapshot = {
   playing: boolean;
 };
 
+function hasControlCharacter(value: string): boolean {
+  return Array.from(value).some(character => character.charCodeAt(0) <= 0x1f);
+}
+
 function boundedNativeMedia(value: unknown): {
   url: string;
   headers?: Readonly<Record<string, string>>;
@@ -150,7 +154,7 @@ function boundedNativeMedia(value: unknown): {
     typeof candidate.url !== 'string' ||
     !candidate.url ||
     candidate.url.length > 4096 ||
-    /[\u0000-\u001f]/.test(candidate.url)
+    hasControlCharacter(candidate.url)
   ) {
     return null;
   }
@@ -159,18 +163,18 @@ function boundedNativeMedia(value: unknown): {
   const entries = Object.entries(candidate.headers as Record<string, unknown>);
   if (entries.length > 8) return null;
   const headers: Record<string, string> = {};
-  for (const [key, value] of entries) {
+  for (const [key, headerValue] of entries) {
     if (
       !key ||
       key.length > 64 ||
-      /[\u0000-\u001f]/.test(key) ||
-      typeof value !== 'string' ||
-      value.length > 1024 ||
-      /[\u0000-\u001f]/.test(value)
+      hasControlCharacter(key) ||
+      typeof headerValue !== 'string' ||
+      headerValue.length > 1024 ||
+      hasControlCharacter(headerValue)
     ) {
       return null;
     }
-    headers[key] = value;
+    headers[key] = headerValue;
   }
   return { url: candidate.url, headers };
 }

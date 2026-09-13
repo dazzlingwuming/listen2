@@ -708,6 +708,55 @@ describe('providerClient', () => {
     );
   });
 
+  it('deduplicates NetEase and Kugou directory identities before applying the card bound', async () => {
+    const neteaseCharts = [
+      { id: 1, name: 'First NetEase chart' },
+      { id: 1, name: 'Duplicate NetEase chart' },
+      ...Array.from({ length: 11 }, (_, index) => ({
+        id: index + 2,
+        name: `Later NetEase chart ${index + 2}`,
+      })),
+    ];
+    globalThis.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ code: 200, playlists: [] }))
+      .mockResolvedValueOnce(jsonResponse({ code: 200, list: neteaseCharts }));
+
+    const neteasePage = await providerClient.getDiscover('netease');
+    const neteaseItems = neteasePage.sections[1];
+    expect(neteaseItems).toMatchObject({ kind: 'charts', status: 'ready' });
+    if (neteaseItems.status === 'ready') {
+      expect(neteaseItems.items).toHaveLength(12);
+      expect(neteaseItems.items.map(item => item.id)).toEqual(
+        Array.from({ length: 12 }, (_, index) => `neplaylist_${index + 1}`),
+      );
+      expect(neteaseItems.items[0].title).toBe('First NetEase chart');
+    }
+
+    const kugouRanks = [
+      { rankid: 1, rankname: 'First Kugou chart' },
+      { rankid: 1, rankname: 'Duplicate Kugou chart' },
+      ...Array.from({ length: 11 }, (_, index) => ({
+        rankid: index + 2,
+        rankname: `Later Kugou chart ${index + 2}`,
+      })),
+    ];
+    globalThis.fetch = jest
+      .fn()
+      .mockResolvedValue(jsonResponse({ data: { info: kugouRanks } }));
+
+    const kugouPage = await providerClient.getDiscover('kugou');
+    const kugouItems = kugouPage.sections[1];
+    expect(kugouItems).toMatchObject({ kind: 'charts', status: 'ready' });
+    if (kugouItems.status === 'ready') {
+      expect(kugouItems.items).toHaveLength(12);
+      expect(kugouItems.items.map(item => item.id)).toEqual(
+        Array.from({ length: 12 }, (_, index) => `kgchart_${index + 1}`),
+      );
+      expect(kugouItems.items[0].title).toBe('First Kugou chart');
+    }
+  });
+
   it('rejects fractional numeric identities instead of truncating them', async () => {
     globalThis.fetch = jest
       .fn()
@@ -792,6 +841,37 @@ describe('providerClient', () => {
       code: 'ROUTE_UNAVAILABLE',
       source: 'kugou',
     });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects ambiguous or unsafe semantic collection IDs before any fetch', async () => {
+    globalThis.fetch = jest.fn();
+    const invalidIds = [
+      'neplaylist_9007199254740992',
+      'neplaylist_01',
+      'neplaylist_1.5',
+      'neplaylist_1e3',
+      'neplaylist_+1',
+      'neplaylist_ 1',
+      'kgchart_9007199254740992',
+      'kgchart_01',
+      'kgchart_1.5',
+      'kgchart_1e3',
+      'kgchart_+1',
+      'kgchart_ 1',
+      'kgplaylist_9007199254740992',
+      'kgplaylist_01',
+      'kgplaylist_1.5',
+      'kgplaylist_1e3',
+      'kgplaylist_+1',
+      'kgplaylist_ 1',
+    ];
+
+    for (const playlistId of invalidIds) {
+      await expect(
+        providerClient.getPlaylist(playlistId),
+      ).rejects.toMatchObject({ code: 'UNKNOWN_TRACK' });
+    }
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
