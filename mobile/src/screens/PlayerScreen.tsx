@@ -113,6 +113,20 @@ export function PlayerScreen() {
     candidateEpoch.current += 1;
     selectionEpoch.current += 1;
   };
+  const invalidateTranslationWork = (settleUi: boolean) => {
+    // Clear the operation before cancelling it so a close followed by an
+    // unmount/track change cannot send duplicate cancellation requests.
+    translationEpoch.current += 1;
+    const operationId = translationOperation.current;
+    translationOperation.current = null;
+    cancelPlayerTranslation(operationId);
+    if (settleUi) {
+      setTranslationBusy(false);
+      setTranslationError(null);
+      setConsentVisible(false);
+      setForceRefreshRequested(false);
+    }
+  };
   useEffect(() => {
     invalidateLyricWork();
     setLyrics(null);
@@ -127,16 +141,12 @@ export function PlayerScreen() {
     setBilibiliCacheRevision(undefined);
     setMachineTranslation(null);
     setTranslationError(null);
-    translationEpoch.current += 1;
-    const operationId = translationOperation.current;
-    cancelPlayerTranslation(operationId);
-    translationOperation.current = null;
+    invalidateTranslationWork(true);
   }, [current?.id, current?.source]);
   useEffect(() => {
     return () => {
       invalidateLyricWork();
-      const operationId = translationOperation.current;
-      cancelPlayerTranslation(operationId);
+      invalidateTranslationWork(false);
     };
   }, []);
   const openLyrics = async (force = false) => {
@@ -325,6 +335,7 @@ export function PlayerScreen() {
   };
   const closeLyrics = () => {
     invalidateLyricWork();
+    invalidateTranslationWork(true);
     setShowLyrics(false);
     setPickerVisible(false);
     setLyricsLoading(false);
@@ -413,7 +424,11 @@ export function PlayerScreen() {
           caught instanceof Error ? caught.message : 'PROVIDER_ERROR',
         );
     } finally {
-      if (epoch === translationEpoch.current) setTranslationBusy(false);
+      if (epoch === translationEpoch.current) {
+        if (translationOperation.current === operationId)
+          translationOperation.current = null;
+        setTranslationBusy(false);
+      }
     }
   };
   const lookupTranslation = () => {
@@ -590,7 +605,10 @@ export function PlayerScreen() {
       />
       <DeepSeekConsentSheet
         visible={consentVisible}
-        onClose={() => setConsentVisible(false)}
+        onClose={() => {
+          setConsentVisible(false);
+          setForceRefreshRequested(false);
+        }}
         onConfirm={consent => {
           setConsentVisible(false);
           requestTranslation(consent, forceRefreshRequested).catch(

@@ -5,6 +5,7 @@ const mockDispatch = jest.fn();
 const mockGetLyric = jest.fn();
 const mockTranslate = jest.fn();
 const mockCancel = jest.fn().mockResolvedValue({ status: 'cancelled' });
+const mockReact = React;
 let mockPlayerState: any;
 
 const mockLyricHash = 'a'.repeat(64);
@@ -68,10 +69,19 @@ jest.mock('../../components/Sheet', () => ({
   Sheet: ({
     children,
     visible,
+    onClose,
   }: {
     children: React.ReactNode;
     visible: boolean;
-  }) => (visible ? <>{children}</> : null),
+    onClose: () => void;
+  }) =>
+    visible
+      ? mockReact.createElement(
+          'mock-sheet',
+          { onPress: onClose, testID: 'mock-sheet' },
+          children,
+        )
+      : null,
 }));
 jest.mock('../../types/music', () => ({ isLocalTrack: () => false }));
 
@@ -134,6 +144,12 @@ describe('PlayerScreen translation orchestration', () => {
         .findByProps({ accessibilityLabel: '确认使用 DeepSeek 翻译' })
         .props.onPress();
       await Promise.resolve();
+    });
+  }
+
+  async function closeLyrics(tree: renderer.ReactTestRenderer) {
+    await act(async () => {
+      tree.root.findAllByProps({ testID: 'mock-sheet' })[0].props.onPress();
     });
   }
 
@@ -314,5 +330,122 @@ describe('PlayerScreen translation orchestration', () => {
     expect(mockCancel).toHaveBeenCalledWith(
       expect.stringMatching(/^deepseek_/),
     );
+  });
+
+  it('cancels a cache lookup on lyric close and suppresses its late miss', async () => {
+    let resolveLookup!: (value: unknown) => void;
+    mockTranslate.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          resolveLookup = resolve;
+        }),
+    );
+    const tree = await renderPlayer();
+    await openLyrics(tree);
+    await act(async () => {
+      tree.root
+        .findByProps({ accessibilityLabel: '翻译当前歌词' })
+        .props.onPress();
+    });
+    const operationId = mockTranslate.mock.calls[0][0].operationId;
+    await closeLyrics(tree);
+    expect(mockCancel).toHaveBeenCalledTimes(1);
+    expect(mockCancel).toHaveBeenCalledWith(operationId);
+    await act(async () => {
+      resolveLookup({ status: 'not-cached', cacheHit: false });
+      await flushTranslation();
+    });
+    expect(
+      tree.root.findAllByProps({
+        accessibilityLabel: '确认使用 DeepSeek 翻译',
+      }),
+    ).toHaveLength(0);
+    await openLyrics(tree);
+    expect(
+      tree.root.findAllByProps({ children: '正在处理歌词翻译…' }),
+    ).toHaveLength(0);
+    expect(tree.root.findByProps({ children: '来源译文' })).toBeTruthy();
+  });
+
+  it('cancels an active network translation once on lyric close and reopens cleanly', async () => {
+    let settleNetwork!: (value: unknown) => void;
+    mockTranslate
+      .mockResolvedValueOnce({ status: 'not-cached', cacheHit: false })
+      .mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            settleNetwork = resolve;
+          }),
+      );
+    const tree = await renderPlayer();
+    await openLyrics(tree);
+    await act(async () => {
+      tree.root
+        .findByProps({ accessibilityLabel: '翻译当前歌词' })
+        .props.onPress();
+      await flushTranslation();
+    });
+    await confirmAllDisclosures(tree);
+    const operationId = mockTranslate.mock.calls[1][0].operationId;
+    await closeLyrics(tree);
+    expect(mockCancel).toHaveBeenCalledTimes(1);
+    expect(mockCancel).toHaveBeenCalledWith(operationId);
+    await act(async () => {
+      settleNetwork({
+        status: 'ok',
+        translation: '[00:01.00] 不应显示',
+        lyricHash: mockLyricHash,
+        trackHash: mockTrackAHash,
+        cacheHit: false,
+      });
+      await flushTranslation();
+    });
+    expect(tree.root.findAllByProps({ children: '不应显示' })).toHaveLength(0);
+    await openLyrics(tree);
+    expect(
+      tree.root.findAllByProps({ children: '正在处理歌词翻译…' }),
+    ).toHaveLength(0);
+    expect(tree.root.findByProps({ children: '来源译文' })).toBeTruthy();
+  });
+
+  it('does not let a late network error or finally clear a newer translation state', async () => {
+    let rejectFirst!: (reason: unknown) => void;
+    mockTranslate
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectFirst = reject;
+          }),
+      )
+      .mockResolvedValueOnce({
+        status: 'ok',
+        translation: '[00:01.00] 新译文',
+        lyricHash: mockLyricHash,
+        trackHash: mockTrackAHash,
+        cacheHit: true,
+      });
+    const tree = await renderPlayer();
+    await openLyrics(tree);
+    await act(async () => {
+      tree.root
+        .findByProps({ accessibilityLabel: '翻译当前歌词' })
+        .props.onPress();
+    });
+    await closeLyrics(tree);
+    await openLyrics(tree);
+    await act(async () => {
+      tree.root
+        .findByProps({ accessibilityLabel: '翻译当前歌词' })
+        .props.onPress();
+      await flushTranslation();
+    });
+    await act(async () => {
+      rejectFirst(new Error('STALE_ERROR'));
+      await flushTranslation();
+    });
+    expect(tree.root.findByProps({ children: '新译文' })).toBeTruthy();
+    expect(
+      tree.root.findAllByProps({ children: '翻译未应用：STALE_ERROR' }),
+    ).toHaveLength(0);
   });
 });
