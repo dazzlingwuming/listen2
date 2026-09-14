@@ -20,7 +20,9 @@ class BilibiliVault(context: Context) : BilibiliVault.Store {
     )
     interface Store {
         fun isAvailable(): Boolean
-        fun saveSession(material: SessionMaterial)
+        fun saveProvisionalSession(material: SessionMaterial)
+        fun commitProvisionalSession(ownerId: String): Boolean
+        fun saveCommittedSession(material: SessionMaterial)
         fun loadSession(): SessionMaterial?
         fun clearIfOwned(ownerId: String)
         fun clear()
@@ -29,11 +31,37 @@ class BilibiliVault(context: Context) : BilibiliVault.Store {
     private val alias = "listen2-bilibili-v1"
     override fun isAvailable(): Boolean = try { key(); true } catch (_: Exception) { false }
 
-    override fun saveSession(material: SessionMaterial) {
+    override fun saveProvisionalSession(material: SessionMaterial) {
+        require(material.ownerId != null)
+        write(material, "provisional")
+    }
+
+    override fun commitProvisionalSession(ownerId: String): Boolean {
+        if (!ownerId.matches(Regex("[A-Za-z0-9_-]{1,64}"))) return false
+        val encoded = preferences.getString("session", null) ?: return false
+        return try {
+            val envelope = decode(encoded)
+            if (!envelope.provisional || envelope.material.ownerId != ownerId) false
+            else {
+                write(envelope.material, "committed")
+                true
+            }
+        } catch (_: Exception) {
+            clear()
+            false
+        }
+    }
+
+    override fun saveCommittedSession(material: SessionMaterial) {
+        write(material, "committed")
+    }
+
+    private fun write(material: SessionMaterial, state: String) {
         require(material.refreshMaterial.isNotBlank() && material.refreshMaterial.length <= 4096)
         require(material.cookies.size <= 32 && material.cookies.all { (name, value) -> name.matches(Regex("[A-Za-z0-9_-]{1,128}")) && value.length <= 4096 && !value.contains('\r') && !value.contains('\n') })
         require(material.ownerId == null || material.ownerId.matches(Regex("[A-Za-z0-9_-]{1,64}")))
-        val root = JSONObject().put("refresh", material.refreshMaterial).put("csrf", material.csrf ?: "").put("owner", material.ownerId ?: "")
+        require(state == "provisional" || state == "committed")
+        val root = JSONObject().put("refresh", material.refreshMaterial).put("csrf", material.csrf ?: "").put("owner", material.ownerId ?: "").put("state", state)
         val storedCookies = JSONObject(); material.cookies.forEach { (name, value) -> storedCookies.put(name, value) }; root.put("cookies", storedCookies)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding"); cipher.init(Cipher.ENCRYPT_MODE, key())
         val encoded = Base64.encodeToString(cipher.iv + cipher.doFinal(root.toString().toByteArray(Charsets.UTF_8)), Base64.NO_WRAP)
@@ -44,7 +72,11 @@ class BilibiliVault(context: Context) : BilibiliVault.Store {
     override fun loadSession(): SessionMaterial? {
         val encoded = preferences.getString("session", null) ?: return null
         return try {
-            decode(encoded)
+            val envelope = decode(encoded)
+            if (envelope.provisional) {
+                envelope.material.ownerId?.let { clearIfOwned(it) } ?: clear()
+                null
+            } else envelope.material
         } catch (_: Exception) { clear(); null }
     }
 
@@ -53,7 +85,7 @@ class BilibiliVault(context: Context) : BilibiliVault.Store {
         if (!ownerId.matches(Regex("[A-Za-z0-9_-]{1,64}"))) return
         val encoded = preferences.getString("session", null) ?: return
         try {
-            if (decode(encoded).ownerId == ownerId) clear()
+            if (decode(encoded).material.ownerId == ownerId) clear()
         } catch (_: Exception) {
             clear()
         }
@@ -70,7 +102,8 @@ class BilibiliVault(context: Context) : BilibiliVault.Store {
         generator.init(KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT).setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).setKeySize(256).build())
         return generator.generateKey()
     }
-    private fun decode(encoded: String): SessionMaterial {
+    private data class Envelope(val material: SessionMaterial, val provisional: Boolean)
+    private fun decode(encoded: String): Envelope {
         val payload = Base64.decode(encoded, Base64.NO_WRAP)
         if (payload.size <= 12) throw IllegalArgumentException()
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
@@ -87,7 +120,8 @@ class BilibiliVault(context: Context) : BilibiliVault.Store {
             cookies[name] = value
         }
         val owner = root.optString("owner", "").takeIf { it.isNotBlank() }
-        if (refresh.isBlank() || refresh.length > 4096 || cookies.size > 32 || owner?.matches(Regex("[A-Za-z0-9_-]{1,64}")) == false) throw IllegalArgumentException()
-        return SessionMaterial(refresh, cookies, root.optString("csrf", "").takeIf { it.isNotBlank() && it.length <= 512 }, owner)
+        val state = root.optString("state", "committed")
+        if (refresh.isBlank() || refresh.length > 4096 || cookies.size > 32 || owner?.matches(Regex("[A-Za-z0-9_-]{1,64}")) == false || state !in setOf("provisional", "committed") || (state == "provisional" && owner == null)) throw IllegalArgumentException()
+        return Envelope(SessionMaterial(refresh, cookies, root.optString("csrf", "").takeIf { it.isNotBlank() && it.length <= 512 }, owner), state == "provisional")
     }
 }

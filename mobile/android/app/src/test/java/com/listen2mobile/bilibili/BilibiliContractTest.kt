@@ -117,6 +117,7 @@ class BilibiliContractTest {
         assertEquals(BilibiliSession.PublicStatus.AUTHENTICATED, state.status)
         assertEquals(stored, gateway.restoredMaterial)
         assertEquals("new-refresh", vault.saved?.refreshMaterial)
+        assertFalse(vault.provisional)
         assertFalse(state.toString().contains("new-refresh"))
     }
 
@@ -176,6 +177,59 @@ class BilibiliContractTest {
         assertFalse(session.snapshot().status == BilibiliSession.PublicStatus.AUTHENTICATED)
     }
 
+    @Test fun `cancelling at provisional save leaves no restorable session after restart`() {
+        val vault = FakeVault()
+        val gateway = FakeGateway().apply {
+            pollResult = BilibiliSession.PollResult.Authenticated("refresh-material")
+        }
+        val session = BilibiliSession(gateway, vault, FakeQrRenderer())
+        val begin = session.begin(NOW)
+        vault.afterProvisionalSave = { session.cancel(begin.attemptId) }
+        val state = session.poll(begin.attemptId, NOW + 1)
+        assertEquals(BilibiliSession.PublicStatus.CANCELLED, state.status)
+        assertNull(vault.saved)
+        assertEquals(
+            BilibiliSession.PublicStatus.IDLE,
+            BilibiliSession(FakeGateway(), vault, FakeQrRenderer()).restore().status,
+        )
+    }
+
+    @Test fun `old owner revocation cannot remove a newer committed session`() {
+        val vault = FakeVault()
+        val old = BilibiliVault.SessionMaterial("old", SESSION_COOKIES, "csrf", "old-owner")
+        val newer = BilibiliVault.SessionMaterial("new", SESSION_COOKIES, "csrf", "new-owner")
+        vault.saveProvisionalSession(old)
+        vault.saveCommittedSession(newer)
+        vault.clearIfOwned("old-owner")
+        assertEquals(newer, vault.loadSession())
+    }
+
+    @Test fun `a provisional envelope is rejected on process restart`() {
+        val vault = FakeVault()
+        vault.saveProvisionalSession(
+            BilibiliVault.SessionMaterial("refresh", SESSION_COOKIES, "csrf", "pending-owner"),
+        )
+        assertEquals(
+            BilibiliSession.PublicStatus.IDLE,
+            BilibiliSession(FakeGateway(), vault, FakeQrRenderer()).restore().status,
+        )
+        assertNull(vault.saved)
+    }
+
+    @Test fun `a committed QR session remains restorable after process restart`() {
+        val vault = FakeVault()
+        val firstGateway = FakeGateway().apply {
+            pollResult = BilibiliSession.PollResult.Authenticated("refresh-material")
+        }
+        val firstSession = BilibiliSession(firstGateway, vault, FakeQrRenderer())
+        val begin = firstSession.begin(NOW)
+        assertEquals(BilibiliSession.PublicStatus.AUTHENTICATED, firstSession.poll(begin.attemptId, NOW + 1).status)
+        assertFalse(vault.provisional)
+        val restarted = BilibiliSession(FakeGateway(), vault, FakeQrRenderer()).restore()
+        assertEquals(BilibiliSession.PublicStatus.AUTHENTICATED, restarted.status)
+        assertEquals("logout", restarted.nextAction)
+    }
+
     private class FakeQrRenderer : BilibiliQrRenderer.Renderer {
         override fun render(value: String): String = "data:image/png;base64,AA=="
     }
@@ -186,22 +240,41 @@ class BilibiliContractTest {
         var cleared = false
         var loadFails = false
         var saveFails = false
+        var provisional = false
+        var afterProvisionalSave: (() -> Unit)? = null
         override fun isAvailable() = true
-        override fun saveSession(material: BilibiliVault.SessionMaterial) {
+        override fun saveProvisionalSession(material: BilibiliVault.SessionMaterial) {
             if (saveFails) throw IllegalStateException("persist-failed")
             saved = material
+            provisional = true
+            afterProvisionalSave?.invoke()
+        }
+        override fun commitProvisionalSession(ownerId: String): Boolean {
+            if (saved?.ownerId != ownerId || !provisional) return false
+            provisional = false
+            return true
+        }
+        override fun saveCommittedSession(material: BilibiliVault.SessionMaterial) {
+            if (saveFails) throw IllegalStateException("persist-failed")
+            saved = material
+            provisional = false
         }
         override fun loadSession(): BilibiliVault.SessionMaterial? {
             if (loadFails) throw IllegalStateException("decrypt-failed")
-            return loaded
+            if (provisional) {
+                saved?.ownerId?.let { clearIfOwned(it) }
+                return null
+            }
+            return loaded ?: saved
         }
         override fun clearIfOwned(ownerId: String) {
             if (saved?.ownerId == ownerId) {
                 saved = null
+                provisional = false
                 cleared = true
             }
         }
-        override fun clear() { saved = null; loaded = null; cleared = true }
+        override fun clear() { saved = null; loaded = null; provisional = false; cleared = true }
     }
 
     private class FakeGateway : BilibiliGateway {
