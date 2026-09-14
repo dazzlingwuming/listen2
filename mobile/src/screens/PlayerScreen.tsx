@@ -258,7 +258,13 @@ export function PlayerScreen() {
   const translationEligible = Boolean(
     current &&
       lyrics &&
-      (trackSource(current) === 'netease' || trackSource(current) === 'qq') &&
+      (trackSource(current) === 'netease' ||
+        trackSource(current) === 'qq' ||
+        (trackSource(current) === 'bilibili' &&
+          parseExactBilibiliTrackId(current.id) &&
+          lyrics.provenance &&
+          (lyrics.provenance.matchedProvider === 'netease' ||
+            lyrics.provenance.matchedProvider === 'qq'))) &&
       parseLyricTimeline(lyrics.text).some(line => line.timestampMs !== null),
   );
   const requestTranslation = async (
@@ -267,7 +273,13 @@ export function PlayerScreen() {
   ) => {
     if (!current || !lyrics || !translationEligible) return;
     const provider = trackSource(current);
-    if (provider !== 'netease' && provider !== 'qq') return;
+    if (provider !== 'netease' && provider !== 'qq' && provider !== 'bilibili')
+      return;
+    if (
+      provider === 'bilibili' &&
+      (!parseExactBilibiliTrackId(current.id) || !lyrics.provenance)
+    )
+      return;
     const lyricHash = hashLyric(lyrics.text);
     const trackHash = hashTrack(provider, current.id, lyricHash);
     const epoch = ++translationEpoch.current;
@@ -291,6 +303,12 @@ export function PlayerScreen() {
         consent,
         allowNetwork: plan.allowNetwork,
         forceRefresh: plan.forceRefresh,
+        ...(provider === 'bilibili'
+          ? {
+              matchedProvider: lyrics.provenance!.matchedProvider,
+              matchedCandidateId: lyrics.provenance!.matchedCandidateId,
+            }
+          : {}),
       });
       if (
         !shouldApplyPlayerTranslation(

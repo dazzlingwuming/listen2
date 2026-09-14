@@ -122,4 +122,60 @@ describe('deepSeekClient', () => {
       }),
     ).rejects.toThrow('CONSENT_REQUIRED');
   });
+
+  it('accepts only an exact matched Bilibili part and keeps cache hashes isolated', async () => {
+    const { deepSeekClient, hashLyric, hashTrack } = require('../client');
+    const lyric = '[00:01.00]one';
+    const lyricHash = hashLyric(lyric);
+    const sourceTrackId = 'bitrack_v_BV1xx411c7mD-12';
+    const trackHash = hashTrack('bilibili', sourceTrackId, lyricHash);
+    native.translate.mockResolvedValue({
+      operation: 'translate',
+      status: 'not-cached',
+      cacheHit: false,
+    });
+    const request = {
+      operationId: 'bilibili-1',
+      provider: 'bilibili',
+      sourceTrackId,
+      lyric,
+      title: 'Song',
+      artist: 'Artist',
+      style: '',
+      lyricHash,
+      trackHash,
+      target: 'zh-CN',
+      consent: {
+        lyrics: false,
+        title: false,
+        artist: false,
+        possibleCost: false,
+        cancellation: false,
+        failureImpact: false,
+        acceptedAtEpochMs: 0,
+      },
+      allowNetwork: false,
+      forceRefresh: false,
+      matchedProvider: 'netease',
+      matchedCandidateId: 'netrack_1',
+    };
+    await expect(deepSeekClient.translate(request)).resolves.toMatchObject({
+      status: 'not-cached',
+    });
+    await expect(
+      deepSeekClient.translate({
+        ...request,
+        sourceTrackId: 'bitrack_v_BV1xx411c7mD',
+      }),
+    ).rejects.toThrow('STALE_IDENTITY');
+    await expect(
+      deepSeekClient.translate({
+        ...request,
+        matchedCandidateId: 'qqtrack_bad',
+      }),
+    ).rejects.toThrow('STALE_IDENTITY');
+    expect(hashTrack('bilibili', sourceTrackId, lyricHash)).not.toBe(
+      hashTrack('bilibili', 'bitrack_v_BV1xx411c7mD-13', lyricHash),
+    );
+  });
 });

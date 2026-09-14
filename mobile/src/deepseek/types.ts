@@ -44,7 +44,7 @@ export interface DeepSeekConfigureStatus extends DeepSeekStatus {
 
 export interface DeepSeekTranslateRequest {
   readonly operationId: string;
-  readonly provider: 'netease' | 'qq';
+  readonly provider: 'netease' | 'qq' | 'bilibili';
   readonly sourceTrackId: string;
   readonly lyric: string;
   readonly title: string;
@@ -56,6 +56,9 @@ export interface DeepSeekTranslateRequest {
   readonly consent: DeepSeekConsent;
   readonly allowNetwork: boolean;
   readonly forceRefresh: boolean;
+  /** Required for Bilibili: proves the lyric was selected from a fixed source. */
+  readonly matchedProvider?: 'netease' | 'qq';
+  readonly matchedCandidateId?: string;
 }
 
 export interface DeepSeekTranslateResult {

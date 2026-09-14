@@ -1,4 +1,5 @@
 import { NativeModules } from 'react-native';
+import { parseExactBilibiliTrackId } from '../api/ids';
 import { hasCompleteDeepSeekConsent } from './consent';
 import type {
   DeepSeekConfigureStatus,
@@ -32,6 +33,8 @@ const REQUEST_KEYS = new Set([
   'consent',
   'allowNetwork',
   'forceRefresh',
+  'matchedProvider',
+  'matchedCandidateId',
 ]);
 const RESULT_KEYS = new Set([
   'operation',
@@ -115,7 +118,9 @@ export function hashTrack(
 function validateRequest(value: unknown): DeepSeekTranslateRequest {
   const request = ensureRecord(value, REQUEST_KEYS, 'INVALID_REQUEST');
   if (
-    (request.provider !== 'netease' && request.provider !== 'qq') ||
+    (request.provider !== 'netease' &&
+      request.provider !== 'qq' &&
+      request.provider !== 'bilibili') ||
     request.target !== 'zh-CN' ||
     typeof request.operationId !== 'string' ||
     !OPERATION_ID.test(request.operationId) ||
@@ -131,6 +136,25 @@ function validateRequest(value: unknown): DeepSeekTranslateRequest {
     typeof request.forceRefresh !== 'boolean'
   )
     fail('INVALID_REQUEST');
+  if (request.provider === 'bilibili') {
+    const exact = parseExactBilibiliTrackId(request.sourceTrackId);
+    const matchedCandidateId = request.matchedCandidateId;
+    if (
+      !exact ||
+      (request.matchedProvider !== 'netease' &&
+        request.matchedProvider !== 'qq') ||
+      typeof matchedCandidateId !== 'string' ||
+      (request.matchedProvider === 'netease'
+        ? !/^netrack_[1-9][0-9]{0,17}$/.test(matchedCandidateId)
+        : !/^qqtrack_[A-Za-z0-9_-]{1,128}$/.test(matchedCandidateId))
+    )
+      fail('STALE_IDENTITY');
+  } else if (
+    request.matchedProvider !== undefined ||
+    request.matchedCandidateId !== undefined
+  ) {
+    fail('INVALID_REQUEST');
+  }
   const lyric = normalizeLyric(request.lyric);
   if (
     byteLength(lyric) > MAX_LYRIC_BYTES ||

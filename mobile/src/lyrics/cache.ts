@@ -62,12 +62,24 @@ async function read(): Promise<Stored> {
   return { version: VERSION, revision: 0, records: [] };
 }
 function valid(record: BilibiliLyricCacheRecord, now = Date.now()) {
-  const provenance = record.lyric.provenance;
+  if (!record || typeof record !== 'object' || !record.lyric) return false;
+  const lyric = record.lyric;
+  const provenance = lyric.provenance;
   return (
-    exactIdentity(record.lyric.trackId) === record.identity &&
-    record.lyric.source === 'bilibili' &&
+    typeof record.identity === 'string' &&
+    Number.isSafeInteger(record.revision) &&
+    Number.isSafeInteger(record.updatedAt) &&
+    typeof lyric.trackId === 'string' &&
+    typeof lyric.text === 'string' &&
+    exactIdentity(lyric.trackId) === record.identity &&
+    lyric.source === 'bilibili' &&
     Boolean(provenance) &&
-    bytes(record.lyric.text) <= MAX_TEXT_BYTES &&
+    (provenance!.mode === 'manual' || provenance!.mode === 'auto') &&
+    (provenance!.matchedProvider === 'netease' ||
+      provenance!.matchedProvider === 'qq') &&
+    typeof provenance!.matchedCandidateId === 'string' &&
+    Number.isFinite(provenance!.matchScore) &&
+    bytes(lyric.text) <= MAX_TEXT_BYTES &&
     (provenance!.mode === 'manual' || now - record.updatedAt <= AUTO_MAX_AGE_MS)
   );
 }
@@ -167,10 +179,18 @@ export const bilibiliLyricCache = {
   async list() {
     return (await read()).records.filter(valid);
   },
-  async repair() {
-    const store = await read();
-    const records = store.records.filter(valid);
-    await publish({ ...store, records });
-    return records;
+  repair() {
+    const operation = async () => {
+      const store = await read();
+      const records = store.records.filter(valid);
+      await publish({ ...store, records });
+      return records;
+    };
+    const result = writeChain.then(operation, operation);
+    writeChain = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
   },
 };

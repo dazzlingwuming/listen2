@@ -58,6 +58,14 @@ class DeepSeekContractTest {
         assertNull(cache.get(first, lyricHash, "Other title"))
     }
 
+    @Test fun `Bilibili eligibility requires exact JavaScript safe CID and matched source provenance`() {
+        assertTrue(DeepSeekPolicy.isEligibleProvider("bilibili", "bitrack_v_BV1xx411c7mD-12", "netease", "netrack_1"))
+        assertFalse(DeepSeekPolicy.isEligibleProvider("bilibili", "bitrack_v_BV1xx411c7mD", "netease", "netrack_1"))
+        assertFalse(DeepSeekPolicy.isEligibleProvider("bilibili", "bitrack_v_BV1xx411c7mD-9007199254740992", "netease", "netrack_1"))
+        assertFalse(DeepSeekPolicy.isEligibleProvider("bilibili", "bitrack_v_BV1xx411c7mD-12", "netease", "qqtrack_1"))
+        assertFalse(DeepSeekPolicy.isEligibleProvider("kugou", "kgtrack_ABCDEF12"))
+    }
+
     @Test fun `injectable vault does not expose a public key getter and fails closed`() {
         val vault = DeepSeekVault.forTesting(DeepSeekVault.InMemoryCiphertextStore())
         assertFalse(vault.status().hasApiKey)

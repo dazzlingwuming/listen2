@@ -147,6 +147,44 @@ describe('PlayerScreen translation orchestration', () => {
     expect(mockTranslate).not.toHaveBeenCalled();
   });
 
+  it('permits cache-only Bilibili translation only for an exact matched lyric', async () => {
+    mockPlayerState = {
+      currentTrack: {
+        id: 'bitrack_v_BV1xx411c7mD-12',
+        source: 'bilibili',
+        title: '甲',
+        artist: '歌手甲',
+      },
+      position: 0,
+    };
+    mockGetLyric.mockResolvedValue({
+      ...sourceLyrics,
+      provenance: {
+        mode: 'manual',
+        matchedProvider: 'netease',
+        matchedCandidateId: 'netrack_1',
+        matchScore: 1,
+      },
+    });
+    const tree = await renderPlayer();
+    await openLyrics(tree);
+    await act(async () => {
+      tree.root
+        .findByProps({ accessibilityLabel: '翻译当前歌词' })
+        .props.onPress();
+      await flushTranslation();
+    });
+    expect(mockTranslate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'bilibili',
+        sourceTrackId: 'bitrack_v_BV1xx411c7mD-12',
+        matchedProvider: 'netease',
+        matchedCandidateId: 'netrack_1',
+        allowNetwork: false,
+      }),
+    );
+  });
+
   it('uses the cache without consent or network and restores the source translation', async () => {
     const tree = await renderPlayer();
     await openLyrics(tree);

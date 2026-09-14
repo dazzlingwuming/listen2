@@ -19,8 +19,8 @@ class DeepSeekClient(private val vault: DeepSeekVault, private val cache: DeepSe
         when { cancelled.get() -> Result("error", "CANCELLED", operation = "test"); response.oversized -> Result("error", "RESPONSE_TOO_LARGE", operation = "test"); response.code in 200..299 -> Result("ok", operation = "test"); response.code == 401 || response.code == 403 -> Result("error", "INVALID_KEY", operation = "test"); response.code == 429 -> Result("error", "RATE_LIMITED", operation = "test"); response.code >= 500 -> Result("error", "SERVICE_UNAVAILABLE", operation = "test"); else -> Result("error", "PROVIDER_ERROR", operation = "test") }
     }
 
-    fun translate(operationId: String, input: DeepSeekPolicy.Input, provider: String, sourceTrackId: String, suppliedLyricHash: String, suppliedTrackHash: String, allowNetwork: Boolean, forceRefresh: Boolean): Result {
-        if (!DeepSeekPolicy.isEligibleProvider(provider)) return Result("error", "LYRIC_UNAVAILABLE")
+    fun translate(operationId: String, input: DeepSeekPolicy.Input, provider: String, sourceTrackId: String, suppliedLyricHash: String, suppliedTrackHash: String, allowNetwork: Boolean, forceRefresh: Boolean, matchedProvider: String? = null, matchedCandidateId: String? = null): Result {
+        if (!DeepSeekPolicy.isEligibleProvider(provider, sourceTrackId, matchedProvider, matchedCandidateId)) return Result("error", "LYRIC_UNAVAILABLE")
         val normalized = DeepSeekPolicy.normalize(input, requireConsent = false)
         val value = normalized.value ?: return Result("error", normalized.errorCode)
         val trackHash = DeepSeekPolicy.trackHash(provider, sourceTrackId, value.lyricHash)

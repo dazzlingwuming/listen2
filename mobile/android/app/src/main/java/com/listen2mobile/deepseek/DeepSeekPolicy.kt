@@ -96,11 +96,33 @@ object DeepSeekPolicy {
 
     fun lyricHash(normalizedTimedLrc: String) = sha256(Normalizer.normalize(normalizedTimedLrc.replace("\r\n", "\n").trim(), Normalizer.Form.NFC))
     fun trackHash(provider: String, sourceTrackId: String, lyricHash: String) = sha256("$provider\n$sourceTrackId\n$lyricHash")
-    fun isEligibleProvider(provider: String) = provider == "netease" || provider == "qq"
+    /** Native checks identity itself: JavaScript provenance is not authority. */
+    fun isEligibleProvider(
+        provider: String,
+        sourceTrackId: String,
+        matchedProvider: String? = null,
+        matchedCandidateId: String? = null,
+    ): Boolean = when (provider) {
+        "netease" -> NETEASE_TRACK.matches(sourceTrackId) && matchedProvider == null && matchedCandidateId == null
+        "qq" -> QQ_TRACK.matches(sourceTrackId) && matchedProvider == null && matchedCandidateId == null
+        "bilibili" -> exactBilibiliTrack(sourceTrackId) &&
+            (matchedProvider == "netease" && NETEASE_TRACK.matches(matchedCandidateId ?: "") ||
+                matchedProvider == "qq" && QQ_TRACK.matches(matchedCandidateId ?: ""))
+        else -> false
+    }
     fun fixedHeaders(apiKey: String) = linkedMapOf("Authorization" to "Bearer $apiKey", "Content-Type" to "application/json", "Accept" to "application/json", "User-Agent" to "Listen2Android/1")
 
     private val TIMED_LINE = Regex("^((?:\\[[0-9]{1,3}:[0-5][0-9](?:\\.[0-9]{1,3})?\\])+)(.*)$")
     private val KEY = Regex("\\\"(E[0-9]{4})\\\"\\s*:")
+    private val NETEASE_TRACK = Regex("^netrack_[1-9][0-9]{0,17}$")
+    private val QQ_TRACK = Regex("^qqtrack_[A-Za-z0-9_-]{1,128}$")
+    private val BILIBILI_TRACK = Regex("^bitrack_v_(BV[0-9A-Za-z]{6,32})-([1-9][0-9]{0,17})$")
+    private const val MAX_JS_SAFE_INTEGER = 9_007_199_254_740_991L
+    private fun exactBilibiliTrack(value: String): Boolean {
+        val match = BILIBILI_TRACK.matchEntire(value) ?: return false
+        val cid = match.groupValues[2].toLongOrNull() ?: return false
+        return cid in 1..MAX_JS_SAFE_INTEGER && cid.toString() == match.groupValues[2]
+    }
     private fun metadata(value: String, max: Int): String? { val normalized = Normalizer.normalize(value, Normalizer.Form.NFC).trim(); return if (normalized.length <= max && !unsafe(normalized)) normalized else null }
     private fun unsafe(value: String) = value.any { it.code in 0..8 || it.code in 11..12 || it.code in 14..31 || it.code == 127 }
     private fun bytes(value: String) = value.toByteArray(StandardCharsets.UTF_8).size
