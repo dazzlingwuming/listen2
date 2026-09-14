@@ -35,7 +35,10 @@ import { isLocalTrack } from '../types/music';
 import type { Lyric } from '../types/provider';
 import { findActiveLyricIndex, parseLyricTimeline } from '../lyrics/timeline';
 import { DeepSeekConsentSheet } from '../components/DeepSeekConsentSheet';
-import { createDeepSeekConsent } from '../deepseek/consent';
+import {
+  createDeepSeekConsent,
+  hasCompleteDeepSeekConsent,
+} from '../deepseek/consent';
 import { deepSeekClient, hashLyric, hashTrack } from '../deepseek/client';
 import type { DeepSeekConsent } from '../deepseek/types';
 
@@ -88,14 +91,13 @@ export function PlayerScreen() {
     setTranslationError(null);
     translationEpoch.current += 1;
     const operationId = translationOperation.current;
-    if (operationId) deepSeekClient.cancel(operationId).catch(() => undefined);
+    cancelPlayerTranslation(operationId);
     translationOperation.current = null;
   }, [current?.id, current?.source]);
   useEffect(
     () => () => {
       const operationId = translationOperation.current;
-      if (operationId)
-        deepSeekClient.cancel(operationId).catch(() => undefined);
+      cancelPlayerTranslation(operationId);
     },
     [],
   );
@@ -145,6 +147,7 @@ export function PlayerScreen() {
     setTranslationBusy(true);
     setTranslationError(null);
     try {
+      const plan = playerTranslationPlan(consent, forceRefresh);
       const result = await deepSeekClient.translate({
         operationId,
         provider,
@@ -157,10 +160,17 @@ export function PlayerScreen() {
         trackHash,
         target: 'zh-CN',
         consent,
-        allowNetwork: consent.acceptedAtEpochMs > 0,
-        forceRefresh,
+        allowNetwork: plan.allowNetwork,
+        forceRefresh: plan.forceRefresh,
       });
-      if (epoch !== translationEpoch.current || result.trackHash !== trackHash)
+      if (
+        !shouldApplyPlayerTranslation(
+          epoch,
+          translationEpoch.current,
+          trackHash,
+          result.trackHash,
+        )
+      )
         return;
       if (result.status === 'ok' && result.translation)
         setMachineTranslation(result.translation);
@@ -359,6 +369,38 @@ export function PlayerScreen() {
       />
     </View>
   );
+}
+
+/** Explicit actions call this planner; render, playback, and lyric hydration never do. */
+export function playerTranslationPlan(
+  consent: DeepSeekConsent,
+  forceRefresh: boolean,
+) {
+  const consented = hasCompleteDeepSeekConsent(consent);
+  return {
+    allowNetwork: consented,
+    forceRefresh: consented && forceRefresh,
+    requiresConsent: !consented,
+  };
+}
+
+export function shouldApplyPlayerTranslation(
+  requestEpoch: number,
+  currentEpoch: number,
+  expectedTrackHash: string,
+  resultTrackHash: string | undefined,
+): boolean {
+  // Cache misses and native errors intentionally omit identity hashes. They
+  // still belong to the active request, while a supplied different hash is a
+  // stale response that must never update the current lyric view.
+  return (
+    requestEpoch === currentEpoch &&
+    (!resultTrackHash || expectedTrackHash === resultTrackHash)
+  );
+}
+
+export function cancelPlayerTranslation(operationId: string | null): void {
+  if (operationId) deepSeekClient.cancel(operationId).catch(() => undefined);
 }
 
 function Progress({
