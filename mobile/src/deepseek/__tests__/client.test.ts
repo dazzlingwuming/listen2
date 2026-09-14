@@ -34,6 +34,12 @@ describe('deepSeekClient', () => {
     await expect(deepSeekClient.configure()).resolves.toMatchObject({
       status: 'configured',
     });
+    native.test.mockResolvedValue({
+      operation: 'test',
+      status: 'ok',
+      cacheHit: false,
+    });
+    await expect(deepSeekClient.test()).resolves.toEqual({ status: 'ok' });
     expect(native.configure).toHaveBeenCalledWith();
     await expect(
       deepSeekClient.translate({ apiKey: 'forbidden' }),
@@ -49,6 +55,7 @@ describe('deepSeekClient', () => {
     const lyricHash = hashLyric(lyric);
     const trackHash = hashTrack('netease', 'netrack_1', lyricHash);
     native.translate.mockResolvedValue({
+      operation: 'translate',
       status: 'ok',
       translation: '[00:01.00]一',
       lyricHash,

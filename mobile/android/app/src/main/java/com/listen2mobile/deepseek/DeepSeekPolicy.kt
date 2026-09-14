@@ -76,10 +76,16 @@ object DeepSeekPolicy {
         if (keys != input.lines.map { it.id } || keys.toSet().size != keys.size) return Outcome(errorCode = "INVALID_ALIGNMENT")
         return try {
             val objectValue = JSONObject(body)
+            val actualKeys = LinkedHashSet<String>()
+            val iterator = objectValue.keys()
+            while (iterator.hasNext()) actualKeys += iterator.next()
+            if (actualKeys != input.lines.map { it.id }.toCollection(LinkedHashSet())) return Outcome(errorCode = "INVALID_ALIGNMENT")
             val translations = LinkedHashMap<String, String>()
             var emojis = 0
             input.lines.forEach { line ->
-                val translated = objectValue.optString(line.id, "").trim()
+                val raw = objectValue.opt(line.id)
+                if (raw !is String) return Outcome(errorCode = "INVALID_ALIGNMENT")
+                val translated = raw.trim()
                 if (translated.isBlank() || translated.length > MAX_TRANSLATION_CHARS || unsafe(translated) || translated.contains('\n') || translated.contains('\r')) return Outcome(errorCode = "INVALID_ALIGNMENT")
                 emojis += translated.codePoints().filter { code -> code >= 0x1F300 }.count().toInt()
                 translations[line.id] = translated

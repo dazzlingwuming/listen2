@@ -6,6 +6,7 @@ import type {
   DeepSeekStatus,
   DeepSeekTranslateRequest,
   DeepSeekTranslateResult,
+  DeepSeekTestResult,
 } from './types';
 
 const MAX_LYRIC_BYTES = 64 * 1024;
@@ -33,6 +34,7 @@ const REQUEST_KEYS = new Set([
   'forceRefresh',
 ]);
 const RESULT_KEYS = new Set([
+  'operation',
   'status',
   'errorCode',
   'translation',
@@ -82,8 +84,8 @@ export const deepSeekClient = {
     delete safeStatus.status;
     return { ...parseStatus(safeStatus), status: value.status };
   },
-  async test(): Promise<DeepSeekTranslateResult> {
-    return parseResult(await nativeModule().test());
+  async test(): Promise<DeepSeekTestResult> {
+    return parseTestResult(await nativeModule().test());
   },
   async delete(): Promise<DeepSeekStatus> {
     return parseStatus(await nativeModule().delete());
@@ -176,6 +178,7 @@ function parseStatus(value: unknown): DeepSeekStatus {
 function parseResult(value: unknown): DeepSeekTranslateResult {
   const result = ensureRecord(value, RESULT_KEYS);
   if (
+    result.operation !== 'translate' ||
     !['ok', 'not-cached', 'error', 'cancelled'].includes(
       result.status as string,
     ) ||
@@ -209,6 +212,23 @@ function parseResult(value: unknown): DeepSeekTranslateResult {
     ...(typeof result.lyricHash === 'string'
       ? { lyricHash: result.lyricHash }
       : {}),
+    ...(error(result.errorCode) ? { errorCode: result.errorCode } : {}),
+  };
+}
+
+function parseTestResult(value: unknown): DeepSeekTestResult {
+  const result = ensureRecord(
+    value,
+    new Set(['operation', 'status', 'errorCode', 'cacheHit']),
+  );
+  if (
+    result.operation !== 'test' ||
+    !['ok', 'error', 'cancelled'].includes(result.status as string) ||
+    typeof result.cacheHit !== 'boolean'
+  )
+    fail('INVALID_RESPONSE');
+  return {
+    status: result.status as DeepSeekTestResult['status'],
     ...(error(result.errorCode) ? { errorCode: result.errorCode } : {}),
   };
 }

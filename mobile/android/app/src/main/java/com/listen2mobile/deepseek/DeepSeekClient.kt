@@ -9,14 +9,14 @@ import javax.net.ssl.HttpsURLConnection
 /** Fixed HTTPS client. The only Authorization construction is adjacent to native vault use. */
 class DeepSeekClient(private val vault: DeepSeekVault, private val cache: DeepSeekTranslationCache, private val transport: Transport = HttpsTransport()) {
     interface Transport { fun post(spec: DeepSeekPolicy.RequestSpec, apiKey: String, cancelled: AtomicBoolean): Response }
-    data class Response(val code: Int, val body: String)
-    data class Result(val status: String, val errorCode: String? = null, val translation: String? = null, val trackHash: String? = null, val lyricHash: String? = null, val cacheHit: Boolean = false)
+    data class Response(val code: Int, val body: String, val oversized: Boolean = false)
+    data class Result(val status: String, val errorCode: String? = null, val translation: String? = null, val trackHash: String? = null, val lyricHash: String? = null, val cacheHit: Boolean = false, val operation: String = "translate")
     private val cancellations = ConcurrentHashMap<String, AtomicBoolean>()
 
     fun cancel(operationId: String): Result { cancellations[operationId]?.set(true); return Result("cancelled") }
     fun test(): Result = execute("test", false) { cancelled ->
-        val response = vault.withApiKey { key -> transport.post(DeepSeekPolicy.testRequest(), key, cancelled) }
-        when { cancelled.get() -> Result("error", "CANCELLED"); response.code in 200..299 -> Result("ok"); response.code == 401 || response.code == 403 -> Result("error", "INVALID_KEY"); response.code == 429 -> Result("error", "RATE_LIMITED"); response.code >= 500 -> Result("error", "SERVICE_UNAVAILABLE"); else -> Result("error", "PROVIDER_ERROR") }
+        val response = try { vault.withApiKey { key -> transport.post(DeepSeekPolicy.testRequest(), key, cancelled) } } catch (error: DeepSeekVault.VaultException) { return@execute Result("error", error.code, operation = "test") }
+        when { cancelled.get() -> Result("error", "CANCELLED", operation = "test"); response.oversized -> Result("error", "RESPONSE_TOO_LARGE", operation = "test"); response.code in 200..299 -> Result("ok", operation = "test"); response.code == 401 || response.code == 403 -> Result("error", "INVALID_KEY", operation = "test"); response.code == 429 -> Result("error", "RATE_LIMITED", operation = "test"); response.code >= 500 -> Result("error", "SERVICE_UNAVAILABLE", operation = "test"); else -> Result("error", "PROVIDER_ERROR", operation = "test") }
     }
 
     fun translate(operationId: String, input: DeepSeekPolicy.Input, provider: String, sourceTrackId: String, suppliedLyricHash: String, suppliedTrackHash: String, allowNetwork: Boolean, forceRefresh: Boolean): Result {
@@ -25,7 +25,7 @@ class DeepSeekClient(private val vault: DeepSeekVault, private val cache: DeepSe
         val value = normalized.value ?: return Result("error", normalized.errorCode)
         val trackHash = DeepSeekPolicy.trackHash(provider, sourceTrackId, value.lyricHash)
         if (value.lyricHash != suppliedLyricHash || trackHash != suppliedTrackHash) return Result("error", "STALE_IDENTITY")
-        if (!forceRefresh) cache.get(trackHash, value.lyricHash)?.let { return Result("ok", translation = it.translation, trackHash = trackHash, lyricHash = value.lyricHash, cacheHit = true) }
+        if (!forceRefresh) cache.get(trackHash, value.lyricHash, value.promptFingerprint)?.let { return Result("ok", translation = it.translation, trackHash = trackHash, lyricHash = value.lyricHash, cacheHit = true) }
         if (!allowNetwork) return Result("not-cached", "NOT_CACHED", trackHash = trackHash, lyricHash = value.lyricHash)
         if (!input.consent.complete()) return Result("error", "CONSENT_REQUIRED")
         val spec = DeepSeekPolicy.translationRequest(value)
@@ -34,6 +34,7 @@ class DeepSeekClient(private val vault: DeepSeekVault, private val cache: DeepSe
             val response = try { vault.withApiKey { key -> transport.post(request, key, cancelled) } } catch (error: DeepSeekVault.VaultException) { return@execute Result("error", error.code) }
             if (cancelled.get()) return@execute Result("error", "CANCELLED")
             when {
+                response.oversized -> Result("error", "RESPONSE_TOO_LARGE")
                 response.code == 401 || response.code == 403 -> Result("error", "INVALID_KEY")
                 response.code == 429 -> Result("error", "RATE_LIMITED")
                 response.code >= 500 -> Result("error", "SERVICE_UNAVAILABLE")
@@ -69,9 +70,10 @@ class DeepSeekClient(private val vault: DeepSeekVault, private val cache: DeepSe
                 connection.outputStream.use { it.write(spec.body.toByteArray()) }
                 val code = connection.responseCode
                 val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-                val body = stream?.bufferedReader()?.use { it.readText().take(DeepSeekPolicy.MAX_RESPONSE_BYTES + 1) } ?: ""
-                return Response(code, body)
+                val body = stream?.use { readBounded(it) } ?: ""
+                return Response(code, body, body.length > DeepSeekPolicy.MAX_RESPONSE_BYTES)
             } finally { connection.disconnect() }
         }
+        private fun readBounded(stream: java.io.InputStream): String { val output = java.io.ByteArrayOutputStream(); val buffer = ByteArray(4096); var total = 0; while (true) { val read = stream.read(buffer); if (read < 0) break; total += read; if (total > DeepSeekPolicy.MAX_RESPONSE_BYTES) return "x".repeat(DeepSeekPolicy.MAX_RESPONSE_BYTES + 1); output.write(buffer, 0, read) }; return output.toString(Charsets.UTF_8.name()) }
     }
 }

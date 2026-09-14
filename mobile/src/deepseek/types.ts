@@ -66,3 +66,8 @@ export interface DeepSeekTranslateResult {
   readonly trackHash?: string;
   readonly cacheHit: boolean;
 }
+
+export interface DeepSeekTestResult {
+  readonly status: 'ok' | 'error' | 'cancelled';
+  readonly errorCode?: DeepSeekErrorCode;
+}

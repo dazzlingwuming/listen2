@@ -42,6 +42,8 @@ class DeepSeekContractTest {
         assertTrue(DeepSeekPolicy.parseLineMap(valid, normalized).isSuccess)
         assertEquals("INVALID_ALIGNMENT", DeepSeekPolicy.parseLineMap("""{"E0002":"第二行","E0001":"第一行"}""", normalized).errorCode)
         assertEquals("INVALID_ALIGNMENT", DeepSeekPolicy.parseLineMap("""{"E0001":"one\ntwo","E0002":"第二行"}""", normalized).errorCode)
+        assertEquals("INVALID_ALIGNMENT", DeepSeekPolicy.parseLineMap("""{"E0001":"第一行","E0002":"第二行","debug":"forbidden"}""", normalized).errorCode)
+        assertEquals("INVALID_ALIGNMENT", DeepSeekPolicy.parseLineMap("""{"E0001":{"nested":"forbidden"},"E0002":"第二行"}""", normalized).errorCode)
     }
 
     @Test fun `track hash prevents a cache hit for identical lyrics on another source identity`() {
