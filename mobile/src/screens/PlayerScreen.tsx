@@ -67,6 +67,7 @@ export function PlayerScreen() {
   );
   const [translationError, setTranslationError] = useState<string | null>(null);
   const [consentVisible, setConsentVisible] = useState(false);
+  const [forceRefreshRequested, setForceRefreshRequested] = useState(false);
   const [translationBusy, setTranslationBusy] = useState(false);
   const lyricRequest = useRef<AbortController | null>(null);
   const lyricEpoch = useRef(0);
@@ -163,8 +164,10 @@ export function PlayerScreen() {
         return;
       if (result.status === 'ok' && result.translation)
         setMachineTranslation(result.translation);
-      else if (result.status === 'not-cached') setConsentVisible(true);
-      else setTranslationError(result.errorCode || 'PROVIDER_ERROR');
+      else if (result.status === 'not-cached') {
+        setForceRefreshRequested(false);
+        setConsentVisible(true);
+      } else setTranslationError(result.errorCode || 'PROVIDER_ERROR');
     } catch (caught) {
       if (epoch === translationEpoch.current)
         setTranslationError(
@@ -334,7 +337,10 @@ export function PlayerScreen() {
         translationEligible={translationEligible}
         translationError={translationError}
         onLookupTranslation={lookupTranslation}
-        onRetranslate={() => setConsentVisible(true)}
+        onRetranslate={() => {
+          setForceRefreshRequested(true);
+          setConsentVisible(true);
+        }}
         onRestoreSource={() => {
           setMachineTranslation(null);
           setTranslationError(null);
@@ -346,7 +352,7 @@ export function PlayerScreen() {
         onClose={() => setConsentVisible(false)}
         onConfirm={consent => {
           setConsentVisible(false);
-          requestTranslation(consent, Boolean(machineTranslation)).catch(
+          requestTranslation(consent, forceRefreshRequested).catch(
             () => undefined,
           );
         }}
