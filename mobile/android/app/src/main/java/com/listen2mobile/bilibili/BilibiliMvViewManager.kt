@@ -21,6 +21,14 @@ class BilibiliMvViewManager(private val controller: BilibiliMvController) : Simp
         val release = { views.toList().forEach { it.releaseHandle(handle) } }
         if (Looper.myLooper() == Looper.getMainLooper()) release() else mainHandler.post(release)
     }
+    fun sync(handle: String?, positionMs: Long, playIntent: Boolean) {
+        val apply = { views.toList().forEach { it.sync(handle, positionMs, playIntent) } }
+        if (Looper.myLooper() == Looper.getMainLooper()) apply() else mainHandler.post(apply)
+    }
+    fun pauseForBackground() {
+        val pause = { views.toList().forEach(BilibiliMvView::pauseForBackground) }
+        if (Looper.myLooper() == Looper.getMainLooper()) pause() else mainHandler.post(pause)
+    }
 
     override fun onDropViewInstance(view: BilibiliMvView) {
         views.remove(view)

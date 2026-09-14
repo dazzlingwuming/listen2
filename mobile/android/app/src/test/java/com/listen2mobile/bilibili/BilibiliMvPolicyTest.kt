@@ -23,6 +23,7 @@ class BilibiliMvPolicyTest {
         val candidate = BilibiliMvPolicy.VideoCandidate(80, "HD", safeUrl, "video/mp4", "avc1.640028", 1920, 1080, 60, "video", false)
         assertEquals(candidate, BilibiliMvPolicy.selectVideoCandidate(listOf(candidate), listOf("avc1"), now))
         assertNull(BilibiliMvPolicy.selectVideoCandidate(listOf(candidate.copy(role = "combined")), listOf("avc1"), now))
+        assertNull(BilibiliMvPolicy.selectVideoCandidate(listOf(candidate.copy(codecs = "avc1evil")), listOf("avc1"), now))
         assertNull(BilibiliMvPolicy.selectVideoCandidate(listOf(candidate.copy(mimeType = "video/webm")), listOf("avc1"), now))
         assertNull(BilibiliMvPolicy.selectVideoCandidate(List(5) { candidate.copy(id = 16 + it) }, listOf("avc1"), now))
         assertFalse(BilibiliMvPolicy.isSafeVideoUrl("https://example.com/video.m4s?deadline=1700000031", now))

@@ -44,24 +44,29 @@ class BilibiliMvController(
         val playIntent: Boolean,
         val refreshes: Int,
     )
+    private data class Pending(val generation: Long, val request: BilibiliMvPolicy.MvRequest, val refreshes: Int, val positionMs: Long, val playIntent: Boolean)
     private val lock = Any()
     private var generation = 0L
     private var active: Active? = null
     private var state = State.IDLE
     private var error: BilibiliPolicy.ErrorCode? = null
 
-    fun open(request: BilibiliMvPolicy.MvRequest): PublicState = synchronized(lock) {
-        generation += 1; active = null; error = null; state = State.RESOLVING
-        resolveLocked(request, 0, 0L, false)
+    fun open(request: BilibiliMvPolicy.MvRequest): PublicState {
+        val pending = synchronized(lock) { generation += 1; active = null; error = null; state = State.RESOLVING; Pending(generation, request, 0, 0L, false) }
+        return resolve(pending)
     }
 
-    fun selectQuality(handle: String?, qualityId: String?): PublicState = synchronized(lock) {
+    fun selectQuality(handle: String?, qualityId: String?): PublicState {
+        val pending = synchronized(lock) {
         val current = active ?: return rejected(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
         if (current.handle != handle) return rejected(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
         val request = BilibiliMvPolicy.request(current.request.bvid, current.request.cid, qualityId, current.request.preferredCodecs, true)
             ?: return rejected(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
         state = State.REFRESHING
-        resolveLocked(request, current.refreshes, current.positionMs, current.playIntent)
+        generation += 1
+        Pending(generation, request, current.refreshes, current.positionMs, current.playIntent)
+        }
+        return resolve(pending)
     }
 
     fun sync(handle: String?, positionMs: Long, playIntent: Boolean): PublicState = synchronized(lock) {
@@ -72,12 +77,16 @@ class BilibiliMvController(
         projectionLocked()
     }
 
-    fun refresh(handle: String?): PublicState = synchronized(lock) {
+    fun refresh(handle: String?): PublicState {
+        val pending = synchronized(lock) {
         val current = active ?: return rejected(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
         if (current.handle != handle) return rejected(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
         if (current.refreshes >= 1) return rejected(BilibiliPolicy.ErrorCode.VIDEO_UNAVAILABLE)
         state = State.REFRESHING
-        resolveLocked(current.request.copy(forceRefresh = true), current.refreshes + 1, current.positionMs, current.playIntent)
+        generation += 1
+        Pending(generation, current.request.copy(forceRefresh = true), current.refreshes + 1, current.positionMs, current.playIntent)
+        }
+        return resolve(pending)
     }
 
     fun close(handle: String?): PublicState = synchronized(lock) {
@@ -106,11 +115,11 @@ class BilibiliMvController(
         active?.let { SemanticSnapshot(it.request.bvid, it.request.cid, it.request.qualityId, it.positionMs, it.playIntent) }
     }
 
-    fun restoreSemantic(snapshot: SemanticSnapshot): PublicState = synchronized(lock) {
+    fun restoreSemantic(snapshot: SemanticSnapshot): PublicState {
         val request = BilibiliMvPolicy.request(snapshot.bvid, snapshot.cid, snapshot.qualityId, emptyList(), true)
-            ?: return@synchronized rejected(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
-        generation += 1; active = null; error = null; state = State.RESOLVING
-        resolveLocked(request, 0, snapshot.positionMs, snapshot.playIntent)
+            ?: return rejected(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
+        val pending = synchronized(lock) { generation += 1; active = null; error = null; state = State.RESOLVING; Pending(generation, request, 0, snapshot.positionMs, snapshot.playIntent) }
+        return resolve(pending)
     }
 
     fun surfaceFailed(handle: String?): PublicState = synchronized(lock) {
@@ -118,19 +127,22 @@ class BilibiliMvController(
         failLocked(BilibiliPolicy.ErrorCode.VIDEO_UNAVAILABLE)
     }
 
-    private fun resolveLocked(request: BilibiliMvPolicy.MvRequest, refreshes: Int, positionMs: Long, playIntent: Boolean): PublicState {
+    /** Provider I/O deliberately happens before re-entering lock; lifecycle reads stay responsive. */
+    private fun resolve(pending: Pending): PublicState {
         return try {
-            val detail = gateway.videoDetail(request.bvid)
-            if (detail.bvid != request.bvid || detail.parts.none { it.cid == request.cid }) throw BilibiliHttpsGateway.ProviderException(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
-            val manifest = gateway.resolveVideo(request)
-            if (manifest.bvid != request.bvid || manifest.cid != request.cid) throw BilibiliHttpsGateway.ProviderException(BilibiliPolicy.ErrorCode.INVALID_RESPONSE)
-            val selected = BilibiliMvPolicy.selectVideoCandidate(manifest.candidates, request.preferredCodecs, clock())
+            val detail = gateway.videoDetail(pending.request.bvid)
+            if (detail.bvid != pending.request.bvid || detail.parts.none { it.cid == pending.request.cid }) throw BilibiliHttpsGateway.ProviderException(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
+            val manifest = gateway.resolveVideo(pending.request)
+            if (manifest.bvid != pending.request.bvid || manifest.cid != pending.request.cid) throw BilibiliHttpsGateway.ProviderException(BilibiliPolicy.ErrorCode.INVALID_RESPONSE)
+            val selected = BilibiliMvPolicy.selectVideoCandidate(manifest.candidates, pending.request.preferredCodecs, clock())
                 ?: throw BilibiliHttpsGateway.ProviderException(BilibiliPolicy.ErrorCode.UNSUPPORTED_VIDEO_CODEC)
             val handle = BilibiliMvPolicy.opaqueHandle(ByteArray(32).also { SecureRandom().nextBytes(it) })
-            active = Active(generation, handle, request, selected, manifest.candidates.map(BilibiliMvPolicy::publicVariant), positionMs, playIntent, refreshes)
-            state = State.READY; error = null; projectionLocked()
-        } catch (failure: BilibiliHttpsGateway.ProviderException) { failLocked(failure.code) }
-        catch (_: Exception) { failLocked(BilibiliPolicy.ErrorCode.NETWORK_ERROR) }
+            synchronized(lock) {
+                if (generation != pending.generation) rejected(BilibiliPolicy.ErrorCode.CANCELLED)
+                else { active = Active(pending.generation, handle, pending.request, selected, manifest.candidates.map(BilibiliMvPolicy::publicVariant), pending.positionMs, pending.playIntent, pending.refreshes); state = State.READY; error = null; projectionLocked() }
+            }
+        } catch (failure: BilibiliHttpsGateway.ProviderException) { synchronized(lock) { if (generation != pending.generation) rejected(BilibiliPolicy.ErrorCode.CANCELLED) else failLocked(failure.code) } }
+        catch (_: Exception) { synchronized(lock) { if (generation != pending.generation) rejected(BilibiliPolicy.ErrorCode.CANCELLED) else failLocked(BilibiliPolicy.ErrorCode.NETWORK_ERROR) } }
     }
 
     private fun failLocked(code: BilibiliPolicy.ErrorCode): PublicState { active = null; state = State.ERROR; error = code; return projectionLocked() }

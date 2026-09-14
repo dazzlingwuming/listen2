@@ -14,6 +14,7 @@ internal object BilibiliMvPolicy {
     private const val MAX_HANDLE_LENGTH = 96
     private val qualityIds = setOf("auto", "16", "32", "64", "74", "80", "112", "116", "120", "125", "126", "127")
     private val codecs = setOf("avc1", "hev1", "hvc1", "av01")
+    private val codecToken = Regex("(avc1|hev1|hvc1|av01)(\\.[A-Za-z0-9]{1,16}){0,3}")
 
     data class MvRequest(
         val bvid: String,
@@ -51,7 +52,7 @@ internal object BilibiliMvPolicy {
         if (candidates.isEmpty() || candidates.size > MAX_CANDIDATES || candidates.map { it.id }.distinct().size != candidates.size) return null
         if (candidates.any { !isSafeCandidate(it, now) }) return null
         val allowed = if (preferredCodecs.isEmpty()) codecs else preferredCodecs.toSet()
-        return candidates.filter { candidate -> allowed.any { candidate.codecs.startsWith(it) } }
+        return candidates.filter { candidate -> codecFamily(candidate.codecs) in allowed }
             .sortedWith(compareByDescending<VideoCandidate> { it.id }.thenBy { it.codecs }).firstOrNull()
     }
 
@@ -77,10 +78,13 @@ internal object BilibiliMvPolicy {
 
     private fun isSafeCandidate(candidate: VideoCandidate, now: Long): Boolean {
         return candidate.id.toString() in qualityIds && BilibiliPolicy.safeText(candidate.label, 80) != null &&
-            candidate.mimeType == "video/mp4" && codecs.any { candidate.codecs.startsWith(it) } &&
+            candidate.mimeType == "video/mp4" && codecFamily(candidate.codecs) != null &&
             candidate.width in 1..MAX_DIMENSION && candidate.height in 1..MAX_DIMENSION && candidate.frameRate in 1..MAX_FRAME_RATE &&
             candidate.role == "video" && !candidate.hasAlternateUrl && isSafeVideoUrl(candidate.url, now)
     }
+
+    private fun codecFamily(value: String): String? =
+        value.takeIf { codecToken.matches(it) }?.substringBefore('.')?.takeIf { it in codecs }
 
     fun opaqueHandle(randomBytes: ByteArray): String {
         val encoded = android.util.Base64.encodeToString(randomBytes, android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING or android.util.Base64.NO_WRAP)

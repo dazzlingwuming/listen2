@@ -19,7 +19,9 @@ const reply = (overrides = {}) => ({
   bvid: 'BV1xx411c7mD',
   cid: '12',
   qualityId: '80',
-  variants: [{ id: '80', label: '高清', codec: 'avc1', width: 1920, height: 1080 }],
+  variants: [
+    { id: '80', label: '高清', codec: 'avc1', width: 1920, height: 1080 },
+  ],
   positionMs: 0,
   playIntent: true,
   refreshing: false,
@@ -29,33 +31,94 @@ const reply = (overrides = {}) => ({
 describe('strict semantic Bilibili MV adapter', () => {
   beforeEach(() => {
     jest.resetModules();
-    jest.doMock('react-native', () => ({ NativeModules: { Listen2Bilibili: nativeModule } }));
+    jest.doMock('react-native', () => ({
+      NativeModules: { Listen2Bilibili: nativeModule },
+    }));
     ({ bilibiliMvClient: client } = require('../mvClient'));
     jest.clearAllMocks();
   });
 
   it('sends only exact semantic identity and returns an opaque safe state', async () => {
     nativeModule.mvOpen.mockResolvedValue(reply());
-    await expect(client.open({ bvid: 'BV1xx411c7mD', cid: '12', qualityId: '80', preferredCodecs: ['avc1'] })).resolves.toMatchObject({ handle: 'opaque_handle_abcdefghijklmnop' });
-    expect(nativeModule.mvOpen).toHaveBeenCalledWith({ bvid: 'BV1xx411c7mD', cid: '12', qualityId: '80', preferredCodecs: ['avc1'], forceRefresh: false });
-    expect(JSON.stringify(nativeModule.mvOpen.mock.calls)).not.toContain('deadline');
+    await expect(
+      client.open({
+        bvid: 'BV1xx411c7mD',
+        cid: '12',
+        qualityId: '80',
+        preferredCodecs: ['avc1'],
+      }),
+    ).resolves.toMatchObject({ handle: 'opaque_handle_abcdefghijklmnop' });
+    expect(nativeModule.mvOpen).toHaveBeenCalledWith({
+      bvid: 'BV1xx411c7mD',
+      cid: '12',
+      qualityId: '80',
+      preferredCodecs: ['avc1'],
+      forceRefresh: false,
+    });
+    expect(JSON.stringify(nativeModule.mvOpen.mock.calls)).not.toContain(
+      'deadline',
+    );
   });
 
   it.each([
-    ['a signed URL', reply({ url: 'https://upos.bilivideo.com/video?deadline=1' })],
+    [
+      'a signed URL',
+      reply({ url: 'https://upos.bilivideo.com/video?deadline=1' }),
+    ],
     ['a cookie', reply({ cookie: 'secret' })],
     ['a provider error map', { errorCode: 'LOGIN_REQUIRED' }],
   ])('rejects %s from native MV replies', async (_name, value) => {
     nativeModule.mvOpen.mockResolvedValue(value);
-    await expect(client.open({ bvid: 'BV1xx411c7mD', cid: '12' })).rejects.toMatchObject({ code: (value as { errorCode?: string }).errorCode || 'INVALID_RESPONSE' });
+    await expect(
+      client.open({ bvid: 'BV1xx411c7mD', cid: '12' }),
+    ).rejects.toMatchObject({
+      code: (value as { errorCode?: string }).errorCode || 'INVALID_RESPONSE',
+    });
   });
 
   it('does not issue sync after close and rejects malformed opaque handles', async () => {
     nativeModule.mvOpen.mockResolvedValue(reply());
-    nativeModule.mvClose.mockResolvedValue(reply({ state: 'closed', handle: undefined, bvid: undefined, cid: undefined }));
+    nativeModule.mvClose.mockResolvedValue(
+      reply({
+        state: 'closed',
+        handle: undefined,
+        bvid: undefined,
+        cid: undefined,
+      }),
+    );
     await client.open({ bvid: 'BV1xx411c7mD', cid: '12' });
     await client.close('opaque_handle_abcdefghijklmnop');
     await expect(client.syncActive(2000, true)).resolves.toBeNull();
-    expect(() => client.refresh('https://not-a-handle')).toThrow('INVALID_RESPONSE');
+    expect(() => client.refresh('https://not-a-handle')).toThrow(
+      'INVALID_RESPONSE',
+    );
+  });
+
+  it('treats a full native error state as failure and replaces the active handle after quality switch', async () => {
+    nativeModule.mvOpen.mockResolvedValue(
+      reply({
+        state: 'error',
+        errorCode: 'VIDEO_UNAVAILABLE',
+        handle: undefined,
+        bvid: undefined,
+        cid: undefined,
+      }),
+    );
+    await expect(
+      client.open({ bvid: 'BV1xx411c7mD', cid: '12' }),
+    ).rejects.toMatchObject({ code: 'VIDEO_UNAVAILABLE' });
+    nativeModule.mvOpen.mockResolvedValue(reply());
+    nativeModule.mvSelectQuality.mockResolvedValue(
+      reply({ handle: 'opaque_handle_replaced_abcdefgh', qualityId: '64' }),
+    );
+    nativeModule.mvSync.mockResolvedValue(
+      reply({ handle: 'opaque_handle_replaced_abcdefgh', qualityId: '64' }),
+    );
+    await client.open({ bvid: 'BV1xx411c7mD', cid: '12' });
+    await client.selectQuality('opaque_handle_abcdefghijklmnop', '64');
+    await client.syncActive(1000, true);
+    expect(nativeModule.mvSync).toHaveBeenCalledWith(
+      expect.objectContaining({ handle: 'opaque_handle_replaced_abcdefgh' }),
+    );
   });
 });

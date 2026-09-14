@@ -21,13 +21,14 @@ class MainActivity : ReactActivity() {
   /** Called only by the allow-listed Bilibili module; no JS supplied URL or orientation enters here. */
   fun bindMvController(controller: BilibiliMvController) {
     mvController = controller
-    pendingMvSnapshot?.let { snapshot ->
-      pendingMvSnapshot = null
-      // Process recreation restores semantic state only. Resolution stays inside the native
-      // controller and runs off the UI thread; a fresh opaque handle is never written to Bundle.
-      Thread { controller.restoreSemantic(snapshot) }.start()
-    }
   }
+
+  fun takePendingMvSnapshot(bvid: String, cid: Long): BilibiliMvController.SemanticSnapshot? {
+    val snapshot = pendingMvSnapshot ?: return null
+    return snapshot.takeIf { it.bvid == bvid && it.cid == cid }?.also { pendingMvSnapshot = null }
+  }
+
+  fun discardPendingMvSnapshot() { pendingMvSnapshot = null }
 
   fun enterMvFullscreen(handle: String): Boolean {
     if (!isActiveMvHandle(handle)) return false

@@ -4,9 +4,11 @@ import android.content.Context
 import android.view.SurfaceView
 import android.widget.FrameLayout
 import androidx.media3.common.MediaItem
+import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 
 /**
  * A deliberately muted video renderer. RNTP owns audio focus, MediaSession and notification
@@ -40,6 +42,7 @@ class BilibiliMvView(context: Context, private val controller: BilibiliMvControl
     fun detach() {
         detachSurface()
         handle = null
+        release()
     }
 
     fun releaseHandle(value: String?) {
@@ -52,11 +55,25 @@ class BilibiliMvView(context: Context, private val controller: BilibiliMvControl
 
     fun activeHandle(): String? = handle
 
+    fun sync(handle: String?, positionMs: Long, playIntent: Boolean) {
+        if (this.handle != handle) return
+        val video = player ?: return
+        if (kotlin.math.abs(video.currentPosition - positionMs) > 750L) video.seekTo(positionMs)
+        video.playWhenReady = playIntent
+    }
+
+    fun pauseForBackground() {
+        player?.playWhenReady = false
+    }
+
     private fun createVideoOnlyPlayer(): ExoPlayer {
         // ExoPlayer defaults to no focus handling. Do not call setAudioAttributes: that would
         // create an audio policy path competing with the existing RNTP service.
         check(!handleAudioFocus)
-        return ExoPlayer.Builder(context).build().also { created ->
+        val trackSelector = DefaultTrackSelector(context).also { selector ->
+            selector.parameters = selector.buildUponParameters().setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true).build()
+        }
+        return ExoPlayer.Builder(context).setTrackSelector(trackSelector).build().also { created ->
             created.volume = 0f
             created.addListener(object : Player.Listener {
                 override fun onPlayerError(error: PlaybackException) {
