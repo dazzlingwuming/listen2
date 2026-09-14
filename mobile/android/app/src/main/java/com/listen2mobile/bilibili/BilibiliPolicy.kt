@@ -21,19 +21,20 @@ internal object BilibiliPolicy {
 
     data class SemanticTrack(val bvid: String, val cid: Long, val page: Long)
     data class AudioHandoff(val bvid: String, val cid: Long, val page: Long, val url: String, val deadline: Long)
+    data class MediaCandidate(val id: Long, val url: String, val mimeType: String, val codecs: String, val hasAlternateUrl: Boolean)
 
     private val bvid = Regex("BV[0-9A-Za-z]{6,32}")
     private val positive = Regex("[1-9][0-9]{0,17}")
     private val semantic = Regex("bitrack_v_(BV[0-9A-Za-z]{6,32})-([1-9][0-9]{0,17})")
-    private val approvedPaths = setOf(
+    private val passportPaths = setOf(
         "/x/passport-login/web/qrcode/generate",
         "/x/passport-login/web/qrcode/poll",
-        "/x/web-interface/nav",
-        "/x/web-interface/view",
-        "/x/player/wbi/playurl",
+        "/x/passport-login/web/cookie/info",
         "/x/passport-login/web/cookie/refresh",
+        "/x/passport-login/web/confirm/refresh",
         "/login/exit/v2",
     )
+    private val apiPaths = setOf("/x/web-interface/nav", "/x/web-interface/view", "/x/player/wbi/playurl")
 
     fun parseSemanticTrack(id: String?, page: Long?): SemanticTrack? {
         if (id == null || page == null || page < 1L || page > Long.MAX_VALUE) return null
@@ -51,13 +52,24 @@ internal object BilibiliPolicy {
             val host = uri.host?.lowercase(Locale.ROOT) ?: return false
             if (uri.scheme != "https" || uri.userInfo != null || uri.fragment != null || uri.port != -1) return false
             if (host != "api.bilibili.com" && host != "passport.bilibili.com") return false
-            if (uri.path !in approvedPaths || uri.rawQuery?.toByteArray(StandardCharsets.UTF_8)?.size ?: 0 > MAX_QUERY_BYTES) return false
-            host == "api.bilibili.com" || uri.path in setOf("/x/passport-login/web/qrcode/generate", "/x/passport-login/web/qrcode/poll", "/x/passport-login/web/cookie/refresh", "/login/exit/v2")
+            val queryBytes = uri.rawQuery?.toByteArray(StandardCharsets.UTF_8)?.size ?: 0
+            if (queryBytes > MAX_QUERY_BYTES) return false
+            (host == "api.bilibili.com" && uri.path in apiPaths) ||
+                (host == "passport.bilibili.com" && uri.path in passportPaths)
         } catch (_: Exception) { false }
     }
 
+    fun isApprovedRefreshCorrespondRoute(raw: String): Boolean = try {
+        val uri = URI(raw)
+        uri.scheme == "https" && uri.host == "www.bilibili.com" && uri.userInfo == null &&
+            uri.fragment == null && uri.port == -1 &&
+            uri.path.matches(Regex("/correspond/1/[0-9a-f]{128,1024}")) &&
+            uri.rawQuery == null
+    } catch (_: Exception) { false }
+
     fun isSafeAudioHandoff(url: String?, headers: Map<String, String>?, deadline: Long, now: Long): Boolean {
         if (url == null || url.length > MAX_MEDIA_URL || headers != mapOf("Referer" to FIXED_REFERER)) return false
+        if (signedDeadline(url) != deadline) return false
         if (deadline - now !in (MIN_MEDIA_TTL_MS + 1)..MAX_MEDIA_TTL_MS) return false
         return try {
             val uri = URI(url)
@@ -65,6 +77,33 @@ internal object BilibiliPolicy {
                 (uri.host.equals("bilivideo.com", true) || uri.host.lowercase(Locale.ROOT).endsWith(".bilivideo.com")) &&
                 uri.userInfo == null && uri.fragment == null && uri.port == -1
         } catch (_: Exception) { false }
+    }
+
+    /** Provider signs `deadline` in seconds; reject duplicates, malformed values, and overflow. */
+    fun signedDeadline(url: String?): Long? {
+        if (url == null || url.length > MAX_MEDIA_URL) return null
+        return try {
+            val uri = URI(url)
+            val values = uri.rawQuery?.split("&")?.mapNotNull { part ->
+                val separator = part.indexOf('=')
+                if (separator <= 0) null else decodeQueryKey(part.substring(0, separator))?.let { key -> key to decodeQueryKey(part.substring(separator + 1)) }
+            } ?: emptyList()
+            val deadlines = values.filter { it.first == "deadline" }.map { it.second }
+            if (deadlines.size != 1 || deadlines[0] == null || !deadlines[0]!!.matches(Regex("[1-9][0-9]{8,12}"))) null else Math.multiplyExact(deadlines[0]!!.toLong(), 1000L)
+        } catch (_: Exception) { null }
+    }
+
+    /** All alternatives must be valid; callers expose only the deterministic best candidate. */
+    fun selectAudioCandidate(candidates: List<MediaCandidate>, now: Long): MediaCandidate? {
+        if (candidates.isEmpty() || candidates.size > 4) return null
+        for (candidate in candidates) {
+            val deadline = signedDeadline(candidate.url)
+            if (candidate.id <= 0 || candidate.hasAlternateUrl || candidate.mimeType != "audio/mp4" ||
+                !candidate.codecs.startsWith("mp4a.") || deadline == null ||
+                !isSafeAudioHandoff(candidate.url, mapOf("Referer" to FIXED_REFERER), deadline, now)
+            ) return null
+        }
+        return candidates.sortedByDescending { it.id }.first()
     }
 
     fun safeText(value: String?, limit: Int = MAX_TEXT): String? {

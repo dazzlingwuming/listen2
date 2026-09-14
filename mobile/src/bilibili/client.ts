@@ -205,6 +205,14 @@ function handoff(
       parsed.hash
     )
       fail();
+    const signedDeadlines = parsed.searchParams.getAll('deadline');
+    if (
+      signedDeadlines.length !== 1 ||
+      !/^[1-9][0-9]{8,12}$/.test(signedDeadlines[0]) ||
+      !Number.isSafeInteger(Number(signedDeadlines[0])) ||
+      Number(signedDeadlines[0]) * 1000 !== deadline
+    )
+      fail();
   } catch {
     fail();
   }

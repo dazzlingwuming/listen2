@@ -5,7 +5,6 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
-import com.facebook.react.bridge.ReactModuleWithSpec
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.ReadableType
 import com.facebook.react.bridge.WritableMap
@@ -21,17 +20,27 @@ class BilibiliModule(context: ReactApplicationContext) : ReactContextBaseJavaMod
     private val session = BilibiliSession(gateway, BilibiliVault(context), BilibiliQrRenderer())
     override fun getName() = NAME
 
-    @ReactMethod fun status(promise: Promise) = complete(promise) { state(session.snapshot()) }
-    @ReactMethod fun qrBegin(promise: Promise) = complete(promise) { state(session.begin(System.currentTimeMillis())) }
+    @ReactMethod fun status(promise: Promise) = complete(promise) { state(session.restore()) }
+    @ReactMethod fun qrBegin(promise: Promise) {
+        session.cancelActiveRequest()
+        complete(promise) { state(session.begin(System.currentTimeMillis())) }
+    }
     @ReactMethod fun qrPoll(request: ReadableMap, promise: Promise) = complete(promise) {
         requireKeys(request, setOf("attemptId"))
         state(session.poll(requireText(request, "attemptId", 64), System.currentTimeMillis()))
     }
-    @ReactMethod fun qrCancel(request: ReadableMap, promise: Promise) = complete(promise) {
-        requireKeys(request, setOf("attemptId"))
-        state(session.cancel(requireText(request, "attemptId", 64)))
+    @ReactMethod fun qrCancel(request: ReadableMap, promise: Promise) {
+        try {
+            requireKeys(request, setOf("attemptId"))
+            promise.resolve(state(session.cancel(requireText(request, "attemptId", 64))))
+        } catch (_: Exception) {
+            promise.resolve(error(BilibiliPolicy.ErrorCode.INVALID_REQUEST))
+        }
     }
-    @ReactMethod fun logout(promise: Promise) = complete(promise) { state(session.logout()) }
+    @ReactMethod fun logout(promise: Promise) {
+        session.cancelActiveRequest()
+        complete(promise) { state(session.logout()) }
+    }
     @ReactMethod fun videoDetail(request: ReadableMap, promise: Promise) = complete(promise) {
         requireKeys(request, setOf("bvid")); detail(gateway.videoDetail(requireBvid(request, "bvid")))
     }
