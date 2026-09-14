@@ -14,7 +14,7 @@ class DeepSeekClient(private val vault: DeepSeekVault, private val cache: DeepSe
     private val cancellations = ConcurrentHashMap<String, AtomicBoolean>()
 
     fun cancel(operationId: String): Result { cancellations[operationId]?.set(true); return Result("cancelled") }
-    fun test(): Result = execute("test", false) { cancelled ->
+    fun test(): Result = execute("test", false, "test") { cancelled ->
         val response = try { vault.withApiKey { key -> transport.post(DeepSeekPolicy.testRequest(), key, cancelled) } } catch (error: DeepSeekVault.VaultException) { return@execute Result("error", error.code, operation = "test") }
         when { cancelled.get() -> Result("error", "CANCELLED", operation = "test"); response.oversized -> Result("error", "RESPONSE_TOO_LARGE", operation = "test"); response.code in 200..299 -> Result("ok", operation = "test"); response.code == 401 || response.code == 403 -> Result("error", "INVALID_KEY", operation = "test"); response.code == 429 -> Result("error", "RATE_LIMITED", operation = "test"); response.code >= 500 -> Result("error", "SERVICE_UNAVAILABLE", operation = "test"); else -> Result("error", "PROVIDER_ERROR", operation = "test") }
     }
@@ -25,7 +25,7 @@ class DeepSeekClient(private val vault: DeepSeekVault, private val cache: DeepSe
         val value = normalized.value ?: return Result("error", normalized.errorCode)
         val trackHash = DeepSeekPolicy.trackHash(provider, sourceTrackId, value.lyricHash)
         if (value.lyricHash != suppliedLyricHash || trackHash != suppliedTrackHash) return Result("error", "STALE_IDENTITY")
-        if (!forceRefresh) cache.get(trackHash, value.lyricHash, value.promptFingerprint)?.let { return Result("ok", translation = it.translation, trackHash = trackHash, lyricHash = value.lyricHash, cacheHit = true) }
+        if (!forceRefresh) cache.get(trackHash, value.lyricHash, value.title, value.artist, value.promptFingerprint)?.let { return Result("ok", translation = it.translation, trackHash = trackHash, lyricHash = value.lyricHash, cacheHit = true) }
         if (!allowNetwork) return Result("not-cached", "NOT_CACHED", trackHash = trackHash, lyricHash = value.lyricHash)
         if (!input.consent.complete()) return Result("error", "CONSENT_REQUIRED")
         val spec = DeepSeekPolicy.translationRequest(value)
@@ -44,16 +44,16 @@ class DeepSeekClient(private val vault: DeepSeekVault, private val cache: DeepSe
                     val parsed = DeepSeekPolicy.parseLineMap(content, value)
                     val translation = parsed.value ?: return@execute Result("error", parsed.errorCode)
                     if (cancelled.get() || trackHash != suppliedTrackHash) Result("error", "CANCELLED") else {
-                        if (!cache.put(DeepSeekTranslationCache.Entry(trackHash, value.lyricHash, translation.translation, promptFingerprint = value.promptFingerprint))) Result("error", "CACHE_WRITE_FAILED") else Result("ok", translation = translation.translation, trackHash = trackHash, lyricHash = value.lyricHash)
+                        if (!cache.put(DeepSeekTranslationCache.Entry(trackHash, value.lyricHash, translation.translation, title = value.title, artist = value.artist, promptFingerprint = value.promptFingerprint))) Result("error", "CACHE_WRITE_FAILED") else Result("ok", translation = translation.translation, trackHash = trackHash, lyricHash = value.lyricHash)
                     }
                 }
             }
         }
     }
 
-    private fun execute(operationId: String, removeOnFinish: Boolean, block: (AtomicBoolean) -> Result): Result {
+    private fun execute(operationId: String, removeOnFinish: Boolean, operation: String = "translate", block: (AtomicBoolean) -> Result): Result {
         val cancelled = AtomicBoolean(false); cancellations[operationId] = cancelled
-        return try { block(cancelled) } catch (_: java.net.SocketTimeoutException) { Result("error", "TIMEOUT") } catch (_: Exception) { Result("error", "PROVIDER_ERROR") } finally { if (removeOnFinish || operationId == "test") cancellations.remove(operationId) }
+        return try { block(cancelled) } catch (_: java.net.SocketTimeoutException) { Result("error", "TIMEOUT", operation = operation) } catch (error: DeepSeekVault.VaultException) { Result("error", error.code, operation = operation) } catch (_: Exception) { Result("error", "PROVIDER_ERROR", operation = operation) } finally { if (removeOnFinish || operationId == "test") cancellations.remove(operationId) }
     }
 
     private class HttpsTransport : Transport {

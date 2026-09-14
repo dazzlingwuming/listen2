@@ -55,6 +55,7 @@ class DeepSeekContractTest {
         cache.put(DeepSeekTranslationCache.Entry(first, lyricHash, "translation"))
         assertEquals("translation", cache.get(first, lyricHash)?.translation)
         assertNull(cache.get(second, lyricHash))
+        assertNull(cache.get(first, lyricHash, "Other title"))
     }
 
     @Test fun `injectable vault does not expose a public key getter and fails closed`() {

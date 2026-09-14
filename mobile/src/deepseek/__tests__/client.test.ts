@@ -40,6 +40,25 @@ describe('deepSeekClient', () => {
       cacheHit: false,
     });
     await expect(deepSeekClient.test()).resolves.toEqual({ status: 'ok' });
+    for (const errorCode of [
+      'TIMEOUT',
+      'CANCELLED',
+      'PROVIDER_ERROR',
+      'MISSING_KEY',
+      'INVALID_KEY',
+      'RATE_LIMITED',
+    ]) {
+      native.test.mockResolvedValue({
+        operation: 'test',
+        status: 'error',
+        errorCode,
+        cacheHit: false,
+      });
+      await expect(deepSeekClient.test()).resolves.toEqual({
+        status: 'error',
+        errorCode,
+      });
+    }
     expect(native.configure).toHaveBeenCalledWith();
     await expect(
       deepSeekClient.translate({ apiKey: 'forbidden' }),
