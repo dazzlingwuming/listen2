@@ -153,7 +153,9 @@ function validateRequest(value: unknown): DeepSeekTranslateRequest {
       request.trackHash
   )
     fail('STALE_IDENTITY');
-  if (!hasCompleteDeepSeekConsent(request.consent)) fail('CONSENT_REQUIRED');
+  if (request.forceRefresh && !request.allowNetwork) fail('INVALID_REQUEST');
+  if (request.allowNetwork && !hasCompleteDeepSeekConsent(request.consent))
+    fail('CONSENT_REQUIRED');
   return { ...request, lyric } as DeepSeekTranslateRequest;
 }
 

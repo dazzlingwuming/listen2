@@ -34,6 +34,10 @@ import { toggleFavorite } from '../store/librarySlice';
 import { isLocalTrack } from '../types/music';
 import type { Lyric } from '../types/provider';
 import { findActiveLyricIndex, parseLyricTimeline } from '../lyrics/timeline';
+import { DeepSeekConsentSheet } from '../components/DeepSeekConsentSheet';
+import { createDeepSeekConsent } from '../deepseek/consent';
+import { deepSeekClient, hashLyric, hashTrack } from '../deepseek/client';
+import type { DeepSeekConsent } from '../deepseek/types';
 
 export function PlayerScreen() {
   const navigation = useNavigation<any>();
@@ -58,8 +62,16 @@ export function PlayerScreen() {
   const [lyrics, setLyrics] = useState<Lyric | null>(null);
   const [lyricsLoading, setLyricsLoading] = useState(false);
   const [lyricsUnavailable, setLyricsUnavailable] = useState(false);
+  const [machineTranslation, setMachineTranslation] = useState<string | null>(
+    null,
+  );
+  const [translationError, setTranslationError] = useState<string | null>(null);
+  const [consentVisible, setConsentVisible] = useState(false);
+  const [translationBusy, setTranslationBusy] = useState(false);
   const lyricRequest = useRef<AbortController | null>(null);
   const lyricEpoch = useRef(0);
+  const translationEpoch = useRef(0);
+  const translationOperation = useRef<string | null>(null);
   const favorite = current
     ? favorites.some(
         item => item.id === current.id && item.source === current.source,
@@ -71,7 +83,21 @@ export function PlayerScreen() {
     setLyrics(null);
     setLyricsLoading(false);
     setLyricsUnavailable(false);
+    setMachineTranslation(null);
+    setTranslationError(null);
+    translationEpoch.current += 1;
+    const operationId = translationOperation.current;
+    if (operationId) deepSeekClient.cancel(operationId).catch(() => undefined);
+    translationOperation.current = null;
   }, [current?.id, current?.source]);
+  useEffect(
+    () => () => {
+      const operationId = translationOperation.current;
+      if (operationId)
+        deepSeekClient.cancel(operationId).catch(() => undefined);
+    },
+    [],
+  );
   const openLyrics = async () => {
     setShowLyrics(true);
     if (!current || lyrics || lyricsLoading) return;
@@ -96,6 +122,73 @@ export function PlayerScreen() {
     } finally {
       if (epoch === lyricEpoch.current) setLyricsLoading(false);
     }
+  };
+  const translationEligible = Boolean(
+    current &&
+      lyrics &&
+      (trackSource(current) === 'netease' || trackSource(current) === 'qq') &&
+      parseLyricTimeline(lyrics.text).some(line => line.timestampMs !== null),
+  );
+  const requestTranslation = async (
+    consent: DeepSeekConsent,
+    forceRefresh: boolean,
+  ) => {
+    if (!current || !lyrics || !translationEligible) return;
+    const provider = trackSource(current);
+    if (provider !== 'netease' && provider !== 'qq') return;
+    const lyricHash = hashLyric(lyrics.text);
+    const trackHash = hashTrack(provider, current.id, lyricHash);
+    const epoch = ++translationEpoch.current;
+    const operationId = `deepseek_${Date.now()}_${epoch}`;
+    translationOperation.current = operationId;
+    setTranslationBusy(true);
+    setTranslationError(null);
+    try {
+      const result = await deepSeekClient.translate({
+        operationId,
+        provider,
+        sourceTrackId: current.id,
+        lyric: lyrics.text,
+        title: trackTitle(current),
+        artist: trackArtist(current),
+        style: '',
+        lyricHash,
+        trackHash,
+        target: 'zh-CN',
+        consent,
+        allowNetwork: consent.acceptedAtEpochMs > 0,
+        forceRefresh,
+      });
+      if (epoch !== translationEpoch.current || result.trackHash !== trackHash)
+        return;
+      if (result.status === 'ok' && result.translation)
+        setMachineTranslation(result.translation);
+      else if (result.status === 'not-cached') setConsentVisible(true);
+      else setTranslationError(result.errorCode || 'PROVIDER_ERROR');
+    } catch (caught) {
+      if (epoch === translationEpoch.current)
+        setTranslationError(
+          caught instanceof Error ? caught.message : 'PROVIDER_ERROR',
+        );
+    } finally {
+      if (epoch === translationEpoch.current) setTranslationBusy(false);
+    }
+  };
+  const lookupTranslation = () => {
+    requestTranslation(
+      createDeepSeekConsent(
+        {
+          lyrics: false,
+          title: false,
+          artist: false,
+          possibleCost: false,
+          cancellation: false,
+          failureImpact: false,
+        },
+        0,
+      ),
+      false,
+    ).catch(() => undefined);
   };
   const toggle = () =>
     invoke(
@@ -234,9 +327,29 @@ export function PlayerScreen() {
         loading={lyricsLoading}
         unavailable={lyricsUnavailable}
         localAudio={Boolean(current && isLocalTrack(current))}
+        machineTranslation={machineTranslation}
         visible={showLyrics}
         position={state.position ?? state.progress ?? 0}
+        translationBusy={translationBusy}
+        translationEligible={translationEligible}
+        translationError={translationError}
+        onLookupTranslation={lookupTranslation}
+        onRetranslate={() => setConsentVisible(true)}
+        onRestoreSource={() => {
+          setMachineTranslation(null);
+          setTranslationError(null);
+        }}
         onClose={() => setShowLyrics(false)}
+      />
+      <DeepSeekConsentSheet
+        visible={consentVisible}
+        onClose={() => setConsentVisible(false)}
+        onConfirm={consent => {
+          setConsentVisible(false);
+          requestTranslation(consent, Boolean(machineTranslation)).catch(
+            () => undefined,
+          );
+        }}
       />
     </View>
   );
@@ -321,7 +434,14 @@ function LyricsSheet({
   loading,
   unavailable,
   localAudio,
+  machineTranslation,
   position,
+  translationBusy,
+  translationEligible,
+  translationError,
+  onLookupTranslation,
+  onRetranslate,
+  onRestoreSource,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -330,11 +450,22 @@ function LyricsSheet({
   loading: boolean;
   unavailable: boolean;
   localAudio: boolean;
+  machineTranslation: string | null;
   position: number;
+  translationBusy: boolean;
+  translationEligible: boolean;
+  translationError: string | null;
+  onLookupTranslation: () => void;
+  onRetranslate: () => void;
+  onRestoreSource: () => void;
 }) {
   const lines = useMemo(
-    () => parseLyricTimeline(lyrics?.text, lyrics?.translation),
-    [lyrics?.text, lyrics?.translation],
+    () =>
+      parseLyricTimeline(
+        lyrics?.text,
+        machineTranslation || lyrics?.translation,
+      ),
+    [lyrics?.text, lyrics?.translation, machineTranslation],
   );
   const activeIndex = findActiveLyricIndex(lines, playbackPositionMs(position));
   const scrollView = useRef<React.ComponentRef<typeof ScrollView>>(null);
@@ -366,6 +497,43 @@ function LyricsSheet({
           <Text style={styles.lyricMeta}>
             {trackTitle(current)} ·{' '}
             {providerLabels[trackSource(current)] || trackSource(current)}
+          </Text>
+        ) : null}
+        {translationEligible ? (
+          <View style={styles.translationActions}>
+            <Pressable
+              accessibilityLabel={
+                machineTranslation ? '恢复来源译文' : '翻译当前歌词'
+              }
+              disabled={translationBusy}
+              onPress={
+                machineTranslation ? onRestoreSource : onLookupTranslation
+              }
+              style={styles.translationButton}
+            >
+              <Text style={styles.actionText}>
+                {machineTranslation ? '恢复来源译文' : '翻译当前歌词'}
+              </Text>
+            </Pressable>
+            <Pressable
+              accessibilityLabel="重新翻译当前歌词"
+              disabled={translationBusy}
+              onPress={onRetranslate}
+              style={styles.translationButton}
+            >
+              <Text style={styles.actionText}>重新翻译</Text>
+            </Pressable>
+          </View>
+        ) : null}
+        {machineTranslation ? (
+          <Text style={styles.machineBadge}>DeepSeek 机器翻译</Text>
+        ) : null}
+        {translationBusy ? (
+          <Text style={text.meta}>正在处理歌词翻译…</Text>
+        ) : null}
+        {translationError ? (
+          <Text style={styles.translationError}>
+            翻译未应用：{translationError}
           </Text>
         ) : null}
         {loading ? (
@@ -537,6 +705,17 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   lyrics: { gap: spacing.lg, alignItems: 'center', padding: spacing.lg },
+  translationActions: { flexDirection: 'row', gap: spacing.sm },
+  translationButton: {
+    borderColor: colors.border,
+    borderRadius: 10,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 40,
+    paddingHorizontal: spacing.md,
+  },
+  machineBadge: { color: colors.accent, fontSize: 12, fontWeight: '700' },
+  translationError: { color: '#ff9aa9', fontSize: 13 },
   lyricMeta: text.meta,
   lyricRow: { width: '100%', alignItems: 'center', gap: spacing.xs },
   lyricLine: { ...text.body, textAlign: 'center' },

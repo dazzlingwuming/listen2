@@ -41,9 +41,9 @@ object DeepSeekPolicy {
     data class RequestSpec(val endpoint: String, val model: String, val promptVersion: String, val body: String, val headerNames: List<String>)
     data class ParsedTranslation(val translation: String, val lineMap: Map<String, String>)
 
-    fun normalize(input: Input?): Outcome<Normalized> {
+    fun normalize(input: Input?, requireConsent: Boolean = true): Outcome<Normalized> {
         if (input == null) return Outcome(errorCode = "INVALID_REQUEST")
-        if (!input.consent.complete()) return Outcome(errorCode = "CONSENT_REQUIRED")
+        if (requireConsent && !input.consent.complete()) return Outcome(errorCode = "CONSENT_REQUIRED")
         val lyric = Normalizer.normalize(input.lyric, Normalizer.Form.NFC).replace("\r\n", "\n").trim()
         if (bytes(lyric) > MAX_LYRIC_BYTES) return Outcome(errorCode = "LYRIC_TOO_LARGE")
         val title = metadata(input.title, MAX_METADATA_CHARS) ?: return Outcome(errorCode = "INVALID_REQUEST")

@@ -21,12 +21,13 @@ class DeepSeekClient(private val vault: DeepSeekVault, private val cache: DeepSe
 
     fun translate(operationId: String, input: DeepSeekPolicy.Input, provider: String, sourceTrackId: String, suppliedLyricHash: String, suppliedTrackHash: String, allowNetwork: Boolean, forceRefresh: Boolean): Result {
         if (!DeepSeekPolicy.isEligibleProvider(provider)) return Result("error", "LYRIC_UNAVAILABLE")
-        val normalized = DeepSeekPolicy.normalize(input)
+        val normalized = DeepSeekPolicy.normalize(input, requireConsent = false)
         val value = normalized.value ?: return Result("error", normalized.errorCode)
         val trackHash = DeepSeekPolicy.trackHash(provider, sourceTrackId, value.lyricHash)
         if (value.lyricHash != suppliedLyricHash || trackHash != suppliedTrackHash) return Result("error", "STALE_IDENTITY")
         if (!forceRefresh) cache.get(trackHash, value.lyricHash)?.let { return Result("ok", translation = it.translation, trackHash = trackHash, lyricHash = value.lyricHash, cacheHit = true) }
         if (!allowNetwork) return Result("not-cached", "NOT_CACHED", trackHash = trackHash, lyricHash = value.lyricHash)
+        if (!input.consent.complete()) return Result("error", "CONSENT_REQUIRED")
         val spec = DeepSeekPolicy.translationRequest(value)
         val request = spec.value ?: return Result("error", spec.errorCode)
         return execute(operationId, true) { cancelled ->

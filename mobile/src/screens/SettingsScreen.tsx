@@ -41,6 +41,8 @@ import {
 import { offlineDownloadErrorCopy } from '../offline/offlineErrorCopy';
 import { bilibiliClient } from '../bilibili/client';
 import type { BilibiliPublicState } from '../bilibili/types';
+import { deepSeekClient } from '../deepseek/client';
+import type { DeepSeekStatus } from '../deepseek/types';
 
 export function SettingsScreen() {
   const dispatch = useDispatch<AppDispatch>();
@@ -58,6 +60,8 @@ export function SettingsScreen() {
   const [backupError, setBackupError] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
   const [bilibili, setBilibili] = useState<BilibiliPublicState | null>(null);
+  const [deepSeek, setDeepSeek] = useState<DeepSeekStatus | null>(null);
+  const [deepSeekBusy, setDeepSeekBusy] = useState(false);
   const liveAttempt = React.useRef('');
   const pollTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const mounted = React.useRef(true);
@@ -65,6 +69,64 @@ export function SettingsScreen() {
     liveAttempt.current = '';
     if (pollTimer.current) clearTimeout(pollTimer.current);
     pollTimer.current = null;
+  };
+  const refreshDeepSeek = React.useCallback(async () => {
+    try {
+      setDeepSeek(await deepSeekClient.status());
+    } catch {
+      setDeepSeek({
+        secureStorageAvailable: false,
+        hasApiKey: false,
+        errorCode: 'SECURE_STORAGE_UNAVAILABLE',
+      });
+    }
+  }, []);
+  React.useEffect(() => {
+    refreshDeepSeek().catch(() => undefined);
+  }, [refreshDeepSeek]);
+  const configureDeepSeek = async () => {
+    setDeepSeekBusy(true);
+    try {
+      setDeepSeek(await deepSeekClient.configure());
+    } catch {
+      setDeepSeek({
+        secureStorageAvailable: false,
+        hasApiKey: false,
+        errorCode: 'CONFIGURE_UNAVAILABLE',
+      });
+    } finally {
+      setDeepSeekBusy(false);
+    }
+  };
+  const testDeepSeek = async () => {
+    setDeepSeekBusy(true);
+    try {
+      const result = await deepSeekClient.test();
+      Alert.alert(
+        result.status === 'ok' ? 'DeepSeek 连接成功' : 'DeepSeek 连接不可用',
+        result.status === 'ok'
+          ? '测试请求可能产生 API 费用。'
+          : result.errorCode || '请检查安全存储和 API key。',
+      );
+    } catch {
+      Alert.alert('DeepSeek 连接不可用', '请检查安全存储和 API key。');
+    } finally {
+      setDeepSeekBusy(false);
+    }
+  };
+  const clearDeepSeek = async () => {
+    setDeepSeekBusy(true);
+    try {
+      setDeepSeek(await deepSeekClient.delete());
+    } catch {
+      setDeepSeek({
+        secureStorageAvailable: false,
+        hasApiKey: false,
+        errorCode: 'SECURE_STORAGE_UNAVAILABLE',
+      });
+    } finally {
+      setDeepSeekBusy(false);
+    }
   };
   const terminalState = (value: BilibiliPublicState) => ({
     ...value,
@@ -333,6 +395,55 @@ export function SettingsScreen() {
               </View>
             );
           })}
+        </View>
+      </View>
+      <View style={sectionStyles.section}>
+        <Text style={text.heading}>DeepSeek 歌词翻译</Text>
+        <View style={sectionStyles.card}>
+          <Text style={text.body}>
+            {deepSeek?.secureStorageAvailable === false
+              ? '安全存储不可用'
+              : deepSeek?.hasApiKey
+              ? '已在本机安全存储中配置 API key'
+              : '尚未配置 API key'}
+          </Text>
+          <Text style={text.meta}>
+            设置和测试均使用原生安全页面；不会将 key 传入应用
+            JavaScript。测试和翻译可能产生费用。
+          </Text>
+          <View style={styles.actions}>
+            <Pressable
+              accessibilityLabel="设置或替换 DeepSeek API key"
+              disabled={deepSeekBusy}
+              onPress={configureDeepSeek}
+              style={styles.actionButton}
+            >
+              <Text style={styles.actionText}>
+                {deepSeek?.hasApiKey ? '替换 API key' : '设置 API key'}
+              </Text>
+            </Pressable>
+            <Pressable
+              accessibilityLabel="测试 DeepSeek 连接"
+              disabled={deepSeekBusy || !deepSeek?.hasApiKey}
+              onPress={testDeepSeek}
+              style={styles.actionButton}
+            >
+              <Text style={styles.actionText}>测试连接</Text>
+            </Pressable>
+            {deepSeek?.hasApiKey ? (
+              <Pressable
+                accessibilityLabel="清除 DeepSeek API key"
+                disabled={deepSeekBusy}
+                onPress={clearDeepSeek}
+                style={styles.actionButton}
+              >
+                <Text style={styles.actionText}>清除 key</Text>
+              </Pressable>
+            ) : null}
+          </View>
+          {deepSeek?.errorCode ? (
+            <Text style={styles.status}>状态：{deepSeek.errorCode}</Text>
+          ) : null}
         </View>
       </View>
       <View style={sectionStyles.section}>
@@ -649,6 +760,21 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   status: { ...text.meta, flex: 1, textAlign: 'right' },
+  actions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  actionButton: {
+    borderColor: colors.border,
+    borderRadius: 10,
+    borderWidth: 1,
+    minHeight: 40,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+  },
+  actionText: { ...text.body, color: colors.accent, fontWeight: '600' },
   backupActions: { gap: spacing.sm, marginTop: spacing.md },
   modalBackdrop: {
     flex: 1,
