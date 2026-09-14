@@ -5,8 +5,8 @@ milestone_name: android-official-mobile-product-pivot
 current_phase: 5
 current_phase_name: Five-Source Listen Journey
 status: implementation
-stopped_at: Completed quick task 260914-h1s; five-source playback/lyrics parity remains in source implementation
-last_updated: "2026-09-14T05:20:00Z"
+stopped_at: Completed quick task 260914-iuc; QQ/Kuwo playback and advanced media surfaces remain
+last_updated: "2026-09-14T06:40:00Z"
 progress:
   total_phases: 5
   completed_phases: 1
@@ -14,7 +14,7 @@ progress:
   completed_plans: 3
   percent: 20
 last_activity: 2026-09-14
-last_activity_desc: Added consented native DeepSeek lyric translation with Android key custody, strict alignment, and private track-bound cache
+last_activity_desc: Added Bilibili exact-part automatic/manual lyrics, dormant bounded Kugou/Kuwo adapters, and Bilibili DeepSeek handoff
 ---
 
 # Project State
@@ -25,7 +25,7 @@ See: `.planning/PROJECT.md`
 
 **Core value:** Android users reliably complete an authorized end-to-end music journey from search through playback, lyrics, and later control.
 
-**Current focus:** Standalone React Native mobile parity; offline, Discover, native Bilibili account/multipart/audio, and consented DeepSeek lyric translation implemented; remaining provider playback/lyrics and integrated runtime acceptance pending
+**Current focus:** Standalone React Native mobile parity; offline, Discover, native Bilibili account/audio, consented DeepSeek, and Bilibili exact-part lyric selection implemented; QQ/Kuwo playback, advanced media surfaces, and integrated runtime acceptance pending
 
 ## Current Position
 
@@ -78,7 +78,7 @@ Progress: [██████████] 100%
 - Plan and execute Phase 4 around source registry and official-style mobile navigation.
 - Implement Phase 5 as one coherent NetEase/QQ/Kugou/Kuwo/Bilibili source journey, rather than adding per-endpoint native patches.
 - Obtain user-owned credentials only for final Bilibili QR and DeepSeek checks; keep them outside the repository.
-- Implement remaining QQ/Kuwo playback and Kugou/Kuwo/Bilibili lyric journeys, then advanced playback/mobile-equivalent surfaces.
+- Design and implement approved semantic QQ/Kuwo playback fallbacks without restoring legacy arbitrary URL/cookie/header authority, then advanced MV/PiP/effects surfaces.
 - Use user-owned SAF media only in the final integrated acceptance and record absence as `not verified`.
 
 ### Blockers/Concerns
@@ -97,6 +97,7 @@ Progress: [██████████] 100%
 | 260913-jlv | Real NetEase/Kugou Discover collections, truthful detail, and rollback-safe play-all | 2026-09-13 | 770a116 | Needs Review | [260913-jlv-replace-the-placeholder-react-native-dis](./quick/260913-jlv-replace-the-placeholder-react-native-dis/) |
 | 260914-f3q | Native Bilibili QR session, exact multipart selection, and authenticated semantic audio resolution | 2026-09-14 | 8ce07d1 | Needs Review | [260914-f3q-implement-bilibili-account-session-exact](./quick/260914-f3q-implement-bilibili-account-session-exact/) |
 | 260914-h1s | Consented native DeepSeek lyric translation, strict alignment, and private track-bound cache | 2026-09-14 | 0c0f42d | Needs Review | [260914-h1s-implement-consented-deepseek-lyric-trans](./quick/260914-h1s-implement-consented-deepseek-lyric-trans/) |
+| 260914-iuc | Bilibili exact-part automatic/manual lyrics, bounded dormant Kugou/Kuwo adapters, and Bilibili DeepSeek handoff | 2026-09-14 | 10663d0 | Needs Review | [260914-iuc-complete-five-source-mobile-lyric-parity](./quick/260914-iuc-complete-five-source-mobile-lyric-parity/) |
 | 3 | Refresh Android mobile progress documentation after offline and Discover implementation | 2026-09-13 | 0ad8ef4 | — | — |
 
 ## Deferred Items
