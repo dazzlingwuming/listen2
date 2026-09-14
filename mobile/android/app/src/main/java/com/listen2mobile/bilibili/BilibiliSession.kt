@@ -17,11 +17,13 @@ class BilibiliSession(
     }
     data class QrChallenge(val key: String, val qrUrl: String, val expiresAt: Long)
     data class PublicState(val status: PublicStatus, val attemptId: String = "", val expiresAt: Long = 0L, val qrPngDataUri: String = "", val displayName: String? = null, val avatarUrl: String? = null, val retryable: Boolean = false, val nextAction: String = "begin", val errorCode: BilibiliPolicy.ErrorCode? = null)
+    private data class ActiveAttempt(val key: String, val id: String, val generation: Long)
 
     private val lock = Any()
     private var restored = false
     private var qrKey: String? = null
     private var attemptId = ""
+    private var generation = 0L
     private var expiry = 0L
     private var bitmap = ""
     private var status = PublicStatus.IDLE
@@ -39,7 +41,7 @@ class BilibiliSession(
         return try {
             gateway.restoreSession(material)
             val refreshed = gateway.refresh(material) ?: throw IllegalStateException()
-            vault.saveSession(refreshed)
+            vault.saveSession(refreshed.copy(ownerId = material.ownerId))
             gateway.restoreSession(refreshed)
             val verifiedAccount = gateway.account() ?: throw IllegalStateException()
             synchronized(lock) { account = verifiedAccount; status = PublicStatus.AUTHENTICATED; error = null; projectionLocked() }
@@ -58,23 +60,24 @@ class BilibiliSession(
             val challenge = gateway.beginQr()
             if (challenge.key.length !in 1..256 || challenge.expiresAt <= now || !isQrUrl(challenge.qrUrl)) throw IllegalArgumentException()
             val rendered = renderer.render(challenge.qrUrl); if (!isQrPng(rendered)) throw IllegalArgumentException()
-            synchronized(lock) { qrKey = challenge.key; attemptId = randomAttemptId(); expiry = challenge.expiresAt; bitmap = rendered; status = PublicStatus.WAITING; error = null; projectionLocked() }
+            synchronized(lock) { generation += 1; qrKey = challenge.key; attemptId = randomAttemptId(); expiry = challenge.expiresAt; bitmap = rendered; status = PublicStatus.WAITING; error = null; projectionLocked() }
         } catch (failure: BilibiliHttpsGateway.ProviderException) { synchronized(lock) { clearTransientLocked(); status = PublicStatus.ERROR; error = failure.code; projectionLocked() } }
         catch (_: Exception) { synchronized(lock) { clearTransientLocked(); status = PublicStatus.ERROR; error = BilibiliPolicy.ErrorCode.PROVIDER_ERROR; projectionLocked() } }
     }
 
     /** The network operation occurs outside the lock so cancel/logout can disconnect it promptly. */
     fun poll(requestedAttemptId: String?, now: Long): PublicState {
-        val key = synchronized(lock) {
+        val attempt = synchronized(lock) {
             if (!sameAttemptLocked(requestedAttemptId)) return PublicState(PublicStatus.CANCELLED, nextAction = "begin")
             if (status !in setOf(PublicStatus.WAITING, PublicStatus.SCANNED)) return projectionLocked()
             if (now >= expiry) { clearTransientLocked(); status = PublicStatus.EXPIRED; return projectionLocked() }
-            qrKey ?: return PublicState(PublicStatus.ERROR, errorCode = BilibiliPolicy.ErrorCode.INVALID_RESPONSE)
+            val key = qrKey ?: return PublicState(PublicStatus.ERROR, errorCode = BilibiliPolicy.ErrorCode.INVALID_RESPONSE)
+            ActiveAttempt(key, attemptId, generation)
         }
-        val result = try { gateway.pollQr(key) } catch (failure: BilibiliHttpsGateway.ProviderException) { PollResult.Failed(failure.code) } catch (_: Exception) { PollResult.Failed(BilibiliPolicy.ErrorCode.PROVIDER_ERROR) }
-        if (result is PollResult.Authenticated) return authenticatePollResult(requestedAttemptId, result.refreshMaterial)
+        val result = try { gateway.pollQr(attempt.key) } catch (failure: BilibiliHttpsGateway.ProviderException) { PollResult.Failed(failure.code) } catch (_: Exception) { PollResult.Failed(BilibiliPolicy.ErrorCode.PROVIDER_ERROR) }
+        if (result is PollResult.Authenticated) return authenticatePollResult(attempt, result.refreshMaterial)
         return synchronized(lock) {
-            if (!sameAttemptLocked(requestedAttemptId)) return projectionLocked()
+            if (!isActiveAttemptLocked(attempt)) return projectionLocked()
             when (result) {
                 PollResult.Waiting -> status = PublicStatus.WAITING
                 PollResult.Scanned -> status = PublicStatus.SCANNED
@@ -87,14 +90,33 @@ class BilibiliSession(
     }
 
     fun cancel(requestedAttemptId: String?): PublicState {
-        val key = synchronized(lock) { if (!sameAttemptLocked(requestedAttemptId)) return projectionLocked(); val active = qrKey; clearTransientLocked(); status = PublicStatus.CANCELLED; error = null; active }
-        key?.let { gateway.cancelPoll(it) }
+        val attempt = synchronized(lock) {
+            if (!sameAttemptLocked(requestedAttemptId)) return projectionLocked()
+            val active = qrKey ?: return projectionLocked()
+            ActiveAttempt(active, attemptId, generation).also {
+                generation += 1
+                clearTransientLocked()
+                status = PublicStatus.CANCELLED
+                error = null
+            }
+        }
+        gateway.cancelPoll(attempt.key)
+        clearOwned(attempt.id)
         return synchronized(lock) { projectionLocked() }
     }
 
     fun cancelActiveRequest() {
-        val key = synchronized(lock) { val active = qrKey; clearTransientLocked(); if (status == PublicStatus.WAITING || status == PublicStatus.SCANNED) status = PublicStatus.CANCELLED; active }
-        key?.let { gateway.cancelPoll(it) }
+        val attempt = synchronized(lock) {
+            val active = qrKey
+            if (active == null || status !in setOf(PublicStatus.WAITING, PublicStatus.SCANNED)) return@synchronized null
+            ActiveAttempt(active, attemptId, generation).also {
+                generation += 1
+                clearTransientLocked()
+                status = PublicStatus.CANCELLED
+                error = null
+            }
+        }
+        attempt?.let { gateway.cancelPoll(it.key); clearOwned(it.id) }
     }
 
     fun logout(): PublicState {
@@ -109,32 +131,64 @@ class BilibiliSession(
         val publicAccount = if (status == PublicStatus.AUTHENTICATED) account else null
         return PublicState(status, if (active) attemptId else "", if (active) expiry else 0L, if (active) bitmap else "", BilibiliPolicy.safeText(publicAccount?.displayName, 80), BilibiliPolicy.safeAvatar(publicAccount?.avatarUrl), status == PublicStatus.ERROR || status == PublicStatus.EXPIRED, if (status == PublicStatus.AUTHENTICATED) "logout" else if (active) "poll" else "begin", error)
     }
-    private fun authenticatePollResult(requestedAttemptId: String?, refreshMaterial: String): PublicState {
-        if (refreshMaterial.isBlank() || refreshMaterial.length > 4096 || !synchronized(lock) { sameAttemptLocked(requestedAttemptId) })
+    private fun authenticatePollResult(attempt: ActiveAttempt, refreshMaterial: String): PublicState {
+        if (refreshMaterial.isBlank() || refreshMaterial.length > 4096 || !isActiveAttempt(attempt))
             return snapshot()
+        val material = try {
+            gateway.exportSession(refreshMaterial)
+        } catch (_: Exception) {
+            return if (isActiveAttempt(attempt)) failAuthentication(attempt) else snapshot()
+        }
+        if (!isActiveAttempt(attempt)) return snapshot()
         val verifiedAccount = try {
-            val material = gateway.exportSession(refreshMaterial)
-            vault.saveSession(material)
             gateway.account() ?: throw IllegalStateException()
         } catch (_: Exception) {
-            try { vault.clear() } catch (_: Exception) { }
-            gateway.logout()
-            null
+            return if (isActiveAttempt(attempt)) failAuthentication(attempt) else snapshot()
         }
-        return synchronized(lock) {
-            if (!sameAttemptLocked(requestedAttemptId)) return projectionLocked()
-            clearTransientLocked()
-            if (verifiedAccount == null) {
-                account = null
-                status = PublicStatus.ERROR
-                error = BilibiliPolicy.ErrorCode.INVALID_RESPONSE
-            } else {
+        if (!isActiveAttempt(attempt)) return snapshot()
+        try {
+            if (!isActiveAttempt(attempt)) return snapshot()
+            vault.saveSession(material.copy(ownerId = attempt.id))
+            if (!isActiveAttempt(attempt)) {
+                clearOwned(attempt.id)
+                return snapshot()
+            }
+        } catch (_: Exception) {
+            return if (isActiveAttempt(attempt)) failAuthentication(attempt) else snapshot()
+        }
+        val staleBeforePublicCommit = synchronized(lock) {
+            if (!isActiveAttemptLocked(attempt)) true else {
+                clearTransientLocked()
                 account = verifiedAccount
                 status = PublicStatus.AUTHENTICATED
                 error = null
+                false
             }
+        }
+        if (staleBeforePublicCommit) {
+            clearOwned(attempt.id)
+            return snapshot()
+        }
+        return snapshot()
+    }
+    private fun failAuthentication(attempt: ActiveAttempt): PublicState {
+        try { vault.clear() } catch (_: Exception) { }
+        gateway.logout()
+        return synchronized(lock) {
+            if (!isActiveAttemptLocked(attempt)) return projectionLocked()
+            clearTransientLocked()
+            account = null
+            status = PublicStatus.ERROR
+            error = BilibiliPolicy.ErrorCode.INVALID_RESPONSE
             projectionLocked()
         }
+    }
+    private fun isActiveAttempt(attempt: ActiveAttempt) = synchronized(lock) { isActiveAttemptLocked(attempt) }
+    private fun isActiveAttemptLocked(attempt: ActiveAttempt) =
+        generation == attempt.generation && attemptId == attempt.id && qrKey == attempt.key &&
+            status in setOf(PublicStatus.WAITING, PublicStatus.SCANNED)
+    private fun clearOwned(ownerId: String) {
+        try { vault.clearIfOwned(ownerId) } catch (_: Exception) { }
     }
     private fun sameAttemptLocked(value: String?) = value != null && attemptId.isNotBlank() && attemptId == value
     private fun clearTransientLocked() { qrKey = null; attemptId = ""; expiry = 0L; bitmap = "" }

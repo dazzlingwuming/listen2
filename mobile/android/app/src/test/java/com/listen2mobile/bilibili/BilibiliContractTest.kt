@@ -5,9 +5,15 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 class BilibiliContractTest {
-    private companion object { const val NOW = 1_700_000_000_000L }
+    private companion object {
+        const val NOW = 1_700_000_000_000L
+        val SESSION_COOKIES = mapOf("SESSDATA" to "opaque", "bili_jct" to "csrf")
+    }
     private val signedAudio = "https://upos-sz-mirrorcos.bilivideo.com/audio.m4s?deadline=1700000031"
 
     @Test fun `semantic track identity is exact and rejects alternate cid`() {
@@ -101,10 +107,10 @@ class BilibiliContractTest {
     }
 
     @Test fun `restore refreshes native vault material then validates account`() {
-        val stored = BilibiliVault.SessionMaterial("old-refresh", "SESSDATA=opaque", "csrf")
+        val stored = BilibiliVault.SessionMaterial("old-refresh", SESSION_COOKIES, "csrf")
         val vault = FakeVault().apply { loaded = stored }
         val gateway = FakeGateway().apply {
-            refreshed = BilibiliVault.SessionMaterial("new-refresh", "SESSDATA=new", "new-csrf")
+            refreshed = BilibiliVault.SessionMaterial("new-refresh", mapOf("SESSDATA" to "new", "bili_jct" to "new-csrf"), "new-csrf")
             accountValue = BilibiliGateway.Account("listener", "https://i0.hdslb.com/avatar.png")
         }
         val state = BilibiliSession(gateway, vault, FakeQrRenderer()).restore()
@@ -115,7 +121,7 @@ class BilibiliContractTest {
     }
 
     @Test fun `restore failure clears vault and gateway without exposing session material`() {
-        val vault = FakeVault().apply { loaded = BilibiliVault.SessionMaterial("refresh", "SESSDATA=opaque", "csrf") }
+        val vault = FakeVault().apply { loaded = BilibiliVault.SessionMaterial("refresh", SESSION_COOKIES, "csrf") }
         val gateway = FakeGateway().apply { refreshed = null }
         val state = BilibiliSession(gateway, vault, FakeQrRenderer()).restore()
         assertEquals(BilibiliSession.PublicStatus.IDLE, state.status)
@@ -144,6 +150,32 @@ class BilibiliContractTest {
         assertTrue(gateway.loggedOut)
     }
 
+    @Test fun `cancelling during account validation prevents session persistence and authentication`() {
+        val accountStarted = CountDownLatch(1)
+        val allowAccountResult = CountDownLatch(1)
+        val gateway = FakeGateway().apply {
+            pollResult = BilibiliSession.PollResult.Authenticated("refresh-material")
+            beforeAccount = {
+                accountStarted.countDown()
+                assertTrue(allowAccountResult.await(2, TimeUnit.SECONDS))
+            }
+        }
+        val vault = FakeVault()
+        val session = BilibiliSession(gateway, vault, FakeQrRenderer())
+        val begin = session.begin(NOW)
+        val polled = AtomicReference<BilibiliSession.PublicState>()
+        val worker = Thread { polled.set(session.poll(begin.attemptId, NOW + 1)) }
+        worker.start()
+        assertTrue(accountStarted.await(2, TimeUnit.SECONDS))
+        assertEquals(BilibiliSession.PublicStatus.CANCELLED, session.cancel(begin.attemptId).status)
+        allowAccountResult.countDown()
+        worker.join(2_000L)
+        assertFalse(worker.isAlive)
+        assertEquals(BilibiliSession.PublicStatus.CANCELLED, polled.get().status)
+        assertNull(vault.saved)
+        assertFalse(session.snapshot().status == BilibiliSession.PublicStatus.AUTHENTICATED)
+    }
+
     private class FakeQrRenderer : BilibiliQrRenderer.Renderer {
         override fun render(value: String): String = "data:image/png;base64,AA=="
     }
@@ -163,6 +195,12 @@ class BilibiliContractTest {
             if (loadFails) throw IllegalStateException("decrypt-failed")
             return loaded
         }
+        override fun clearIfOwned(ownerId: String) {
+            if (saved?.ownerId == ownerId) {
+                saved = null
+                cleared = true
+            }
+        }
         override fun clear() { saved = null; loaded = null; cleared = true }
     }
 
@@ -171,17 +209,21 @@ class BilibiliContractTest {
         var pollResult: BilibiliSession.PollResult = BilibiliSession.PollResult.Waiting
         var cancelledKeys = mutableListOf<String>()
         var restoredMaterial: BilibiliVault.SessionMaterial? = null
-        var refreshed: BilibiliVault.SessionMaterial? = BilibiliVault.SessionMaterial("refreshed", "SESSDATA=opaque", "csrf")
+        var refreshed: BilibiliVault.SessionMaterial? = BilibiliVault.SessionMaterial("refreshed", SESSION_COOKIES, "csrf")
         var accountValue: BilibiliGateway.Account? = BilibiliGateway.Account("listener", null)
+        var beforeAccount: (() -> Unit)? = null
         var loggedOut = false
         override fun beginQr() = BilibiliSession.QrChallenge("provider-key", "https://passport.bilibili.com/h5-app/passport/login/scan?qrcode_key=provider-key", NOW + 10_000L)
         override fun pollQr(qrKey: String): BilibiliSession.PollResult { polled = true; return pollResult }
         override fun cancelPoll(qrKey: String) { cancelledKeys += qrKey }
-        override fun exportSession(refreshMaterial: String) = BilibiliVault.SessionMaterial(refreshMaterial, "SESSDATA=opaque", "csrf")
+        override fun exportSession(refreshMaterial: String) = BilibiliVault.SessionMaterial(refreshMaterial, SESSION_COOKIES, "csrf")
         override fun restoreSession(material: BilibiliVault.SessionMaterial) { restoredMaterial = material }
         override fun refresh(material: BilibiliVault.SessionMaterial) = refreshed
         override fun logout() { loggedOut = true }
-        override fun account() = accountValue
+        override fun account(): BilibiliGateway.Account? {
+            beforeAccount?.invoke()
+            return accountValue
+        }
         override fun videoDetail(bvid: String) = throw UnsupportedOperationException()
         override fun resolveAudio(track: BilibiliPolicy.SemanticTrack) = throw UnsupportedOperationException()
     }
