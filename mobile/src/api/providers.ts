@@ -884,7 +884,11 @@ function kuwoProviderId(value: string): string | null {
 
 function safeLyricText(value: unknown): string | null {
   const candidate = neteaseLyricText(value);
-  return candidate && candidate.trim() ? candidate : null;
+  // eslint-disable-next-line no-control-regex -- lyric text rejects unsafe controls.
+  const unsafe = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(
+    candidate?.replace(/\r?\n/g, '') ?? '',
+  );
+  return candidate && candidate.trim() && !unsafe ? candidate : null;
 }
 
 /** Test-only dormant adapter; production dispatch stays deliberately closed. */
@@ -953,11 +957,17 @@ export async function getKuwoLyric(
     const item = asObject(row);
     const time = text(item?.time, 16);
     const line = text(item?.lineLyric, 1024);
-    if (!time || !line || !/^\d{1,3}:\d{2}(?:\.\d{1,3})?$/.test(time))
+    if (!time || !line) return [];
+    const seconds = /^\d{1,6}(?:\.\d{1,3})?$/.test(time)
+      ? Number(time)
+      : /^\d{1,3}:\d{2}(?:\.\d{1,3})?$/.test(time)
+      ? Number(time.split(':')[0]) * 60 + Number(time.split(':')[1])
+      : Number.NaN;
+    if (!Number.isFinite(seconds) || seconds < 0 || seconds > 8 * 60 * 60)
       return [];
-    const [minutes, seconds] = time.split(':');
-    if (Number(seconds) >= 60) return [];
-    return [`[${minutes.padStart(2, '0')}:${seconds}]${line}`];
+    const minutes = Math.floor(seconds / 60);
+    const remainder = (seconds % 60).toFixed(2).padStart(5, '0');
+    return [`[${String(minutes).padStart(2, '0')}:${remainder}]${line}`];
   });
   const lyric = lines.join('\n');
   if (!lyric) throw unavailable('kuwo', 'lyric', 'LYRIC_UNAVAILABLE');

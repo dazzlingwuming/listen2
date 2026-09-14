@@ -111,7 +111,7 @@ export const bilibiliLyricCache = {
       const existing = store.records.find(value => value.identity === identity);
       if (
         expectedRevision !== undefined &&
-        existing?.revision !== expectedRevision
+        (existing?.revision ?? 0) !== expectedRevision
       )
         return { status: 'stale' as const, revision: existing?.revision };
       const next: BilibiliLyricCacheRecord = {

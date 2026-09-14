@@ -43,6 +43,13 @@ jest.mock('react-redux', () => ({
 jest.mock('../../api/client', () => ({
   providerClient: { getLyric: (...args: unknown[]) => mockGetLyric(...args) },
 }));
+jest.mock('../../lyrics/cache', () => ({
+  bilibiliLyricCache: {
+    get: jest.fn().mockResolvedValue(null),
+    put: jest.fn().mockResolvedValue({ status: 'ok', record: { revision: 1 } }),
+    clear: jest.fn().mockResolvedValue({ status: 'ok' }),
+  },
+}));
 jest.mock('../../store/playerSlice', () => ({
   togglePlayback: () => ({ type: 'player/togglePlayback' }),
 }));

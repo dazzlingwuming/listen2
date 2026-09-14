@@ -30,10 +30,16 @@ import {
 import { providerLabels } from '../components/SourceTabs';
 import { Sheet } from '../components/Sheet';
 import { providerClient } from '../api/client';
+import { parseExactBilibiliTrackId } from '../api/ids';
+import { findBilibiliLyricCandidates } from '../bilibili/lyrics';
+import type { BilibiliLyricCandidate } from '../bilibili/types';
+import { BilibiliLyricPicker } from '../components/BilibiliLyricPicker';
 import { toggleFavorite } from '../store/librarySlice';
 import { isLocalTrack } from '../types/music';
 import type { Lyric } from '../types/provider';
+import type { Track } from '../types/provider';
 import { findActiveLyricIndex, parseLyricTimeline } from '../lyrics/timeline';
+import { bilibiliLyricCache } from '../lyrics/cache';
 import { DeepSeekConsentSheet } from '../components/DeepSeekConsentSheet';
 import {
   createDeepSeekConsent,
@@ -65,6 +71,14 @@ export function PlayerScreen() {
   const [lyrics, setLyrics] = useState<Lyric | null>(null);
   const [lyricsLoading, setLyricsLoading] = useState(false);
   const [lyricsUnavailable, setLyricsUnavailable] = useState(false);
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const [candidates, setCandidates] = useState<BilibiliLyricCandidate[]>([]);
+  const [candidateLoading, setCandidateLoading] = useState(false);
+  const [candidatePartial, setCandidatePartial] = useState(false);
+  const [candidateError, setCandidateError] = useState(false);
+  const [bilibiliCacheRevision, setBilibiliCacheRevision] = useState<
+    number | undefined
+  >();
   const [machineTranslation, setMachineTranslation] = useState<string | null>(
     null,
   );
@@ -74,6 +88,9 @@ export function PlayerScreen() {
   const [translationBusy, setTranslationBusy] = useState(false);
   const lyricRequest = useRef<AbortController | null>(null);
   const lyricEpoch = useRef(0);
+  const candidateRequest = useRef<AbortController | null>(null);
+  const candidateEpoch = useRef(0);
+  const selectionEpoch = useRef(0);
   const translationEpoch = useRef(0);
   const translationOperation = useRef<string | null>(null);
   const favorite = current
@@ -83,10 +100,17 @@ export function PlayerScreen() {
     : false;
   useEffect(() => {
     lyricRequest.current?.abort();
+    candidateRequest.current?.abort();
     lyricEpoch.current += 1;
     setLyrics(null);
     setLyricsLoading(false);
     setLyricsUnavailable(false);
+    setPickerVisible(false);
+    setCandidates([]);
+    setCandidateLoading(false);
+    setCandidatePartial(false);
+    setCandidateError(false);
+    setBilibiliCacheRevision(undefined);
     setMachineTranslation(null);
     setTranslationError(null);
     translationEpoch.current += 1;
@@ -101,9 +125,9 @@ export function PlayerScreen() {
     },
     [],
   );
-  const openLyrics = async () => {
+  const openLyrics = async (force = false) => {
     setShowLyrics(true);
-    if (!current || lyrics || lyricsLoading) return;
+    if (!current || (!force && (lyrics || lyricsLoading))) return;
     if (isLocalTrack(current)) {
       setLyricsUnavailable(true);
       return;
@@ -115,16 +139,121 @@ export function PlayerScreen() {
     setLyricsLoading(true);
     setLyricsUnavailable(false);
     try {
-      const response = await providerClient.getLyric(current.id, {
+      const bilibiliIdentity =
+        trackSource(current) === 'bilibili'
+          ? parseExactBilibiliTrackId(current.id)
+          : null;
+      if (bilibiliIdentity) {
+        const cached = await bilibiliLyricCache.get(current.id);
+        if (
+          cached &&
+          epoch === lyricEpoch.current &&
+          !controller.signal.aborted
+        ) {
+          setLyrics(cached.lyric);
+          setBilibiliCacheRevision(cached.revision);
+          return;
+        }
+      }
+      const response = await providerClient.getLyric(current as Track, {
         signal: controller.signal,
       });
-      if (epoch === lyricEpoch.current) setLyrics(response);
+      if (epoch === lyricEpoch.current && !controller.signal.aborted) {
+        setLyrics(response);
+        if (bilibiliIdentity && response.provenance) {
+          const saved = await bilibiliLyricCache.put({ lyric: response });
+          if (saved.status === 'ok')
+            setBilibiliCacheRevision(saved.record.revision);
+        }
+      }
     } catch {
-      if (epoch === lyricEpoch.current && !controller.signal.aborted)
-        setLyricsUnavailable(true);
+      if (epoch === lyricEpoch.current && !controller.signal.aborted) {
+        if (trackSource(current) === 'bilibili') setPickerVisible(true);
+        else setLyricsUnavailable(true);
+      }
     } finally {
       if (epoch === lyricEpoch.current) setLyricsLoading(false);
     }
+  };
+  const searchBilibiliCandidates = async (query: string) => {
+    if (!current || trackSource(current) !== 'bilibili') return;
+    const identity = parseExactBilibiliTrackId(current.id);
+    if (!identity) return;
+    candidateRequest.current?.abort();
+    const controller = new AbortController();
+    candidateRequest.current = controller;
+    const epoch = ++candidateEpoch.current;
+    setCandidateLoading(true);
+    setCandidateError(false);
+    try {
+      const result = await findBilibiliLyricCandidates(
+        { ...(current as Track), title: query.trim() || trackTitle(current) },
+        { signal: controller.signal },
+      );
+      if (epoch === candidateEpoch.current && !controller.signal.aborted) {
+        setCandidates(result);
+        setCandidatePartial(false);
+      }
+    } catch {
+      if (epoch === candidateEpoch.current && !controller.signal.aborted) {
+        setCandidatePartial(true);
+        setCandidateError(true);
+      }
+    } finally {
+      if (epoch === candidateEpoch.current) setCandidateLoading(false);
+    }
+  };
+  const chooseBilibiliCandidate = async (candidate: BilibiliLyricCandidate) => {
+    if (!current || trackSource(current) !== 'bilibili') return;
+    const identity = parseExactBilibiliTrackId(current.id);
+    const token = ++selectionEpoch.current;
+    if (!identity) return;
+    const lyric: Lyric = {
+      trackId: identity.trackId,
+      source: 'bilibili',
+      text: candidate.text,
+      translation: candidate.translation,
+      provenance: {
+        mode: 'manual',
+        matchedProvider: candidate.matchedProvider,
+        matchedCandidateId: candidate.id,
+        matchScore: candidate.matchScore,
+        ...(candidate.translation
+          ? { translationProvider: candidate.matchedProvider }
+          : {}),
+      },
+    };
+    const saved = await bilibiliLyricCache.put(
+      { lyric },
+      bilibiliCacheRevision,
+    );
+    if (
+      token !== selectionEpoch.current ||
+      current.id !== identity.trackId ||
+      saved.status !== 'ok'
+    )
+      return;
+    setLyrics(lyric);
+    setBilibiliCacheRevision(saved.record.revision);
+    setMachineTranslation(null);
+    setTranslationError(null);
+    setPickerVisible(false);
+  };
+  const restoreBilibiliAutomatic = async () => {
+    if (!current || trackSource(current) !== 'bilibili') return;
+    const identity = parseExactBilibiliTrackId(current.id);
+    if (!identity) return;
+    const token = ++selectionEpoch.current;
+    await bilibiliLyricCache.clear(identity.trackId);
+    if (token !== selectionEpoch.current || current.id !== identity.trackId)
+      return;
+    setLyrics(null);
+    setMachineTranslation(null);
+    setTranslationError(null);
+    setBilibiliCacheRevision(undefined);
+    setPickerVisible(false);
+    lyricEpoch.current += 1;
+    await openLyrics(true);
   };
   const translationEligible = Boolean(
     current &&
@@ -293,7 +422,9 @@ export function PlayerScreen() {
           <View style={styles.actions}>
             <Pressable
               accessibilityLabel="查看歌词"
-              onPress={openLyrics}
+              onPress={() => {
+                openLyrics().catch(() => undefined);
+              }}
               style={styles.action}
             >
               <Text style={styles.actionText}>歌词</Text>
@@ -366,6 +497,23 @@ export function PlayerScreen() {
             () => undefined,
           );
         }}
+      />
+      <BilibiliLyricPicker
+        candidates={candidates}
+        error={candidateError}
+        loading={candidateLoading}
+        onClose={() => setPickerVisible(false)}
+        onRestore={() => {
+          restoreBilibiliAutomatic().catch(() => undefined);
+        }}
+        onSearch={query => {
+          searchBilibiliCandidates(query).catch(() => undefined);
+        }}
+        onSelect={candidate => {
+          chooseBilibiliCandidate(candidate).catch(() => undefined);
+        }}
+        partial={candidatePartial}
+        visible={pickerVisible}
       />
     </View>
   );

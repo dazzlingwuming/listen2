@@ -133,7 +133,7 @@ export async function findBilibiliLyricCandidates(
             item.kind === 'track',
         )
         .slice(0, MAX_CANDIDATES_PER_PROVIDER);
-      return Promise.all(
+      const lyrics = await Promise.allSettled(
         rows.map(async (item, rank) => {
           const lyric =
             provider === 'netease'
@@ -156,12 +156,13 @@ export async function findBilibiliLyricCandidates(
           } as BilibiliLyricCandidate;
         }),
       );
+      return lyrics.flatMap(value =>
+        value.status === 'fulfilled' && value.value ? [value.value] : [],
+      );
     }),
   );
   const successes = settled.filter(
-    (
-      value,
-    ): value is PromiseFulfilledResult<(BilibiliLyricCandidate | null)[]> =>
+    (value): value is PromiseFulfilledResult<BilibiliLyricCandidate[]> =>
       value.status === 'fulfilled',
   );
   if (!successes.length)
@@ -171,9 +172,6 @@ export async function findBilibiliLyricCandidates(
   const seen = new Set<string>();
   return successes
     .flatMap(value => value.value)
-    .filter((candidate): candidate is BilibiliLyricCandidate =>
-      Boolean(candidate),
-    )
     .sort((left, right) => right.matchScore - left.matchScore)
     .filter(
       candidate => !seen.has(candidate.id) && Boolean(seen.add(candidate.id)),
