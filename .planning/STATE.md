@@ -5,8 +5,8 @@ milestone_name: android-official-mobile-product-pivot
 current_phase: 5
 current_phase_name: Five-Source Listen Journey
 status: implementation
-stopped_at: Completed quick task 260914-iuc; QQ/Kuwo playback and advanced media surfaces remain
-last_updated: "2026-09-14T06:40:00Z"
+stopped_at: Quick task 260914-kh4 implementation and native JVM gate closed in pushed commit 4f02a7c; API 35 runtime acceptance remains
+last_updated: "2026-09-14T11:27:49Z"
 progress:
   total_phases: 5
   completed_phases: 1
@@ -14,7 +14,7 @@ progress:
   completed_plans: 3
   percent: 20
 last_activity: 2026-09-14
-last_activity_desc: Added Bilibili exact-part automatic/manual lyrics, dormant bounded Kugou/Kuwo adapters, and Bilibili DeepSeek handoff
+last_activity_desc: Closed quick 260914-kh4 MV source and native JVM gates; 26 mobile suites/145 tests plus Android JVM tests passed
 ---
 
 # Project State
@@ -33,21 +33,22 @@ Phase: 5 — Five-Source Listen Journey
 
 Plan: Not started
 
-Status: Ready to plan
+Status: In progress
 
-Progress: [██████████] 100%
+Progress: [██░░░░░░░░] 20%
 
 ## Performance Metrics
 
 **Velocity:** Reset at the approved product pivot; prior per-plan counts belong to the superseded infrastructure-first roadmap and are not comparable.
 
-| Phase | Plans | Status |
-| --- | --- | --- |
-| 4. Official Mobile Shell & Unified Provider Registry | TBD | Not started |
-| 5. Five-Source Listen Journey | TBD | Not started |
-| 6. Personal Library & Continuity | TBD | Not started |
-| 7. Offline & Advanced Desktop-Equivalent Playback | TBD | Not started |
-| 8. Integrated API 35 Acceptance & Release-Like Evidence | TBD | Not started |
+| Phase                        | Plans | Status      |
+| ---------------------------- | ----- | ----------- |
+| 4. Official Mobile Shell & Unified Provider Registry | TBD   | Not started |
+| 5. Five-Source Listen Journey | TBD   | Not started |
+| 6. Personal Library & Continuity | TBD   | Not started |
+| 7. Offline & Advanced Desktop-Equivalent Playback | TBD   | Not started |
+| 8. Integrated API 35 Acceptance & Release-Like Evidence | TBD   | Not started |
+
 **Per-Plan Metrics:**
 
 | Plan | Duration | Tasks | Files |
@@ -72,13 +73,15 @@ Progress: [██████████] 100%
 - [Phase ?]: The shared semantic lifecycle owns deadline, cancellation, stale-reply, and exactly-once terminal settlement; only the existing search seam is dispatched.
 - [Phase ?]: System Back blurs active phone search, closes confirmation and child layers nearest-first, then falls through to the existing Activity policy.
 - [Phase ?]: The terminal 760px rule owns 64px dock/tab geometry, safe-area clearance, single-row source selection, and motion/accessibility backstops.
+- [Quick 260914-kh4]: RNTP remains the sole audio/MediaSession/audio-focus owner; MV transport is native-only, muted/video-only, opaque-handle based, and semantic-only across recovery boundaries.
 
 ### Pending Todos
 
 - Plan and execute Phase 4 around source registry and official-style mobile navigation.
 - Implement Phase 5 as one coherent NetEase/QQ/Kugou/Kuwo/Bilibili source journey, rather than adding per-endpoint native patches.
 - Obtain user-owned credentials only for final Bilibili QR and DeepSeek checks; keep them outside the repository.
-- Design and implement approved semantic QQ/Kuwo playback fallbacks without restoring legacy arbitrary URL/cookie/header authority, then advanced MV/PiP/effects surfaces.
+- Complete the approved semantic QQ/Kuwo playback fallbacks without restoring legacy arbitrary URL/cookie/header authority, then validate MV/PiP runtime behavior on an API 35 emulator/device.
+- Continue with the next coherent mobile-parity slice; keep APK generation and API 35 runtime acceptance for the integrated acceptance stage.
 - Use user-owned SAF media only in the final integrated acceptance and record absence as `not verified`.
 
 ### Blockers/Concerns
@@ -87,7 +90,8 @@ Progress: [██████████] 100%
 - Music-provider availability, membership, region, DRM, endpoint drift, WebView codec support, and device PiP/effect support remain external variables. They must produce a visible, actionable state rather than a claimed success.
 - Existing historical Android evidence and `android/evidence/phase01/` are preserved but cannot prove the newly specified five-source journey. Do not delete or overwrite the untracked Phase 1 evidence while executing this roadmap.
 - Release signing, merge, and deploy remain out of scope. Local toolchain drift from repository-pinned Gradle/JDK must be recorded during Phase 8 rather than hidden.
-- This host currently has no Java Runtime/JDK 17, so focused Kotlin/JVM offline, Bilibili, and DeepSeek contracts plus AndroidKeyStore/content-provider/TrackPlayer runtime remain `not verified`; JavaScript behavior, typecheck, lint, formatting, and Metro bundling passed.
+- OpenJDK 17, Android SDK, Build Tools 36.0.0, and NDK 27.1.12297006 are available locally. The exact offline `:app:testDebugUnitTest` gate now passes; AndroidKeyStore/content-provider/TrackPlayer runtime remains `not verified` until API 35 acceptance. JavaScript behavior, typecheck, lint, formatting, and native JVM tests passed.
+- Quick 260914-kh4 source and native JVM closure is committed and pushed as `4f02a7c`. No APK, emulator/device, live provider/account, signing, merge, or deploy run was performed.
 
 ### Quick Tasks Completed
 
@@ -98,6 +102,7 @@ Progress: [██████████] 100%
 | 260914-f3q | Native Bilibili QR session, exact multipart selection, and authenticated semantic audio resolution | 2026-09-14 | 8ce07d1 | Needs Review | [260914-f3q-implement-bilibili-account-session-exact](./quick/260914-f3q-implement-bilibili-account-session-exact/) |
 | 260914-h1s | Consented native DeepSeek lyric translation, strict alignment, and private track-bound cache | 2026-09-14 | 0c0f42d | Needs Review | [260914-h1s-implement-consented-deepseek-lyric-trans](./quick/260914-h1s-implement-consented-deepseek-lyric-trans/) |
 | 260914-iuc | Bilibili exact-part automatic/manual lyrics, bounded dormant Kugou/Kuwo adapters, and Bilibili DeepSeek handoff | 2026-09-14 | 10663d0 | Needs Review | [260914-iuc-complete-five-source-mobile-lyric-parity](./quick/260914-iuc-complete-five-source-mobile-lyric-parity/) |
+| 260914-kh4 | Safe native Bilibili MV, fullscreen/PiP, and semantic recovery source slice | 2026-09-14 | 4f02a7c (+ a9a44ee, 60598aa, eef2a56, a3c0121) | Human needed; source/native gaps empty; API 35 runtime pending | [260914-kh4-implement-safe-bilibili-mv-fullscreen-pi](./quick/260914-kh4-implement-safe-bilibili-mv-fullscreen-pi/) |
 | 3 | Refresh Android mobile progress documentation after offline and Discover implementation | 2026-09-13 | 0ad8ef4 | — | — |
 
 ## Deferred Items
@@ -110,8 +115,8 @@ Progress: [██████████] 100%
 
 **Resume file:** None
 
-Last session: 2026-09-13T08:11:00Z
+Last session: 2026-09-14T11:27:49Z
 
-Stopped at: Quick task 260913-jlv code complete; JDK 17 and integrated emulator/device acceptance pending
+Stopped at: Quick task 260914-kh4 source/native closure committed and pushed as `4f02a7c`; API 35 runtime and live-provider acceptance remain intentionally deferred
 
-Resume with: install/select JDK 17, run the focused offline Kotlin contract, then perform one integrated Android emulator/device acceptance
+Resume with: implement the next coherent mobile-parity slice without per-feature APK generation; preserve API 35 emulator/device, live-provider, and release-like checks for integrated acceptance
