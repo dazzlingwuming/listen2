@@ -17,7 +17,10 @@ import java.util.concurrent.Executors
 /** Allow-listed semantic module: status, configure, test, delete, translate and cancel only. */
 @ReactModule(name = DeepSeekModule.NAME)
 class DeepSeekModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(context) {
-    companion object { const val NAME = "Listen2DeepSeek" }
+    companion object {
+        const val NAME = "Listen2DeepSeek"
+        private const val CONFIGURE_REQUEST = 39142
+    }
     private val worker = Executors.newSingleThreadExecutor()
     private val vault = DeepSeekVault(context)
     private val client = DeepSeekClient(vault, DeepSeekTranslationCache(context))
@@ -39,7 +42,7 @@ class DeepSeekModule(context: ReactApplicationContext) : ReactContextBaseJavaMod
     override fun getName() = NAME
     @ReactMethod fun status(promise: Promise) = promise.resolve(statusMap(vault.status()))
     @ReactMethod fun configure(promise: Promise) {
-        val activity = currentActivity
+        val activity = reactApplicationContext.currentActivity
         if (activity == null || configurePromise != null) {
             promise.resolve(error("CONFIGURE_UNAVAILABLE"))
             return
@@ -71,6 +74,4 @@ class DeepSeekModule(context: ReactApplicationContext) : ReactContextBaseJavaMod
     private fun lyricText(value: ReadableMap, key: String): String { require(value.hasKey(key) && value.getType(key) == ReadableType.String); return value.getString(key)?.takeIf { it.toByteArray(Charsets.UTF_8).size <= DeepSeekPolicy.MAX_LYRIC_BYTES && it.none { char -> char.code < 32 && char != '\n' && char != '\r' } } ?: throw IllegalArgumentException() }
     private fun bool(value: ReadableMap, key: String): Boolean { require(value.hasKey(key) && value.getType(key) == ReadableType.Boolean); return value.getBoolean(key) }
     private fun number(value: ReadableMap, key: String): Long { require(value.hasKey(key) && value.getType(key) == ReadableType.Number); return value.getDouble(key).toLong().takeIf { it > 0 } ?: throw IllegalArgumentException() }
-
-    private companion object { const val CONFIGURE_REQUEST = 39142 }
 }

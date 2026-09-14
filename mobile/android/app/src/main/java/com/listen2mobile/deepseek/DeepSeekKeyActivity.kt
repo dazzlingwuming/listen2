@@ -4,6 +4,7 @@ import android.app.Activity
 import android.os.Bundle
 import android.os.Build
 import android.text.InputType
+import android.view.View
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.EditText
@@ -18,7 +19,7 @@ class DeepSeekKeyActivity : Activity() {
         val input = EditText(this).apply {
             hint = "DeepSeek API key"
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) importantForAutofill = IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
         }
         val message = TextView(this).apply { text = "仅保存在此设备的安全存储中。" }
         val save = Button(this).apply { text = "保存"; setOnClickListener { val status = DeepSeekVault(this@DeepSeekKeyActivity).saveFromNativeEntry(input.text.toString()); input.text?.clear(); setResult(if (status.hasApiKey) RESULT_OK else RESULT_CANCELED); finish() } }

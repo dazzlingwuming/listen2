@@ -72,7 +72,7 @@ object DeepSeekPolicy {
     fun parseLineMap(body: String?, input: Normalized): Outcome<ParsedTranslation> {
         if (body == null || bytes(body) > MAX_RESPONSE_BYTES) return Outcome(errorCode = "RESPONSE_TOO_LARGE")
         if (unsafe(body)) return Outcome(errorCode = "INVALID_ALIGNMENT")
-        val keys = KEY.matcher(body).let { matcher -> buildList { while (matcher.find()) add(matcher.group(1)) } }
+        val keys = KEY.findAll(body).map { match -> match.groupValues[1] }.toList()
         if (keys != input.lines.map { it.id } || keys.toSet().size != keys.size) return Outcome(errorCode = "INVALID_ALIGNMENT")
         return try {
             val objectValue = JSONObject(body)

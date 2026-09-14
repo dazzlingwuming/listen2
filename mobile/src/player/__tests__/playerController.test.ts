@@ -251,6 +251,7 @@ describe('PlayerController queue transitions', () => {
     mockBootstrapTrack.mockRejectedValueOnce({ code });
     await playerController.playTracks(dispatch, [bilibiliTrack()]);
     expect(state.error).toBe(code);
+    expect(mockBootstrapTrack).toHaveBeenCalledTimes(1);
   });
 
   it('uses exactly one online bootstrap after a cache miss or corrupt result', async () => {

@@ -3,7 +3,7 @@ package com.listen2mobile.bilibili
 import java.security.SecureRandom
 
 /** Native-only MV state and signed transport ownership. All public projections are redacted. */
-class BilibiliMvController(
+internal class BilibiliMvController(
     private val gateway: BilibiliGateway,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
@@ -23,7 +23,7 @@ class BilibiliMvController(
     /** Internal surface hand-off; never converted to a React map or Bundle. */
     data class SurfaceBinding(
         val handle: String,
-        val url: String,
+        val urls: List<String>,
         val positionMs: Long,
         val playIntent: Boolean,
     )
@@ -44,7 +44,14 @@ class BilibiliMvController(
         val playIntent: Boolean,
         val refreshes: Int,
     )
-    private data class Pending(val generation: Long, val request: BilibiliMvPolicy.MvRequest, val refreshes: Int, val positionMs: Long, val playIntent: Boolean)
+    private data class Pending(
+        val generation: Long,
+        val request: BilibiliMvPolicy.MvRequest,
+        val refreshes: Int,
+        val positionMs: Long,
+        val playIntent: Boolean,
+        val handle: String? = null,
+    )
     private val lock = Any()
     private var generation = 0L
     private var active: Active? = null
@@ -69,9 +76,9 @@ class BilibiliMvController(
         return resolve(pending)
     }
 
-    fun sync(handle: String?, positionMs: Long, playIntent: Boolean): PublicState = synchronized(lock) {
+    fun sync(handle: String?, bvid: String?, cid: Long, positionMs: Long, playIntent: Boolean): PublicState = synchronized(lock) {
         val current = active ?: return rejected(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
-        if (current.handle != handle || positionMs !in 0L..(24L * 60L * 60L * 1000L)) return rejected(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
+        if (current.handle != handle || current.request.bvid != bvid || current.request.cid != cid || positionMs !in 0L..(24L * 60L * 60L * 1000L)) return rejected(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
         active = current.copy(positionMs = positionMs, playIntent = playIntent)
         state = if (playIntent) State.PLAYING else State.PAUSED
         projectionLocked()
@@ -99,13 +106,22 @@ class BilibiliMvController(
         active?.takeIf { it.handle == handle && BilibiliMvPolicy.isSafeVideoUrl(it.candidate.url, clock()) }?.candidate
     }
 
+    /** Invalidates every outstanding native resolution without exposing its transport to JS. */
+    fun cancel(): PublicState = synchronized(lock) {
+        generation += 1
+        active = null
+        state = State.CLOSED
+        error = BilibiliPolicy.ErrorCode.CANCELLED
+        projectionLocked()
+    }
+
     fun surfaceBinding(handle: String?): SurfaceBinding? = synchronized(lock) {
         val current = active?.takeIf { it.handle == handle } ?: return@synchronized null
         if (!BilibiliMvPolicy.isSafeVideoUrl(current.candidate.url, clock())) {
             failLocked(BilibiliPolicy.ErrorCode.VIDEO_UNAVAILABLE)
             return@synchronized null
         }
-        SurfaceBinding(current.handle, current.candidate.url, current.positionMs, current.playIntent)
+        SurfaceBinding(current.handle, listOf(current.candidate.url) + current.candidate.backupUrls, current.positionMs, current.playIntent)
     }
 
     fun isActiveHandle(handle: String?) = synchronized(lock) { active?.handle == handle }
@@ -124,6 +140,7 @@ class BilibiliMvController(
 
     fun surfaceFailed(handle: String?): PublicState = synchronized(lock) {
         if (active?.handle != handle) return@synchronized rejected(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
+        generation += 1
         failLocked(BilibiliPolicy.ErrorCode.VIDEO_UNAVAILABLE)
     }
 
@@ -134,12 +151,16 @@ class BilibiliMvController(
             if (detail.bvid != pending.request.bvid || detail.parts.none { it.cid == pending.request.cid }) throw BilibiliHttpsGateway.ProviderException(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
             val manifest = gateway.resolveVideo(pending.request)
             if (manifest.bvid != pending.request.bvid || manifest.cid != pending.request.cid) throw BilibiliHttpsGateway.ProviderException(BilibiliPolicy.ErrorCode.INVALID_RESPONSE)
-            val selected = BilibiliMvPolicy.selectVideoCandidate(manifest.candidates, pending.request.preferredCodecs, clock())
+            val selected = BilibiliMvPolicy.selectVideoCandidate(manifest.candidates, pending.request.qualityId, pending.request.preferredCodecs, clock())
                 ?: throw BilibiliHttpsGateway.ProviderException(BilibiliPolicy.ErrorCode.UNSUPPORTED_VIDEO_CODEC)
-            val handle = BilibiliMvPolicy.opaqueHandle(ByteArray(32).also { SecureRandom().nextBytes(it) })
+            val handle = pending.handle ?: BilibiliMvPolicy.opaqueHandle(ByteArray(32).also { SecureRandom().nextBytes(it) })
             synchronized(lock) {
                 if (generation != pending.generation) rejected(BilibiliPolicy.ErrorCode.CANCELLED)
-                else { active = Active(pending.generation, handle, pending.request, selected, manifest.candidates.map(BilibiliMvPolicy::publicVariant), pending.positionMs, pending.playIntent, pending.refreshes); state = State.READY; error = null; projectionLocked() }
+                else {
+                    val selectedRequest = pending.request.copy(qualityId = selected.id.toString())
+                    active = Active(pending.generation, handle, selectedRequest, selected, manifest.candidates.map(BilibiliMvPolicy::publicVariant).distinctBy { it.id }, pending.positionMs, pending.playIntent, pending.refreshes)
+                    state = State.READY; error = null; projectionLocked()
+                }
             }
         } catch (failure: BilibiliHttpsGateway.ProviderException) { synchronized(lock) { if (generation != pending.generation) rejected(BilibiliPolicy.ErrorCode.CANCELLED) else failLocked(failure.code) } }
         catch (_: Exception) { synchronized(lock) { if (generation != pending.generation) rejected(BilibiliPolicy.ErrorCode.CANCELLED) else failLocked(BilibiliPolicy.ErrorCode.NETWORK_ERROR) } }

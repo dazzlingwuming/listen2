@@ -137,17 +137,11 @@ function isRetryableBilibiliResolution(track: PlayableTrack, error: unknown) {
     error && typeof error === 'object' && 'code' in error
       ? (error as { code?: unknown }).code
       : undefined;
-  // Native player expiry callbacks frequently have no provider code. Treat that
-  // as one transient transport retry, but never retry entitlement/DRM/cancel or
-  // an explicitly unsupported codec.
-  return ![
-    'LOGIN_REQUIRED',
-    'MEMBERSHIP_REQUIRED',
-    'REGION_RESTRICTED',
-    'DRM_RESTRICTED',
-    'CANCELLED',
-    'UNSUPPORTED_VIDEO_CODEC',
-  ].includes(typeof code === 'string' ? code : '');
+  // Native player expiry callbacks have no provider code, and a native
+  // NETWORK_ERROR can use one fresh signed handoff. Every typed provider
+  // result, including REQUEST_TIMEOUT, is already a stable user-facing
+  // outcome and must reach the reducer unchanged.
+  return code === undefined || code === 'NETWORK_ERROR';
 }
 
 function isExactBilibiliMedia(

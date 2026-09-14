@@ -34,8 +34,14 @@ export function BilibiliMvScreen() {
   const cid = safeCid(route.params?.cid);
   const [mv, setMv] = useState<BilibiliMvPublicState | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [inPip, setInPip] = useState(false);
   const epoch = useRef(0);
+  const mounted = useRef(false);
   const handleRef = useRef<string | null>(null);
+  const releaseStale = (value: BilibiliMvPublicState) => {
+    if (value.handle)
+      bilibiliMvClient.close(value.handle).catch(() => undefined);
+  };
   const applyMv = (value: BilibiliMvPublicState) => {
     if (!value.handle) throw new Error('VIDEO_UNAVAILABLE');
     handleRef.current = value.handle;
@@ -57,32 +63,58 @@ export function BilibiliMvScreen() {
       return;
     }
     const current = ++epoch.current;
+    const restore = route.params?.restore;
     setError(null);
     bilibiliMvClient
       .open({
         bvid,
         cid,
-        qualityId: 'auto',
+        qualityId: restore?.qualityId || 'auto',
         preferredCodecs: CODECS,
         forceRefresh,
       })
       .then(value => {
-        if (current !== epoch.current) return;
+        if (!mounted.current || current !== epoch.current) {
+          releaseStale(value);
+          return;
+        }
         applyMv(value);
+        if (restore && value.handle)
+          return bilibiliMvClient
+            .sync(
+              value.handle,
+              value.bvid || bvid,
+              value.cid || cid,
+              restore.positionMs,
+              restore.playIntent,
+            )
+            .then(synced => {
+              if (mounted.current && current === epoch.current) applyMv(synced);
+              else releaseStale(synced);
+            });
       })
       .catch(value => {
-        if (current === epoch.current)
+        if (mounted.current && current === epoch.current)
           setError(value?.code || 'VIDEO_UNAVAILABLE');
       });
   };
   useEffect(() => {
-    if (bvid && cid)
+    mounted.current = true;
+    if (route.params?.restore) open();
+    else if (bvid && cid) {
+      const current = ++epoch.current;
       bilibiliMvClient
         .restore(bvid, cid)
-        .then(applyMv)
-        .catch(() => open());
-    else open();
+        .then(value => {
+          if (mounted.current && current === epoch.current) applyMv(value);
+          else releaseStale(value);
+        })
+        .catch(() => {
+          if (mounted.current && current === epoch.current) open();
+        });
+    } else open();
     return () => {
+      mounted.current = false;
       epoch.current += 1;
       const handle = handleRef.current;
       handleRef.current = null;
@@ -92,6 +124,12 @@ export function BilibiliMvScreen() {
     // The screen identity is semantic and never changes after navigation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bvid, cid]);
+  useEffect(() => {
+    const subscription = bilibiliMvClient.onPipState(value => {
+      if (value.handle === handleRef.current) setInPip(value.active);
+    });
+    return () => subscription.remove();
+  }, []);
   const close = () => {
     epoch.current += 1;
     const handle = handleRef.current;
@@ -102,10 +140,25 @@ export function BilibiliMvScreen() {
   };
   const chooseQuality = (qualityId: BilibiliMvQualityId) => {
     if (!mv?.handle) return;
+    const previousHandle = mv.handle;
+    const current = ++epoch.current;
     bilibiliMvClient
-      .selectQuality(mv.handle, qualityId)
-      .then(applyMv)
-      .catch(value => setError(value?.code || 'VIDEO_UNAVAILABLE'));
+      .selectQuality(previousHandle, qualityId)
+      .then(value => {
+        if (!mounted.current || current !== epoch.current) {
+          releaseStale(value);
+          return;
+        }
+        applyMv(value);
+      })
+      .catch(value => {
+        if (!mounted.current || current !== epoch.current) return;
+        handleRef.current = null;
+        setMv(null);
+        dispatch(mvActions.clearSnapshot());
+        bilibiliMvClient.close(previousHandle).catch(() => undefined);
+        setError(value?.code || 'VIDEO_UNAVAILABLE');
+      });
   };
   const invoke = (
     operation: 'enterFullscreen' | 'exitFullscreen' | 'requestPip',
@@ -118,13 +171,15 @@ export function BilibiliMvScreen() {
   return (
     <View style={styles.page}>
       <View style={styles.top}>
-        <Pressable
-          accessibilityLabel="关闭MV画面"
-          onPress={close}
-          style={styles.button}
-        >
-          <Text style={styles.buttonText}>关闭</Text>
-        </Pressable>
+        {!inPip ? (
+          <Pressable
+            accessibilityLabel="关闭MV画面"
+            onPress={close}
+            style={styles.button}
+          >
+            <Text style={styles.buttonText}>关闭</Text>
+          </Pressable>
+        ) : null}
         <Text accessibilityRole="header" numberOfLines={1} style={text.heading}>
           {route.params?.title || 'Bilibili MV'}
         </Text>
@@ -157,39 +212,43 @@ export function BilibiliMvScreen() {
           </Pressable>
         </View>
       ) : null}
-      <View style={styles.controls}>
-        <Pressable
-          accessibilityLabel="全屏播放MV"
-          disabled={!mv?.handle}
-          onPress={() => invoke('enterFullscreen')}
-          style={styles.button}
-        >
-          <Text style={styles.buttonText}>全屏</Text>
-        </Pressable>
-        <Pressable
-          accessibilityLabel="退出MV全屏"
-          disabled={!mv?.handle}
-          onPress={() => invoke('exitFullscreen')}
-          style={styles.button}
-        >
-          <Text style={styles.buttonText}>退出全屏</Text>
-        </Pressable>
-      </View>
-      <View style={styles.qualities}>
-        {mv?.variants.map(variant => (
+      {!inPip ? (
+        <View style={styles.controls}>
           <Pressable
-            accessibilityLabel={`选择${variant.label}画质`}
-            key={variant.id}
-            onPress={() => chooseQuality(variant.id)}
-            style={[
-              styles.button,
-              mv.qualityId === variant.id && styles.selected,
-            ]}
+            accessibilityLabel="全屏播放MV"
+            disabled={!mv?.handle}
+            onPress={() => invoke('enterFullscreen')}
+            style={styles.button}
           >
-            <Text style={styles.buttonText}>{variant.label}</Text>
+            <Text style={styles.buttonText}>全屏</Text>
           </Pressable>
-        ))}
-      </View>
+          <Pressable
+            accessibilityLabel="退出MV全屏"
+            disabled={!mv?.handle}
+            onPress={() => invoke('exitFullscreen')}
+            style={styles.button}
+          >
+            <Text style={styles.buttonText}>退出全屏</Text>
+          </Pressable>
+        </View>
+      ) : null}
+      {!inPip ? (
+        <View style={styles.qualities}>
+          {mv?.variants.map(variant => (
+            <Pressable
+              accessibilityLabel={`选择${variant.label}画质`}
+              key={variant.id}
+              onPress={() => chooseQuality(variant.id)}
+              style={[
+                styles.button,
+                mv.qualityId === variant.id && styles.selected,
+              ]}
+            >
+              <Text style={styles.buttonText}>{variant.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }

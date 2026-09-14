@@ -7,7 +7,7 @@ import com.facebook.react.uimanager.ThemedReactContext
 import com.facebook.react.uimanager.annotations.ReactProp
 
 /** The package injects a single controller; this manager never creates transport/session state. */
-class BilibiliMvViewManager(private val controller: BilibiliMvController) : SimpleViewManager<BilibiliMvView>() {
+internal class BilibiliMvViewManager(private val controller: BilibiliMvController) : SimpleViewManager<BilibiliMvView>() {
     private val views = LinkedHashSet<BilibiliMvView>()
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -28,6 +28,15 @@ class BilibiliMvViewManager(private val controller: BilibiliMvController) : Simp
     fun pauseForBackground() {
         val pause = { views.toList().forEach(BilibiliMvView::pauseForBackground) }
         if (Looper.myLooper() == Looper.getMainLooper()) pause() else mainHandler.post(pause)
+    }
+    fun resumeAfterHost() {
+        val resume = { views.toList().forEach(BilibiliMvView::resumeAfterHost) }
+        if (Looper.myLooper() == Looper.getMainLooper()) resume() else mainHandler.post(resume)
+    }
+    fun isSurfaceReady(handle: String?): Boolean = views.any { it.isSurfaceReady(handle) }
+    fun releaseAll() {
+        val release = { views.toList().forEach(BilibiliMvView::detach); views.clear() }
+        if (Looper.myLooper() == Looper.getMainLooper()) release() else mainHandler.post(release)
     }
 
     override fun onDropViewInstance(view: BilibiliMvView) {

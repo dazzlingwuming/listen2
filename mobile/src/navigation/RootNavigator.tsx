@@ -1,6 +1,9 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import {
+  createNavigationContainerRef,
+  NavigationContainer,
+} from '@react-navigation/native';
 import {
   createBottomTabNavigator,
   type BottomTabBarProps,
@@ -19,11 +22,13 @@ import { PlaylistDetailScreen } from '../screens/PlaylistDetailScreen';
 import { PlayerScreen } from '../screens/PlayerScreen';
 import { BilibiliDetailScreen } from '../screens/BilibiliDetailScreen';
 import { BilibiliMvScreen } from '../screens/BilibiliMvScreen';
+import { bilibiliMvClient } from '../bilibili/mvClient';
 import { colors, spacing } from '../theme';
 import type { RootStackParamList, TabParamList } from './types';
 
 const Tabs = createBottomTabNavigator<TabParamList>();
 const Stack = createNativeStackNavigator<RootStackParamList>();
+const navigationRef = createNavigationContainerRef<RootStackParamList>();
 const tabLabels: Record<keyof TabParamList, string> = {
   My: '我的',
   Discover: '发现',
@@ -97,9 +102,30 @@ function MobileTabBar({ state, navigation }: BottomTabBarProps) {
 }
 
 export function RootNavigator() {
+  const restorePendingMv = useCallback(() => {
+    const consume = (retry: boolean) => {
+      bilibiliMvClient
+        .consumePendingRestore()
+        .then(restore => {
+          if (!navigationRef.isReady()) return;
+          navigationRef.navigate('BilibiliMv', {
+            bvid: restore.bvid,
+            cid: restore.cid,
+            title: '恢复 MV',
+            restore,
+          });
+        })
+        .catch(error => {
+          // React can report ready before its host Activity is reattached. Retry exactly once.
+          if (!retry && error?.code === 'NOT_READY')
+            setTimeout(() => consume(true), 250);
+        });
+    };
+    consume(false);
+  }, []);
   return (
     <SafeAreaProvider>
-      <NavigationContainer>
+      <NavigationContainer onReady={restorePendingMv} ref={navigationRef}>
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           <Stack.Screen component={MainTabs} name="MainTabs" />
           <Stack.Screen

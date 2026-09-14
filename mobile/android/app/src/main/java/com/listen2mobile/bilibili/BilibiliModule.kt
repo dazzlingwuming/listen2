@@ -4,25 +4,31 @@ import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
+import com.facebook.react.bridge.LifecycleEventListener
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.ReadableType
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.module.annotations.ReactModule
+import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.listen2mobile.MainActivity
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 
 /** Semantic-only React Native boundary. Every rejected value returns a stable code, never provider text. */
 @ReactModule(name = BilibiliModule.NAME)
-class BilibiliModule(
+internal class BilibiliModule(
     context: ReactApplicationContext,
     private val gateway: BilibiliGateway,
     private val session: BilibiliSession,
     private val mvController: BilibiliMvController,
     private val mvViewManager: BilibiliMvViewManager,
-) : ReactContextBaseJavaModule(context) {
+) : ReactContextBaseJavaModule(context), LifecycleEventListener {
     companion object { const val NAME = "Listen2Bilibili" }
     private val worker = Executors.newSingleThreadExecutor()
+    @Volatile private var invalidated = false
+
+    init { context.addLifecycleEventListener(this) }
     override fun getName() = NAME
 
     @ReactMethod fun status(promise: Promise) = complete(promise) { state(session.restore()) }
@@ -66,7 +72,7 @@ class BilibiliModule(
 
     @ReactMethod fun mvOpen(request: ReadableMap, promise: Promise) = complete(promise) {
         requireKeys(request, setOf("bvid", "cid", "qualityId", "preferredCodecs", "forceRefresh"))
-        (currentActivity as? MainActivity)?.apply { bindMvController(mvController); discardPendingMvSnapshot() }
+        (reactApplicationContext.currentActivity as? MainActivity)?.apply { bindMvController(mvController); discardPendingMvSnapshot() }
         mvViewManager.releaseHandle(mvController.currentHandle())
         mvState(mvController.open(requireMvRequest(request)))
     }
@@ -74,21 +80,36 @@ class BilibiliModule(
         requireKeys(request, setOf("bvid", "cid"))
         val bvid = requireBvid(request, "bvid")
         val cid = requirePositive(request, "cid")
-        val activity = currentActivity as? MainActivity ?: throw BilibiliHttpsGateway.ProviderException(BilibiliPolicy.ErrorCode.VIDEO_UNAVAILABLE)
+        val activity = reactApplicationContext.currentActivity as? MainActivity ?: throw BilibiliHttpsGateway.ProviderException(BilibiliPolicy.ErrorCode.VIDEO_UNAVAILABLE)
         activity.bindMvController(mvController)
         val snapshot = activity.takePendingMvSnapshot(bvid, cid) ?: throw BilibiliHttpsGateway.ProviderException(BilibiliPolicy.ErrorCode.VIDEO_UNAVAILABLE)
         mvState(mvController.restoreSemantic(snapshot))
+    }
+    /** One-shot semantic restore handoff for the JS root navigator. */
+    @ReactMethod fun mvConsumePendingRestore(promise: Promise) = complete(promise) {
+        val activity = reactApplicationContext.currentActivity as? MainActivity
+            ?: throw BilibiliHttpsGateway.ProviderException(BilibiliPolicy.ErrorCode.NOT_READY)
+        activity.bindMvController(mvController)
+        val snapshot = activity.consumePendingMvSnapshot()
+            ?: throw BilibiliHttpsGateway.ProviderException(BilibiliPolicy.ErrorCode.NOT_READY)
+        Arguments.createMap().apply {
+            putString("bvid", snapshot.bvid)
+            putString("cid", snapshot.cid.toString())
+            putString("qualityId", snapshot.qualityId)
+            putDouble("positionMs", snapshot.positionMs.toDouble())
+            putBoolean("playIntent", snapshot.playIntent)
+        }
     }
     @ReactMethod fun mvSelectQuality(request: ReadableMap, promise: Promise) = complete(promise) {
         requireKeys(request, setOf("handle", "qualityId"))
         mvState(mvController.selectQuality(requireHandle(request), requireQuality(request, "qualityId")))
     }
     @ReactMethod fun mvSync(request: ReadableMap, promise: Promise) = complete(promise) {
-        requireKeys(request, setOf("handle", "positionMs", "playIntent"))
+        requireKeys(request, setOf("handle", "bvid", "cid", "positionMs", "playIntent"))
         val position = requirePositiveOrZero(request, "positionMs")
         if (!request.hasKey("playIntent") || request.getType("playIntent") != ReadableType.Boolean) throw IllegalArgumentException()
         val handle = requireHandle(request)
-        val result = mvController.sync(handle, position, request.getBoolean("playIntent"))
+        val result = mvController.sync(handle, requireBvid(request, "bvid"), requirePositive(request, "cid"), position, request.getBoolean("playIntent"))
         if (result.errorCode == null) mvViewManager.sync(handle, position, result.playIntent)
         mvState(result)
     }
@@ -100,31 +121,40 @@ class BilibiliModule(
     }
     @ReactMethod fun mvEnterFullscreen(request: ReadableMap, promise: Promise) = completeMvUi(promise, request) { activity, handle -> activity.enterMvFullscreen(handle) }
     @ReactMethod fun mvExitFullscreen(request: ReadableMap, promise: Promise) = completeMvUi(promise, request) { activity, handle -> activity.exitMvFullscreen(handle) }
-    @ReactMethod fun mvRequestPip(request: ReadableMap, promise: Promise) = completeMvUi(promise, request) { activity, handle -> activity.enterMvPip(handle) }
+    @ReactMethod fun mvRequestPip(request: ReadableMap, promise: Promise) = completeMvUi(promise, request, true) { activity, handle -> activity.enterMvPip(handle) }
 
     private fun complete(promise: Promise, operation: () -> WritableMap) {
         try {
+            if (invalidated) return promise.resolve(error(BilibiliPolicy.ErrorCode.CANCELLED))
             worker.execute {
-                try { promise.resolve(operation()) }
-                catch (error: BilibiliHttpsGateway.ProviderException) { promise.resolve(error(error.code)) }
-                catch (_: IllegalArgumentException) { promise.resolve(error(BilibiliPolicy.ErrorCode.INVALID_REQUEST)) }
-                catch (_: Exception) { promise.resolve(error(BilibiliPolicy.ErrorCode.PROVIDER_ERROR)) }
+                try {
+                    val result = operation()
+                    promise.resolve(if (invalidated) error(BilibiliPolicy.ErrorCode.CANCELLED) else result)
+                }
+                catch (failure: BilibiliHttpsGateway.ProviderException) { promise.resolve(error(if (invalidated) BilibiliPolicy.ErrorCode.CANCELLED else failure.code)) }
+                catch (_: IllegalArgumentException) { promise.resolve(error(if (invalidated) BilibiliPolicy.ErrorCode.CANCELLED else BilibiliPolicy.ErrorCode.INVALID_REQUEST)) }
+                catch (_: Exception) { promise.resolve(error(if (invalidated) BilibiliPolicy.ErrorCode.CANCELLED else BilibiliPolicy.ErrorCode.PROVIDER_ERROR)) }
             }
-        } catch (_: java.util.concurrent.RejectedExecutionException) {
+        } catch (_: RejectedExecutionException) {
             promise.resolve(error(BilibiliPolicy.ErrorCode.CANCELLED))
         }
     }
-    private fun completeMvUi(promise: Promise, request: ReadableMap, operation: (MainActivity, String) -> Boolean) {
+    private fun completeMvUi(promise: Promise, request: ReadableMap, requireSurface: Boolean = false, operation: (MainActivity, String) -> Boolean) {
         try {
             requireKeys(request, setOf("handle"))
             val handle = requireHandle(request)
-            val activity = currentActivity as? MainActivity
+            val activity = reactApplicationContext.currentActivity as? MainActivity
                 ?: return promise.resolve(error(BilibiliPolicy.ErrorCode.VIDEO_UNAVAILABLE))
             activity.bindMvController(mvController)
+            activity.setMvPipListener { activeHandle, active ->
+                reactApplicationContext.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                    .emit("bilibiliMvPip", Arguments.createMap().apply { putString("handle", activeHandle); putBoolean("active", active) })
+            }
             if (!mvController.isActiveHandle(handle)) return promise.resolve(error(BilibiliPolicy.ErrorCode.INVALID_REQUEST))
             activity.runOnUiThread {
                 try {
                     if (!mvController.isActiveHandle(handle)) promise.resolve(error(BilibiliPolicy.ErrorCode.INVALID_REQUEST))
+                    else if (requireSurface && !mvViewManager.isSurfaceReady(handle)) promise.resolve(error(BilibiliPolicy.ErrorCode.NOT_READY))
                     else promise.resolve(Arguments.createMap().apply { putBoolean("ok", operation(activity, handle)) })
                 } catch (_: Exception) { promise.resolve(error(BilibiliPolicy.ErrorCode.VIDEO_UNAVAILABLE)) }
             }
@@ -132,12 +162,25 @@ class BilibiliModule(
     }
 
     override fun onHostPause() {
-        val inPip = (currentActivity as? MainActivity)?.isInPictureInPictureMode == true
+        val inPip = (reactApplicationContext.currentActivity as? MainActivity)?.isInPictureInPictureMode == true
         if (!inPip) mvViewManager.pauseForBackground()
     }
 
+    override fun onHostResume() {
+        mvViewManager.resumeAfterHost()
+    }
+
+    override fun onHostDestroy() {
+        mvController.cancel()
+        mvViewManager.releaseAll()
+    }
+
     override fun invalidate() {
+        invalidated = true
+        reactApplicationContext.removeLifecycleEventListener(this)
         session.cancelActiveRequest()
+        mvController.cancel()
+        mvViewManager.releaseAll()
         worker.shutdownNow()
         super.invalidate()
     }
@@ -158,7 +201,22 @@ class BilibiliModule(
         if (value.cid.isNotBlank()) putString("cid", value.cid)
         putString("qualityId", value.qualityId); putDouble("positionMs", value.positionMs.toDouble()); putBoolean("playIntent", value.playIntent)
         putBoolean("refreshing", value.refreshing)
-        putArray("variants", Arguments.createArray().apply { value.variants.forEach { variant -> pushMap(Arguments.createMap().apply { putString("id", variant.id); putString("label", variant.label); putString("codec", variant.codec); putInt("width", variant.width); putInt("height", variant.height) }) })
+        putArray(
+            "variants",
+            Arguments.createArray().apply {
+                value.variants.forEach { variant ->
+                    pushMap(
+                        Arguments.createMap().apply {
+                            putString("id", variant.id)
+                            putString("label", variant.label)
+                            putString("codec", variant.codec)
+                            putInt("width", variant.width)
+                            putInt("height", variant.height)
+                        },
+                    )
+                }
+            },
+        )
         value.errorCode?.let { putString("errorCode", it.name) }
     }
     private fun error(code: BilibiliPolicy.ErrorCode): WritableMap = Arguments.createMap().apply { putString("errorCode", code.name) }

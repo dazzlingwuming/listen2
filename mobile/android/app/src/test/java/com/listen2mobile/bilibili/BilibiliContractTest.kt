@@ -115,7 +115,7 @@ class BilibiliContractTest {
         }
         val state = BilibiliSession(gateway, vault, FakeQrRenderer()).restore()
         assertEquals(BilibiliSession.PublicStatus.AUTHENTICATED, state.status)
-        assertEquals(stored, gateway.restoredMaterial)
+        assertEquals(listOf(stored, gateway.refreshed), gateway.restoredMaterials)
         assertEquals("new-refresh", vault.saved?.refreshMaterial)
         assertFalse(vault.provisional)
         assertFalse(state.toString().contains("new-refresh"))
@@ -230,11 +230,11 @@ class BilibiliContractTest {
         assertEquals("logout", restarted.nextAction)
     }
 
-    private class FakeQrRenderer : BilibiliQrRenderer.Renderer {
+    private class FakeQrRenderer : BilibiliQrRendererContract {
         override fun render(value: String): String = "data:image/png;base64,AA=="
     }
 
-    private class FakeVault : BilibiliVault.Store {
+    private class FakeVault : BilibiliVaultStore {
         var saved: BilibiliVault.SessionMaterial? = null
         var loaded: BilibiliVault.SessionMaterial? = null
         var cleared = false
@@ -281,7 +281,7 @@ class BilibiliContractTest {
         var polled = false
         var pollResult: BilibiliSession.PollResult = BilibiliSession.PollResult.Waiting
         var cancelledKeys = mutableListOf<String>()
-        var restoredMaterial: BilibiliVault.SessionMaterial? = null
+        val restoredMaterials = mutableListOf<BilibiliVault.SessionMaterial>()
         var refreshed: BilibiliVault.SessionMaterial? = BilibiliVault.SessionMaterial("refreshed", SESSION_COOKIES, "csrf")
         var accountValue: BilibiliGateway.Account? = BilibiliGateway.Account("listener", null)
         var beforeAccount: (() -> Unit)? = null
@@ -290,7 +290,7 @@ class BilibiliContractTest {
         override fun pollQr(qrKey: String): BilibiliSession.PollResult { polled = true; return pollResult }
         override fun cancelPoll(qrKey: String) { cancelledKeys += qrKey }
         override fun exportSession(refreshMaterial: String) = BilibiliVault.SessionMaterial(refreshMaterial, SESSION_COOKIES, "csrf")
-        override fun restoreSession(material: BilibiliVault.SessionMaterial) { restoredMaterial = material }
+        override fun restoreSession(material: BilibiliVault.SessionMaterial) { restoredMaterials += material }
         override fun refresh(material: BilibiliVault.SessionMaterial) = refreshed
         override fun logout() { loggedOut = true }
         override fun account(): BilibiliGateway.Account? {

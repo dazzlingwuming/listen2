@@ -137,7 +137,11 @@ internal class ThreadOfflineExecutor : OfflineExecutor {
     private val executor = ThreadPoolExecutor(2, 2, 0, TimeUnit.MILLISECONDS, ArrayBlockingQueue(8), ThreadPoolExecutor.AbortPolicy())
     override fun submit(work: () -> Unit): OfflineTask {
         val future = executor.submit(work)
-        return object : OfflineTask { override fun cancel() = future.cancel(true) }
+        return object : OfflineTask {
+            override fun cancel() {
+                future.cancel(true)
+            }
+        }
     }
 }
 

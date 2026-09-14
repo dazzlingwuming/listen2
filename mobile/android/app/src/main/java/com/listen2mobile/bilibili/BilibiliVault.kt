@@ -10,23 +10,25 @@ import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.spec.GCMParameterSpec
 
+/** Narrow vault abstraction keeps session tests away from encrypted platform storage. */
+internal interface BilibiliVaultStore {
+    fun isAvailable(): Boolean
+    fun saveProvisionalSession(material: BilibiliVault.SessionMaterial)
+    fun commitProvisionalSession(ownerId: String): Boolean
+    fun saveCommittedSession(material: BilibiliVault.SessionMaterial)
+    fun loadSession(): BilibiliVault.SessionMaterial?
+    fun clearIfOwned(ownerId: String)
+    fun clear()
+}
+
 /** Native-only encrypted storage; React Native has no plaintext getter. */
-class BilibiliVault(context: Context) : BilibiliVault.Store {
+internal class BilibiliVault(context: Context) : BilibiliVaultStore {
     data class SessionMaterial(
         val refreshMaterial: String,
         val cookies: Map<String, String>,
         val csrf: String?,
         val ownerId: String? = null,
     )
-    interface Store {
-        fun isAvailable(): Boolean
-        fun saveProvisionalSession(material: SessionMaterial)
-        fun commitProvisionalSession(ownerId: String): Boolean
-        fun saveCommittedSession(material: SessionMaterial)
-        fun loadSession(): SessionMaterial?
-        fun clearIfOwned(ownerId: String)
-        fun clear()
-    }
     private val preferences = context.getSharedPreferences("listen2_bilibili_vault", Context.MODE_PRIVATE)
     private val alias = "listen2-bilibili-v1"
     override fun isAvailable(): Boolean = try { key(); true } catch (_: Exception) { false }

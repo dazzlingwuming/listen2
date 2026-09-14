@@ -24,9 +24,20 @@ class BilibiliMvControllerTest {
         val first = controller.open(BilibiliMvPolicy.MvRequest("BV1xx411c7mD", 12L, "80", listOf("avc1"), false))
         val second = controller.open(BilibiliMvPolicy.MvRequest("BV1xx411c7mD", 12L, "80", listOf("avc1"), true))
         assertNotEquals(first.handle, second.handle)
-        assertEquals(BilibiliPolicy.ErrorCode.INVALID_REQUEST, controller.sync(first.handle, 1_000L, true).errorCode)
-        assertEquals(BilibiliMvController.State.READY, controller.refresh(second.handle).state)
-        assertEquals(BilibiliPolicy.ErrorCode.VIDEO_UNAVAILABLE, controller.refresh(second.handle).errorCode)
+        assertEquals(BilibiliPolicy.ErrorCode.INVALID_REQUEST, controller.sync(first.handle, "BV1xx411c7mD", 12L, 1_000L, true).errorCode)
+        val refreshed = controller.refresh(second.handle)
+        assertEquals(BilibiliMvController.State.READY, refreshed.state)
+        assertNotEquals(second.handle, refreshed.handle)
+        assertEquals(BilibiliPolicy.ErrorCode.VIDEO_UNAVAILABLE, controller.refresh(refreshed.handle).errorCode)
+    }
+
+    @Test fun `cancel invalidates the active handle and rejects later mutations`() {
+        val controller = BilibiliMvController(FakeGateway(candidate), clock = { now })
+        val opened = controller.open(BilibiliMvPolicy.MvRequest("BV1xx411c7mD", 12L, "80", listOf("avc1"), false))
+        val cancelled = controller.cancel()
+        assertEquals(BilibiliMvController.State.CLOSED, cancelled.state)
+        assertEquals(BilibiliPolicy.ErrorCode.CANCELLED, cancelled.errorCode)
+        assertEquals(BilibiliPolicy.ErrorCode.INVALID_REQUEST, controller.sync(opened.handle, "BV1xx411c7mD", 12L, 500L, true).errorCode)
     }
 
     private class FakeGateway(private val candidate: BilibiliMvPolicy.VideoCandidate) : BilibiliGateway {

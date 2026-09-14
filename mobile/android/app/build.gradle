@@ -114,6 +114,9 @@ dependencies {
         implementation jscFlavor
     }
     testImplementation("junit:junit:4.13.2")
+    // Android's platform `org.json` methods are stubs in local JVM tests; use the same API
+    // implementation only on the test runtime so persistence and policy contracts execute.
+    testImplementation("org.json:json:20240303")
     implementation 'com.google.zxing:core:3.5.3'
     implementation 'androidx.media3:media3-exoplayer:1.9.4'
 }

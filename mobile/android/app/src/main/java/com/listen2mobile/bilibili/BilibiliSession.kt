@@ -1,13 +1,12 @@
 package com.listen2mobile.bilibili
 
 import java.security.SecureRandom
-import android.util.Base64
 
 /** One cancellable native QR generation at a time; every public projection is credential-free. */
-class BilibiliSession(
+internal class BilibiliSession(
     private val gateway: BilibiliGateway,
-    private val vault: BilibiliVault.Store,
-    private val renderer: BilibiliQrRenderer.Renderer,
+    private val vault: BilibiliVaultStore,
+    private val renderer: BilibiliQrRendererContract,
 ) {
     enum class PublicStatus { IDLE, WAITING, SCANNED, AUTHENTICATED, EXPIRED, CANCELLED, ERROR, UNAVAILABLE }
     sealed class PollResult {
@@ -213,15 +212,12 @@ class BilibiliSession(
     private enum class CommitOutcome { COMMITTED, STALE, FAILED }
     private fun sameAttemptLocked(value: String?) = value != null && attemptId.isNotBlank() && attemptId == value
     private fun clearTransientLocked() { qrKey = null; attemptId = ""; expiry = 0L; bitmap = "" }
-    private fun randomAttemptId(): String = Base64.encodeToString(
-        ByteArray(24).also { SecureRandom().nextBytes(it) },
-        Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP,
-    )
+    private fun randomAttemptId(): String = BilibiliRandom.randomHex(24)
     private fun isQrUrl(value: String) = try { val uri = java.net.URI(value); uri.scheme == "https" && uri.host == "passport.bilibili.com" && uri.path == "/h5-app/passport/login/scan" && (uri.query?.length ?: 0) <= BilibiliPolicy.MAX_QUERY_BYTES } catch (_: Exception) { false }
     private fun isQrPng(value: String) = value.startsWith("data:image/png;base64,") && value.length <= 192 * 1024
 }
 
-interface BilibiliGateway {
+internal interface BilibiliGateway {
     data class Account(val displayName: String?, val avatarUrl: String?)
     data class VideoPart(val cid: Long, val page: Long, val title: String, val durationMs: Long?)
     data class VideoDetail(val bvid: String, val title: String, val owner: String?, val parts: List<VideoPart>)

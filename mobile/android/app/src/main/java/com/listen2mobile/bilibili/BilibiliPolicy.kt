@@ -17,7 +17,7 @@ internal object BilibiliPolicy {
     const val MAX_MEDIA_TTL_MS = 24 * 60 * 60 * 1000L
     const val FIXED_REFERER = "https://www.bilibili.com/"
 
-    enum class ErrorCode { INVALID_REQUEST, NETWORK_ERROR, REQUEST_TIMEOUT, LOGIN_REQUIRED, MEMBERSHIP_REQUIRED, REGION_RESTRICTED, DRM_RESTRICTED, PROVIDER_ERROR, INVALID_RESPONSE, VIDEO_UNAVAILABLE, UNSUPPORTED_VIDEO_CODEC, CANCELLED }
+    enum class ErrorCode { INVALID_REQUEST, NETWORK_ERROR, REQUEST_TIMEOUT, LOGIN_REQUIRED, MEMBERSHIP_REQUIRED, REGION_RESTRICTED, DRM_RESTRICTED, PROVIDER_ERROR, INVALID_RESPONSE, VIDEO_UNAVAILABLE, UNSUPPORTED_VIDEO_CODEC, NOT_READY, CANCELLED }
 
     data class SemanticTrack(val bvid: String, val cid: Long, val page: Long)
     data class AudioHandoff(val bvid: String, val cid: Long, val page: Long, val url: String, val deadline: Long)

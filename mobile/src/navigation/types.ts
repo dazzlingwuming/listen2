@@ -1,5 +1,6 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
 import type { PlayableTrack, SourceId } from '../types/music';
+import type { BilibiliMvRecovery } from '../bilibili/types';
 
 export type TabParamList = {
   My: undefined;
@@ -22,5 +23,10 @@ export type RootStackParamList = {
   };
   Player: undefined;
   BilibiliDetail: { bvid: string; title: string };
-  BilibiliMv: { bvid: string; cid: string; title: string };
+  BilibiliMv: {
+    bvid: string;
+    cid: string;
+    title: string;
+    restore?: BilibiliMvRecovery;
+  };
 };

@@ -5,8 +5,9 @@ import android.util.Base64
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.MultiFormatWriter
 
-class BilibiliQrRenderer : BilibiliQrRenderer.Renderer {
-    interface Renderer { fun render(value: String): String }
+internal interface BilibiliQrRendererContract { fun render(value: String): String }
+
+internal class BilibiliQrRenderer : BilibiliQrRendererContract {
     override fun render(value: String): String {
         require(value.length <= 2048)
         val matrix = MultiFormatWriter().encode(value, BarcodeFormat.QR_CODE, 384, 384)

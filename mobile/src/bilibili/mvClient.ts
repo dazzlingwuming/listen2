@@ -1,7 +1,8 @@
-import { NativeModules } from 'react-native';
+import { NativeEventEmitter, NativeModules } from 'react-native';
 import type {
   BilibiliMvPublicState,
   BilibiliMvQualityId,
+  BilibiliMvRecovery,
   BilibiliMvRequest,
   BilibiliMvVariant,
 } from './types';
@@ -35,6 +36,7 @@ const states = new Set<BilibiliMvPublicState['state']>([
   'closed',
 ]);
 let activeHandle: string | null = null;
+let activeIdentity: { bvid: string; cid: string } | null = null;
 
 export class BilibiliMvClientError extends Error {
   constructor(readonly code: string) {
@@ -93,6 +95,12 @@ function call(method: string, arg: Record<string, unknown>): Promise<unknown> {
   if (typeof fn !== 'function')
     return Promise.reject(new BilibiliMvClientError('UNAVAILABLE'));
   return (fn as (request: Record<string, unknown>) => Promise<unknown>)(arg);
+}
+function noArgCall(method: string): Promise<unknown> {
+  const fn = native?.[method];
+  if (typeof fn !== 'function')
+    return Promise.reject(new BilibiliMvClientError('UNAVAILABLE'));
+  return (fn as () => Promise<unknown>)();
 }
 function nativeError(raw: Record<string, unknown>): void {
   if (
@@ -196,21 +204,43 @@ function successfulState(value: unknown): BilibiliMvPublicState {
     fail(result.errorCode || 'VIDEO_UNAVAILABLE');
   return result;
 }
+function rememberActive(result: BilibiliMvPublicState) {
+  activeHandle = result.handle || null;
+  activeIdentity =
+    result.handle && result.bvid && result.cid
+      ? { bvid: result.bvid, cid: result.cid }
+      : null;
+  return result;
+}
+function recovery(value: unknown): BilibiliMvRecovery {
+  const raw = object(value);
+  nativeError(raw);
+  exactKeys(raw, ['bvid', 'cid', 'qualityId', 'positionMs', 'playIntent']);
+  const playIntent =
+    typeof raw.playIntent === 'boolean' ? raw.playIntent : fail();
+  return {
+    bvid: bvid(raw.bvid),
+    cid: cid(raw.cid),
+    qualityId: quality(raw.qualityId),
+    positionMs: number(raw.positionMs, 24 * 60 * 60 * 1000),
+    playIntent,
+  };
+}
 
 export const bilibiliMvClient = {
+  consumePendingRestore: () =>
+    noArgCall('mvConsumePendingRestore').then(recovery),
   restore: (bvidValue: string, cidValue: string) =>
     call('mvRestore', { bvid: bvid(bvidValue), cid: cid(cidValue) }).then(
       reply => {
         const result = successfulState(reply);
-        activeHandle = result.handle || null;
-        return result;
+        return rememberActive(result);
       },
     ),
   open: (value: BilibiliMvRequest) =>
     call('mvOpen', request(value)).then(reply => {
       const result = successfulState(reply);
-      activeHandle = result.handle ?? null;
-      return result;
+      return rememberActive(result);
     }),
   selectQuality: (opaqueHandle: string, qualityId: BilibiliMvQualityId) =>
     call('mvSelectQuality', {
@@ -218,27 +248,49 @@ export const bilibiliMvClient = {
       qualityId: quality(qualityId),
     }).then(reply => {
       const result = successfulState(reply);
-      activeHandle = result.handle || null;
-      return result;
+      return rememberActive(result);
     }),
-  sync: (opaqueHandle: string, positionMs: number, playIntent: boolean) =>
+  sync: (
+    opaqueHandle: string,
+    bvidValue: string,
+    cidValue: string,
+    positionMs: number,
+    playIntent: boolean,
+  ) =>
     call('mvSync', {
       handle: handle(opaqueHandle),
+      bvid: bvid(bvidValue),
+      cid: cid(cidValue),
       positionMs: number(positionMs, 24 * 60 * 60 * 1000),
       playIntent: Boolean(playIntent),
     }).then(successfulState),
   refresh: (opaqueHandle: string) =>
-    call('mvRefresh', { handle: handle(opaqueHandle) }).then(successfulState),
+    call('mvRefresh', { handle: handle(opaqueHandle) }).then(reply =>
+      rememberActive(successfulState(reply)),
+    ),
   close: (opaqueHandle: string) =>
     call('mvClose', { handle: handle(opaqueHandle) }).then(value => {
       const result = successfulState(value);
-      if (activeHandle === opaqueHandle) activeHandle = null;
+      if (activeHandle === opaqueHandle) {
+        activeHandle = null;
+        activeIdentity = null;
+      }
       return result;
     }),
-  syncActive: (positionMs: number, playIntent: boolean) =>
-    activeHandle
+  syncActive: (
+    bvidValue: string,
+    cidValue: string,
+    positionMs: number,
+    playIntent: boolean,
+  ) =>
+    activeHandle &&
+    activeIdentity &&
+    activeIdentity.bvid === bvidValue &&
+    activeIdentity.cid === cidValue
       ? call('mvSync', {
           handle: activeHandle,
+          bvid: bvid(bvidValue),
+          cid: cid(cidValue),
           positionMs: number(positionMs, 24 * 60 * 60 * 1000),
           playIntent: Boolean(playIntent),
         }).then(successfulState)
@@ -255,11 +307,22 @@ export const bilibiliMvClient = {
     call('mvRequestPip', { handle: handle(opaqueHandle) }).then(value =>
       booleanReply(value),
     ),
+  onPipState: (
+    listener: (value: { handle: string; active: boolean }) => void,
+  ) => {
+    const emitter = new NativeEventEmitter(native as any);
+    return emitter.addListener('bilibiliMvPip', (value: unknown) => {
+      const raw = object(value);
+      exactKeys(raw, ['handle', 'active']);
+      if (typeof raw.active === 'boolean')
+        listener({ handle: handle(raw.handle), active: raw.active });
+    });
+  },
 };
 
 function booleanReply(value: unknown): boolean {
   const raw = object(value);
   nativeError(raw);
   exactKeys(raw, ['ok']);
-  return raw.ok === true ? true : fail();
+  return raw.ok === true ? true : fail('NOT_READY');
 }

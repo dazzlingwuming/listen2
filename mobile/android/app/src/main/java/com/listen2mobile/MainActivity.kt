@@ -1,6 +1,7 @@
 package com.listen2mobile
 
 import android.app.PictureInPictureParams
+import android.annotation.TargetApi
 import android.content.pm.ActivityInfo
 import android.os.Build
 import android.os.Bundle
@@ -11,24 +12,31 @@ import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
 import com.listen2mobile.bilibili.BilibiliMvController
+import com.listen2mobile.bilibili.BilibiliMvPolicy
 
 class MainActivity : ReactActivity() {
   private var mvController: BilibiliMvController? = null
   private var activeMvHandle: String? = null
   private var fullscreenMv = false
   private var pendingMvSnapshot: BilibiliMvController.SemanticSnapshot? = null
+  private var pipListener: ((String, Boolean) -> Unit)? = null
 
   /** Called only by the allow-listed Bilibili module; no JS supplied URL or orientation enters here. */
-  fun bindMvController(controller: BilibiliMvController) {
+  internal fun bindMvController(controller: BilibiliMvController) {
     mvController = controller
   }
+  internal fun setMvPipListener(listener: (String, Boolean) -> Unit) { pipListener = listener }
 
-  fun takePendingMvSnapshot(bvid: String, cid: Long): BilibiliMvController.SemanticSnapshot? {
+  internal fun takePendingMvSnapshot(bvid: String, cid: Long): BilibiliMvController.SemanticSnapshot? {
     val snapshot = pendingMvSnapshot ?: return null
     return snapshot.takeIf { it.bvid == bvid && it.cid == cid }?.also { pendingMvSnapshot = null }
   }
 
   fun discardPendingMvSnapshot() { pendingMvSnapshot = null }
+
+  /** A process-recovery payload is semantic-only and can be consumed once by the root navigator. */
+  internal fun consumePendingMvSnapshot(): BilibiliMvController.SemanticSnapshot? =
+    pendingMvSnapshot?.also { pendingMvSnapshot = null }
 
   fun enterMvFullscreen(handle: String): Boolean {
     if (!isActiveMvHandle(handle)) return false
@@ -56,18 +64,23 @@ class MainActivity : ReactActivity() {
     return enterPictureInPictureMode(PictureInPictureParams.Builder().build())
   }
 
+  @TargetApi(Build.VERSION_CODES.O)
   override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: android.content.res.Configuration) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
     super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+    activeMvHandle?.let { pipListener?.invoke(it, isInPictureInPictureMode) }
     if (!isInPictureInPictureMode && fullscreenMv) restoreMvWindow()
   }
 
   override fun onSaveInstanceState(outState: Bundle) {
     mvController?.semanticSnapshot()?.let { snapshot ->
-      outState.putString(MV_BVID, snapshot.bvid)
-      outState.putLong(MV_CID, snapshot.cid)
-      outState.putString(MV_QUALITY, snapshot.qualityId)
-      outState.putLong(MV_POSITION, snapshot.positionMs)
-      outState.putBoolean(MV_PLAY_INTENT, snapshot.playIntent)
+      if (safeSnapshot(snapshot.bvid, snapshot.cid, snapshot.qualityId, snapshot.positionMs, snapshot.playIntent) != null) {
+        outState.putString(MV_BVID, snapshot.bvid)
+        outState.putLong(MV_CID, snapshot.cid)
+        outState.putString(MV_QUALITY, snapshot.qualityId)
+        outState.putLong(MV_POSITION, snapshot.positionMs)
+        outState.putBoolean(MV_PLAY_INTENT, snapshot.playIntent)
+      }
     }
     super.onSaveInstanceState(outState)
   }
@@ -79,13 +92,15 @@ class MainActivity : ReactActivity() {
       val quality = state.getString(MV_QUALITY)
       val cid = state.getLong(MV_CID, 0L)
       val position = state.getLong(MV_POSITION, -1L)
-      if (bvid != null && quality != null && cid > 0L && position >= 0L)
+      if (bvid != null && quality != null && safeSnapshot(bvid, cid, quality, position, state.getBoolean(MV_PLAY_INTENT, false)) != null)
         BilibiliMvController.SemanticSnapshot(bvid, cid, quality, position, state.getBoolean(MV_PLAY_INTENT, false))
       else null
     }
   }
 
   private fun isActiveMvHandle(handle: String) = handle.isNotBlank() && mvController?.isActiveHandle(handle) == true
+  private fun safeSnapshot(bvid: String?, cid: Long, quality: String?, position: Long, playIntent: Boolean) =
+    BilibiliMvPolicy.safeSnapshot(bvid, cid, quality, position, playIntent)
 
   private fun restoreMvWindow() {
     fullscreenMv = false

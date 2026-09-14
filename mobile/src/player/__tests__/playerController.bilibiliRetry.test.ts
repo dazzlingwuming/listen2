@@ -51,10 +51,7 @@ jest.mock('../../offline/offlineAudio', () => ({
   offlineAudio: { resolveVerified: jest.fn() },
 }));
 
-import reducer, {
-  playerActions,
-  type PlayerState,
-} from '../../store/playerSlice';
+import reducer, { type PlayerState } from '../../store/playerSlice';
 import {
   configurePlayerController,
   playerController,

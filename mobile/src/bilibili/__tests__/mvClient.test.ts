@@ -9,6 +9,7 @@ const nativeModule = {
   mvEnterFullscreen: jest.fn(),
   mvExitFullscreen: jest.fn(),
   mvRequestPip: jest.fn(),
+  mvConsumePendingRestore: jest.fn(),
 };
 
 let client: typeof import('../mvClient').bilibiliMvClient;
@@ -88,9 +89,27 @@ describe('strict semantic Bilibili MV adapter', () => {
     );
     await client.open({ bvid: 'BV1xx411c7mD', cid: '12' });
     await client.close('opaque_handle_abcdefghijklmnop');
-    await expect(client.syncActive(2000, true)).resolves.toBeNull();
+    await expect(
+      client.syncActive('BV1xx411c7mD', '12', 2000, true),
+    ).resolves.toBeNull();
     expect(() => client.refresh('https://not-a-handle')).toThrow(
       'INVALID_RESPONSE',
+    );
+  });
+
+  it('refreshes the active handle before subsequent active synchronization', async () => {
+    nativeModule.mvOpen.mockResolvedValue(reply());
+    nativeModule.mvRefresh.mockResolvedValue(
+      reply({ handle: 'opaque_handle_refreshed_abcdefg' }),
+    );
+    nativeModule.mvSync.mockResolvedValue(
+      reply({ handle: 'opaque_handle_refreshed_abcdefg' }),
+    );
+    await client.open({ bvid: 'BV1xx411c7mD', cid: '12' });
+    await client.refresh('opaque_handle_abcdefghijklmnop');
+    await client.syncActive('BV1xx411c7mD', '12', 1000, true);
+    expect(nativeModule.mvSync).toHaveBeenCalledWith(
+      expect.objectContaining({ handle: 'opaque_handle_refreshed_abcdefg' }),
     );
   });
 
@@ -116,9 +135,52 @@ describe('strict semantic Bilibili MV adapter', () => {
     );
     await client.open({ bvid: 'BV1xx411c7mD', cid: '12' });
     await client.selectQuality('opaque_handle_abcdefghijklmnop', '64');
-    await client.syncActive(1000, true);
+    await client.syncActive('BV1xx411c7mD', '12', 1000, true);
     expect(nativeModule.mvSync).toHaveBeenCalledWith(
       expect.objectContaining({ handle: 'opaque_handle_replaced_abcdefgh' }),
+    );
+  });
+
+  it('accepts a one-shot recovery payload without a handle or signed transport', async () => {
+    nativeModule.mvConsumePendingRestore.mockResolvedValue({
+      bvid: 'BV1xx411c7mD',
+      cid: '12',
+      qualityId: '80',
+      positionMs: 1200,
+      playIntent: true,
+    });
+    await expect(client.consumePendingRestore()).resolves.toEqual({
+      bvid: 'BV1xx411c7mD',
+      cid: '12',
+      qualityId: '80',
+      positionMs: 1200,
+      playIntent: true,
+    });
+    expect(nativeModule.mvConsumePendingRestore).toHaveBeenCalledWith();
+  });
+
+  it('keeps the current active handle when releasing an older exact handle', async () => {
+    const first = 'opaque_handle_abcdefghijklmnop';
+    const replacement = 'opaque_handle_replaced_abcdefgh';
+    nativeModule.mvOpen.mockResolvedValue(reply({ handle: first }));
+    nativeModule.mvSelectQuality.mockResolvedValue(
+      reply({ handle: replacement }),
+    );
+    nativeModule.mvClose.mockResolvedValue(
+      reply({
+        state: 'closed',
+        handle: undefined,
+        bvid: undefined,
+        cid: undefined,
+      }),
+    );
+    nativeModule.mvSync.mockResolvedValue(reply({ handle: replacement }));
+    await client.open({ bvid: 'BV1xx411c7mD', cid: '12' });
+    await client.selectQuality(first, '64');
+    await client.close(first);
+    await client.syncActive('BV1xx411c7mD', '12', 1000, true);
+    expect(nativeModule.mvSync).toHaveBeenCalledWith(
+      expect.objectContaining({ handle: replacement }),
     );
   });
 });

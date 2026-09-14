@@ -114,7 +114,12 @@ export function PlayerScreen() {
     const identity = parseExactBilibiliTrackId(currentBilibiliTrackId);
     if (!identity) return;
     bilibiliMvClient
-      .syncActive(playbackPositionMs(currentPosition), playing)
+      .syncActive(
+        identity.bvid,
+        identity.cid,
+        playbackPositionMs(currentPosition),
+        playing,
+      )
       .catch(() => undefined);
   }, [currentBilibiliTrackId, currentPosition, playing]);
   const invalidateLyricWork = () => {

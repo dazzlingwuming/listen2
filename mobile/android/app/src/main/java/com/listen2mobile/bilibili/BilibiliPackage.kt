@@ -1,6 +1,7 @@
 package com.listen2mobile.bilibili
 
 import com.facebook.react.ReactPackage
+import com.facebook.react.bridge.NativeModule
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.uimanager.ViewManager
 
@@ -20,7 +21,7 @@ class BilibiliPackage : ReactPackage {
         }.also { composition = it }
     }
 
-    override fun createNativeModules(context: ReactApplicationContext): List<BilibiliModule> {
+    override fun createNativeModules(context: ReactApplicationContext): List<NativeModule> {
         val shared = composition(context)
         return listOf(BilibiliModule(context, shared.gateway, shared.session, shared.controller, shared.viewManager))
     }

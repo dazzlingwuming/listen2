@@ -14,7 +14,7 @@ class BilibiliMvLifecycleTest {
     @Test fun `detach snapshot and recreation retain semantic identity but not opaque transport`() {
         val controller = BilibiliMvController(FakeGateway(candidate), clock = { now })
         val opened = controller.open(BilibiliMvPolicy.MvRequest("BV1xx411c7mD", 12L, "80", listOf("avc1"), false))
-        controller.sync(opened.handle, 7_000L, true)
+        controller.sync(opened.handle, "BV1xx411c7mD", 12L, 7_000L, true)
         val snapshot = controller.semanticSnapshot()!!
         assertFalse(snapshot.toString().contains(opened.handle))
         assertFalse(snapshot.toString().contains("bilivideo.com"))
@@ -31,6 +31,16 @@ class BilibiliMvLifecycleTest {
         val failed = controller.surfaceFailed(opened.handle)
         assertNull(controller.surfaceBinding(opened.handle))
         assertEquals(BilibiliPolicy.ErrorCode.VIDEO_UNAVAILABLE, failed.errorCode)
+    }
+
+    @Test fun `surface binding keeps native backup order and latest semantic seek position`() {
+        val backup = candidate.url.replace("video.m4s", "backup.m4s")
+        val controller = BilibiliMvController(FakeGateway(candidate.copy(backupUrls = listOf(backup))), clock = { now })
+        val opened = controller.open(BilibiliMvPolicy.MvRequest("BV1xx411c7mD", 12L, "80", emptyList(), false))
+        controller.sync(opened.handle, "BV1xx411c7mD", 12L, 9_000L, true)
+        val binding = controller.surfaceBinding(opened.handle)!!
+        assertEquals(listOf(candidate.url, backup), binding.urls)
+        assertEquals(9_000L, binding.positionMs)
     }
 
     private class FakeGateway(private val candidate: BilibiliMvPolicy.VideoCandidate) : BilibiliGateway {

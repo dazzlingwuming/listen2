@@ -5,6 +5,7 @@
   "scripts": {
     "android": "react-native run-android",
     "lint": "eslint .",
+    "postinstall": "patch-package",
     "start": "react-native start",
     "test": "jest"
   },
@@ -17,8 +18,8 @@
     "@reduxjs/toolkit": "2.12.0",
     "react": "19.2.3",
     "react-native": "0.87.1",
-    "react-native-gesture-handler": "2.30.0",
-    "react-native-safe-area-context": "5.5.2",
+    "react-native-gesture-handler": "2.33.0",
+    "react-native-safe-area-context": "5.8.0",
     "react-native-screens": "4.27.0",
     "react-native-track-player": "4.1.2",
     "react-redux": "9.3.0",
@@ -41,6 +42,7 @@
     "@types/react-test-renderer": "^19.1.0",
     "eslint": "^8.19.0",
     "jest": "^29.6.3",
+    "patch-package": "8.0.1",
     "prettier": "2.8.8",
     "react-test-renderer": "19.2.3",
     "typescript": "^6.0.3"

@@ -94,6 +94,15 @@ export type BilibiliMvPublicState = Readonly<{
   errorCode?: string;
 }>;
 
+/** One-shot process-recovery state. It is semantic-only and never contains a native handle. */
+export type BilibiliMvRecovery = Readonly<{
+  bvid: string;
+  cid: string;
+  qualityId: BilibiliMvQualityId;
+  positionMs: number;
+  playIntent: boolean;
+}>;
+
 export type BilibiliLyricCandidate = Readonly<{
   id: string;
   matchedProvider: 'netease' | 'qq';

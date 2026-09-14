@@ -224,12 +224,12 @@ class OfflineAudioContractTest {
     }
 
     private class RedirectConnection(url: URL, private val code: Int, private val location: String?) : HttpURLConnection(url) {
-        init { contentLength = 24 }
         override fun connect() = Unit
         override fun disconnect() = Unit
         override fun usingProxy() = false
         override fun getResponseCode() = code
         override fun getHeaderField(name: String?) = if (name == "Location") location else null
+        override fun getContentLengthLong() = 24L
         override fun getInputStream() = ByteArrayInputStream(audio())
         override fun getContentType() = "audio/mpeg"
     }

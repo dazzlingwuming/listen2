@@ -33,7 +33,8 @@ internal object BilibiliMvPolicy {
         val height: Int,
         val frameRate: Int,
         val role: String,
-        val hasAlternateUrl: Boolean,
+        val hasAlternateUrl: Boolean = false,
+        val backupUrls: List<String> = emptyList(),
     )
     data class VideoManifest(val bvid: String, val cid: Long, val candidates: List<VideoCandidate>)
     data class PublicVariant(val id: String, val label: String, val codec: String, val width: Int, val height: Int)
@@ -48,15 +49,25 @@ internal object BilibiliMvPolicy {
         return MvRequest(bvid!!, cid, normalizedQuality, normalizedCodecs, forceRefresh)
     }
 
-    fun selectVideoCandidate(candidates: List<VideoCandidate>, preferredCodecs: List<String>, now: Long): VideoCandidate? {
-        if (candidates.isEmpty() || candidates.size > MAX_CANDIDATES || candidates.map { it.id }.distinct().size != candidates.size) return null
+    fun selectVideoCandidate(candidates: List<VideoCandidate>, qualityId: String, preferredCodecs: List<String>, now: Long): VideoCandidate? {
+        if (candidates.isEmpty() || candidates.size > MAX_CANDIDATES) return null
         if (candidates.any { !isSafeCandidate(it, now) }) return null
         val allowed = if (preferredCodecs.isEmpty()) codecs else preferredCodecs.toSet()
-        return candidates.filter { candidate -> codecFamily(candidate.codecs) in allowed }
+        val qualityMatches = if (qualityId == "auto") candidates else candidates.filter { it.id.toString() == qualityId }
+        return qualityMatches.filter { candidate -> codecFamily(candidate.codecs) in allowed }
             .sortedWith(compareByDescending<VideoCandidate> { it.id }.thenBy { it.codecs }).firstOrNull()
     }
 
     fun publicVariant(candidate: VideoCandidate): PublicVariant = PublicVariant(candidate.id.toString(), candidate.label, candidate.codecs.substringBefore('.'), candidate.width, candidate.height)
+    fun parseFrameRate(value: String?): Int? {
+        val match = Regex("([1-9][0-9]{0,8})(?:/([1-9][0-9]{0,8}))?").matchEntire(value ?: "") ?: return null
+        val numerator = match.groupValues[1].toLongOrNull() ?: return null
+        val denominator = match.groupValues[2].takeIf { it.isNotEmpty() }?.toLongOrNull() ?: 1L
+        if (numerator > 1_000_000_000L || denominator > 1_000_000_000L) return null
+        val rate = numerator.toDouble() / denominator.toDouble()
+        if (!rate.isFinite() || rate < 1.0 || rate > MAX_FRAME_RATE.toDouble()) return null
+        return kotlin.math.round(rate).toInt()
+    }
     fun isOpaqueHandle(value: String?) = value != null && value.length in 16..MAX_HANDLE_LENGTH && value.matches(Regex("[A-Za-z0-9_-]+"))
     fun isSafeVideoUrl(url: String?, now: Long): Boolean {
         if (url == null || url.length > BilibiliPolicy.MAX_MEDIA_URL) return false
@@ -80,14 +91,14 @@ internal object BilibiliMvPolicy {
         return candidate.id.toString() in qualityIds && BilibiliPolicy.safeText(candidate.label, 80) != null &&
             candidate.mimeType == "video/mp4" && codecFamily(candidate.codecs) != null &&
             candidate.width in 1..MAX_DIMENSION && candidate.height in 1..MAX_DIMENSION && candidate.frameRate in 1..MAX_FRAME_RATE &&
-            candidate.role == "video" && !candidate.hasAlternateUrl && isSafeVideoUrl(candidate.url, now)
+            candidate.role == "video" && !candidate.hasAlternateUrl && candidate.backupUrls.size <= 3 &&
+            isSafeVideoUrl(candidate.url, now) && candidate.backupUrls.all { isSafeVideoUrl(it, now) }
     }
 
     private fun codecFamily(value: String): String? =
         value.takeIf { codecToken.matches(it) }?.substringBefore('.')?.takeIf { it in codecs }
 
     fun opaqueHandle(randomBytes: ByteArray): String {
-        val encoded = android.util.Base64.encodeToString(randomBytes, android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING or android.util.Base64.NO_WRAP)
-        return encoded.take(MAX_HANDLE_LENGTH)
+        return BilibiliRandom.lowercaseHex(randomBytes).take(MAX_HANDLE_LENGTH)
     }
 }

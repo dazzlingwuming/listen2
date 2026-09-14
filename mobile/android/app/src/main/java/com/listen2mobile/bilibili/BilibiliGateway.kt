@@ -18,7 +18,7 @@ import javax.crypto.spec.PSource
 import javax.net.ssl.HttpsURLConnection
 
 /** Closed native transport. Only the active QR poll has a disconnectable handle. */
-class BilibiliHttpsGateway : BilibiliGateway {
+internal class BilibiliHttpsGateway : BilibiliGateway {
     private data class ActivePoll(val key: String, val connection: HttpsURLConnection)
 
     private val cookies = LinkedHashMap<String, String>()
@@ -203,12 +203,21 @@ class BilibiliHttpsGateway : BilibiliGateway {
                 codecs = item.optString("codecs", ""),
                 width = item.optInt("width", 0),
                 height = item.optInt("height", 0),
-                frameRate = item.optString("frameRate", "").substringBefore('/').toIntOrNull() ?: 0,
+                frameRate = BilibiliMvPolicy.parseFrameRate(item.optString("frameRate", "")) ?: 0,
                 role = "video",
-                hasAlternateUrl = hasAlternateUrl(item),
+                backupUrls = backupUrls(item),
             )
         }
         return BilibiliMvPolicy.VideoManifest(request.bvid, request.cid, candidates)
+    }
+
+    private fun backupUrls(item: JSONObject): List<String> {
+        val values = item.optJSONArray("backupUrl") ?: item.optJSONArray("backup_url") ?: return emptyList()
+        if (values.length() > 3) throw ProviderException(BilibiliPolicy.ErrorCode.INVALID_RESPONSE)
+        return (0 until values.length()).map { index ->
+            values.optString(index, "").takeIf { it.isNotBlank() }
+                ?: throw ProviderException(BilibiliPolicy.ErrorCode.INVALID_RESPONSE)
+        }
     }
 
     private fun wbiMixinKey(): String {
