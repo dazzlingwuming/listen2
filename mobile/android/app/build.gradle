@@ -115,4 +115,5 @@ dependencies {
     }
     testImplementation("junit:junit:4.13.2")
     implementation 'com.google.zxing:core:3.5.3'
+    implementation 'androidx.media3:media3-exoplayer:1.9.4'
 }

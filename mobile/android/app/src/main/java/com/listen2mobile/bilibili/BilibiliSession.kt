@@ -235,4 +235,7 @@ interface BilibiliGateway {
     fun account(): Account?
     fun videoDetail(bvid: String): VideoDetail
     fun resolveAudio(track: BilibiliPolicy.SemanticTrack): BilibiliPolicy.AudioHandoff
+    /** Video transport remains native-only; callers receive it only through BilibiliMvController. */
+    fun resolveVideo(request: BilibiliMvPolicy.MvRequest): BilibiliMvPolicy.VideoManifest =
+        throw UnsupportedOperationException("MV unsupported by this gateway")
 }

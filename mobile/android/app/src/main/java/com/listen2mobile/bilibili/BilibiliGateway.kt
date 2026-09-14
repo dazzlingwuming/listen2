@@ -178,6 +178,39 @@ class BilibiliHttpsGateway : BilibiliGateway {
         return BilibiliPolicy.AudioHandoff(track.bvid, track.cid, track.page, selected.url, deadline)
     }
 
+    override fun resolveVideo(request: BilibiliMvPolicy.MvRequest): BilibiliMvPolicy.VideoManifest {
+        val detail = videoDetail(request.bvid)
+        if (detail.bvid != request.bvid || detail.parts.none { it.cid == request.cid })
+            throw ProviderException(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
+        val quality = request.qualityId.takeUnless { it == "auto" } ?: "80"
+        val query = BilibiliPolicy.buildWbiQuery(
+            mapOf("bvid" to request.bvid, "cid" to request.cid.toString(), "qn" to quality, "fnval" to "16", "fnver" to "0", "fourk" to "0"),
+            wbiMixinKey(),
+            System.currentTimeMillis() / 1000L,
+        ) ?: throw ProviderException(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
+        val video = request("https://api.bilibili.com/x/player/wbi/playurl?$query")
+            .optJSONObject("dash")?.optJSONArray("video")
+            ?: throw ProviderException(BilibiliPolicy.ErrorCode.VIDEO_UNAVAILABLE)
+        if (video.length() !in 1..4) throw ProviderException(BilibiliPolicy.ErrorCode.INVALID_RESPONSE)
+        val candidates = ArrayList<BilibiliMvPolicy.VideoCandidate>()
+        for (index in 0 until video.length()) {
+            val item = video.optJSONObject(index) ?: throw ProviderException(BilibiliPolicy.ErrorCode.INVALID_RESPONSE)
+            candidates += BilibiliMvPolicy.VideoCandidate(
+                id = item.optInt("id", 0),
+                label = item.optString("id", ""),
+                url = item.optString("baseUrl", item.optString("base_url", "")),
+                mimeType = item.optString("mimeType", item.optString("mime_type", "")),
+                codecs = item.optString("codecs", ""),
+                width = item.optInt("width", 0),
+                height = item.optInt("height", 0),
+                frameRate = item.optString("frameRate", "").substringBefore('/').toIntOrNull() ?: 0,
+                role = "video",
+                hasAlternateUrl = hasAlternateUrl(item),
+            )
+        }
+        return BilibiliMvPolicy.VideoManifest(request.bvid, request.cid, candidates)
+    }
+
     private fun wbiMixinKey(): String {
         val image = request("https://api.bilibili.com/x/web-interface/nav").optJSONObject("wbi_img")
             ?: throw ProviderException(BilibiliPolicy.ErrorCode.INVALID_RESPONSE)

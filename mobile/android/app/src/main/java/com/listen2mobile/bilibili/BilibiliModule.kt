@@ -13,11 +13,14 @@ import java.util.concurrent.Executors
 
 /** Semantic-only React Native boundary. Every rejected value returns a stable code, never provider text. */
 @ReactModule(name = BilibiliModule.NAME)
-class BilibiliModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(context) {
+class BilibiliModule(
+    context: ReactApplicationContext,
+    private val gateway: BilibiliGateway,
+    private val session: BilibiliSession,
+    private val mvController: BilibiliMvController,
+) : ReactContextBaseJavaModule(context) {
     companion object { const val NAME = "Listen2Bilibili" }
     private val worker = Executors.newSingleThreadExecutor()
-    private val gateway = BilibiliHttpsGateway()
-    private val session = BilibiliSession(gateway, BilibiliVault(context), BilibiliQrRenderer())
     override fun getName() = NAME
 
     @ReactMethod fun status(promise: Promise) = complete(promise) { state(session.restore()) }
@@ -59,6 +62,27 @@ class BilibiliModule(context: ReactApplicationContext) : ReactContextBaseJavaMod
         }
     }
 
+    @ReactMethod fun mvOpen(request: ReadableMap, promise: Promise) = complete(promise) {
+        requireKeys(request, setOf("bvid", "cid", "qualityId", "preferredCodecs", "forceRefresh"))
+        mvState(mvController.open(requireMvRequest(request)))
+    }
+    @ReactMethod fun mvSelectQuality(request: ReadableMap, promise: Promise) = complete(promise) {
+        requireKeys(request, setOf("handle", "qualityId"))
+        mvState(mvController.selectQuality(requireHandle(request), requireQuality(request, "qualityId")))
+    }
+    @ReactMethod fun mvSync(request: ReadableMap, promise: Promise) = complete(promise) {
+        requireKeys(request, setOf("handle", "positionMs", "playIntent"))
+        val position = requirePositiveOrZero(request, "positionMs")
+        if (!request.hasKey("playIntent") || request.getType("playIntent") != ReadableType.Boolean) throw IllegalArgumentException()
+        mvState(mvController.sync(requireHandle(request), position, request.getBoolean("playIntent")))
+    }
+    @ReactMethod fun mvRefresh(request: ReadableMap, promise: Promise) = complete(promise) {
+        requireKeys(request, setOf("handle")); mvState(mvController.refresh(requireHandle(request)))
+    }
+    @ReactMethod fun mvClose(request: ReadableMap, promise: Promise) = complete(promise) {
+        requireKeys(request, setOf("handle")); mvState(mvController.close(requireHandle(request)))
+    }
+
     private fun complete(promise: Promise, operation: () -> WritableMap) {
         worker.execute {
             try { promise.resolve(operation()) }
@@ -77,9 +101,35 @@ class BilibiliModule(context: ReactApplicationContext) : ReactContextBaseJavaMod
         putString("bvid", value.bvid); putString("title", value.title); value.owner?.let { putString("owner", it) }
         putArray("parts", Arguments.createArray().apply { value.parts.forEach { part -> pushMap(Arguments.createMap().apply { putString("cid", part.cid.toString()); putString("page", part.page.toString()); putString("title", part.title); part.durationMs?.let { putDouble("durationMs", it.toDouble()) } }) } })
     }
+    private fun mvState(value: BilibiliMvController.PublicState): WritableMap = Arguments.createMap().apply {
+        putString("state", value.state.name.lowercase())
+        if (value.handle.isNotBlank()) putString("handle", value.handle)
+        if (value.bvid.isNotBlank()) putString("bvid", value.bvid)
+        if (value.cid.isNotBlank()) putString("cid", value.cid)
+        putString("qualityId", value.qualityId); putDouble("positionMs", value.positionMs.toDouble()); putBoolean("playIntent", value.playIntent)
+        putBoolean("refreshing", value.refreshing)
+        putArray("variants", Arguments.createArray().apply { value.variants.forEach { variant -> pushMap(Arguments.createMap().apply { putString("id", variant.id); putString("label", variant.label); putString("codec", variant.codec); putInt("width", variant.width); putInt("height", variant.height) }) })
+        value.errorCode?.let { putString("errorCode", it.name) }
+    }
     private fun error(code: BilibiliPolicy.ErrorCode): WritableMap = Arguments.createMap().apply { putString("errorCode", code.name) }
     private fun requireKeys(map: ReadableMap, allowed: Set<String>) { val keys = map.keySetIterator(); while (keys.hasNextKey()) if (keys.nextKey() !in allowed) throw IllegalArgumentException() }
     private fun requireText(map: ReadableMap, key: String, limit: Int): String { if (!map.hasKey(key) || map.getType(key) != ReadableType.String) throw IllegalArgumentException(); return BilibiliPolicy.safeText(map.getString(key), limit) ?: throw IllegalArgumentException() }
     private fun requireBvid(map: ReadableMap, key: String): String = requireText(map, key, 40).also { if (!BilibiliPolicy.isCanonicalBvid(it)) throw IllegalArgumentException() }
     private fun requirePositive(map: ReadableMap, key: String): Long { val value = requireText(map, key, 18); if (!BilibiliPolicy.isPositiveText(value)) throw IllegalArgumentException(); return value.toLong() }
+    private fun requirePositiveOrZero(map: ReadableMap, key: String): Long { if (!map.hasKey(key) || map.getType(key) != ReadableType.Number) throw IllegalArgumentException(); return map.getDouble(key).toLong().takeIf { it >= 0L && it <= 24L * 60L * 60L * 1000L } ?: throw IllegalArgumentException() }
+    private fun requireHandle(map: ReadableMap): String = requireText(map, "handle", 96).takeIf(BilibiliMvPolicy::isOpaqueHandle) ?: throw IllegalArgumentException()
+    private fun requireQuality(map: ReadableMap, key: String): String = requireText(map, key, 8)
+    private fun requireMvRequest(map: ReadableMap): BilibiliMvPolicy.MvRequest {
+        val codecs = if (!map.hasKey("preferredCodecs") || map.isNull("preferredCodecs")) emptyList() else {
+            if (map.getType("preferredCodecs") != ReadableType.Array) throw IllegalArgumentException()
+            val values = map.getArray("preferredCodecs") ?: throw IllegalArgumentException()
+            if (values.size() > 4) throw IllegalArgumentException()
+            (0 until values.size()).map { index -> if (values.getType(index) != ReadableType.String) throw IllegalArgumentException(); requireNotNull(values.getString(index)) }
+        }
+        val forceRefresh = if (!map.hasKey("forceRefresh") || map.isNull("forceRefresh")) false else {
+            if (map.getType("forceRefresh") != ReadableType.Boolean) throw IllegalArgumentException(); map.getBoolean("forceRefresh")
+        }
+        val quality = if (!map.hasKey("qualityId") || map.isNull("qualityId")) "auto" else requireQuality(map, "qualityId")
+        return BilibiliMvPolicy.request(requireBvid(map, "bvid"), requirePositive(map, "cid"), quality, codecs, forceRefresh) ?: throw IllegalArgumentException()
+    }
 }
