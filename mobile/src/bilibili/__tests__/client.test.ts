@@ -57,16 +57,11 @@ describe('strict Bilibili native adapter', () => {
       parts: [expect.objectContaining({ cid: '11', page: '1' })],
     });
     await expect(
-      bilibiliClient.resolveAudio({
-        bvid: 'BV1xx411c7mD',
-        cid: '12',
-        page: '2',
-      }),
+      bilibiliClient.resolveAudio({ bvid: 'BV1xx411c7mD', cid: '12' }),
     ).resolves.toMatchObject({ cid: '12', page: '2' });
     expect(nativeModule.resolveAudio).toHaveBeenCalledWith({
       bvid: 'BV1xx411c7mD',
       cid: '12',
-      page: '2',
     });
   });
 });

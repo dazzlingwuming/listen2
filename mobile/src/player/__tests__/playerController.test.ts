@@ -83,6 +83,12 @@ const localTrack = (id: string): LocalTrack => ({
   contentUri: `content://documents/${id}`,
   fileName: `${id}.mp3`,
 });
+const bilibiliTrack = (id = 'bitrack_v_BV1xx411c7mD-456'): Track => ({
+  id,
+  source: 'bilibili',
+  title: '精确分段',
+  artist: '上传者',
+});
 
 describe('PlayerController queue transitions', () => {
   let state: PlayerState;
@@ -211,6 +217,40 @@ describe('PlayerController queue transitions', () => {
     expect(mockNativePlayer.add).toHaveBeenCalledWith(
       expect.objectContaining({ url: 'content://cache/abc' }),
     );
+  });
+
+  it('keeps a validated Bilibili handoff transient until the single native add', async () => {
+    const selected = bilibiliTrack();
+    const signedUrl = 'https://upos-sz-mirror.example.bilivideo.com/audio.m4s';
+    mockBootstrapTrack.mockResolvedValueOnce({
+      trackId: selected.id,
+      source: selected.source,
+      url: signedUrl,
+      headers: { Referer: 'https://www.bilibili.com/' },
+    });
+    await playerController.playTracks(dispatch, [selected]);
+    expect(mockBootstrapTrack).toHaveBeenCalledWith(selected);
+    expect(mockNativePlayer.add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: signedUrl,
+        headers: { Referer: 'https://www.bilibili.com/' },
+      }),
+    );
+    expect(JSON.stringify(state)).not.toContain(signedUrl);
+    expect(JSON.stringify(state)).not.toContain('Referer');
+  });
+
+  it.each([
+    'LOGIN_REQUIRED',
+    'MEMBERSHIP_REQUIRED',
+    'REGION_RESTRICTED',
+    'DRM_RESTRICTED',
+    'REQUEST_TIMEOUT',
+    'CANCELLED',
+  ])('preserves the typed Bilibili provider error %s', async code => {
+    mockBootstrapTrack.mockRejectedValueOnce({ code });
+    await playerController.playTracks(dispatch, [bilibiliTrack()]);
+    expect(state.error).toBe(code);
   });
 
   it('uses exactly one online bootstrap after a cache miss or corrupt result', async () => {

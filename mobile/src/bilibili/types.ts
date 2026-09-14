@@ -34,8 +34,9 @@ export type BilibiliVideoDetail = {
   parts: BilibiliPart[];
 };
 
-export type BilibiliAudioRequest = { bvid: string; cid: string; page: string };
+export type BilibiliAudioRequest = { bvid: string; cid: string };
 export type BilibiliAudioHandoff = BilibiliAudioRequest & {
+  page: string;
   url: string;
   deadline: number;
   headers: Readonly<{ Referer: 'https://www.bilibili.com/' }>;

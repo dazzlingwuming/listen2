@@ -182,8 +182,7 @@ function handoff(
   keys(raw, ['bvid', 'cid', 'page', 'url', 'deadline', 'headers']);
   if (
     bvid(raw.bvid) !== requested.bvid ||
-    numericText(raw.cid) !== requested.cid ||
-    numericText(raw.page) !== requested.page
+    numericText(raw.cid) !== requested.cid
   )
     fail();
   const url = text(raw.url, MAX_MEDIA_URL);
@@ -214,6 +213,7 @@ function handoff(
   if (headers.Referer !== 'https://www.bilibili.com/') fail();
   return {
     ...requested,
+    page: numericText(raw.page),
     url,
     deadline: deadline as number,
     headers: { Referer: 'https://www.bilibili.com/' },
@@ -231,11 +231,7 @@ export const bilibiliClient = {
   videoDetail: (id: string, _options?: { signal?: AbortSignal }) =>
     call('videoDetail', { bvid: bvid(id) }).then(detail),
   resolveAudio: (request: BilibiliAudioRequest) => {
-    const exact = {
-      bvid: bvid(request.bvid),
-      cid: numericText(request.cid),
-      page: numericText(request.page),
-    };
+    const exact = { bvid: bvid(request.bvid), cid: numericText(request.cid) };
     return call('resolveAudio', exact).then(value => handoff(value, exact));
   },
 };

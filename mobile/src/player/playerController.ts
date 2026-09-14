@@ -52,6 +52,12 @@ const SAFE_TYPED_PLAYER_ERRORS = new Set([
   'PROVIDER_ERROR',
   'ROUTE_UNAVAILABLE',
   'PLAYBACK_UNAVAILABLE',
+  'LOGIN_REQUIRED',
+  'MEMBERSHIP_REQUIRED',
+  'REGION_RESTRICTED',
+  'DRM_RESTRICTED',
+  'REQUEST_TIMEOUT',
+  'CANCELLED',
 ]);
 
 function safePlayerError(error: unknown, fallback: string): string {
@@ -108,7 +114,36 @@ async function resolveTrackUrl(track: PlayableTrack) {
   const candidate = await providerClient.bootstrapTrack(track);
   const { url } = candidate;
   if (!url || typeof url !== 'string') throw new Error('provider-unavailable');
+  if (track.source === 'bilibili' && !isExactBilibiliMedia(track.id, candidate))
+    throw new Error('provider-unavailable');
   return candidate;
+}
+
+function isExactBilibiliMedia(
+  id: string,
+  candidate: { url: string; headers?: Readonly<Record<string, string>> },
+): boolean {
+  if (!/^bitrack_v_BV[0-9A-Za-z]{6,32}-[1-9][0-9]{0,17}$/.test(id))
+    return false;
+  if (
+    !candidate.headers ||
+    Object.keys(candidate.headers).length !== 1 ||
+    candidate.headers.Referer !== 'https://www.bilibili.com/'
+  )
+    return false;
+  try {
+    const url = new URL(candidate.url);
+    return (
+      url.protocol === 'https:' &&
+      (url.hostname === 'bilivideo.com' ||
+        url.hostname.endsWith('.bilivideo.com')) &&
+      url.username === '' &&
+      url.password === '' &&
+      url.hash === ''
+    );
+  } catch {
+    return false;
+  }
 }
 
 function asNativeTrack(

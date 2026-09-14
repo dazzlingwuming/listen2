@@ -12,6 +12,7 @@ import type {
 } from '../types';
 import { isSourceId } from '../types';
 import { ProviderClientError, unavailable } from './errors';
+import { BilibiliClientError, bilibiliClient } from '../bilibili/client';
 import { sourceForPlaylistId, sourceForTrackId } from './ids';
 import {
   bootstrapKugouTrack,
@@ -129,8 +130,44 @@ export const providerClient = {
         'bootstrap',
       );
     }
-    if (source === 'bilibili')
-      throw unavailable(source, 'bootstrap', 'PLAYBACK_UNAVAILABLE');
+    if (source === 'bilibili') {
+      const identity =
+        /^bitrack_v_(BV[0-9A-Za-z]{6,32})-([1-9][0-9]{0,17})$/.exec(track.id);
+      if (!identity)
+        throw new ProviderClientError('UNKNOWN_TRACK', source, 'bootstrap');
+      try {
+        const media = await bilibiliClient.resolveAudio({
+          bvid: identity[1],
+          cid: identity[2],
+        });
+        return {
+          trackId: track.id,
+          source,
+          url: media.url,
+          headers: media.headers,
+        };
+      } catch (error) {
+        const code =
+          error instanceof BilibiliClientError ? error.code : 'PROVIDER_ERROR';
+        const allowed = new Set([
+          'INVALID_REQUEST',
+          'REQUEST_TIMEOUT',
+          'CANCELLED',
+          'LOGIN_REQUIRED',
+          'MEMBERSHIP_REQUIRED',
+          'DRM_RESTRICTED',
+          'REGION_RESTRICTED',
+          'NETWORK_ERROR',
+          'PROVIDER_ERROR',
+          'INVALID_RESPONSE',
+        ]);
+        throw new ProviderClientError(
+          allowed.has(code) ? (code as any) : 'PROVIDER_ERROR',
+          source,
+          'bootstrap',
+        );
+      }
+    }
     if (source === 'kugou')
       return bootstrapKugouTrack(track, { signal: _signal });
     if (source === 'netease') return bootstrapNetEaseTrack(track, _signal);

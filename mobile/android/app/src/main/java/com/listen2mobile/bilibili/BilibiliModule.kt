@@ -36,11 +36,12 @@ class BilibiliModule(context: ReactApplicationContext) : ReactContextBaseJavaMod
         requireKeys(request, setOf("bvid")); detail(gateway.videoDetail(requireBvid(request, "bvid")))
     }
     @ReactMethod fun resolveAudio(request: ReadableMap, promise: Promise) = complete(promise) {
-        requireKeys(request, setOf("bvid", "cid", "page"))
+        requireKeys(request, setOf("bvid", "cid"))
         val bvid = requireBvid(request, "bvid")
         val cid = requirePositive(request, "cid")
-        val page = requirePositive(request, "page")
-        val handoff = gateway.resolveAudio(BilibiliPolicy.SemanticTrack(bvid, cid, page))
+        val part = gateway.videoDetail(bvid).parts.singleOrNull { it.cid == cid }
+            ?: throw BilibiliHttpsGateway.ProviderException(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
+        val handoff = gateway.resolveAudio(BilibiliPolicy.SemanticTrack(bvid, cid, part.page))
         if (!BilibiliPolicy.isSafeAudioHandoff(handoff.url, mapOf("Referer" to BilibiliPolicy.FIXED_REFERER), handoff.deadline, System.currentTimeMillis())) throw BilibiliHttpsGateway.ProviderException(BilibiliPolicy.ErrorCode.INVALID_RESPONSE)
         Arguments.createMap().apply {
             putString("bvid", handoff.bvid); putString("cid", handoff.cid.toString()); putString("page", handoff.page.toString())

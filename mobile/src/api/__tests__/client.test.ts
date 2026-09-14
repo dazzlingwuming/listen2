@@ -1,5 +1,19 @@
 import { providerClient, ProviderClientError } from '../client';
 
+const mockBilibiliResolveAudio = jest.fn();
+jest.mock('../../bilibili/client', () => ({
+  BilibiliClientError: class BilibiliClientError extends Error {
+    code: string;
+    constructor(mockCode: string) {
+      super(mockCode);
+      this.code = mockCode;
+    }
+  },
+  bilibiliClient: {
+    resolveAudio: (...args: unknown[]) => mockBilibiliResolveAudio(...args),
+  },
+}));
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -365,63 +379,36 @@ describe('providerClient', () => {
     );
   });
 
-  it('resolves Bilibili through validated detail/CID and a bounded audio candidate', async () => {
-    const futureDeadline = Math.floor(Date.now() / 1000) + 60;
-    globalThis.fetch = jest
-      .fn()
-      .mockResolvedValueOnce(
-        jsonResponse({
-          code: 0,
-          data: { bvid: 'BV1xx411c7mD', pages: [{ cid: 456 }] },
-        }),
-      )
-      .mockResolvedValueOnce(
-        jsonResponse({
-          code: 0,
-          data: {
-            dash: {
-              audio: [
-                {
-                  id: 30280,
-                  mimeType: 'audio/mp4',
-                  codecs: 'mp4a.40.2',
-                  baseUrl: `https://upos-sz-mirror.example.bilivideo.com/audio.m4s?deadline=${futureDeadline}`,
-                },
-              ],
-            },
-          },
-        }),
-      );
+  it('resolves an exact Bilibili part only through the semantic native adapter', async () => {
+    globalThis.fetch = jest.fn();
+    mockBilibiliResolveAudio.mockResolvedValue({
+      bvid: 'BV1xx411c7mD',
+      cid: '456',
+      page: '1',
+      url: 'https://upos-sz-mirror.example.bilivideo.com/audio.m4s',
+      deadline: Date.now() + 60_000,
+      headers: { Referer: 'https://www.bilibili.com/' },
+    });
     await expect(
       providerClient.bootstrapTrack({
-        id: 'bitrack_v_BV1xx411c7mD',
+        id: 'bitrack_v_BV1xx411c7mD-456',
         source: 'bilibili',
         title: 'Song',
         artist: 'Uploader',
       }),
     ).resolves.toEqual({
-      trackId: 'bitrack_v_BV1xx411c7mD',
+      trackId: 'bitrack_v_BV1xx411c7mD-456',
       source: 'bilibili',
-      url: `https://upos-sz-mirror.example.bilivideo.com/audio.m4s?deadline=${futureDeadline}`,
+      url: 'https://upos-sz-mirror.example.bilivideo.com/audio.m4s',
       headers: {
         Referer: 'https://www.bilibili.com/',
       },
     });
-    expect((globalThis.fetch as jest.Mock).mock.calls[0][0]).toContain(
-      '/x/web-interface/view?bvid=BV1xx411c7mD',
-    );
-    expect((globalThis.fetch as jest.Mock).mock.calls[1][0]).toContain(
-      '/x/player/playurl?',
-    );
-    expect((globalThis.fetch as jest.Mock).mock.calls[1][0]).toContain(
-      'cid=456',
-    );
-    expect((globalThis.fetch as jest.Mock).mock.calls[0][1]).toMatchObject({
-      headers: expect.objectContaining({
-        Referer: 'https://www.bilibili.com/',
-        'User-Agent': expect.stringContaining('Android'),
-      }),
+    expect(mockBilibiliResolveAudio).toHaveBeenCalledWith({
+      bvid: 'BV1xx411c7mD',
+      cid: '456',
     });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
   it('bootstraps a NetEase track through its fixed public media route', async () => {
