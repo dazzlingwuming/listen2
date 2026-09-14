@@ -1,6 +1,8 @@
 const COPY: Readonly<Record<string, string>> = {
   NETWORK_ERROR: '网络连接异常，请检查网络后重试。',
   PROVIDER_ERROR: '音源暂不可用，请稍后重试。',
+  VIDEO_UNAVAILABLE: '当前视频画面不可用，音频播放不受影响。',
+  UNSUPPORTED_VIDEO_CODEC: '当前设备不支持该视频编码，音频播放不受影响。',
   ROUTE_UNAVAILABLE: '当前音源暂不可播放。',
   PLAYBACK_UNAVAILABLE: '当前音源暂不可播放。',
   'offline-media-unavailable': '离线媒体不可用，正在尝试在线播放。',

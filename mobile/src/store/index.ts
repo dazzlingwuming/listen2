@@ -15,6 +15,7 @@ import libraryReducer from './librarySlice';
 import downloadReducer, { downloadActions } from './downloadSlice';
 import { offlineAudio } from '../offline/offlineAudio';
 import { configurePlayerController } from '../player/playerController';
+import mvReducer from './mvSlice';
 
 const persistConfig = {
   key: 'listen2-mobile',
@@ -36,6 +37,8 @@ export const store = configureStore({
     player: persistedPlayerReducer,
     library: persistedLibraryReducer,
     downloads: downloadReducer,
+    // MV transport/handles are process-local. This reducer is purposefully volatile.
+    mv: mvReducer,
   },
   middleware: getDefaultMiddleware =>
     getDefaultMiddleware({

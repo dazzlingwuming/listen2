@@ -22,4 +22,5 @@ export type RootStackParamList = {
   };
   Player: undefined;
   BilibiliDetail: { bvid: string; title: string };
+  BilibiliMv: { bvid: string; cid: string; title: string };
 };

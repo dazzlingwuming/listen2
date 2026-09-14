@@ -18,6 +18,7 @@ import { SettingsScreen } from '../screens/SettingsScreen';
 import { PlaylistDetailScreen } from '../screens/PlaylistDetailScreen';
 import { PlayerScreen } from '../screens/PlayerScreen';
 import { BilibiliDetailScreen } from '../screens/BilibiliDetailScreen';
+import { BilibiliMvScreen } from '../screens/BilibiliMvScreen';
 import { colors, spacing } from '../theme';
 import type { RootStackParamList, TabParamList } from './types';
 
@@ -114,6 +115,7 @@ export function RootNavigator() {
             component={BilibiliDetailScreen}
             name="BilibiliDetail"
           />
+          <Stack.Screen component={BilibiliMvScreen} name="BilibiliMv" />
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>

@@ -180,6 +180,12 @@ function handoff(
   requested: BilibiliAudioRequest,
 ): BilibiliAudioHandoff {
   const raw = object(value);
+  if (
+    Object.keys(raw).length === 1 &&
+    typeof raw.errorCode === 'string' &&
+    /^[A-Z_]{3,64}$/.test(raw.errorCode)
+  )
+    fail(raw.errorCode);
   keys(raw, ['bvid', 'cid', 'page', 'url', 'deadline', 'headers']);
   if (
     bvid(raw.bvid) !== requested.bvid ||

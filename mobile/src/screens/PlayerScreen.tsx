@@ -50,6 +50,7 @@ import {
 } from '../deepseek/consent';
 import { deepSeekClient, hashLyric, hashTrack } from '../deepseek/client';
 import type { DeepSeekConsent } from '../deepseek/types';
+import { bilibiliMvClient } from '../bilibili/mvClient';
 
 export function PlayerScreen() {
   const navigation = useNavigation<any>();
@@ -65,6 +66,9 @@ export function PlayerScreen() {
   ) as PresentableTrack[];
   const showingPlayNext = Boolean(state.playNextQueue?.length);
   const playing = Boolean(state.isPlaying ?? state.playing);
+  const currentPosition = state.position ?? state.progress ?? 0;
+  const currentBilibiliTrackId =
+    current && trackSource(current) === 'bilibili' ? current.id : null;
   const error = playerErrorCopy(
     typeof state.error === 'string' ? state.error : null,
   );
@@ -106,6 +110,13 @@ export function PlayerScreen() {
       )
     : false;
   currentTrackId.current = current?.id ?? null;
+  useEffect(() => {
+    const identity = parseExactBilibiliTrackId(currentBilibiliTrackId);
+    if (!identity) return;
+    bilibiliMvClient
+      .syncActive(playbackPositionMs(currentPosition), playing)
+      .catch(() => undefined);
+  }, [currentBilibiliTrackId, currentPosition, playing]);
   const invalidateLyricWork = () => {
     lyricRequest.current?.abort();
     candidateRequest.current?.abort();
@@ -502,7 +513,7 @@ export function PlayerScreen() {
             </View>
           ) : null}
           <Progress
-            position={state.position ?? state.progress ?? 0}
+            position={currentPosition}
             duration={
               state.duration ?? current.duration ?? current.durationMs ?? 0
             }
@@ -535,6 +546,23 @@ export function PlayerScreen() {
             </Pressable>
           </View>
           <View style={styles.actions}>
+            {current && parseExactBilibiliTrackId(current.id) ? (
+              <Pressable
+                accessibilityLabel="打开当前歌曲MV画面"
+                onPress={() => {
+                  const identity = parseExactBilibiliTrackId(current.id);
+                  if (identity)
+                    navigation.navigate('BilibiliMv', {
+                      bvid: identity.bvid,
+                      cid: identity.cid,
+                      title: trackTitle(current),
+                    });
+                }}
+                style={styles.action}
+              >
+                <Text style={styles.actionText}>MV</Text>
+              </Pressable>
+            ) : null}
             <Pressable
               accessibilityLabel="查看歌词"
               onPress={() => {
@@ -588,7 +616,7 @@ export function PlayerScreen() {
         localAudio={Boolean(current && isLocalTrack(current))}
         machineTranslation={machineTranslation}
         visible={showLyrics}
-        position={state.position ?? state.progress ?? 0}
+        position={currentPosition}
         translationBusy={translationBusy}
         translationEligible={translationEligible}
         translationError={translationError}

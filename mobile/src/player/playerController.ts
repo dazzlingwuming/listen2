@@ -57,6 +57,9 @@ const SAFE_TYPED_PLAYER_ERRORS = new Set([
   'REGION_RESTRICTED',
   'DRM_RESTRICTED',
   'REQUEST_TIMEOUT',
+  'INVALID_RESPONSE',
+  'VIDEO_UNAVAILABLE',
+  'UNSUPPORTED_VIDEO_CODEC',
   'CANCELLED',
 ]);
 
@@ -111,12 +114,40 @@ async function resolveTrackUrl(track: PlayableTrack) {
     const cached = await offlineAudio.resolveVerified(track.source, track.id);
     if (cached.status === 'hit') return { url: cached.uri };
   }
-  const candidate = await providerClient.bootstrapTrack(track);
+  let candidate: Awaited<ReturnType<typeof providerClient.bootstrapTrack>>;
+  try {
+    candidate = await providerClient.bootstrapTrack(track);
+  } catch (error) {
+    // Bilibili media URLs are intentionally transient. A single fresh native
+    // resolution is allowed for transport failure; entitlement/DRM/cancel
+    // failures are terminal and never alter the RNTP queue.
+    if (!isRetryableBilibiliResolution(track, error)) throw error;
+    candidate = await providerClient.bootstrapTrack(track);
+  }
   const { url } = candidate;
   if (!url || typeof url !== 'string') throw new Error('provider-unavailable');
   if (track.source === 'bilibili' && !isExactBilibiliMedia(track.id, candidate))
     throw new Error('provider-unavailable');
   return candidate;
+}
+
+function isRetryableBilibiliResolution(track: PlayableTrack, error: unknown) {
+  if (track.source !== 'bilibili') return false;
+  const code =
+    error && typeof error === 'object' && 'code' in error
+      ? (error as { code?: unknown }).code
+      : undefined;
+  // Native player expiry callbacks frequently have no provider code. Treat that
+  // as one transient transport retry, but never retry entitlement/DRM/cancel or
+  // an explicitly unsupported codec.
+  return ![
+    'LOGIN_REQUIRED',
+    'MEMBERSHIP_REQUIRED',
+    'REGION_RESTRICTED',
+    'DRM_RESTRICTED',
+    'CANCELLED',
+    'UNSUPPORTED_VIDEO_CODEC',
+  ].includes(typeof code === 'string' ? code : '');
 }
 
 function isExactBilibiliMedia(
@@ -349,6 +380,20 @@ async function loadAndPlay(
         );
       } catch {
         /* stable error below */
+      }
+    }
+    if (resolvedMedia && isRetryableBilibiliResolution(track, error)) {
+      try {
+        const replacement = await resolveTrackUrl(track);
+        await TrackPlayer.reset();
+        await TrackPlayer.add(asNativeTrack(track, replacement) as any);
+        await configureNativeSnapshot(playerState());
+        if (position > 0) await TrackPlayer.seekTo(position);
+        await TrackPlayer.play();
+        emit(dispatch, 'player/setPlaying', true);
+        return true;
+      } catch {
+        // One bounded replacement only; the stable error below preserves the queue snapshot.
       }
     }
     emit(dispatch, 'player/setPlaying', false);

@@ -166,6 +166,8 @@ export const providerClient = {
           'NETWORK_ERROR',
           'PROVIDER_ERROR',
           'INVALID_RESPONSE',
+          'VIDEO_UNAVAILABLE',
+          'UNSUPPORTED_VIDEO_CODEC',
         ]);
         throw new ProviderClientError(
           allowed.has(code) ? (code as any) : 'PROVIDER_ERROR',

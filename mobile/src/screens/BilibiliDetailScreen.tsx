@@ -111,6 +111,13 @@ export function BilibiliDetailScreen() {
                 </Text>
               </View>
               <Text style={styles.play}>播放</Text>
+              <Pressable
+                accessibilityLabel={`打开${part.title}MV画面`}
+                onPress={() => navigation.navigate('BilibiliMv', { bvid, cid: part.cid, title: `${detail.title} · ${part.title}` })}
+                style={styles.mv}
+              >
+                <Text style={styles.play}>MV</Text>
+              </Pressable>
             </Pressable>
           ))}
         </View>
@@ -142,4 +149,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontWeight: '600',
   },
+  mv: { minHeight: 48, minWidth: 48, alignItems: 'center', justifyContent: 'center' },
 });
