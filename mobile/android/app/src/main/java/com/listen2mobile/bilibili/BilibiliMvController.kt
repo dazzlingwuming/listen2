@@ -20,6 +20,20 @@ class BilibiliMvController(
         val refreshing: Boolean = false,
         val errorCode: BilibiliPolicy.ErrorCode? = null,
     )
+    /** Internal surface hand-off; never converted to a React map or Bundle. */
+    data class SurfaceBinding(
+        val handle: String,
+        val url: String,
+        val positionMs: Long,
+        val playIntent: Boolean,
+    )
+    data class SemanticSnapshot(
+        val bvid: String,
+        val cid: Long,
+        val qualityId: String,
+        val positionMs: Long,
+        val playIntent: Boolean,
+    )
     private data class Active(
         val generation: Long,
         val handle: String,
@@ -74,6 +88,34 @@ class BilibiliMvController(
 
     fun activeCandidate(handle: String?): BilibiliMvPolicy.VideoCandidate? = synchronized(lock) {
         active?.takeIf { it.handle == handle && BilibiliMvPolicy.isSafeVideoUrl(it.candidate.url, clock()) }?.candidate
+    }
+
+    fun surfaceBinding(handle: String?): SurfaceBinding? = synchronized(lock) {
+        val current = active?.takeIf { it.handle == handle } ?: return@synchronized null
+        if (!BilibiliMvPolicy.isSafeVideoUrl(current.candidate.url, clock())) {
+            failLocked(BilibiliPolicy.ErrorCode.VIDEO_UNAVAILABLE)
+            return@synchronized null
+        }
+        SurfaceBinding(current.handle, current.candidate.url, current.positionMs, current.playIntent)
+    }
+
+    fun isActiveHandle(handle: String?) = synchronized(lock) { active?.handle == handle }
+    fun currentHandle(): String? = synchronized(lock) { active?.handle }
+
+    fun semanticSnapshot(): SemanticSnapshot? = synchronized(lock) {
+        active?.let { SemanticSnapshot(it.request.bvid, it.request.cid, it.request.qualityId, it.positionMs, it.playIntent) }
+    }
+
+    fun restoreSemantic(snapshot: SemanticSnapshot): PublicState = synchronized(lock) {
+        val request = BilibiliMvPolicy.request(snapshot.bvid, snapshot.cid, snapshot.qualityId, emptyList(), true)
+            ?: return@synchronized rejected(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
+        generation += 1; active = null; error = null; state = State.RESOLVING
+        resolveLocked(request, 0, snapshot.positionMs, snapshot.playIntent)
+    }
+
+    fun surfaceFailed(handle: String?): PublicState = synchronized(lock) {
+        if (active?.handle != handle) return@synchronized rejected(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
+        failLocked(BilibiliPolicy.ErrorCode.VIDEO_UNAVAILABLE)
     }
 
     private fun resolveLocked(request: BilibiliMvPolicy.MvRequest, refreshes: Int, positionMs: Long, playIntent: Boolean): PublicState {

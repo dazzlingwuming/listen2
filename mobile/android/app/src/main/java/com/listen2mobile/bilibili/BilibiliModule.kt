@@ -9,6 +9,7 @@ import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.ReadableType
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.module.annotations.ReactModule
+import com.listen2mobile.MainActivity
 import java.util.concurrent.Executors
 
 /** Semantic-only React Native boundary. Every rejected value returns a stable code, never provider text. */
@@ -18,6 +19,7 @@ class BilibiliModule(
     private val gateway: BilibiliGateway,
     private val session: BilibiliSession,
     private val mvController: BilibiliMvController,
+    private val mvViewManager: BilibiliMvViewManager,
 ) : ReactContextBaseJavaModule(context) {
     companion object { const val NAME = "Listen2Bilibili" }
     private val worker = Executors.newSingleThreadExecutor()
@@ -64,6 +66,8 @@ class BilibiliModule(
 
     @ReactMethod fun mvOpen(request: ReadableMap, promise: Promise) = complete(promise) {
         requireKeys(request, setOf("bvid", "cid", "qualityId", "preferredCodecs", "forceRefresh"))
+        (currentActivity as? MainActivity)?.bindMvController(mvController)
+        mvViewManager.releaseHandle(mvController.currentHandle())
         mvState(mvController.open(requireMvRequest(request)))
     }
     @ReactMethod fun mvSelectQuality(request: ReadableMap, promise: Promise) = complete(promise) {
@@ -80,8 +84,11 @@ class BilibiliModule(
         requireKeys(request, setOf("handle")); mvState(mvController.refresh(requireHandle(request)))
     }
     @ReactMethod fun mvClose(request: ReadableMap, promise: Promise) = complete(promise) {
-        requireKeys(request, setOf("handle")); mvState(mvController.close(requireHandle(request)))
+        requireKeys(request, setOf("handle")); val handle = requireHandle(request); val state = mvController.close(handle); mvViewManager.releaseHandle(handle); mvState(state)
     }
+    @ReactMethod fun mvEnterFullscreen(request: ReadableMap, promise: Promise) = completeMvUi(promise, request) { activity, handle -> activity.enterMvFullscreen(handle) }
+    @ReactMethod fun mvExitFullscreen(request: ReadableMap, promise: Promise) = completeMvUi(promise, request) { activity, handle -> activity.exitMvFullscreen(handle) }
+    @ReactMethod fun mvRequestPip(request: ReadableMap, promise: Promise) = completeMvUi(promise, request) { activity, handle -> activity.enterMvPip(handle) }
 
     private fun complete(promise: Promise, operation: () -> WritableMap) {
         worker.execute {
@@ -90,6 +97,22 @@ class BilibiliModule(
             catch (_: IllegalArgumentException) { promise.resolve(error(BilibiliPolicy.ErrorCode.INVALID_REQUEST)) }
             catch (_: Exception) { promise.resolve(error(BilibiliPolicy.ErrorCode.PROVIDER_ERROR)) }
         }
+    }
+    private fun completeMvUi(promise: Promise, request: ReadableMap, operation: (MainActivity, String) -> Boolean) {
+        try {
+            requireKeys(request, setOf("handle"))
+            val handle = requireHandle(request)
+            val activity = currentActivity as? MainActivity
+                ?: return promise.resolve(error(BilibiliPolicy.ErrorCode.VIDEO_UNAVAILABLE))
+            activity.bindMvController(mvController)
+            if (!mvController.isActiveHandle(handle)) return promise.resolve(error(BilibiliPolicy.ErrorCode.INVALID_REQUEST))
+            activity.runOnUiThread {
+                try {
+                    if (!mvController.isActiveHandle(handle)) promise.resolve(error(BilibiliPolicy.ErrorCode.INVALID_REQUEST))
+                    else promise.resolve(Arguments.createMap().apply { putBoolean("ok", operation(activity, handle)) })
+                } catch (_: Exception) { promise.resolve(error(BilibiliPolicy.ErrorCode.VIDEO_UNAVAILABLE)) }
+            }
+        } catch (_: Exception) { promise.resolve(error(BilibiliPolicy.ErrorCode.INVALID_REQUEST)) }
     }
 
     private fun state(value: BilibiliSession.PublicState): WritableMap = Arguments.createMap().apply {
