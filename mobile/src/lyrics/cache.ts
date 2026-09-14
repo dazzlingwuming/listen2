@@ -21,48 +21,88 @@ type Stored = {
   revision: number;
   records: BilibiliLyricCacheRecord[];
 };
+type ReadState = { store: Stored; activeSlot: 0 | 1 };
 
 const bytes = (value: string) =>
   encodeURIComponent(value).replace(/%[0-9a-f]{2}/gi, 'x').length;
-let writeChain = Promise.resolve();
+let operationChain = Promise.resolve();
 
 function exactIdentity(value: string) {
   const parsed = parseExactBilibiliTrackId(value);
   return parsed?.cacheKey ?? null;
 }
-function current(value: Stored): Stored {
-  return value &&
-    value.version === VERSION &&
+function recordShape(record: unknown): record is BilibiliLyricCacheRecord {
+  if (!record || typeof record !== 'object') return false;
+  const value = record as BilibiliLyricCacheRecord;
+  const lyric = value.lyric;
+  const provenance = lyric?.provenance;
+  return (
+    typeof value.identity === 'string' &&
     Number.isSafeInteger(value.revision) &&
-    value.revision >= 0 &&
-    Array.isArray(value.records)
-    ? value
-    : { version: VERSION, revision: 0, records: [] };
+    value.revision > 0 &&
+    Number.isSafeInteger(value.updatedAt) &&
+    Boolean(lyric) &&
+    typeof lyric.trackId === 'string' &&
+    typeof lyric.text === 'string' &&
+    exactIdentity(lyric.trackId) === value.identity &&
+    lyric.source === 'bilibili' &&
+    Boolean(provenance) &&
+    (provenance!.mode === 'manual' || provenance!.mode === 'auto') &&
+    (provenance!.matchedProvider === 'netease' ||
+      provenance!.matchedProvider === 'qq') &&
+    typeof provenance!.matchedCandidateId === 'string' &&
+    Number.isFinite(provenance!.matchScore) &&
+    bytes(lyric.text) <= MAX_TEXT_BYTES
+  );
 }
-async function read(): Promise<Stored> {
-  const head = await AsyncStorage.getItem(HEAD);
-  const slot = head === '1' ? 1 : 0;
-  for (const candidate of [slot, slot === 0 ? 1 : 0] as const) {
-    try {
-      const raw = await AsyncStorage.getItem(SLOT(candidate));
-      if (!raw) continue;
-      const parsed = current(JSON.parse(raw));
-      if (
-        parsed.records.every(
-          record =>
-            exactIdentity(record.lyric.trackId) &&
-            record.identity === exactIdentity(record.lyric.trackId),
-        )
-      )
-        return parsed;
-    } catch {
-      // Fall through to the alternate atomically published slot.
-    }
+function parseSlot(raw: string | null): Stored | null {
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw) as Stored;
+    return value &&
+      value.version === VERSION &&
+      Number.isSafeInteger(value.revision) &&
+      value.revision >= 0 &&
+      Array.isArray(value.records) &&
+      value.records.length <= MAX_RECORDS &&
+      value.records.every(recordShape)
+      ? value
+      : null;
+  } catch {
+    return null;
   }
-  return { version: VERSION, revision: 0, records: [] };
+}
+async function readUnsafe(): Promise<ReadState> {
+  const head = await AsyncStorage.getItem(HEAD);
+  const [zero, one] = await Promise.all([
+    AsyncStorage.getItem(SLOT(0)),
+    AsyncStorage.getItem(SLOT(1)),
+  ]);
+  const slots = [
+    { slot: 0 as const, store: parseSlot(zero) },
+    { slot: 1 as const, store: parseSlot(one) },
+  ].filter(
+    (value): value is { slot: 0 | 1; store: Stored } => value.store !== null,
+  );
+  if (!slots.length)
+    return {
+      store: { version: VERSION, revision: 0, records: [] },
+      activeSlot: 0,
+    };
+  slots.sort((left, right) => {
+    if (right.store.revision !== left.store.revision)
+      return right.store.revision - left.store.revision;
+    if (head === String(left.slot)) return -1;
+    if (head === String(right.slot)) return 1;
+    return left.slot - right.slot;
+  });
+  const selected = slots[0];
+  if (head !== String(selected.slot))
+    await AsyncStorage.setItem(HEAD, String(selected.slot));
+  return { store: selected.store, activeSlot: selected.slot };
 }
 function valid(record: BilibiliLyricCacheRecord, now = Date.now()) {
-  if (!record || typeof record !== 'object' || !record.lyric) return false;
+  if (!recordShape(record)) return false;
   const lyric = record.lyric;
   const provenance = lyric.provenance;
   return (
@@ -83,23 +123,32 @@ function valid(record: BilibiliLyricCacheRecord, now = Date.now()) {
     (provenance!.mode === 'manual' || now - record.updatedAt <= AUTO_MAX_AGE_MS)
   );
 }
-async function publish(value: Stored) {
-  const oldHead = await AsyncStorage.getItem(HEAD);
-  const next: 0 | 1 = oldHead === '0' ? 1 : 0;
+async function publish(value: Stored, activeSlot: 0 | 1) {
+  const next: 0 | 1 = activeSlot === 0 ? 1 : 0;
   await AsyncStorage.setItem(SLOT(next), JSON.stringify(value));
   await AsyncStorage.setItem(HEAD, String(next));
 }
+function serial<T>(operation: () => Promise<T>): Promise<T> {
+  const result = operationChain.then(operation, operation);
+  operationChain = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+}
 
 export const bilibiliLyricCache = {
-  async get(trackId: string) {
+  get(trackId: string) {
     const identity = exactIdentity(trackId);
-    if (!identity) return null;
-    const store = await read();
-    return (
-      store.records.find(
-        record => record.identity === identity && valid(record),
-      ) ?? null
-    );
+    if (!identity) return Promise.resolve(null);
+    return serial(async () => {
+      const { store } = await readUnsafe();
+      return (
+        store.records.find(
+          record => record.identity === identity && valid(record),
+        ) ?? null
+      );
+    });
   },
   put(
     record: Omit<
@@ -111,7 +160,7 @@ export const bilibiliLyricCache = {
       >,
     expectedRevision?: number,
   ) {
-    const operation = async () => {
+    return serial(async () => {
       const identity = exactIdentity(record.lyric.trackId);
       if (
         !identity ||
@@ -119,7 +168,7 @@ export const bilibiliLyricCache = {
         bytes(record.lyric.text) > MAX_TEXT_BYTES
       )
         return { status: 'invalid' as const };
-      const store = await read();
+      const { store, activeSlot } = await readUnsafe();
       const existing = store.records.find(value => value.identity === identity);
       if (
         expectedRevision !== undefined &&
@@ -143,54 +192,42 @@ export const bilibiliLyricCache = {
         MAX_TOTAL_BYTES
       )
         records.pop();
-      await publish({
-        version: VERSION,
-        revision: store.revision + 1,
-        records,
-      });
+      await publish(
+        {
+          version: VERSION,
+          revision: store.revision + 1,
+          records,
+        },
+        activeSlot,
+      );
       return { status: 'ok' as const, record: next };
-    };
-    const result = writeChain.then(operation, operation);
-    writeChain = result.then(
-      () => undefined,
-      () => undefined,
-    );
-    return result;
+    });
   },
   clear(trackId: string) {
     const identity = exactIdentity(trackId);
     if (!identity) return Promise.resolve({ status: 'invalid' as const });
-    const operation = async () => {
-      const store = await read();
-      await publish({
-        ...store,
-        revision: store.revision + 1,
-        records: store.records.filter(record => record.identity !== identity),
-      });
+    return serial(async () => {
+      const { store, activeSlot } = await readUnsafe();
+      await publish(
+        {
+          ...store,
+          revision: store.revision + 1,
+          records: store.records.filter(record => record.identity !== identity),
+        },
+        activeSlot,
+      );
       return { status: 'ok' as const };
-    };
-    const result = writeChain.then(operation, operation);
-    writeChain = result.then(
-      () => undefined,
-      () => undefined,
-    );
-    return result;
+    });
   },
-  async list() {
-    return (await read()).records.filter(valid);
+  list() {
+    return serial(async () => (await readUnsafe()).store.records.filter(valid));
   },
   repair() {
-    const operation = async () => {
-      const store = await read();
+    return serial(async () => {
+      const { store, activeSlot } = await readUnsafe();
       const records = store.records.filter(valid);
-      await publish({ ...store, records });
+      await publish({ ...store, records }, activeSlot);
       return records;
-    };
-    const result = writeChain.then(operation, operation);
-    writeChain = result.then(
-      () => undefined,
-      () => undefined,
-    );
-    return result;
+    });
   },
 };

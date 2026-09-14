@@ -54,3 +54,12 @@ export type BilibiliLyricCandidate = Readonly<{
   matchScore: number;
   hasTranslation: boolean;
 }>;
+
+export type BilibiliLyricCandidateResult = Readonly<{
+  candidates: readonly BilibiliLyricCandidate[];
+  partial: boolean;
+  providerErrors: readonly Readonly<{
+    provider: 'netease' | 'qq';
+    stage: 'search' | 'lyric';
+  }>[];
+}>;

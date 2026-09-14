@@ -2,7 +2,10 @@ import { ProviderClientError } from '../api/errors';
 import { parseExactBilibiliTrackId } from '../api/ids';
 import { getNetEaseLyric, getQqLyric, providerFor } from '../api/providers';
 import type { Lyric, ProviderRequestOptions, Track } from '../types/provider';
-import type { BilibiliLyricCandidate } from './types';
+import type {
+  BilibiliLyricCandidate,
+  BilibiliLyricCandidateResult,
+} from './types';
 
 export const AUTO_MATCH_THRESHOLD = 0.93;
 const MAX_CANDIDATES_PER_PROVIDER = 6;
@@ -119,7 +122,7 @@ export function canAutoApplyBilibiliCandidate(
 export async function findBilibiliLyricCandidates(
   track: Track,
   options?: ProviderRequestOptions,
-): Promise<BilibiliLyricCandidate[]> {
+): Promise<BilibiliLyricCandidateResult> {
   if (track.source !== 'bilibili' || !parseExactBilibiliTrackId(track.id)) {
     throw new ProviderClientError('UNKNOWN_TRACK', 'bilibili', 'lyric');
   }
@@ -132,16 +135,20 @@ export async function findBilibiliLyricCandidates(
           (item): item is Extract<typeof item, { kind: 'track' }> =>
             item.kind === 'track',
         )
+        .map((item, rank) => ({
+          track: item.track,
+          score: scoreBilibiliCandidate(track, item.track, rank),
+        }))
+        .filter(item => item.score >= 0.3)
+        .sort((left, right) => right.score - left.score)
         .slice(0, MAX_CANDIDATES_PER_PROVIDER);
       const lyrics = await Promise.allSettled(
-        rows.map(async (item, rank) => {
+        rows.map(async item => {
           const lyric =
             provider === 'netease'
               ? await getNetEaseLyric(item.track.id, options)
               : await getQqLyric(item.track.id, options);
           if (!lyric.text || !hasTimedText(lyric.text)) return null;
-          const score = scoreBilibiliCandidate(track, item.track, rank);
-          if (score < 0.3) return null;
           return {
             id: item.track.id,
             matchedProvider: provider,
@@ -151,32 +158,54 @@ export async function findBilibiliLyricCandidates(
             durationMs: item.track.durationMs,
             text: lyric.text,
             translation: lyric.translation,
-            matchScore: score,
+            matchScore: item.score,
             hasTranslation: Boolean(lyric.translation),
           } as BilibiliLyricCandidate;
         }),
       );
-      return lyrics.flatMap(value =>
-        value.status === 'fulfilled' && value.value ? [value.value] : [],
-      );
+      return {
+        provider,
+        candidates: lyrics.flatMap(value =>
+          value.status === 'fulfilled' && value.value ? [value.value] : [],
+        ),
+        lyricFailed: lyrics.some(value => value.status === 'rejected'),
+      };
     }),
   );
   const successes = settled.filter(
-    (value): value is PromiseFulfilledResult<BilibiliLyricCandidate[]> =>
-      value.status === 'fulfilled',
+    (
+      value,
+    ): value is PromiseFulfilledResult<{
+      provider: 'netease' | 'qq';
+      candidates: BilibiliLyricCandidate[];
+      lyricFailed: boolean;
+    }> => value.status === 'fulfilled',
   );
   if (!successes.length)
     throw new ProviderClientError('PROVIDER_ERROR', 'bilibili', 'lyric', {
       retryable: true,
     });
+  const providerErrors = [
+    ...settled.flatMap((value, index) =>
+      value.status === 'rejected'
+        ? [{ provider: providers[index], stage: 'search' as const }]
+        : [],
+    ),
+    ...successes.flatMap(value =>
+      value.value.lyricFailed
+        ? [{ provider: value.value.provider, stage: 'lyric' as const }]
+        : [],
+    ),
+  ];
   const seen = new Set<string>();
-  return successes
-    .flatMap(value => value.value)
+  const candidates = successes
+    .flatMap(value => value.value.candidates)
     .sort((left, right) => right.matchScore - left.matchScore)
     .filter(
       candidate => !seen.has(candidate.id) && Boolean(seen.add(candidate.id)),
     )
     .slice(0, MAX_DISPLAY_CANDIDATES);
+  return { candidates, partial: providerErrors.length > 0, providerErrors };
 }
 
 export async function resolveBilibiliLyric(
@@ -187,7 +216,7 @@ export async function resolveBilibiliLyric(
   if (track.source !== 'bilibili' || !exact) {
     throw new ProviderClientError('UNKNOWN_TRACK', 'bilibili', 'lyric');
   }
-  const candidates = await findBilibiliLyricCandidates(track, options);
+  const { candidates } = await findBilibiliLyricCandidates(track, options);
   const automatic = candidates.find(candidate =>
     canAutoApplyBilibiliCandidate(track, candidate),
   );

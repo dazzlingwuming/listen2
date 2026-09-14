@@ -7,7 +7,10 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import type { BilibiliLyricCandidate } from '../bilibili/types';
+import type {
+  BilibiliLyricCandidate,
+  BilibiliLyricCandidateResult,
+} from '../bilibili/types';
 import { colors, spacing, text } from '../theme';
 import { Sheet } from './Sheet';
 
@@ -16,6 +19,7 @@ export function BilibiliLyricPicker({
   candidates,
   loading,
   partial,
+  providerErrors,
   error,
   onSearch,
   onSelect,
@@ -26,6 +30,7 @@ export function BilibiliLyricPicker({
   candidates: readonly BilibiliLyricCandidate[];
   loading: boolean;
   partial: boolean;
+  providerErrors: BilibiliLyricCandidateResult['providerErrors'];
   error: boolean;
   onSearch: (query: string) => void;
   onSelect: (candidate: BilibiliLyricCandidate) => void;
@@ -60,7 +65,17 @@ export function BilibiliLyricPicker({
         </View>
         {loading ? <Text style={text.meta}>正在搜索歌词候选…</Text> : null}
         {partial ? (
-          <Text style={styles.notice}>部分歌词来源暂不可用。</Text>
+          <Text style={styles.notice}>
+            部分歌词来源暂不可用：
+            {providerErrors
+              .map(
+                entry =>
+                  `${entry.provider}${
+                    entry.stage === 'search' ? '搜索' : '歌词'
+                  }`,
+              )
+              .join('、')}
+          </Text>
         ) : null}
         {error ? (
           <Text style={styles.notice}>歌词候选加载失败，可重试。</Text>
@@ -80,6 +95,11 @@ export function BilibiliLyricPicker({
               {candidate.matchedProvider} · {candidate.artist}
               {candidate.album ? ` · ${candidate.album}` : ''} · 匹配{' '}
               {Math.round(candidate.matchScore * 100)}%
+              {candidate.durationMs
+                ? ` · ${Math.floor(candidate.durationMs / 60_000)}:${String(
+                    Math.floor((candidate.durationMs % 60_000) / 1_000),
+                  ).padStart(2, '0')}`
+                : ''}
             </Text>
             {candidate.hasTranslation ? (
               <Text style={styles.badge}>含来源译文</Text>

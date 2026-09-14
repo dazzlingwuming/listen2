@@ -5,18 +5,24 @@ const mockGetLyric = jest.fn();
 const mockCacheGet = jest.fn();
 const mockCacheClear = jest.fn();
 const mockCachePut = jest.fn();
+const mockFindCandidates = jest.fn();
+const mockDispatch = jest.fn();
 let mockPlayerState: any;
 
 jest.mock('@react-navigation/native', () => ({
   useNavigation: () => ({ goBack: jest.fn() }),
 }));
 jest.mock('react-redux', () => ({
-  useDispatch: () => jest.fn(),
+  useDispatch: () => mockDispatch,
   useSelector: (selector: (state: unknown) => unknown) =>
     selector({ player: mockPlayerState, library: { favorites: [] } }),
 }));
 jest.mock('../../api/client', () => ({
   providerClient: { getLyric: (...args: unknown[]) => mockGetLyric(...args) },
+}));
+jest.mock('../../bilibili/lyrics', () => ({
+  findBilibiliLyricCandidates: (...args: unknown[]) =>
+    mockFindCandidates(...args),
 }));
 jest.mock('../../lyrics/cache', () => ({
   bilibiliLyricCache: {
@@ -71,6 +77,11 @@ describe('Bilibili lyric player flow', () => {
     mockCacheGet.mockResolvedValue(null);
     mockCacheClear.mockResolvedValue({ status: 'ok' });
     mockGetLyric.mockRejectedValue(new Error('LYRIC_UNAVAILABLE'));
+    mockFindCandidates.mockResolvedValue({
+      candidates: [],
+      partial: false,
+      providerErrors: [],
+    });
   });
 
   it('keeps playback independent and offers exact-part restore after an auto miss', async () => {
@@ -93,5 +104,115 @@ describe('Bilibili lyric player flow', () => {
       await Promise.resolve();
     });
     expect(mockCacheClear).toHaveBeenCalledWith('bitrack_v_BV1xx411c7mD-12');
+  });
+
+  it('drops a late lyric response after the current Bilibili part changes', async () => {
+    let resolveLyric!: (value: unknown) => void;
+    mockGetLyric.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          resolveLyric = resolve;
+        }),
+    );
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<PlayerScreen />);
+    });
+    await act(async () => {
+      tree.root.findByProps({ accessibilityLabel: '查看歌词' }).props.onPress();
+    });
+    mockPlayerState = {
+      ...mockPlayerState,
+      currentTrack: {
+        ...mockPlayerState.currentTrack,
+        id: 'bitrack_v_BV1xx411c7mD-13',
+      },
+    };
+    await act(async () => {
+      tree.update(<PlayerScreen />);
+    });
+    await act(async () => {
+      resolveLyric({ text: '[00:01.00]old line' });
+      await Promise.resolve();
+    });
+    expect(tree.root.findAllByProps({ children: 'old line' })).toHaveLength(0);
+    expect(mockDispatch).not.toHaveBeenCalled();
+  });
+
+  it('keeps only the newest candidate query and renders partial provider status', async () => {
+    let resolveFirst!: (value: unknown) => void;
+    let resolveSecond!: (value: unknown) => void;
+    mockFindCandidates
+      .mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            resolveFirst = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            resolveSecond = resolve;
+          }),
+      );
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<PlayerScreen />);
+    });
+    await act(async () => {
+      tree.root.findByProps({ accessibilityLabel: '查看歌词' }).props.onPress();
+      await Promise.resolve();
+    });
+    const input = tree.root.findByProps({
+      accessibilityLabel: '搜索 Bilibili 歌词候选',
+    });
+    await act(async () => {
+      input.props.onChangeText('first');
+    });
+    await act(async () => {
+      tree.root
+        .findByProps({ accessibilityLabel: '搜索歌词候选' })
+        .props.onPress();
+    });
+    await act(async () => {
+      input.props.onChangeText('second');
+    });
+    await act(async () => {
+      tree.root
+        .findByProps({ accessibilityLabel: '搜索歌词候选' })
+        .props.onPress();
+    });
+    const candidate = (id: string) => ({
+      id,
+      matchedProvider: 'netease',
+      title: id,
+      artist: 'Artist',
+      text: '[00:01.00]line',
+      matchScore: 1,
+      hasTranslation: false,
+    });
+    await act(async () => {
+      resolveFirst({
+        candidates: [candidate('old')],
+        partial: false,
+        providerErrors: [],
+      });
+      await Promise.resolve();
+    });
+    expect(
+      tree.root.findAllByProps({ accessibilityLabel: '选择netease歌词，old' }),
+    ).toHaveLength(0);
+    await act(async () => {
+      resolveSecond({
+        candidates: [candidate('new')],
+        partial: true,
+        providerErrors: [{ provider: 'qq', stage: 'search' }],
+      });
+      await Promise.resolve();
+    });
+    expect(
+      tree.root.findByProps({ accessibilityLabel: '选择netease歌词，new' }),
+    ).toBeTruthy();
+    expect(JSON.stringify(tree.toJSON())).toContain('qq搜索');
   });
 });

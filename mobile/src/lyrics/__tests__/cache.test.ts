@@ -39,4 +39,33 @@ describe('Bilibili exact-part lyric cache', () => {
       bilibiliLyricCache.get('bitrack_v_BV1xx411c7mD-13'),
     ).resolves.toBeNull();
   });
+
+  it('recovers the newest valid slot when the head is corrupt or stale', async () => {
+    const { bilibiliLyricCache } = require('../cache');
+    const lyric = (text: string) => ({
+      trackId: 'bitrack_v_BV1xx411c7mD-12',
+      source: 'bilibili',
+      text,
+      provenance: {
+        mode: 'manual',
+        matchedProvider: 'netease',
+        matchedCandidateId: 'netrack_1',
+        matchScore: 1,
+      },
+    });
+    await bilibiliLyricCache.put({ lyric: lyric('[00:01.00]first') });
+    const first = await bilibiliLyricCache.get('bitrack_v_BV1xx411c7mD-12');
+    await bilibiliLyricCache.put(
+      { lyric: lyric('[00:01.00]second') },
+      first.revision,
+    );
+    mockStorage.set('listen2:bilibili-lyrics:head', 'broken');
+    await expect(
+      bilibiliLyricCache.get('bitrack_v_BV1xx411c7mD-12'),
+    ).resolves.toMatchObject({ lyric: { text: '[00:01.00]second' } });
+    expect(mockStorage.get('listen2:bilibili-lyrics:head')).toBe('0');
+    await expect(
+      bilibiliLyricCache.put({ lyric: lyric('[00:01.00]stale') }, 0),
+    ).resolves.toMatchObject({ status: 'stale' });
+  });
 });
