@@ -209,4 +209,25 @@ describe('backupCodec', () => {
     });
     expect(existing.favorites.map(item => item.id)).toEqual(['ne_old']);
   });
+
+  it('rejects DeepSeek credential, consent, lyric cache, and transport fields', () => {
+    for (const forbidden of [
+      'deepSeekApiKey',
+      'deepSeekConsent',
+      'deepSeekCache',
+      'lyricText',
+      'authorization',
+      'headers',
+      'cookie',
+    ]) {
+      expect(() =>
+        parseBackup(
+          JSON.stringify({
+            ...createBackup(snapshot),
+            [forbidden]: 'must-not-export',
+          }),
+        ),
+      ).toThrow(BackupValidationError);
+    }
+  });
 });

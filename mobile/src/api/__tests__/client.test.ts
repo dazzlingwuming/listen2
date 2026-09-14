@@ -601,6 +601,9 @@ describe('providerClient', () => {
     await expect(
       providerClient.getLyric('kgtrack_AABBCCDDEEFF0011'),
     ).rejects.toMatchObject({ code: 'LYRIC_UNAVAILABLE', source: 'kugou' });
+    await expect(
+      providerClient.getLyric('bitrack_v_BV1xx411c7mD-12'),
+    ).rejects.toMatchObject({ code: 'LYRIC_UNAVAILABLE', source: 'bilibili' });
     expect(
       new ProviderClientError('NETWORK_ERROR', 'qq', 'search').action,
     ).toBe('retry');
