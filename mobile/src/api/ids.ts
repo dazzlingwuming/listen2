@@ -35,6 +35,33 @@ export function isCanonicalPositiveSafeIntegerText(
   return Number.isSafeInteger(parsed) && parsed > 0 && String(parsed) === value;
 }
 
+export type ExactBilibiliTrackIdentity = Readonly<{
+  bvid: string;
+  cid: string;
+  trackId: string;
+  cacheKey: string;
+}>;
+
+/**
+ * Lyrics and machine translation deliberately require a selected video part.
+ * A base BVID is searchable but cannot identify lyrics safely.
+ */
+export function parseExactBilibiliTrackId(
+  value: unknown,
+): ExactBilibiliTrackIdentity | null {
+  if (typeof value !== 'string') return null;
+  const match = /^bitrack_v_(BV[0-9A-Za-z]{6,32})-([1-9][0-9]{0,17})$/.exec(
+    value,
+  );
+  if (!match || !isCanonicalPositiveSafeIntegerText(match[2])) return null;
+  return {
+    bvid: match[1],
+    cid: match[2],
+    trackId: value,
+    cacheKey: `bilibili:${match[1]}:${match[2]}`,
+  };
+}
+
 function hasCollectionIdPrefix(value: string, prefix: string): boolean {
   return (
     value.startsWith(prefix) &&

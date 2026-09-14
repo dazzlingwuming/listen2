@@ -1,4 +1,8 @@
-import { providerClient, ProviderClientError } from '../client';
+import {
+  dormantLyricAdapters,
+  providerClient,
+  ProviderClientError,
+} from '../client';
 
 const mockBilibiliResolveAudio = jest.fn();
 jest.mock('../../bilibili/client', () => ({
@@ -608,6 +612,41 @@ describe('providerClient', () => {
       new ProviderClientError('NETWORK_ERROR', 'qq', 'search').action,
     ).toBe('retry');
     expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('keeps Kugou/Kuwo lyric dispatch closed while the fixed dormant adapters parse fixtures safely', async () => {
+    globalThis.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(
+        new Response('jQuery({"data":{"lyrics":"[00:01.00]Kugou"}});', {
+          status: 200,
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: 200,
+          data: { lrclist: [{ time: '00:01.00', lineLyric: 'Kuwo' }] },
+        }),
+      );
+    await expect(
+      dormantLyricAdapters.getKugouLyric({
+        id: 'kgtrack_AABBCCDDEEFF0011',
+        source: 'kugou',
+        title: 'Song',
+        artist: 'Artist',
+        providerAlbumId: '12',
+      }),
+    ).resolves.toMatchObject({ text: '[00:01.00]Kugou' });
+    await expect(
+      dormantLyricAdapters.getKuwoLyric('kwtrack_12'),
+    ).resolves.toMatchObject({
+      text: '[00:01.00]Kuwo',
+    });
+    await expect(
+      providerClient.getLyric('kgtrack_AABBCCDDEEFF0011'),
+    ).rejects.toMatchObject({
+      code: 'LYRIC_UNAVAILABLE',
+    });
   });
 
   it('uses fixed bounded NetEase discovery routes and semantic chart identities', async () => {

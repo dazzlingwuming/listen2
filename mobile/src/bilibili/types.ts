@@ -41,3 +41,16 @@ export type BilibiliAudioHandoff = BilibiliAudioRequest & {
   deadline: number;
   headers: Readonly<{ Referer: 'https://www.bilibili.com/' }>;
 };
+
+export type BilibiliLyricCandidate = Readonly<{
+  id: string;
+  matchedProvider: 'netease' | 'qq';
+  title: string;
+  artist: string;
+  album?: string;
+  durationMs?: number;
+  text: string;
+  translation?: string;
+  matchScore: number;
+  hasTranslation: boolean;
+}>;

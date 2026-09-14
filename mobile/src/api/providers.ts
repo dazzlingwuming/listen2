@@ -14,7 +14,11 @@ import type {
 } from '../types';
 import { ProviderClientError, unavailable } from './errors';
 import { isCanonicalPositiveSafeIntegerText } from './ids';
-import { requestJson, requestMediaAvailability } from './http';
+import {
+  requestFixedText,
+  requestJson,
+  requestMediaAvailability,
+} from './http';
 
 const PAGE_SIZE = 20;
 const MAX_PAGE = 1_000;
@@ -40,6 +44,7 @@ const NETEASE_DETAIL_BATCH_SIZE = 50;
 const MAX_DETAIL_CONCURRENCY = 3;
 const MAX_KUGOU_DETAIL_PAGES = 40;
 const MAX_LYRIC_CHARS = 512 * 1024;
+const MAX_KUWO_LINES = 400;
 
 function checkedSearchInput(
   source: SourceId,
@@ -677,6 +682,11 @@ function kugouChartTrack(value: unknown): Track | null {
     title,
     artist,
     durationMs: secondsToMs(row?.duration),
+    providerAlbumId: isCanonicalPositiveSafeIntegerText(
+      String(row?.album_id ?? ''),
+    )
+      ? String(row?.album_id)
+      : undefined,
     artworkUrl: kugouChartArtwork(row?.img),
   };
 }
@@ -865,6 +875,95 @@ export async function getQqLyric(
   };
 }
 
+function kuwoProviderId(value: string): string | null {
+  const match = /^kwtrack_([1-9][0-9]{0,17})$/.exec(value);
+  return match && isCanonicalPositiveSafeIntegerText(match[1])
+    ? match[1]
+    : null;
+}
+
+function safeLyricText(value: unknown): string | null {
+  const candidate = neteaseLyricText(value);
+  return candidate && candidate.trim() ? candidate : null;
+}
+
+/** Test-only dormant adapter; production dispatch stays deliberately closed. */
+export async function getKugouLyric(
+  track: Track,
+  options?: ProviderRequestOptions,
+): Promise<Lyric> {
+  const hash = track.source === 'kugou' ? kugouProviderId(track.id) : null;
+  const albumId = track.providerAlbumId;
+  if (!hash || !albumId || !isCanonicalPositiveSafeIntegerText(albumId)) {
+    throw new ProviderClientError('UNKNOWN_TRACK', 'kugou', 'lyric');
+  }
+  const params = new URLSearchParams({
+    r: 'play/getdata',
+    callback: 'jQuery',
+    mid: '1',
+    hash,
+    platid: '4',
+    album_id: albumId,
+    _: String(Date.now()),
+  });
+  const raw = await requestFixedText(
+    { url: `https://wwwapi.kugou.com/yy/index.php?${params}` },
+    'kugou',
+    'lyric',
+    options,
+  );
+  const envelope = /^jQuery\((\{[\s\S]*\})\);$/.exec(raw);
+  if (!envelope)
+    throw new ProviderClientError('INVALID_RESPONSE', 'kugou', 'lyric');
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(envelope[1]);
+  } catch {
+    throw new ProviderClientError('INVALID_RESPONSE', 'kugou', 'lyric');
+  }
+  const lyric = safeLyricText(asObject(asObject(parsed)?.data)?.lyrics);
+  if (!lyric) throw unavailable('kugou', 'lyric', 'LYRIC_UNAVAILABLE');
+  return { trackId: track.id, source: 'kugou', text: lyric };
+}
+
+/** Test-only dormant adapter; the fixed JSON route never bootstraps cookies. */
+export async function getKuwoLyric(
+  trackId: string,
+  options?: ProviderRequestOptions,
+): Promise<Lyric> {
+  const id = kuwoProviderId(trackId);
+  if (!id) throw new ProviderClientError('UNKNOWN_TRACK', 'kuwo', 'lyric');
+  const root = asObject(
+    await requestJson(
+      { url: `https://m.kuwo.cn/newh5/singles/songinfoandlrc?musicId=${id}` },
+      'kuwo',
+      'lyric',
+      options,
+    ),
+  );
+  const rows = asObject(root?.data)?.lrclist;
+  if (
+    root?.status !== 200 ||
+    !Array.isArray(rows) ||
+    rows.length > MAX_KUWO_LINES
+  ) {
+    throw new ProviderClientError('INVALID_RESPONSE', 'kuwo', 'lyric');
+  }
+  const lines = rows.flatMap((row): string[] => {
+    const item = asObject(row);
+    const time = text(item?.time, 16);
+    const line = text(item?.lineLyric, 1024);
+    if (!time || !line || !/^\d{1,3}:\d{2}(?:\.\d{1,3})?$/.test(time))
+      return [];
+    const [minutes, seconds] = time.split(':');
+    if (Number(seconds) >= 60) return [];
+    return [`[${minutes.padStart(2, '0')}:${seconds}]${line}`];
+  });
+  const lyric = lines.join('\n');
+  if (!lyric) throw unavailable('kuwo', 'lyric', 'LYRIC_UNAVAILABLE');
+  return { trackId, source: 'kuwo', text: lyric };
+}
+
 const bilibili: ProviderAdapter = {
   async search(query, pageNumber, options) {
     const value = checkedSearchInput('bilibili', query, pageNumber);
@@ -1006,6 +1105,11 @@ const kugou: ProviderAdapter = {
           title,
           artist,
           album: cleanTitle(row?.AlbumName) ?? undefined,
+          providerAlbumId: isCanonicalPositiveSafeIntegerText(
+            String(row?.AlbumID ?? row?.album_id ?? ''),
+          )
+            ? String(row?.AlbumID ?? row?.album_id)
+            : undefined,
         },
       ];
     });

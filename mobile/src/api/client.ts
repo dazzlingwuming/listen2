@@ -13,7 +13,11 @@ import type {
 import { isSourceId } from '../types';
 import { ProviderClientError, unavailable } from './errors';
 import { BilibiliClientError, bilibiliClient } from '../bilibili/client';
-import { sourceForPlaylistId, sourceForTrackId } from './ids';
+import {
+  parseExactBilibiliTrackId,
+  sourceForPlaylistId,
+  sourceForTrackId,
+} from './ids';
 import {
   bootstrapKugouTrack,
   bootstrapNetEaseTrack,
@@ -23,8 +27,11 @@ import {
   getNetEasePlaylist,
   getKugouChart,
   getKugouDiscover,
+  getKugouLyric,
+  getKuwoLyric,
   providerFor,
 } from './providers';
+import { resolveBilibiliLyric } from '../bilibili/lyrics';
 
 export const PROVIDER_CAPABILITIES: Readonly<
   Record<
@@ -75,7 +82,7 @@ export const PROVIDER_CAPABILITIES: Readonly<
     search: true,
     playlistSearch: false,
     playback: true,
-    lyric: false,
+    lyric: true,
     playlist: false,
     discover: false,
   },
@@ -131,14 +138,13 @@ export const providerClient = {
       );
     }
     if (source === 'bilibili') {
-      const identity =
-        /^bitrack_v_(BV[0-9A-Za-z]{6,32})-([1-9][0-9]{0,17})$/.exec(track.id);
+      const identity = parseExactBilibiliTrackId(track.id);
       if (!identity)
         throw new ProviderClientError('UNKNOWN_TRACK', source, 'bootstrap');
       try {
         const media = await bilibiliClient.resolveAudio({
-          bvid: identity[1],
-          cid: identity[2],
+          bvid: identity.bvid,
+          cid: identity.cid,
         });
         return {
           trackId: track.id,
@@ -175,14 +181,34 @@ export const providerClient = {
     throw unavailable(source, 'bootstrap', 'PLAYBACK_UNAVAILABLE');
   },
 
-  async getLyric(id: string, options?: ProviderRequestOptions): Promise<Lyric> {
+  async getLyric(
+    trackOrId: Track | string,
+    options?: ProviderRequestOptions,
+  ): Promise<Lyric> {
+    const id = typeof trackOrId === 'string' ? trackOrId : trackOrId.id;
     const source = sourceForTrackId(id);
     if (!source)
       throw new ProviderClientError('UNKNOWN_TRACK', 'netease', 'lyric');
     if (source === 'netease') return getNetEaseLyric(id, options);
     if (source === 'qq') return getQqLyric(id, options);
+    if (source === 'bilibili') {
+      if (typeof trackOrId === 'string') {
+        throw unavailable(source, 'lyric', 'LYRIC_UNAVAILABLE');
+      }
+      return resolveBilibiliLyric(trackOrId, options);
+    }
+    // Deliberately dormant until device evidence validates each fixed route.
+    if (source === 'kugou' || source === 'kuwo') {
+      throw unavailable(source, 'lyric', 'LYRIC_UNAVAILABLE');
+    }
     throw unavailable(source, 'lyric', 'LYRIC_UNAVAILABLE');
   },
 };
+
+/** Internal test seam; it is intentionally not used by production dispatch. */
+export const dormantLyricAdapters = Object.freeze({
+  getKugouLyric,
+  getKuwoLyric,
+});
 
 export { ProviderClientError } from './errors';

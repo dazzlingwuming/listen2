@@ -1,4 +1,5 @@
 import { NativeModules } from 'react-native';
+import { parseExactBilibiliTrackId } from '../api/ids';
 import type {
   BilibiliAudioHandoff,
   BilibiliAudioRequest,
@@ -243,3 +244,5 @@ export const bilibiliClient = {
     return call('resolveAudio', exact).then(value => handoff(value, exact));
   },
 };
+
+export { parseExactBilibiliTrackId };

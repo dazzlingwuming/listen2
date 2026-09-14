@@ -59,6 +59,8 @@ export interface Track {
   album?: string;
   durationMs?: number;
   artworkUrl?: string;
+  /** A semantic Kugou AlbumID; it is never a URL or transport field. */
+  providerAlbumId?: string;
 }
 
 /** A compact, non-playable remote playlist identity returned by search. */
@@ -102,6 +104,13 @@ export interface Lyric {
   source: SourceId;
   text: string;
   translation?: string;
+  provenance?: {
+    mode: 'auto' | 'manual';
+    matchedProvider: 'netease' | 'qq';
+    matchedCandidateId: string;
+    matchScore: number;
+    translationProvider?: 'netease' | 'qq';
+  };
 }
 
 export interface BootstrapTrack {

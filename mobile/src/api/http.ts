@@ -151,6 +151,66 @@ export async function requestJson(
   }
 }
 
+/** Internal adapter seam for fixed text-only provider contracts (not a UI API). */
+export async function requestFixedText(
+  request: FixedRequest,
+  source: SourceId,
+  operation: ProviderOperation,
+  options: ProviderRequestOptions = {},
+): Promise<string> {
+  const timeoutMs = Math.min(
+    Math.max(options.timeoutMs ?? DEFAULT_TIMEOUT_MS, 1),
+    DEFAULT_TIMEOUT_MS,
+  );
+  const controller = new AbortController();
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  const cancel = () => controller.abort();
+  options.signal?.addEventListener('abort', cancel, { once: true });
+  try {
+    const response = await fetch(request.url, {
+      method: request.method ?? 'GET',
+      headers: request.profile === 'qq' ? QQ_HEADERS : undefined,
+      signal: controller.signal,
+    });
+    if (!response.ok)
+      throw providerErrorForStatus(response.status, source, operation);
+    const declaredLength = Number(response.headers.get('content-length') ?? 0);
+    if (
+      Number.isFinite(declaredLength) &&
+      declaredLength > MAX_RESPONSE_BYTES
+    ) {
+      throw new ProviderClientError('INVALID_RESPONSE', source, operation);
+    }
+    const text = await response.text();
+    if (utf8ByteLength(text) > MAX_RESPONSE_BYTES) {
+      throw new ProviderClientError('INVALID_RESPONSE', source, operation);
+    }
+    return text;
+  } catch (error) {
+    if (error instanceof ProviderClientError) throw error;
+    if (timedOut) {
+      throw new ProviderClientError('REQUEST_TIMEOUT', source, operation, {
+        retryable: true,
+      });
+    }
+    if (options.signal?.aborted) {
+      throw new ProviderClientError('CANCELLED', source, operation, {
+        retryable: false,
+      });
+    }
+    throw new ProviderClientError('NETWORK_ERROR', source, operation, {
+      retryable: true,
+    });
+  } finally {
+    clearTimeout(timeout);
+    options.signal?.removeEventListener('abort', cancel);
+  }
+}
+
 /**
  * Confirms a provider-minted media route without accepting caller headers or
  * exposing its final redirected location. The player receives the original
