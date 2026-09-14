@@ -21,4 +21,5 @@ export type RootStackParamList = {
     libraryCollection?: 'favorites' | 'recent' | 'local';
   };
   Player: undefined;
+  BilibiliDetail: { bvid: string; title: string };
 };

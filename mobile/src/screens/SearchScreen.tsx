@@ -148,6 +148,16 @@ export function SearchScreen() {
     setStatus('guide');
   };
   const play = (track: PresentableTrack) => {
+    if (track.source === 'bilibili') {
+      const match = /^bitrack_v_(BV[0-9A-Za-z]{6,32})$/.exec(String(track.id));
+      if (match) {
+        navigation.navigate('BilibiliDetail', {
+          bvid: match[1],
+          title: track.title || 'Bilibili 视频',
+        });
+        return;
+      }
+    }
     const creator =
       (playerActions as any).playTrack ||
       (playerActions as any).setCurrentTrack ||

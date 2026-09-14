@@ -17,6 +17,7 @@ import { SearchScreen } from '../screens/SearchScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { PlaylistDetailScreen } from '../screens/PlaylistDetailScreen';
 import { PlayerScreen } from '../screens/PlayerScreen';
+import { BilibiliDetailScreen } from '../screens/BilibiliDetailScreen';
 import { colors, spacing } from '../theme';
 import type { RootStackParamList, TabParamList } from './types';
 
@@ -108,6 +109,10 @@ export function RootNavigator() {
             component={PlayerScreen}
             name="Player"
             options={{ animation: 'slide_from_bottom' }}
+          />
+          <Stack.Screen
+            component={BilibiliDetailScreen}
+            name="BilibiliDetail"
           />
         </Stack.Navigator>
       </NavigationContainer>

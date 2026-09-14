@@ -14,7 +14,6 @@ import { isSourceId } from '../types';
 import { ProviderClientError, unavailable } from './errors';
 import { sourceForPlaylistId, sourceForTrackId } from './ids';
 import {
-  bootstrapBilibiliTrack,
   bootstrapKugouTrack,
   bootstrapNetEaseTrack,
   getNetEaseLyric,
@@ -130,7 +129,8 @@ export const providerClient = {
         'bootstrap',
       );
     }
-    if (source === 'bilibili') return bootstrapBilibiliTrack(track, _signal);
+    if (source === 'bilibili')
+      throw unavailable(source, 'bootstrap', 'PLAYBACK_UNAVAILABLE');
     if (source === 'kugou')
       return bootstrapKugouTrack(track, { signal: _signal });
     if (source === 'netease') return bootstrapNetEaseTrack(track, _signal);

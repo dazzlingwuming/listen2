@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   Alert,
+  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -38,6 +39,8 @@ import {
   retryDownload,
 } from '../store/downloadSlice';
 import { offlineDownloadErrorCopy } from '../offline/offlineErrorCopy';
+import { bilibiliClient } from '../bilibili/client';
+import type { BilibiliPublicState } from '../bilibili/types';
 
 export function SettingsScreen() {
   const dispatch = useDispatch<AppDispatch>();
@@ -54,9 +57,152 @@ export function SettingsScreen() {
   >(null);
   const [backupError, setBackupError] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
+  const [bilibili, setBilibili] = useState<BilibiliPublicState | null>(null);
+  const liveAttempt = React.useRef('');
+  const pollTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mounted = React.useRef(true);
+  const clearAttempt = () => {
+    liveAttempt.current = '';
+    if (pollTimer.current) clearTimeout(pollTimer.current);
+    pollTimer.current = null;
+  };
+  const terminalState = (value: BilibiliPublicState) => ({
+    ...value,
+    attemptId: '',
+    expiresAt: 0,
+    qrPngDataUri: '',
+  });
+  const pollBilibili = async (attemptId: string, count = 0): Promise<void> => {
+    if (!mounted.current || liveAttempt.current !== attemptId) return;
+    if (count >= 90) {
+      clearAttempt();
+      setBilibili(current =>
+        current
+          ? terminalState({
+              ...current,
+              status: 'error',
+              retryable: true,
+              nextAction: 'begin',
+              errorCode: 'REQUEST_TIMEOUT',
+            })
+          : current,
+      );
+      return;
+    }
+    try {
+      const next = await bilibiliClient.qrPoll(attemptId);
+      if (!mounted.current || liveAttempt.current !== attemptId) return;
+      if (next.status === 'waiting' || next.status === 'scanned') {
+        setBilibili(next);
+        pollTimer.current = setTimeout(() => {
+          void pollBilibili(attemptId, count + 1);
+        }, 2000);
+      } else {
+        clearAttempt();
+        setBilibili(terminalState(next));
+      }
+    } catch {
+      if (liveAttempt.current === attemptId) {
+        clearAttempt();
+        setBilibili(current =>
+          current
+            ? terminalState({
+                ...current,
+                status: 'error',
+                retryable: true,
+                nextAction: 'begin',
+                errorCode: 'PROVIDER_ERROR',
+              })
+            : current,
+        );
+      }
+    }
+  };
+  const beginBilibili = async () => {
+    clearAttempt();
+    try {
+      const next = await bilibiliClient.qrBegin();
+      if (!mounted.current) return;
+      setBilibili(next);
+      if (next.attemptId) {
+        liveAttempt.current = next.attemptId;
+        void pollBilibili(next.attemptId);
+      }
+    } catch {
+      setBilibili({
+        status: 'error',
+        attemptId: '',
+        expiresAt: 0,
+        qrPngDataUri: '',
+        retryable: true,
+        nextAction: 'begin',
+        errorCode: 'PROVIDER_ERROR',
+      });
+    }
+  };
+  const cancelBilibili = async () => {
+    const attemptId = liveAttempt.current;
+    clearAttempt();
+    if (!attemptId) return;
+    try {
+      setBilibili(terminalState(await bilibiliClient.qrCancel(attemptId)));
+    } catch {
+      setBilibili(current =>
+        current
+          ? terminalState({
+              ...current,
+              status: 'cancelled',
+              retryable: false,
+              nextAction: 'begin',
+            })
+          : current,
+      );
+    }
+  };
+  const logoutBilibili = async () => {
+    clearAttempt();
+    try {
+      setBilibili(terminalState(await bilibiliClient.logout()));
+    } catch {
+      setBilibili({
+        status: 'error',
+        attemptId: '',
+        expiresAt: 0,
+        qrPngDataUri: '',
+        retryable: true,
+        nextAction: 'begin',
+        errorCode: 'PROVIDER_ERROR',
+      });
+    }
+  };
   React.useEffect(() => {
     dispatch(hydrateDownloads());
   }, [dispatch]);
+  React.useEffect(() => {
+    bilibiliClient
+      .status()
+      .then(value => {
+        if (mounted.current) setBilibili(terminalState(value));
+      })
+      .catch(() => {
+        if (mounted.current)
+          setBilibili({
+            status: 'unavailable',
+            attemptId: '',
+            expiresAt: 0,
+            qrPngDataUri: '',
+            retryable: false,
+            nextAction: 'begin',
+          });
+      });
+    return () => {
+      mounted.current = false;
+      const attemptId = liveAttempt.current;
+      clearAttempt();
+      if (attemptId)
+        void bilibiliClient.qrCancel(attemptId).catch(() => undefined);
+    };
+  }, []);
   const confirmClearDownloads = () =>
     Alert.alert('清空全部下载？', '已下载的离线媒体将从本机移除。', [
       { text: '取消', style: 'cancel' },
@@ -187,6 +333,64 @@ export function SettingsScreen() {
               </View>
             );
           })}
+        </View>
+      </View>
+      <View style={sectionStyles.section}>
+        <Text style={text.heading}>Bilibili 账号</Text>
+        <View style={sectionStyles.card}>
+          <Text style={text.meta}>
+            {bilibili?.status === 'authenticated'
+              ? `已登录${
+                  bilibili.displayName ? `：${bilibili.displayName}` : ''
+                }`
+              : bilibili?.status === 'scanned'
+              ? '已扫码，请在 Bilibili 中确认登录。'
+              : bilibili?.status === 'waiting'
+              ? '请使用 Bilibili 扫码登录。'
+              : bilibili?.status === 'expired'
+              ? '二维码已过期，请重新获取。'
+              : bilibili?.status === 'unavailable'
+              ? '本机暂不支持 Bilibili 安全登录。'
+              : bilibili?.status === 'error'
+              ? '登录暂未完成，请重试。'
+              : '可选择扫码登录以使用账号可用的音质。'}
+          </Text>
+          {bilibili?.qrPngDataUri ? (
+            <Image
+              accessibilityLabel="Bilibili 登录二维码"
+              source={{ uri: bilibili.qrPngDataUri }}
+              style={styles.qrCode}
+            />
+          ) : null}
+          {bilibili?.status === 'authenticated' ? (
+            <Pressable
+              accessibilityLabel="退出 Bilibili 登录"
+              onPress={logoutBilibili}
+              style={sectionStyles.secondaryButton}
+            >
+              <Text style={sectionStyles.secondaryText}>退出登录</Text>
+            </Pressable>
+          ) : bilibili?.status === 'waiting' ||
+            bilibili?.status === 'scanned' ? (
+            <Pressable
+              accessibilityLabel="取消 Bilibili 扫码登录"
+              onPress={cancelBilibili}
+              style={sectionStyles.secondaryButton}
+            >
+              <Text style={sectionStyles.secondaryText}>取消登录</Text>
+            </Pressable>
+          ) : (
+            <Pressable
+              accessibilityLabel="开始 Bilibili 扫码登录"
+              disabled={bilibili?.status === 'unavailable'}
+              onPress={beginBilibili}
+              style={sectionStyles.button}
+            >
+              <Text style={sectionStyles.buttonText}>
+                {bilibili?.retryable ? '重新获取二维码' : '扫码登录'}
+              </Text>
+            </Pressable>
+          )}
         </View>
       </View>
       <Pressable
@@ -482,4 +686,10 @@ const styles = StyleSheet.create({
   error: { ...text.meta, color: colors.danger },
   preview: { gap: spacing.sm, paddingBottom: spacing.sm },
   previewActions: { gap: spacing.sm },
+  qrCode: {
+    alignSelf: 'center',
+    width: 192,
+    height: 192,
+    backgroundColor: '#ffffff',
+  },
 });
