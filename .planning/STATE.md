@@ -5,8 +5,8 @@ milestone_name: android-official-mobile-product-pivot
 current_phase: 5
 current_phase_name: Five-Source Listen Journey
 status: verifying
-stopped_at: Completed 08-01-PLAN.md
-last_updated: "2026-09-15T17:45:24.836Z"
+stopped_at: Refreshed 08-01 releaseLike candidate after RNTP startup repair; ready for 08-02 API 35 journey
+last_updated: "2026-09-15T18:48:51.265Z"
 progress:
   total_phases: 5
   completed_phases: 4
@@ -65,6 +65,7 @@ Progress: [█████████░] 88%
 | Phase 07-offline-advanced-playback P03 | 135m | 3 tasks | 12 files |
 | Phase 07-offline-advanced-playback P05 | 90min | 2 tasks | 17 files |
 | Phase 08 P01 | 27m | 2 tasks | 13 files |
+| Phase 08 P01 | 88m | 2 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -98,6 +99,7 @@ Progress: [█████████░] 88%
 - [Phase ?]: Loudness metrics are reusable only for matching hash, sample rate, codec, and analyzer version.
 - [Phase ?]: Phase 7 SEC-004 uses fail-closed current-account entitlement and redacting source/artifact canary scans; device-only proof remains Phase 8.
 - [Phase ?]: Phase 08 release-like reproducibility compares canonical ZIP entries and signer identity; raw v2 signing-block SHA differences are diagnostic only.
+- [Phase ?]: Phase 08 candidate reproducibility requires canonical ZIP metadata/content, signer identity, and raw APK equality excluding only a validated complete APK Signing Block; the post-RNTP-fix 4c1f893 candidate supersedes 7b163a4.
 
 ### Pending Todos
 
@@ -139,8 +141,8 @@ Progress: [█████████░] 88%
 
 **Resume file:** .planning/phases/08-integrated-api-35-acceptance-release-like-evidence/08-02-PLAN.md
 
-Last session: 2026-09-15T17:45:24.828Z
+Last session: 2026-09-15T18:48:51.257Z
 
-Stopped at: Completed 08-01-PLAN.md
+Stopped at: Refreshed 08-01 releaseLike candidate after RNTP startup repair; ready for 08-02 API 35 journey
 
 Resume with: implement the next coherent mobile-parity slice without per-feature APK generation; preserve API 35 emulator/device, live-provider, and release-like checks for integrated acceptance
