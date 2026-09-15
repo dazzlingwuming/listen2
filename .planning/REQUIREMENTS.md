@@ -55,9 +55,9 @@ Android 保留共享前端，但 native 只提供窄的、版本化、可取消�
 
 ### 歌词/翻译（LYR）
 
-- [ ] **LYR-001** [P][E] Bilibili 与 NetEase 能按 provider/track/时长匹配主歌词候选、时间轴和已有译文；播放页按 Media3 时钟显示当前行、偏移、双语和滚动状态，暂停、seek、切歌和恢复不会使用旧曲目时钟。
-- [ ] **LYR-002** [P][E] 我可以手动搜索、选择并持久化歌词来源，手选按 track/provider/revision 覆盖自动结果；无歌词、纯文本、时间戳不足、超时和失配显示清晰降级，不阻塞首播。
-- [ ] **LYR-003** [T][P][E] TalkBack 能读出歌词行、当前行状态、偏移和原文/译文切换；切歌竞态、旧响应和错误回调不会覆盖新曲目、卡住 loading 或伪造时间戳。
+- [x] **LYR-001** [P][E] Bilibili 与 NetEase 能按 provider/track/时长匹配主歌词候选、时间轴和已有译文；播放页按 Media3 时钟显示当前行、偏移、双语和滚动状态，暂停、seek、切歌和恢复不会使用旧曲目时钟。
+- [x] **LYR-002** [P][E] 我可以手动搜索、选择并持久化歌词来源，手选按 track/provider/revision 覆盖自动结果；无歌词、纯文本、时间戳不足、超时和失配显示清晰降级，不阻塞首播。
+- [x] **LYR-003** [T][P][E] TalkBack 能读出歌词行、当前行状态、偏移和原文/译文切换；切歌竞态、旧响应和错误回调不会覆盖新曲目、卡住 loading 或伪造时间戳。
 
 ### 歌单/库（LIB）
 
@@ -191,9 +191,9 @@ Android 保留共享前端，但 native 只提供窄的、版本化、可取消�
 | PLAY-004 | Phase 5 | Foundation present; Pending acceptance | FIFO queue persistence and journey E2E |
 | PLAY-005 | Phase 5 | Foundation present; Pending acceptance | shuffle/repeat transition and journey E2E |
 | PLAY-006 | Phase 5 | Pending | service/focus/lockscreen recovery |
-| LYR-001 | Phase 5 | Pending | five-source lyric capability fixtures |
-| LYR-002 | Phase 5 | Pending | manual/offset persistence |
-| LYR-003 | Phase 5 | Pending | stale/error/TalkBack test |
+| LYR-001 | Phase 5 | Complete | five-source lyric capability fixtures |
+| LYR-002 | Phase 5 | Complete | manual/offset persistence |
+| LYR-003 | Phase 5 | Complete | stale/error/TalkBack test |
 | LIB-001 | Phase 6 | Pending | source/offline library E2E |
 | LIB-002 | Phase 6 | Pending | playlist CRUD/favorite test |
 | LIB-003 | Phase 6 | Pending | transactional/capability test |
