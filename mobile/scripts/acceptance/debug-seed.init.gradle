@@ -1,0 +1,15 @@
+// Acceptance-only Gradle init script. It changes no checked-in product build
+// configuration: the debug variant is temporarily treated as non-debuggable by
+// the RN Gradle plugin so it receives an in-APK JS bundle for the visible
+// debug-to-releaseLike migration seed.
+gradle.beforeProject { project ->
+    if (project.path == ':app') {
+        project.pluginManager.withPlugin('com.facebook.react') {
+            def reactExtension = project.extensions.findByName('react')
+            if (reactExtension == null) {
+                throw new GradleException('React Native extension is unavailable for bundled debug seed')
+            }
+            reactExtension.debuggableVariants.set([])
+        }
+    }
+}

@@ -19,6 +19,7 @@ if [[ "${1:-}" == "--self-test" ]]; then
   ! instrumentation_result_ok "$self_test_dir/failed.txt" || { echo 'INSTRUMENTATION_FAILED fixture accepted' >&2; exit 1; }
   grep -Fq 'RELEASE_BYTES="$(wc -c < "$RELEASE_APK" | tr -d '\'' '\'')"' "$0" || { echo 'journey record must derive product bytes from the sealed APK' >&2; exit 1; }
   grep -Fq 'bytes: Number(releaseBytes)' "$0" || { echo 'journey record must preserve the derived product byte count' >&2; exit 1; }
+  grep -Fq "assets/index.android.bundle" "$0" || { echo 'runner must reject an unbundled debug seed before reset' >&2; exit 1; }
   echo 'Instrumentation result self-test passed.'
   exit 0
 fi
@@ -84,8 +85,15 @@ APKANALYZER="$SDK/cmdline-tools/latest/bin/apkanalyzer"; [[ -x "$APKANALYZER" ]]
 "$APKANALYZER" dex packages "$TEST_APK" | grep -Fq 'com.listen2mobile.acceptance.UpgradeSeedTest' || { echo "BLOCKED: sealed test payload lacks UpgradeSeedTest" >&2; exit 3; }
 "$APKANALYZER" dex packages "$TEST_APK" | grep -Fq 'com.listen2mobile.acceptance.IntegratedJourneyTest' || { echo "BLOCKED: sealed test payload lacks IntegratedJourneyTest" >&2; exit 3; }
 APKSIGNER="$SDK/build-tools/37.0.0/apksigner"
+[[ -x "$APKSIGNER" ]] || { echo "BLOCKED: Android Build Tools 37.0.0 apksigner is unavailable" >&2; exit 3; }
 TEST_SIGNER="$($APKSIGNER verify --verbose --print-certs "$TEST_APK" | awk -F': ' '/(Signer #1|V[0-9.]+ Signer): certificate SHA-256 digest/ { print $NF; exit }')"
 [[ "$TEST_SIGNER" =~ ^[a-f0-9]{64}$ ]] || { echo "BLOCKED: AndroidTest signer was not verified" >&2; exit 3; }
+apk_signer() { "$APKSIGNER" verify --verbose --print-certs "$1" | awk -F': ' '/(Signer #1|V[0-9.]+ Signer): certificate SHA-256 digest/ { print $NF; exit }'; }
+DEBUG_SIGNER="$(apk_signer "$DEBUG_APK")"; RELEASE_SIGNER="$(apk_signer "$RELEASE_APK")"
+[[ "$DEBUG_SIGNER" =~ ^[a-f0-9]{64}$ && "$DEBUG_SIGNER" == "$RELEASE_SIGNER" && "$DEBUG_SIGNER" == "$TEST_SIGNER" ]] || { echo "BLOCKED: debug seed, releaseLike, and AndroidTest signer lineage differs" >&2; exit 3; }
+unzip -Z1 "$DEBUG_APK" | grep -Fx 'assets/index.android.bundle' >/dev/null || { echo "BLOCKED: debug seed lacks assets/index.android.bundle before reset" >&2; exit 3; }
+DEBUG_BADGING="$($SDK/build-tools/37.0.0/aapt dump badging "$DEBUG_APK")"
+[[ "$DEBUG_BADGING" == *"package: name='com.dazzlingwuming.listen2' versionCode='1'"* ]] || { echo "BLOCKED: debug seed package or versionCode is unexpected" >&2; exit 3; }
 
 STATE="$RUN_DIR/device-state-before.sh"; EVENTS="$RUN_DIR/journey-events.txt"; SCREENSHOT="$RUN_DIR/journey-phone.png"
 FIXTURE_DIR="$RUN_DIR/fixtures"; mkdir -p "$FIXTURE_DIR"; umask 077
