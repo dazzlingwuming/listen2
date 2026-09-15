@@ -17,6 +17,8 @@ if [[ "${1:-}" == "--self-test" ]]; then
   instrumentation_result_ok "$self_test_dir/success.txt" || { echo 'instrumentation success fixture rejected' >&2; exit 1; }
   ! instrumentation_result_ok "$self_test_dir/assertion.txt" || { echo 'AssertionError fixture accepted' >&2; exit 1; }
   ! instrumentation_result_ok "$self_test_dir/failed.txt" || { echo 'INSTRUMENTATION_FAILED fixture accepted' >&2; exit 1; }
+  grep -Fq 'RELEASE_BYTES="$(wc -c < "$RELEASE_APK" | tr -d '\'' '\'')"' "$0" || { echo 'journey record must derive product bytes from the sealed APK' >&2; exit 1; }
+  grep -Fq 'bytes: Number(releaseBytes)' "$0" || { echo 'journey record must preserve the derived product byte count' >&2; exit 1; }
   echo 'Instrumentation result self-test passed.'
   exit 0
 fi
@@ -74,6 +76,7 @@ NODE
 )"
 DEBUG_APK="${BUILD_FIELDS[0]%%|*}"; DEBUG_SHA="${BUILD_FIELDS[0]##*|}"
 RELEASE_APK="${BUILD_FIELDS[1]%%|*}"; RELEASE_SHA="${BUILD_FIELDS[1]##*|}"
+RELEASE_BYTES="$(wc -c < "$RELEASE_APK" | tr -d ' ')"
 TEST_APK="$JOURNEY_TEST_APK"; TEST_SHA="$(shasum -a 256 "$TEST_APK" | awk '{print $1}')"
 sha_file() { shasum -a 256 "$1" | awk '{print $1}'; }
 [[ "$(sha_file "$DEBUG_APK")" == "$DEBUG_SHA" && "$(sha_file "$RELEASE_APK")" == "$RELEASE_SHA" ]] || { echo "BLOCKED: retained product APK hash mismatch" >&2; exit 3; }
@@ -114,16 +117,16 @@ run_instrumentation() {
 }
 write_record() {
   local OUTCOME="$1"; local DETAIL="$2"; local BUILD_HEAD_VALUE="${3:-$BUILD_HEAD}"; local ENDED_AT="$(date -Iseconds)"; trap - EXIT; cleanup
-  node --input-type=module - "$RUN_DIR" "$RELEASE_SHA" "$FIXTURE_SHA" "$OUTCOME" "$DETAIL" "$STARTED_AT" "$ENDED_AT" "$SERIAL" "$CLEANUP_STATUS" "$BUILD_HEAD_VALUE" <<'NODE' > "$RUN_DIR/.journey-input.json"
+  node --input-type=module - "$RUN_DIR" "$RELEASE_SHA" "$RELEASE_BYTES" "$FIXTURE_SHA" "$OUTCOME" "$DETAIL" "$STARTED_AT" "$ENDED_AT" "$SERIAL" "$CLEANUP_STATUS" "$BUILD_HEAD_VALUE" <<'NODE' > "$RUN_DIR/.journey-input.json"
 import { createHash } from 'node:crypto'; import { readFileSync, statSync } from 'node:fs'; import { basename } from 'node:path';
-const [run, sha, fixtureSha, outcome, detail, started, ended, serial, cleanup, buildHead] = process.argv.slice(2);
+const [run, sha, releaseBytes, fixtureSha, outcome, detail, started, ended, serial, cleanup, buildHead] = process.argv.slice(2);
 const hash = file => createHash('sha256').update(readFileSync(`${run}/${file}`)).digest('hex');
 const listed = ['journey-events.txt', 'upgrade-seed-instrumentation.txt', 'integrated-journey-instrumentation.txt', 'smoke-phone.png', 'smoke-window.xml', 'integrated-phone.png', 'integrated-window.xml', 'postrun-phone.png', 'postrun-window.xml', 'fixture.json', 'fixtures/synthetic-phase08.wav', 'fixtures/synthetic-phase08.lrc', 'device-state-before.sh', 'journey-test-payload.json', 'artifacts/releaseLikeAndroidTest-journey.apk'].filter(file => { try { return statSync(`${run}/${file}`).isFile(); } catch { return false; } });
 const artifacts = listed.map(file => ({ kind: basename(file).replace(/[^a-z0-9]+/gi, '-').toLowerCase(), relativePath: file, sha256: hash(file), bytes: statSync(`${run}/${file}`).size, sanitized: true }));
 console.log(JSON.stringify({ schemaVersion: 1, runId: basename(run), recordId: 'phase8-api35-journey', recordedAt: ended,
   git: { branch: 'acceptance-clean-worktree', sha: buildHead, trackedClean: true, allowedUntracked: [] },
   toolchain: { os: 'host-recorded', arch: 'host-recorded', node: 'host-recorded', npm: 'recorded-by-build', java: 'recorded-by-build', gradle: 'recorded-by-build', agp: 'repository-pinned', kotlin: '2.2.0', androidHomeHash: 'recorded-by-build', buildTools: '37.0.0', compileSdk: 37, targetSdk: 36, minSdk: 24, ndk: '27.1.12297006' },
-  build: { variant: 'releaseLike', applicationId: 'com.dazzlingwuming.listen2', versionCode: 1000001, versionName: '2.34.0-android', apkRelativePath: 'artifacts/releaseLike.apk', bytes: 67106878, sha256: sha, signerSha256: 'development-debug', zipAligned16KiB: true, minified: true, debuggable: false },
+  build: { variant: 'releaseLike', applicationId: 'com.dazzlingwuming.listen2', versionCode: 1000001, versionName: '2.34.0-android', apkRelativePath: 'artifacts/releaseLike.apk', bytes: Number(releaseBytes), sha256: sha, signerSha256: 'development-debug', zipAligned16KiB: true, minified: true, debuggable: false },
   device: { serialHash: createHash('sha256').update(serial).digest('hex'), avdName: 'recorded-api35', image: 'google_apis', apiLevel: 35, abi: 'host-matched', ramMiB: 0, cores: 0, resolution: 'recorded-by-device', density: 0, locale: 'recorded-by-device', fontScale: 0, navigationMode: 'recorded-by-device' },
   network: { mode: 'production-routes', transport: 'emulator', offlineWindows: [], proxyConfigured: false },
   fixture: { id: 'phase08', revision: '1', manifestSha256: hash('fixture.json'), queryIds: ['qinghuaci'], generatedMediaSha256: fixtureSha, accountLane: 'none' },
