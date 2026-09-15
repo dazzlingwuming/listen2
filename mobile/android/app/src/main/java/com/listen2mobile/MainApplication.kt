@@ -16,6 +16,7 @@ import com.listen2mobile.local.LocalAudioPackage
 import com.listen2mobile.history.HistoryPackage
 import com.listen2mobile.netease.NeteasePlaybackPackage
 import com.listen2mobile.kugou.KugouPlaybackPackage
+import com.listen2mobile.audiofx.AudioEffectsPackage
 
 class MainApplication : Application(), ReactApplication {
 
@@ -34,6 +35,7 @@ class MainApplication : Application(), ReactApplication {
           add(LibraryPackage())
           add(LocalAudioPackage())
           add(HistoryPackage())
+          add(AudioEffectsPackage())
           // Packages that cannot be autolinked yet can be added manually here, for example:
           // add(MyReactNativePackage())
         },
