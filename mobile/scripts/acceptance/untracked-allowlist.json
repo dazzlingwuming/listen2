@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "phaseDirectory": ".planning/phases/08-integrated-api-35-acceptance-release-like-evidence",
+  "exactFiles": [
+    ".planning/phases/08-integrated-api-35-acceptance-release-like-evidence/08-01-PLAN.md",
+    ".planning/phases/08-integrated-api-35-acceptance-release-like-evidence/08-02-PLAN.md",
+    ".planning/phases/08-integrated-api-35-acceptance-release-like-evidence/08-03-PLAN.md",
+    ".planning/phases/08-integrated-api-35-acceptance-release-like-evidence/08-04-PLAN.md",
+    ".planning/phases/08-integrated-api-35-acceptance-release-like-evidence/08-CONTEXT.md",
+    ".planning/phases/08-integrated-api-35-acceptance-release-like-evidence/08-PATTERNS.md",
+    ".planning/phases/08-integrated-api-35-acceptance-release-like-evidence/08-PREREQUISITES.md",
+    ".planning/phases/08-integrated-api-35-acceptance-release-like-evidence/08-RESEARCH.md",
+    ".planning/phases/08-integrated-api-35-acceptance-release-like-evidence/08-VALIDATION.md"
+  ],
+  "runRoot": ".planning/phases/08-integrated-api-35-acceptance-release-like-evidence/evidence"
+}

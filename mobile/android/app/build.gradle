@@ -58,7 +58,11 @@ react {
 /**
  * Set this to true to Run Proguard on Release builds to minify the Java bytecode.
  */
-def enableProguardInReleaseBuilds = false
+// A store-ready `release` must remain unsigned until a release authority is
+// supplied outside this repository. Phase 8 uses `releaseLike` only as an
+// installable, development-signed acceptance candidate.
+def enableProguardInReleaseBuilds = true
+def phase8ReleaseLikeVersionCode = 1000001
 
 /**
  * The preferred build flavor of JavaScriptCore (JSC)
@@ -79,6 +83,11 @@ android {
     compileSdk rootProject.ext.compileSdkVersion
 
     namespace "com.listen2mobile"
+    // Keep the diagnostic AndroidTest/UnitTest compilation on debug. The
+    // Phase 8 releaseLike AndroidTest alias below has the same application ID
+    // and signer, so it can drive the in-place releaseLike journey without
+    // making the production candidate debuggable.
+    testBuildType "debug"
     defaultConfig {
         applicationId "com.dazzlingwuming.listen2"
         minSdkVersion rootProject.ext.minSdkVersion
@@ -86,6 +95,7 @@ android {
         versionCode 1
         versionName "2.34.0-android"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        manifestPlaceholders = [usesCleartextTraffic: "false"]
     }
     signingConfigs {
         debug {
@@ -101,9 +111,43 @@ android {
         }
         release {
             minifyEnabled enableProguardInReleaseBuilds
+            shrinkResources enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
         }
+        releaseLike {
+            initWith release
+            // This is deliberately the checked-in debug/development signer,
+            // not production release authority.
+            signingConfig signingConfigs.debug
+            debuggable false
+            minifyEnabled true
+            shrinkResources true
+            manifestPlaceholders = [usesCleartextTraffic: "false"]
+            matchingFallbacks = ["release"]
+        }
     }
+}
+
+androidComponents {
+    onVariants(selector().withBuildType("releaseLike")) { variant ->
+        // Keep debug at version 1 so the API-35 runner can exercise exactly
+        // one data-preserving debug -> releaseLike upgrade.
+        variant.outputs.forEach { output ->
+            output.versionCode.set(phase8ReleaseLikeVersionCode)
+        }
+    }
+}
+
+tasks.register("compileReleaseLikeAndroidTestKotlin") {
+    dependsOn("compileDebugAndroidTestKotlin")
+}
+
+tasks.register("assembleReleaseLikeAndroidTest", Copy) {
+    dependsOn("assembleDebugAndroidTest")
+    from(layout.buildDirectory.dir("outputs/apk/androidTest/debug"))
+    include("app-debug-androidTest.apk")
+    into(layout.buildDirectory.dir("outputs/apk/androidTest/releaseLike"))
+    rename { "app-releaseLike-androidTest.apk" }
 }
 
 dependencies {
