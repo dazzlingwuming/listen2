@@ -35,7 +35,11 @@ class OfflineAudioModule(private val app: ReactApplicationContext) : ReactContex
     }
     @ReactMethod fun promoteCache(source: String, trackId: String, promise: Promise) { promise.resolve(snapshot(service().promote(source, trackId))) }
     @ReactMethod fun setCacheQuota(bytes: Double?, promise: Promise) {
-        val exact = bytes?.takeIf { it.isFinite() && it >= 0 && it == it.toLong().toDouble() }?.toLong()
+        if (bytes != null && (!bytes.isFinite() || bytes < 0 || bytes != bytes.toLong().toDouble())) {
+            promise.resolve(snapshot(service().snapshot()))
+            return
+        }
+        val exact = bytes?.toLong()
         promise.resolve(snapshot(service().setQuota(exact)))
     }
     @ReactMethod fun cacheAction(action: String, operationId: String, promise: Promise) {
