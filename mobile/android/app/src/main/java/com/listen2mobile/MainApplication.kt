@@ -11,6 +11,7 @@ import com.listen2mobile.bilibili.BilibiliPackage
 import com.listen2mobile.deepseek.DeepSeekPackage
 import com.listen2mobile.qq.QqPlaybackPackage
 import com.listen2mobile.kuwo.KuwoPlaybackPackage
+import com.listen2mobile.library.LibraryPackage
 
 class MainApplication : Application(), ReactApplication {
 
@@ -24,6 +25,7 @@ class MainApplication : Application(), ReactApplication {
           add(DeepSeekPackage())
           add(QqPlaybackPackage())
           add(KuwoPlaybackPackage())
+          add(LibraryPackage())
           // Packages that cannot be autolinked yet can be added manually here, for example:
           // add(MyReactNativePackage())
         },
