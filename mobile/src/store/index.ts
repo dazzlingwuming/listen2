@@ -68,9 +68,11 @@ const continuity = createContinuityCoordinator({
 });
 
 let observedLibraryRevision: number | null = null;
+let observedLocalProjection = '';
 let observedContinuity = '';
 let appliedNativeQueueCheckpoint = false;
 let attemptedNativeQueueRestore = false;
+let nativeQueueRestorePending = false;
 let playerRehydrated = false;
 const reconcileContinuity = () => {
   let state = store.getState();
@@ -78,30 +80,56 @@ const reconcileContinuity = () => {
   if (!state.library.hydrated || typeof revision !== 'number') return;
   let nativeQueue = state.library.queueCheckpoint || [];
   let nativeLyrics = state.library.lyricMetadata || [];
+  const localProjection = JSON.stringify(state.library.localTracks || []);
+  if (localProjection !== observedLocalProjection) {
+    observedLocalProjection = localProjection;
+    if (nativeQueueRestorePending) {
+      attemptedNativeQueueRestore = false;
+      appliedNativeQueueCheckpoint = false;
+    }
+  }
   if (observedLibraryRevision !== revision) {
     observedLibraryRevision = revision;
     continuity.hydrate({ revision, queueCheckpoint: nativeQueue, lyricMetadata: nativeLyrics });
+    if (nativeQueueRestorePending) {
+      attemptedNativeQueueRestore = false;
+      appliedNativeQueueCheckpoint = false;
+    }
   }
   if (!playerRehydrated) return;
+  if (!nativeQueue.length) {
+    nativeQueueRestorePending = false;
+    attemptedNativeQueueRestore = false;
+    appliedNativeQueueCheckpoint = false;
+  }
   if (!attemptedNativeQueueRestore && nativeQueue.length) {
     // Room is the durable owner. Do not require an occurrence from the old
     // Redux projection before dispatching: a restart can legitimately leave
     // that projection empty, and the reducer has a semantic remote fallback.
     attemptedNativeQueueRestore = true;
-    store.dispatch(restorePlayNextCheckpoint(nativeQueue));
+    store.dispatch(
+      restorePlayNextCheckpoint({
+        checkpoints: nativeQueue,
+        localTracks: state.library.localTracks || [],
+      }),
+    );
     // Redux subscriptions can run re-entrantly. Re-read the player and
     // library projections after restoring the native checkpoint so the
     // outer callback cannot enqueue a stale or partial queue projection.
     state = store.getState();
     nativeQueue = state.library.queueCheckpoint || [];
     nativeLyrics = state.library.lyricMetadata || [];
-    appliedNativeQueueCheckpoint = nativeQueue.every(checkpoint =>
+    const matchesCheckpoint = (checkpoint: (typeof nativeQueue)[number]) =>
       state.player.playNextQueue.some(
         item =>
-          item.occurrenceId === checkpoint.occurrenceId ||
-          (item.track.source === checkpoint.source &&
-            item.track.id === checkpoint.trackId),
-      ),
+          item.resolutionState !== 'unresolved' &&
+          (item.occurrenceId === checkpoint.occurrenceId ||
+            (item.track.source === checkpoint.source &&
+              item.track.id === checkpoint.trackId)),
+      );
+    appliedNativeQueueCheckpoint = nativeQueue.every(matchesCheckpoint);
+    nativeQueueRestorePending = nativeQueue.some(
+      checkpoint => !matchesCheckpoint(checkpoint),
     );
   }
   // Do not let an empty or partial old Redux projection erase native rows.
@@ -114,9 +142,10 @@ const reconcileContinuity = () => {
       checkpoint =>
         !state.player.playNextQueue.some(
           item =>
-            item.occurrenceId === checkpoint.occurrenceId ||
-            (item.track.source === checkpoint.source &&
-              item.track.id === checkpoint.trackId),
+            item.resolutionState !== 'unresolved' &&
+            (item.occurrenceId === checkpoint.occurrenceId ||
+              (item.track.source === checkpoint.source &&
+                item.track.id === checkpoint.trackId)),
         ),
     )
   )

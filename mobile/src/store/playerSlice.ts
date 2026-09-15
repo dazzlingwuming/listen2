@@ -1,5 +1,5 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
-import type { PlayableTrack as Track } from '../types/music';
+import type { LocalTrack, PlayableTrack as Track } from '../types/music';
 import { playerController } from '../player/playerController';
 import type { LibraryQueueCheckpoint } from '../library/types';
 
@@ -24,7 +24,16 @@ export type PlaybackSource = 'playlist' | 'play-next';
 export type PlayNextOccurrence = Track & {
   occurrenceId: string;
   track: Track;
+  /** Native local records may arrive after the semantic queue checkpoint. */
+  resolutionState?: 'unresolved';
 };
+
+export type RestorePlayNextCheckpointPayload =
+  | LibraryQueueCheckpoint[]
+  | {
+      checkpoints: LibraryQueueCheckpoint[];
+      localTracks?: LocalTrack[];
+    };
 
 export type HistoryEntry = {
   track: Track;
@@ -327,25 +336,77 @@ const playerSlice = createSlice({
       invalidateTransition(state);
       state.playNextQueue = [];
     },
-    restorePlayNextCheckpoint(state, action: PayloadAction<LibraryQueueCheckpoint[]>) {
-      if (!action.payload.length) return;
+    restorePlayNextCheckpoint(
+      state,
+      action: PayloadAction<RestorePlayNextCheckpointPayload>,
+    ) {
+      const checkpoints = Array.isArray(action.payload)
+        ? action.payload
+        : action.payload.checkpoints;
+      const localTracks = Array.isArray(action.payload)
+        ? []
+        : action.payload.localTracks || [];
+      if (!checkpoints.length) return;
       const available = state.playNextQueue.slice();
+      const localById = new Map(localTracks.map(track => [track.id, track]));
       const used = new Set<string>();
-      const restored = action.payload.flatMap(checkpoint => {
-        const match = available.find(item =>
-          !used.has(item.occurrenceId) &&
-          (item.occurrenceId === checkpoint.occurrenceId ||
-            (item.track.source === checkpoint.source && item.track.id === checkpoint.trackId)),
+      const restored = checkpoints.flatMap(checkpoint => {
+        const localTrack =
+          checkpoint.source === 'local'
+            ? localById.get(checkpoint.trackId)
+            : undefined;
+        if (localTrack) {
+          const unresolved = localTrack.accessStatus !== 'available';
+          return [
+            {
+              ...localTrack,
+              occurrenceId: checkpoint.occurrenceId,
+              track: localTrack,
+              ...(unresolved ? { resolutionState: 'unresolved' as const } : {}),
+            },
+          ];
+        }
+        const match = available.find(
+          item =>
+            !used.has(item.occurrenceId) &&
+            (item.occurrenceId === checkpoint.occurrenceId ||
+              (item.track.source === checkpoint.source &&
+                item.track.id === checkpoint.trackId)),
         );
         if (match) {
           used.add(match.occurrenceId);
-          return [{ ...match, occurrenceId: checkpoint.occurrenceId, track: match.track }];
+          return [
+            {
+              ...match,
+              occurrenceId: checkpoint.occurrenceId,
+              track: match.track,
+            },
+          ];
         }
         // The native checkpoint intentionally stores only semantic identity.
         // Recreate a bounded remote occurrence when the old player reducer is
         // unavailable; the provider bootstrap can fill richer metadata later.
-        // Local rows cannot be invented without the native document record.
-        if (checkpoint.source === 'local') return [];
+        // A local document is opaque and cannot be invented. Keep a safe,
+        // actionable repair row until the native catalog is hydrated.
+        if (checkpoint.source === 'local') {
+          const track = {
+            id: checkpoint.trackId,
+            source: 'local' as const,
+            title: '本地音频不可用',
+            artist: '请在本地音乐中重新选择文件',
+            accessStatus: 'needs-repair' as const,
+            capabilities: ['queue'] as Array<'queue'>,
+            seekable: false,
+          };
+          return [
+            {
+              ...track,
+              occurrenceId: checkpoint.occurrenceId,
+              track,
+              resolutionState: 'unresolved' as const,
+            },
+          ];
+        }
         const track = {
           id: checkpoint.trackId,
           source: checkpoint.source,

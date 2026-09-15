@@ -116,7 +116,9 @@ describe('playerSlice', () => {
     expect(state.transitionToken).toBeGreaterThan(7);
   });
 
-  it('restores a Room-only remote checkpoint in order and leaves local rows unresolved', () => {
+  it('restores Room-only remote and local checkpoints without dropping local rows', () => {
+    const localRecordId = 'local-record-1234567890abcdef';
+    const revokedRecordId = 'local-record-revoked1234';
     const checkpoints = [
       {
         occurrenceId: 'native-remote-1',
@@ -130,33 +132,135 @@ describe('playerSlice', () => {
         source: 'qq' as const,
         trackId: 'qqtrack_2',
       },
+      {
+        occurrenceId: 'native-local-1',
+        position: 56,
+        source: 'local' as const,
+        trackId: localRecordId,
+      },
+      {
+        occurrenceId: 'native-local-revoked',
+        position: 78,
+        source: 'local' as const,
+        trackId: revokedRecordId,
+      },
     ];
     let state = reducer(
       undefined,
-      playerActions.restorePlayNextCheckpoint(checkpoints),
+      playerActions.restorePlayNextCheckpoint({
+        checkpoints,
+        localTracks: [
+          {
+            id: localRecordId,
+            source: 'local',
+            title: '本地歌曲',
+            artist: '本地艺人',
+            accessStatus: 'available',
+            capabilities: ['queue'],
+            seekable: true,
+          },
+          {
+            id: revokedRecordId,
+            source: 'local',
+            title: '已失效的本地歌曲',
+            artist: '本地艺人',
+            accessStatus: 'revoked',
+            capabilities: ['queue'],
+            seekable: true,
+          },
+        ],
+      }),
     );
 
     expect(state.playNextQueue.map(item => item.occurrenceId)).toEqual([
       'native-remote-1',
       'native-remote-2',
+      'native-local-1',
+      'native-local-revoked',
     ]);
     expect(state.playNextQueue.map(item => item.track.id)).toEqual([
       'netrack_1',
       'qqtrack_2',
+      localRecordId,
+      revokedRecordId,
     ]);
+    expect(state.playNextQueue[2].track).toEqual(
+      expect.objectContaining({
+        title: '本地歌曲',
+        accessStatus: 'available',
+      }),
+    );
+    expect(state.playNextQueue[2].resolutionState).toBeUndefined();
+    expect(state.playNextQueue[3]).toEqual(
+      expect.objectContaining({
+        resolutionState: 'unresolved',
+        track: expect.objectContaining({
+          id: revokedRecordId,
+          accessStatus: 'revoked',
+        }),
+      }),
+    );
 
     state = reducer(
       undefined,
-      playerActions.restorePlayNextCheckpoint([
-        {
-          occurrenceId: 'native-local',
-          position: 56,
-          source: 'local',
-          trackId: 'local-record-1',
-        },
-      ]),
+      playerActions.restorePlayNextCheckpoint({
+        checkpoints: [
+          {
+            occurrenceId: 'native-local-unresolved',
+            position: 78,
+            source: 'local',
+            trackId: 'local-record-missing',
+          },
+        ],
+        localTracks: [],
+      }),
     );
-    expect(state.playNextQueue).toEqual([]);
+    expect(state.playNextQueue).toEqual([
+      expect.objectContaining({
+        occurrenceId: 'native-local-unresolved',
+        resolutionState: 'unresolved',
+        track: expect.objectContaining({
+          source: 'local',
+          accessStatus: 'needs-repair',
+        }),
+      }),
+    ]);
+
+    state = reducer(
+      state,
+      playerActions.restorePlayNextCheckpoint({
+        checkpoints: [
+          {
+            occurrenceId: 'native-local-unresolved',
+            position: 78,
+            source: 'local',
+            trackId: 'local-record-missing',
+          },
+        ],
+        localTracks: [
+          {
+            id: 'local-record-missing',
+            source: 'local',
+            title: '恢复后的本地歌曲',
+            artist: '本地艺人',
+            accessStatus: 'available',
+            capabilities: ['queue'],
+            seekable: true,
+          },
+        ],
+      }),
+    );
+    expect(state.playNextQueue).toEqual([
+      expect.objectContaining({
+        occurrenceId: 'native-local-unresolved',
+        track: expect.objectContaining({
+          id: 'local-record-missing',
+          title: '恢复后的本地歌曲',
+          accessStatus: 'available',
+        }),
+      }),
+    ]);
+    expect(state.playNextQueue[0]).not.toHaveProperty('resolutionState');
   });
 
   it('invalidates an in-flight transition when a queued occurrence is reordered', () => {
