@@ -173,6 +173,22 @@ export const offlineAudio = {
         }
       : { status: 'miss' as const };
   },
+  async normalizationGain(source: string, trackId: string) {
+    if (!safeId(source) || !safeId(trackId) || !native?.normalizationGain)
+      return 1;
+    try {
+      const value = (await (native.normalizationGain as Function)(
+        source,
+        trackId,
+      )) as Record<string, unknown>;
+      const gain = value?.gain;
+      return typeof gain === 'number' && Number.isFinite(gain)
+        ? Math.max(0, Math.min(4, gain))
+        : 1;
+    } catch {
+      return 1;
+    }
+  },
   subscribe(listener: (next: CacheSnapshot) => void) {
     if (!native) return () => {};
     const subscription = new NativeEventEmitter(native as any).addListener(

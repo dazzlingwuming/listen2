@@ -34,7 +34,40 @@ export function scheduleFixedNormalizationGain(gain: number | undefined) {
     typeof gain === 'number' && Number.isFinite(gain)
       ? Math.max(0, Math.min(4, gain))
       : 1;
+  // LoudnessEnhancer can boost but cannot attenuate.  The output stage owns
+  // attenuation while the native session effect handles optional positive gain.
+  fixedOutputGain = normalizationOutputGain(safeGain);
   void audioEffectsClient.setFixedNormalizationGain(safeGain);
+}
+
+let fixedOutputGain = 1;
+
+/** RNTP volume is the attenuation stage; LoudnessEnhancer remains boost-only. */
+export function normalizationOutputGain(gain: number | undefined) {
+  const safe =
+    typeof gain === 'number' && Number.isFinite(gain)
+      ? Math.max(0, Math.min(4, gain))
+      : 1;
+  return safe < 1 ? safe : 1;
+}
+
+function normalizedVolume(state: PlayerState) {
+  return state.muted ? 0 : Math.max(0, Math.min(1, state.volume * fixedOutputGain));
+}
+
+function scheduleCachedNormalization(
+  track: PlayableTrack,
+  context?: NativeOperationContext,
+) {
+  // Clear the preceding track's gain before first audio.  Cache analysis is
+  // deliberately fire-and-forget and can only affect the still-current load.
+  scheduleFixedNormalizationGain(undefined);
+  if (!isOfflineDownloadEligible(track)) return;
+  void offlineAudio.normalizationGain(track.source, track.id).then(gain => {
+    if (!isNativeOperationCurrent(context)) return;
+    scheduleFixedNormalizationGain(gain);
+    void TrackPlayer.setVolume(normalizedVolume(playerState()));
+  });
 }
 
 type ControllerRuntime = {
@@ -437,11 +470,7 @@ async function configureNativeSnapshot(
     state.playMode === PLAY_MODE.REPEAT_ONE ? RepeatMode.Track : RepeatMode.Off,
   );
   assertNativeOperationCurrent(context);
-  await TrackPlayer.setVolume(state.muted ? 0 : state.volume);
-  // The current catalog has no matching completed metrics at startup. Unity is
-  // applied asynchronously; a future matching result may replace it without
-  // touching RNTP user volume or mute.
-  scheduleFixedNormalizationGain(undefined);
+  await TrackPlayer.setVolume(normalizedVolume(state));
 }
 
 async function loadAndPlay(
@@ -466,6 +495,7 @@ async function loadAndPlay(
     await TrackPlayer.add(nativeTrack as any);
     context?.markLoaded(nativeTrack.id, track);
     await configureNativeSnapshot(state, context);
+    scheduleCachedNormalization(track, context);
     if (position > 0) {
       assertNativeOperationCurrent(context);
       await TrackPlayer.seekTo(position);
@@ -1286,7 +1316,9 @@ class PlayerController {
   ): Promise<boolean> {
     try {
       await ensurePlayer();
-      await TrackPlayer.setVolume(playerState().muted ? 0 : target);
+      await TrackPlayer.setVolume(
+        playerState().muted ? 0 : Math.max(0, Math.min(1, target * fixedOutputGain)),
+      );
       emit(dispatch, 'player/setVolumeSnapshot', target);
       return true;
     } catch (error) {
@@ -1310,7 +1342,7 @@ class PlayerController {
   ): Promise<boolean> {
     try {
       await ensurePlayer();
-      await TrackPlayer.setVolume(muted ? 0 : playerState().volume);
+      await TrackPlayer.setVolume(muted ? 0 : normalizedVolume(playerState()));
       emit(dispatch, 'player/setMutedSnapshot', muted);
       return true;
     } catch (error) {

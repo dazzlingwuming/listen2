@@ -16,7 +16,10 @@ jest.mock('../../audioFx/client', () => ({
   audioEffectsClient: { setFixedNormalizationGain: jest.fn().mockResolvedValue(undefined) },
 }));
 
-import { scheduleFixedNormalizationGain } from '../playerController';
+import {
+  normalizationOutputGain,
+  scheduleFixedNormalizationGain,
+} from '../playerController';
 import { audioEffectsClient } from '../../audioFx/client';
 
 describe('loudness playback integration', () => {
@@ -28,5 +31,11 @@ describe('loudness playback integration', () => {
   it('clamps a completed matching gain independently of app volume', () => {
     scheduleFixedNormalizationGain(1.5);
     expect(audioEffectsClient.setFixedNormalizationGain).toHaveBeenLastCalledWith(1.5);
+  });
+
+  it('routes attenuation through the output stage while preserving native boost support', () => {
+    expect(normalizationOutputGain(0.5)).toBe(0.5);
+    expect(normalizationOutputGain(1.5)).toBe(1);
+    expect(normalizationOutputGain(undefined)).toBe(1);
   });
 });
