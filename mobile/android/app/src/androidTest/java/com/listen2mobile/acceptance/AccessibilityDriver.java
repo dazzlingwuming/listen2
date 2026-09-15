@@ -80,17 +80,30 @@ public final class AccessibilityDriver {
     }
 
     void tapLabel(String label) {
-        String node = nodeFor(label);
-        if (node == null) {
-            throw new AssertionError("missing visible control: " + label);
+        String before = dumpWindow();
+        ClickTarget target = clickableTargetFor(label);
+        if (target == null) {
+            throw new AssertionError("missing enabled clickable control: " + label);
         }
-        String[] parts = node.split(",");
-        Rect bounds = new Rect(
-            Integer.parseInt(parts[0]), Integer.parseInt(parts[1]),
-            Integer.parseInt(parts[2]), Integer.parseInt(parts[3])
-        );
-        shell("input tap " + bounds.centerX() + " " + bounds.centerY());
+        boolean actionClick;
+        try {
+            actionClick = target.node.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+        } finally {
+            target.node.recycle();
+        }
+        if (!actionClick) {
+            // The shell fallback is restricted to the exact resolved control, never a
+            // nearby label or caller-supplied coordinate. It must visibly change state.
+            shell("input tap " + target.bounds.centerX() + " " + target.bounds.centerY());
+            require(waitForWindowChange(before, 3_000L), "shell tap did not change visible state: " + label);
+        }
         instrumentation.waitForIdleSync();
+    }
+
+    void submitLiveSearch() {
+        String before = dumpWindow();
+        tapLabel("搜索音乐");
+        require(waitForSearchSubmission(before, 3_000L), "search action did not leave the guide state");
     }
 
     void enterText(String label, String value) {
@@ -169,7 +182,7 @@ public final class AccessibilityDriver {
     PlaybackProbe attemptNativePlayback(String title) {
         String safeTitle = sanitizeVisibleTitle(title);
         String playLabel = "播放" + title;
-        if (nodeFor(playLabel) == null) {
+        if (!hasClickableTarget(playLabel)) {
             return PlaybackProbe.notVerified("no-visible-play-action-" + safeTitle);
         }
         tapLabel(playLabel);
@@ -283,15 +296,6 @@ public final class AccessibilityDriver {
         }
     }
 
-    private String nodeFor(String label) {
-        String expression = "(?:text|content-desc)=\\\"" + Pattern.quote(label) + "\\\"[^>]*bounds=\\\"\\[(-?\\d+),(-?\\d+)\\]\\[(-?\\d+),(-?\\d+)\\]\\\"";
-        Matcher match = Pattern.compile(expression).matcher(dumpWindow());
-        if (!match.find()) {
-            return null;
-        }
-        return match.group(1) + "," + match.group(2) + "," + match.group(3) + "," + match.group(4);
-    }
-
     /**
      * The API 35 shell `input text` route cannot type the fixed CJK fixture.
      * Set text through the visible editable accessibility node instead; this
@@ -333,6 +337,94 @@ public final class AccessibilityDriver {
             }
         }
         return null;
+    }
+
+    private ClickTarget clickableTargetFor(String label) {
+        AccessibilityNodeInfo matched = findLabeledNode(label);
+        if (matched == null) {
+            return null;
+        }
+        AccessibilityNodeInfo current = matched;
+        for (int depth = 0; current != null && depth <= 8; depth += 1) {
+            if (current.isEnabled() && current.isClickable()) {
+                Rect bounds = new Rect();
+                current.getBoundsInScreen(bounds);
+                return new ClickTarget(current, bounds);
+            }
+            AccessibilityNodeInfo parent = current.getParent();
+            current.recycle();
+            current = parent;
+        }
+        return null;
+    }
+
+    private boolean hasClickableTarget(String label) {
+        ClickTarget target = clickableTargetFor(label);
+        if (target == null) {
+            return false;
+        }
+        target.node.recycle();
+        return true;
+    }
+
+    private AccessibilityNodeInfo findLabeledNode(String label) {
+        AccessibilityNodeInfo root = instrumentation.getUiAutomation().getRootInActiveWindow();
+        if (root == null) {
+            return null;
+        }
+        try {
+            return findLabeledNode(root, label, 0, new int[] { 0 });
+        } finally {
+            root.recycle();
+        }
+    }
+
+    private AccessibilityNodeInfo findLabeledNode(AccessibilityNodeInfo node, String label, int depth, int[] visited) {
+        if (visited[0] >= MAX_NODES_PER_DUMP || depth > MAX_DUMP_DEPTH) {
+            return null;
+        }
+        visited[0] += 1;
+        if (labelMatches(node, label)) {
+            return AccessibilityNodeInfo.obtain(node);
+        }
+        for (int index = 0; index < node.getChildCount(); index += 1) {
+            AccessibilityNodeInfo child = node.getChild(index);
+            if (child == null) {
+                continue;
+            }
+            try {
+                AccessibilityNodeInfo found = findLabeledNode(child, label, depth + 1, visited);
+                if (found != null) {
+                    return found;
+                }
+            } finally {
+                child.recycle();
+            }
+        }
+        return null;
+    }
+
+    private boolean waitForWindowChange(String before, long timeoutMillis) {
+        long deadline = SystemClock.elapsedRealtime() + timeoutMillis;
+        while (SystemClock.elapsedRealtime() < deadline) {
+            if (!before.equals(dumpWindow())) {
+                return true;
+            }
+            SystemClock.sleep(100L);
+        }
+        return false;
+    }
+
+    private boolean waitForSearchSubmission(String before, long timeoutMillis) {
+        long deadline = SystemClock.elapsedRealtime() + timeoutMillis;
+        while (SystemClock.elapsedRealtime() < deadline) {
+            String current = dumpWindow();
+            if (!current.equals(before) && (!current.contains("开始搜索") || current.contains("正在搜索"))) {
+                return true;
+            }
+            SystemClock.sleep(100L);
+        }
+        return false;
     }
 
     private boolean waitForExactEditableText(String label, String expected, long timeoutMillis) {
@@ -456,6 +548,16 @@ public final class AccessibilityDriver {
         }
     }
 
+    private static final class ClickTarget {
+        final AccessibilityNodeInfo node;
+        final Rect bounds;
+
+        ClickTarget(AccessibilityNodeInfo node, Rect bounds) {
+            this.node = node;
+            this.bounds = bounds;
+        }
+    }
+
     private String dumpWindow() {
         AccessibilityNodeInfo root = instrumentation.getUiAutomation().getRootInActiveWindow();
         if (root == null) {
@@ -481,6 +583,9 @@ public final class AccessibilityDriver {
         node.getBoundsInScreen(bounds);
         output.append("<node text=\"").append(xmlAttribute(stringValue(node.getText())))
             .append("\" content-desc=\"").append(xmlAttribute(stringValue(node.getContentDescription())))
+            .append("\" class=\"").append(xmlAttribute(stringValue(node.getClassName())))
+            .append("\" clickable=\"").append(node.isClickable())
+            .append("\" enabled=\"").append(node.isEnabled())
             .append("\" bounds=\"[").append(bounds.left).append(',').append(bounds.top)
             .append("][").append(bounds.right).append(',').append(bounds.bottom).append("]\">");
         for (int index = 0; index < node.getChildCount(); index += 1) {

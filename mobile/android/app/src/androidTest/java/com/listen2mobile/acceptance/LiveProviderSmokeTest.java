@@ -22,7 +22,7 @@ public final class LiveProviderSmokeTest {
         require(driver.waitForLabel("搜索歌曲、歌手或歌单", 10_000L), "search field was not visible");
         progress.step("live-query");
         driver.enterText("搜索歌曲、歌手或歌单", "青花瓷");
-        driver.tapLabel("搜索音乐");
+        driver.submitLiveSearch();
         progress.step("live-netease-results");
         List<String> neteaseTitles = driver.requireLiveSearchResults("网易云音乐");
         progress.step("live-bilibili-results");

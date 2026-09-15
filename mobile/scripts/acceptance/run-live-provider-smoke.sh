@@ -30,6 +30,8 @@ if [[ "${1:-}" == '--self-test' ]]; then
   grep -Fq 'assembleReleaseLikeAndroidTest' "$0" || exit 1
   ! grep -Eq '(^|[[:space:]])(node|npm|bash)[[:space:]].*generate-fixtures' "$0" || exit 1
   grep -Fq 'LiveProviderSmokeTest' "$0" || exit 1
+  grep -Fq 'performAction(AccessibilityNodeInfo.ACTION_CLICK)' mobile/android/app/src/androidTest/java/com/listen2mobile/acceptance/AccessibilityDriver.java || exit 1
+  grep -Fq 'submitLiveSearch' mobile/android/app/src/androidTest/java/com/listen2mobile/acceptance/LiveProviderSmokeTest.java || exit 1
   for source in \
     mobile/android/app/src/androidTest/java/com/listen2mobile/acceptance/Phase08Instrumentation.java \
     mobile/android/app/src/androidTest/java/com/listen2mobile/acceptance/AccessibilityDriver.java \
