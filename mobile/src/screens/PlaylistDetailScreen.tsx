@@ -78,6 +78,10 @@ export function PlaylistDetailScreen() {
           signal,
         });
         if (signal.aborted) return;
+        if (detail.id !== remotePlaylistId || detail.source !== sourceId) {
+          setRemoteStatus('error');
+          return;
+        }
         setRemoteDetail(detail);
         setRemoteStatus('ready');
       } catch {

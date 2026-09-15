@@ -229,6 +229,7 @@ export function SearchScreen() {
         navigation.navigate('BilibiliDetail', {
           bvid: match[1],
           title: track.title || 'Bilibili 视频',
+          restorationScope: journey.scope,
         });
         return;
       }
@@ -351,10 +352,12 @@ export function SearchScreen() {
         downloads={downloads}
         onDownload={track => dispatch(requestDownload(track as Track))}
         onSelectPlaylist={playlist =>
+          isOperationAvailable(playlist.source, 'detail') &&
           navigation.navigate('PlaylistDetail', {
             sourceId: playlist.source,
             title: playlist.title,
             remotePlaylistId: playlist.id,
+            restorationScope: journey.scope,
           })
         }
         searchKind={searchKind}

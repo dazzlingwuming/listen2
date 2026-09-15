@@ -153,6 +153,11 @@ describe('Bilibili exact part flow', () => {
     expect(mockNavigate).toHaveBeenCalledWith('BilibiliDetail', {
       bvid: 'BV1xx411c7mD',
       title: '视频',
+      restorationScope: expect.objectContaining({
+        source: 'bilibili',
+        query: '视频',
+        kind: 'track',
+      }),
     });
     expect(mockPlayTracks).not.toHaveBeenCalled();
   });

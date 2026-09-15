@@ -30,7 +30,6 @@ export function BilibiliDetailScreen() {
     const controller = new AbortController();
     const current = ++epoch.current;
     setStatus('loading');
-    setDetail(null);
     bilibiliClient
       .videoDetail(bvid, { signal: controller.signal })
       .then(value => {
@@ -76,12 +75,20 @@ export function BilibiliDetailScreen() {
       {status === 'error' ? (
         <View style={[sectionStyles.card, styles.state]}>
           <Text style={text.heading}>无法加载视频分段</Text>
+          <Text style={text.meta}>请重试，或返回保留的搜索结果。</Text>
           <Pressable
             accessibilityLabel="重试加载视频分段"
             onPress={() => setReload(value => value + 1)}
             style={sectionStyles.button}
           >
             <Text style={sectionStyles.buttonText}>重试</Text>
+          </Pressable>
+          <Pressable
+            accessibilityLabel="返回搜索结果"
+            onPress={() => navigation.goBack()}
+            style={sectionStyles.secondaryButton}
+          >
+            <Text style={sectionStyles.secondaryText}>返回搜索结果</Text>
           </Pressable>
         </View>
       ) : null}
