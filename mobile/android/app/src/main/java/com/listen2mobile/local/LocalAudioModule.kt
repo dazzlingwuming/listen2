@@ -28,7 +28,8 @@ class LocalAudioModule(private val app: ReactApplicationContext) : ReactContextB
         var unsupported = 0
         val accepted = uris.mapNotNull { uri -> try {
             app.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            if (!LocalAudioPolicy.supportedMime(app.contentResolver.getType(uri))) { unsupported++; null }
+            val header = app.contentResolver.openInputStream(uri)?.use { input -> input.readNBytes(64) } ?: ByteArray(0)
+            if (!LocalAudioPolicy.supportedMime(app.contentResolver.getType(uri)) || !LocalAudioPolicy.supportedHeader(header)) { unsupported++; null }
             else SafeLocalRecord(UUID.randomUUID().toString(), "本地音频", "本地音频", "available")
         } catch (_: Exception) { unsupported++; null } }
         val imported = if (accepted.isEmpty()) 0 else LibraryRepository.open(app).insertLocalRecords(accepted).first
