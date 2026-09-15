@@ -38,7 +38,20 @@ class HistoryModule internal constructor(app: ReactApplicationContext, private v
     @ReactMethod fun setRecordingPreference(enabled: Boolean, promise: Promise) = submitResult(promise) { runBlocking { preferences.setRecordingEnabled(enabled) }; mapOf("recordingEnabled" to enabled) }
     @ReactMethod fun clearHistory(promise: Promise) = submitResult(promise) { mapOf("clearGeneration" to ledger.clear()) }
     @ReactMethod fun getHistory(limit: Int, promise: Promise) = submitResult(promise) { safeEvents(null, limit) }
-    @ReactMethod fun getRecap(year: Int, promise: Promise) = submitResult(promise) { if (year !in 1970..9999) emptyList<Map<String, Any>>() else safeEvents(year, 500) }
+    @ReactMethod fun getRecap(year: Int, promise: Promise) = submitResult(promise) {
+        val safeYear = year.takeIf { it in 1970..9999 } ?: java.time.Year.now().value
+        val recap = ledger.recap(safeYear)
+        mapOf(
+            "year" to recap.year,
+            "totalListenedMs" to recap.totalListenedMs,
+            "playCount" to recap.playCount,
+            "distinctTracks" to recap.distinctTracks,
+            "distinctArtists" to recap.distinctArtists,
+            "topTracks" to recap.topTracks,
+            "topArtists" to recap.topArtists,
+            "monthly" to recap.monthly,
+        )
+    }
     @ReactMethod fun exportSafeHistory(year: Int, limit: Int, promise: Promise) = submitResult(promise) { if (year !in 1970..9999) emptyList<Map<String, Any>>() else safeEvents(year, limit.coerceIn(1, 500)) }
 
     private fun submit(promise: Promise, work: () -> Unit) {

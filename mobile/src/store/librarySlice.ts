@@ -65,6 +65,17 @@ const librarySlice = createSlice({
       state.pendingRequestIds = (state.pendingRequestIds || []).filter(requestId => requestId !== action.payload.requestId);
       if (action.payload.snapshot) applySnapshot(state, action.payload.snapshot);
     },
+    historyProjectionReceived(state, action: PayloadAction<PlayableTrack[]>) {
+      // Recent rows are a disposable native-ledger projection, never a persisted
+      // library authority.  Keep first-seen order and semantic identity only.
+      const seen = new Set<string>();
+      state.recentTracks = action.payload.filter(track => {
+        const key = `${track.source}:${track.id}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }).slice(0, 100);
+    },
     toggleFavorite(_state, _action: PayloadAction<PlayableTrack>) {},
     recordRecent(_state, _action: PayloadAction<PlayableTrack>) {},
     clearRecent() {},
@@ -85,6 +96,7 @@ export const {
   createPlaylist,
   deletePlaylist,
   hydrationFailed,
+  historyProjectionReceived,
   hydrationStarted,
   hydrationSucceeded,
   importLocalTracks,

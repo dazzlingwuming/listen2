@@ -10,12 +10,14 @@ export const BACKUP_VERSION = 1;
 
 export const BACKUP_LIMITS = Object.freeze({
   maxBytes: 5 * 1024 * 1024,
-  maxPlaylists: 500,
+  // These values are the portable side of the native LibraryBridge contract.
+  // Keep them aligned: a preview must not accept an import Room will reject.
+  maxPlaylists: 2_000,
   maxTracksPerPlaylist: 5000,
   maxTotalTracks: 50000,
-  maxIdLength: 200,
-  maxTitleLength: 80,
-  maxTextLength: 256,
+  maxIdLength: 64,
+  maxTitleLength: 128,
+  maxTextLength: 128,
   maxArtworkUrlLength: 4096,
   maxDurationMs: 24 * 60 * 60 * 1000,
 });

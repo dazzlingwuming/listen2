@@ -19,7 +19,7 @@ import { TrackRow, type PresentableTrack } from '../components/TrackRow';
 import { ScreenLayout, sectionStyles } from './ScreenLayout';
 import { PROVIDER_CAPABILITIES, providerClient } from '../api/client';
 import { Sheet } from '../components/Sheet';
-import { releaseLocalAudioAccess } from '../localAudio/access';
+import { removeLocalAudio } from '../localAudio/picker';
 import { isLocalTrack } from '../types/music';
 import { libraryClient } from '../library/libraryClient';
 
@@ -127,9 +127,10 @@ export function PlaylistDetailScreen() {
     }
   };
   const canPlayTrack = (track: PresentableTrack) =>
-    !isLocalTrack(track) &&
-    PROVIDER_CAPABILITIES[track.source as keyof typeof PROVIDER_CAPABILITIES]
-      ?.playback === true;
+    isLocalTrack(track)
+      ? track.accessStatus === 'available'
+      : PROVIDER_CAPABILITIES[track.source as keyof typeof PROVIDER_CAPABILITIES]
+        ?.playback === true;
   const partialRemoteDetail = remoteDetail?.completeness === 'partial';
   const playAll = () => {
     if (partialRemoteDetail) return;
@@ -321,10 +322,11 @@ export function PlaylistDetailScreen() {
                               text: '移除',
                               style: 'destructive',
                               onPress: async () => {
-                                const forget = (playerActions as any)
-                                  .forgetTrack;
+                                const result = await removeLocalAudio(track.id);
+                                if (result !== 'repaired') return;
+                                const forget = (playerActions as any).forgetTrack;
                                 if (forget) await dispatch(forget(track));
-                                await releaseLocalAudioAccess(track);
+                                dispatch(hydrationSucceeded(await libraryClient.getSnapshot()));
                               },
                             },
                           ],

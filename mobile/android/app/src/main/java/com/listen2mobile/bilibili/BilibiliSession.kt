@@ -127,8 +127,15 @@ internal class BilibiliSession(
 
     fun logout(): PublicState {
         cancelActiveRequest()
-        return try { gateway.logout(); vault.clear(); synchronized(lock) { account = null; status = PublicStatus.IDLE; error = null; projectionLocked() } }
-        catch (_: Exception) { synchronized(lock) { status = PublicStatus.ERROR; error = BilibiliPolicy.ErrorCode.PROVIDER_ERROR; projectionLocked() } }
+        // Credential erasure is not contingent on best-effort provider transport
+        // cleanup. A gateway exception must never retain an authenticated vault.
+        try { vault.clear() } catch (_: Exception) { }
+        return try {
+            gateway.logout()
+            synchronized(lock) { account = null; status = PublicStatus.IDLE; error = null; projectionLocked() }
+        } catch (_: Exception) {
+            synchronized(lock) { account = null; status = PublicStatus.ERROR; error = BilibiliPolicy.ErrorCode.PROVIDER_ERROR; projectionLocked() }
+        }
     }
     fun snapshot(): PublicState = synchronized(lock) { projectionLocked() }
 

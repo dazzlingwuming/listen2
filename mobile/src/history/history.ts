@@ -8,6 +8,18 @@ let active: { id: string; trackId: string } | null = null;
 const native = () => NativeModules.Listen2History as NativeHistory | undefined;
 const safe = (track: PlayableTrack) => ({ source: track.source, trackId: track.id, title: track.title.slice(0, 160), artist: track.artist.slice(0, 160) });
 const fire = (method: string, value: Record<string, unknown>) => { try { const fn = native()?.[method]; if (typeof fn === 'function') void fn(value).catch(() => undefined); } catch {} };
+function recent(value: unknown): PlayableTrack[] {
+  const response = value as { status?: unknown; data?: unknown } | null;
+  if (response?.status !== 'success' || !Array.isArray(response.data)) return [];
+  const seen = new Set<string>();
+  return response.data.flatMap((entry: any) => {
+    if (!entry || typeof entry !== 'object' || !['netease', 'kugou', 'kuwo', 'qq', 'bilibili', 'local'].includes(entry.source) || typeof entry.trackId !== 'string' || typeof entry.title !== 'string' || typeof entry.artist !== 'string' || entry.trackId.length > 128 || entry.title.length > 160 || entry.artist.length > 160) return [];
+    const key = `${entry.source}:${entry.trackId}`;
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return [{ id: entry.trackId, source: entry.source, title: entry.title, artist: entry.artist } as PlayableTrack];
+  });
+}
 /** Fire-and-forget side channel: no player command awaits native history work. */
 export const history = {
   begin(track: PlayableTrack) {
@@ -24,6 +36,7 @@ export const history = {
   async recordingEnabled() { return native()?.getRecordingPreference?.(); },
   async setRecordingEnabled(enabled: boolean) { return native()?.setRecordingPreference?.(enabled); },
   async getHistory(limit = 100) { return native()?.getHistory?.(limit); },
+  async recentTracks() { return recent(await native()?.getHistory?.(100)); },
   async recap(year: number) { return native()?.getRecap?.(year); },
   async exportSafe(year: number) { return native()?.exportSafeHistory?.(year, 500); },
 };

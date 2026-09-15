@@ -170,9 +170,26 @@ class LocalAudioModule(private val app: ReactApplicationContext) : ReactContextB
                 else -> { accepted += record; acceptedUris[record.recordId] = uri }
             }
         }
-        if (!current.active) return
-        val imported = if (accepted.isEmpty()) 0 else LibraryRepository.open(app).insertLocalRecords(accepted).first
-        if (imported > 0 && current.active) acceptedUris.forEach { (recordId, uri) -> privateStore.rememberDocument(recordId, uri) }
+        if (!current.active) {
+            acceptedUris.values.forEach(::releaseReadGrant)
+            return
+        }
+        val imported = try {
+            if (accepted.isEmpty()) 0 else LibraryRepository.open(app).insertLocalRecords(accepted).first
+        } catch (_: Exception) {
+            acceptedUris.values.forEach(::releaseReadGrant)
+            if (current.active) current.promise.resolve(receipt(current.requestId, "rejected", 0, duplicates, unsupported, unreadable))
+            return
+        }
+        if (imported > 0) {
+            // Once Room accepts the batch, cancellation cannot split the durable row
+            // from its native-private document association.  The picker promise may
+            // already have been resolved as cancelled, but the accepted batch remains
+            // internally complete and has no leaked grant.
+            acceptedUris.forEach { (recordId, uri) -> privateStore.rememberDocument(recordId, uri) }
+        } else {
+            acceptedUris.values.forEach(::releaseReadGrant)
+        }
         if (current.active) current.promise.resolve(receipt(current.requestId, if (imported > 0) "success" else "rejected", imported, duplicates, unsupported, unreadable))
     }
 
@@ -180,9 +197,10 @@ class LocalAudioModule(private val app: ReactApplicationContext) : ReactContextB
         val required = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
         if ((resultFlags and required) != required) return null
         try { app.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: SecurityException) { return null }
-        if (privateStore.hasDocument(uri)) return DUPLICATE
-        val header = try { app.contentResolver.openInputStream(uri)?.use { it.readNBytes(16) } } catch (_: Exception) { null } ?: return null
-        if (!LocalAudioPolicy.supportedMime(app.contentResolver.getType(uri)) || !LocalAudioPolicy.supportedHeader(header)) return UNSUPPORTED
+        if (privateStore.hasDocument(uri)) { releaseReadGrant(uri); return DUPLICATE }
+        val header = try { app.contentResolver.openInputStream(uri)?.use { it.readNBytes(16) } } catch (_: Exception) { null }
+        if (header == null) { releaseReadGrant(uri); return null }
+        if (!LocalAudioPolicy.supportedMime(app.contentResolver.getType(uri)) || !LocalAudioPolicy.supportedHeader(header)) { releaseReadGrant(uri); return UNSUPPORTED }
         val metadata = readMetadata(uri)
         val id = UUID.randomUUID().toString()
         return SafeLocalRecord(id, metadata.title, metadata.artist, "available", metadata.album, metadata.durationMs, metadata.hasArtwork)
@@ -192,12 +210,18 @@ class LocalAudioModule(private val app: ReactApplicationContext) : ReactContextB
         val required = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
         if ((resultFlags and required) != required) { current.promise.resolve(receipt(current.requestId, "rejected")); return }
         try { app.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: SecurityException) { current.promise.resolve(receipt(current.requestId, "rejected")); return }
-        val normalized = try { app.contentResolver.openInputStream(uri)?.use { LocalAudioPolicy.normalizeLrc(it.readNBytes(LocalAudioPolicy.MAX_LRC_BYTES + 1)) } } catch (_: Exception) { null }
-        if (!current.active) return
-        if (normalized == null || !LibraryRepository.open(app).attachExplicitLyric(recordId)) { if (current.active) current.promise.resolve(receipt(current.requestId, "rejected")); return }
-        if (!current.active) return
-        privateStore.rememberLyric(recordId, normalized)
-        current.promise.resolve(receipt(current.requestId, "success"))
+        try {
+            val normalized = try { app.contentResolver.openInputStream(uri)?.use { LocalAudioPolicy.normalizeLrc(it.readNBytes(LocalAudioPolicy.MAX_LRC_BYTES + 1)) } } catch (_: Exception) { null }
+            if (!current.active) return
+            if (normalized == null || !LibraryRepository.open(app).attachExplicitLyric(recordId)) { if (current.active) current.promise.resolve(receipt(current.requestId, "rejected")); return }
+            // The Room flag and copied private text form one committed association;
+            // never let a late cancellation leave an "attached" record without text.
+            privateStore.rememberLyric(recordId, normalized)
+            if (current.active) current.promise.resolve(receipt(current.requestId, "success"))
+        } finally {
+            // LRC bytes are copied into app-private storage, so no long-lived grant is needed.
+            releaseReadGrant(uri)
+        }
     }
 
     private fun repairDocument(current: Pending, recordId: String, uri: android.net.Uri, resultFlags: Int) {
@@ -215,7 +239,6 @@ class LocalAudioModule(private val app: ReactApplicationContext) : ReactContextB
         val repository = LibraryRepository.open(app)
         val previous = privateStore.document(recordId)
         if (!repository.repairLocalRecord(recordId, replacement)) { releaseReadGrant(uri); current.promise.resolve(repairReceipt(current.requestId, recordId, "rejected")); return }
-        if (!current.active) { releaseReadGrant(uri); return }
         privateStore.rememberDocument(recordId, uri)
         if (previous != null && previous != uri) runCatching { app.contentResolver.releasePersistableUriPermission(previous, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
         current.promise.resolve(repairReceipt(current.requestId, recordId, "repaired"))

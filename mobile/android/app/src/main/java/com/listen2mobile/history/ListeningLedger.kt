@@ -12,6 +12,16 @@ internal data class SafeHistoryTrack(val source: String, val trackId: String, va
 internal data class PlaybackStart(val playbackInstanceId: String, val clearGeneration: Long, val track: SafeHistoryTrack, val durationMs: Long, val startedElapsedMs: Long)
 internal data class PlaybackObservation(val playbackInstanceId: String, val clearGeneration: Long, val sequence: Long, val kind: String, val positionMs: Long?, val observedElapsedMs: Long)
 internal data class ListeningCommit(val eventId: String, val playbackInstanceId: String, val committedLocalDate: String, val committedLocalYear: Int, val committedLocalMonth: Int, val listenedForwardMs: Long, val thresholdMs: Long)
+internal data class HistoryRecap(
+    val year: Int,
+    val totalListenedMs: Long,
+    val playCount: Int,
+    val distinctTracks: Int,
+    val distinctArtists: Int,
+    val topTracks: List<Map<String, Any>>,
+    val topArtists: List<Map<String, Any>>,
+    val monthly: List<Map<String, Any>>,
+)
 
 /** Room owner for valid-listen evidence. Every public result is semantic and bounded. */
 internal class ListeningLedger(
@@ -63,6 +73,32 @@ internal class ListeningLedger(
     fun events(year: Int?, limit: Int = 500): List<HistoryEventEntity> = database.runInTransaction<List<HistoryEventEntity>> {
         val safeLimit = limit.coerceIn(1, 500)
         if (year == null) database.libraryDao().historyEvents(safeLimit) else database.libraryDao().historyEventsForYear(year, safeLimit)
+    }
+
+    /** Bounded, semantic-only annual aggregate. An empty year is a real zero result, not an error. */
+    fun recap(year: Int): HistoryRecap = database.runInTransaction<HistoryRecap> {
+        val events = database.libraryDao().historyEventsForYear(year, 500)
+        val byTrack = events.groupBy { "${it.source}:${it.semanticTrackId}" }
+        val byArtist = events.groupBy { it.artist }
+        val monthRows = (1..12).map { month ->
+            val rows = events.filter { it.committedLocalMonth == month }
+            mapOf("month" to month, "playCount" to rows.size, "listenedForwardMs" to rows.sumOf { it.listenedForwardMs })
+        }
+        HistoryRecap(
+            year = year,
+            totalListenedMs = events.sumOf { it.listenedForwardMs },
+            playCount = events.size,
+            distinctTracks = byTrack.size,
+            distinctArtists = byArtist.size,
+            topTracks = byTrack.values.sortedWith(compareByDescending<List<HistoryEventEntity>> { it.size }.thenBy { it.first().title }).take(5).map { rows ->
+                val row = rows.first()
+                mapOf("source" to row.source, "trackId" to row.semanticTrackId, "title" to row.title, "artist" to row.artist, "playCount" to rows.size)
+            },
+            topArtists = byArtist.values.sortedWith(compareByDescending<List<HistoryEventEntity>> { it.size }.thenBy { it.first().artist }).take(5).map { rows ->
+                mapOf("artist" to rows.first().artist, "playCount" to rows.size)
+            },
+            monthly = monthRows,
+        )
     }
 
     private fun state(): HistoryStateEntity = database.libraryDao().historyState() ?: HistoryStateEntity(clearGeneration = 0, revision = 0).also(database.libraryDao()::putHistoryState)

@@ -91,7 +91,10 @@ internal object LibraryBridgeContract {
         if (depth > 4) return true
         return when (value) {
             is Map<*, *> -> value.any { (key, child) -> key !is String || privateKey.containsMatchIn(key) || hasPrivateTree(child, depth + 1) }
-            is Collection<*> -> value.size > 32 || value.any { hasPrivateTree(it, depth + 1) }
+            // Backup preview is bounded separately (2,000 playlists / 50,000
+            // tracks). Do not accidentally impose the old generic bridge's 32
+            // item cap before that contract can validate it.
+            is Collection<*> -> value.size > 50_000 || value.any { hasPrivateTree(it, depth + 1) }
             is String -> value.length > LibraryLimits.MAX_TITLE
             else -> false
         }
@@ -118,9 +121,10 @@ class LibraryBridge internal constructor(
 
     @ReactMethod
     fun applyMutation(request: ReadableMap, promise: Promise) = execute(promise) {
-        when (val parsed = LibraryBridgeContract.parseMutation(readMap(request))) {
+        val raw = readMap(request)
+        when (val parsed = LibraryBridgeContract.parseMutation(raw)) {
             is LibraryValidation.Accepted -> receipt(repository.apply(parsed.mutation))
-            is LibraryValidation.Rejected -> error(parsed.errorCode)
+            is LibraryValidation.Rejected -> rejectedMutationReceipt(raw, parsed.errorCode)
         }
     }
 
@@ -140,6 +144,9 @@ class LibraryBridge internal constructor(
     /** Public status exposes no legacy payload, storage handle, checksum source, or native exception. */
     @ReactMethod
     fun getMigrationStatus(promise: Promise) = execute(promise) {
+        // A separate process/startup validates the active Room readback before
+        // cleanup ever becomes eligible; this call has no legacy payload access.
+        runBlocking { migration.validateLaterStartup() }
         val status = runBlocking { preferences.status() }
         migrationStatus(status)
     }
@@ -269,6 +276,19 @@ class LibraryBridge internal constructor(
         putDouble("revision", value.revision.toDouble())
         putString("errorCode", value.errorCode)
         value.snapshot?.let { putMap("snapshot", snapshot(it)) }
+    }
+
+    /** A syntactically correlated mutation failure still has the receipt shape the
+     * JS client validates, so rejected requests retain the last confirmed snapshot. */
+    private fun rejectedMutationReceipt(raw: Map<String, Any?>, code: String): WritableMap {
+        val requestId = raw["requestId"] as? String
+        val revision = (raw["expectedRevision"] as? Number)?.let { number ->
+            val decimal = number.toDouble()
+            if (decimal.isFinite() && decimal >= 0 && decimal == decimal.toLong().toDouble()) decimal.toLong() else null
+        }
+        return if (requestId != null && requestId.matches(Regex("^[A-Za-z0-9._:-]{1,96}$")) && revision != null)
+            receipt(LibraryReceipt(requestId, "rejected", repository.snapshot().revision, code, repository.snapshot()))
+        else error(code)
     }
 
     private fun backupPreview(value: BackupPreview) = Arguments.createMap().apply {

@@ -1,17 +1,28 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, Pressable, Text, View } from 'react-native';
+import { Alert, Pressable, Share, Text, View } from 'react-native';
 import { history } from '../history/history';
 import { ScreenLayout, sectionStyles } from './ScreenLayout';
 import { text } from '../theme';
 
+type Entry = { eventId: string; title: string; artist: string; date: string };
+type Recap = { year: number; totalListenedMs: number; playCount: number; distinctTracks: number; distinctArtists: number; topTracks: Array<{ title: string; playCount: number }>; monthly: Array<{ month: number; playCount: number }> };
+const successData = (value: any) => value?.status === 'success' ? value.data : null;
+
 export function HistoryScreen() {
-  const [entries, setEntries] = useState<any[]>([]); const [status, setStatus] = useState('loading'); const [enabled, setEnabled] = useState(true);
-  const load = async () => { setStatus('loading'); try { const [rows, pref] = await Promise.all([history.getHistory(), history.recordingEnabled()]); setEntries(Array.isArray((rows as any)?.data) ? (rows as any).data : []); setEnabled(Boolean((pref as any)?.data?.recordingEnabled ?? true)); setStatus('ready'); } catch { setStatus('error'); } };
-  useEffect(() => { void load(); }, []);
-  const clear = () => Alert.alert('清空听歌历史？此操作不可恢复。', undefined, [{ text: '取消', style: 'cancel' }, { text: '清空', style: 'destructive', onPress: () => { void history.clear().then(load); } }]);
+  const currentYear = new Date().getFullYear();
+  const [entries, setEntries] = useState<Entry[]>([]); const [status, setStatus] = useState('loading'); const [enabled, setEnabled] = useState(true); const [year, setYear] = useState(currentYear); const [annual, setAnnual] = useState<Recap | null>(null); const [actionError, setActionError] = useState<string | null>(null);
+  const load = async (selectedYear = year) => { setStatus('loading'); try { const [rows, pref, annualValue] = await Promise.all([history.getHistory(), history.recordingEnabled(), history.recap(selectedYear)]); const historyRows = successData(rows); const preference = successData(pref); const recap = successData(annualValue); if (!Array.isArray(historyRows) || typeof preference?.recordingEnabled !== 'boolean' || !recap || !Number.isInteger(recap.year) || !Array.isArray(recap.monthly) || !Array.isArray(recap.topTracks)) throw new Error('invalid-history-response'); setEntries(historyRows); setEnabled(preference.recordingEnabled); setAnnual(recap); setStatus('ready'); } catch { setStatus('error'); } };
+  // The first history hydrate intentionally happens once per screen mount.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { void load(currentYear); }, []);
+  const switchYear = (next: number) => { if (next < 1970 || next > currentYear) return; setYear(next); void load(next); };
+  const setPreference = async () => { const requested = !enabled; setActionError(null); const result = successData(await history.setRecordingEnabled(requested)); if (typeof result?.recordingEnabled !== 'boolean' || result.recordingEnabled !== requested) { setActionError('记录设置暂时未确认，请重试。'); return; } setEnabled(result.recordingEnabled); };
+  const clear = () => Alert.alert('清空听歌历史？此操作不可恢复。', undefined, [{ text: '取消', style: 'cancel' }, { text: '清空', style: 'destructive', onPress: () => { void history.clear().then(() => load()).catch(() => setActionError('清空失败，请重试。')); } }]);
+  const exportSafe = async () => { setActionError(null); const exportRows = successData(await history.exportSafe(year)); if (!Array.isArray(exportRows)) { setActionError('导出暂时不可用，请重试。'); return; } try { await Share.share({ title: `${year} 听歌历史`, message: JSON.stringify({ schemaVersion: 1, year, entries: exportRows }, null, 2) }); } catch { setActionError('无法打开系统分享或保存面板。'); } };
   return <ScreenLayout title="听歌历史与年度回响" subtitle="只记录有效播放；关闭记录不会删除已有历史。">
-    <View style={sectionStyles.card}><Pressable accessibilityLabel="切换听歌记录" onPress={() => { void history.setRecordingEnabled(!enabled).then(() => setEnabled(!enabled)); }} style={sectionStyles.button}><Text style={sectionStyles.buttonText}>{enabled ? '关闭未来记录' : '开启未来记录'}</Text></Pressable><Text style={text.meta}>关闭后仅停止未来记录，已有历史会保留。</Text></View>
+    <View style={sectionStyles.card}><Pressable accessibilityLabel="切换听歌记录" onPress={() => { void setPreference(); }} style={sectionStyles.button}><Text style={sectionStyles.buttonText}>{enabled ? '关闭未来记录' : '开启未来记录'}</Text></Pressable><Text style={text.meta}>关闭后仅停止未来记录，已有历史会保留。</Text>{actionError ? <Text accessibilityRole="alert" style={text.meta}>{actionError}</Text> : null}</View>
+    <View style={sectionStyles.section}><Text style={text.heading}>年度回响</Text><View style={sectionStyles.card}><View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><Pressable accessibilityLabel="上一年年度回响" onPress={() => switchYear(year - 1)}><Text style={text.body}>‹ 上一年</Text></Pressable><Text style={text.body}>{year}</Text><Pressable accessibilityLabel="下一年年度回响" onPress={() => switchYear(year + 1)}><Text style={text.body}>下一年 ›</Text></Pressable></View>{annual ? <View><Text style={text.meta}>有效播放 {annual.playCount} 次 · {Math.floor(annual.totalListenedMs / 60000)} 分钟 · {annual.distinctTracks} 首歌 · {annual.distinctArtists} 位艺人</Text><Text style={text.meta}>{annual.topTracks.length ? `最常听：${annual.topTracks.map(item => `${item.title}（${item.playCount}）`).join('、')}` : '这一年还没有有效播放记录。'}</Text><Text style={text.meta}>每月：{annual.monthly.map(item => `${item.month}月 ${item.playCount}次`).join(' · ')}</Text></View> : null}</View></View>
     <View style={sectionStyles.section}><Text style={text.heading}>最近有效播放</Text>{status === 'loading' ? <Text style={text.meta}>正在载入…</Text> : status === 'error' ? <Pressable accessibilityLabel="重试历史加载" onPress={() => void load()}><Text style={text.body}>载入失败，点此重试</Text></Pressable> : entries.length ? entries.map(item => <View key={item.eventId} style={sectionStyles.card}><Text style={text.body}>{item.title}</Text><Text style={text.meta}>{item.artist} · {item.date}</Text></View>) : <Text style={text.meta}>还没有满足有效播放条件的听歌历史。</Text>}</View>
-    <View style={sectionStyles.section}><Pressable accessibilityLabel="导出安全听歌历史" onPress={() => { void history.exportSafe(new Date().getFullYear()); }} style={sectionStyles.secondaryButton}><Text style={sectionStyles.secondaryText}>导出安全历史</Text></Pressable><Pressable accessibilityLabel="清空听歌历史" onPress={clear} style={sectionStyles.secondaryButton}><Text style={sectionStyles.secondaryText}>清空历史</Text></Pressable></View>
+    <View style={sectionStyles.section}><Pressable accessibilityLabel="导出安全听歌历史" onPress={() => { void exportSafe(); }} style={sectionStyles.secondaryButton}><Text style={sectionStyles.secondaryText}>导出安全历史</Text></Pressable><Pressable accessibilityLabel="清空听歌历史" onPress={clear} style={sectionStyles.secondaryButton}><Text style={sectionStyles.secondaryText}>清空历史</Text></Pressable></View>
   </ScreenLayout>;
 }

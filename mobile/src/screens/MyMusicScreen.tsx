@@ -230,12 +230,12 @@ export function MyMusicScreen() {
                     <Text numberOfLines={1} style={text.meta}>{track.artist}{track.album ? ` · ${track.album}` : ''}{track.lyricState === 'attached' ? ' · 已有歌词' : ''}{track.seekable === false ? ' · 仅顺序播放' : ''}</Text>
                     {track.accessStatus !== 'available' ? <Text accessibilityRole="alert" style={text.meta}>文件当前不可访问，请重新选择。</Text> : null}
                   </View>
-                  <Pressable accessibilityLabel={`为${track.title}选择歌词`} onPress={() => { void chooseLyric(track.id); }} style={styles.localAction}>
+                  {track.accessStatus === 'available' && track.capabilities?.includes('lyrics') ? <Pressable accessibilityLabel={`为${track.title}选择歌词`} onPress={() => { void chooseLyric(track.id); }} style={styles.localAction}>
                     <Text style={styles.localActionText}>歌词</Text>
-                  </Pressable>
-                  <Pressable accessibilityLabel={`下一首播放${track.title}`} onPress={() => dispatch(playerActions.addNextTrack(track))} style={styles.localAction}>
+                  </Pressable> : null}
+                  {track.accessStatus === 'available' && track.capabilities?.includes('queue') ? <Pressable accessibilityLabel={`下一首播放${track.title}`} onPress={() => dispatch(playerActions.addNextTrack(track))} style={styles.localAction}>
                     <Text style={styles.localActionText}>下一首</Text>
-                  </Pressable>
+                  </Pressable> : null}
                   {track.accessStatus !== 'available' ? <Pressable accessibilityLabel={`重新选择${track.title}`} disabled={localActionRecordId === track.id} onPress={() => { void repairLocal(track.id); }} style={styles.localAction}>
                     <Text style={styles.localActionText}>{localActionRecordId === track.id ? '处理中…' : '重新选择'}</Text>
                   </Pressable> : null}

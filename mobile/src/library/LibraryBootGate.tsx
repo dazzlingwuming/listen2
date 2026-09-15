@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useAppDispatch, useAppSelector } from '../store';
-import { hydrationFailed, hydrationStarted, hydrationSucceeded } from '../store/librarySlice';
+import { historyProjectionReceived, hydrationFailed, hydrationStarted, hydrationSucceeded } from '../store/librarySlice';
 import { LibraryClientError, libraryClient } from './libraryClient';
+import { history } from '../history/history';
+import { migrateKnownLegacyLibrary } from './legacyMigration';
 
 type Props = { children: React.ReactNode };
 
@@ -18,8 +20,23 @@ export function LibraryBootGate({ children }: Props) {
   const { hydrated, hydrationPending, hydrationError } = useAppSelector(state => state.library);
   const hydrate = useCallback(() => {
     dispatch(hydrationStarted());
-    libraryClient.getSnapshot().then(
-      snapshot => dispatch(hydrationSucceeded(snapshot)),
+    (async () => {
+      const migration = await libraryClient.getMigrationStatus();
+      if (migration.phase === 'not-started' || migration.phase === 'failed') {
+        const attemptId = `boot_${Date.now().toString(36)}`;
+        const result = await migrateKnownLegacyLibrary(attemptId);
+        // An existing legacy payload must not be silently replaced by an invented
+        // empty Room projection. Keep the legacy source selected and surface retry.
+        if (result.status === 'invalid-legacy' || result.status === 'unconfirmed' || result.status === 'retryable') throw new LibraryClientError('INVALID_RESPONSE');
+      }
+      return libraryClient.getSnapshot();
+    })().then(
+      snapshot => {
+        dispatch(hydrationSucceeded(snapshot));
+        // History is independent from the library boot authority. Its absence must
+        // not turn a valid Room library into a fake empty/error state.
+        void history.recentTracks().then(tracks => dispatch(historyProjectionReceived(tracks)));
+      },
       error => dispatch(hydrationFailed(errorCode(error))),
     );
   }, [dispatch]);
