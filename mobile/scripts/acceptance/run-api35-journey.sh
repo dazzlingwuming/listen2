@@ -160,8 +160,8 @@ smoke_ui || { record_failure release-ui-smoke; exit 1; }
 "$ADB" -s "$SERIAL" pull /sdcard/listen2-phase8-smoke.xml "$RUN_DIR/smoke-window.xml" >/dev/null
 "$ADB" -s "$SERIAL" exec-out screencap -p > "$RUN_DIR/smoke-phone.png"
 run_instrumentation "$JOURNEY_CLASS" "$RUN_DIR/integrated-journey-instrumentation.txt" || { record_failure integrated-journey; exit 1; }
-"$ADB" -s "$SERIAL" pull /sdcard/listen2-phase8-integrated.xml "$RUN_DIR/integrated-window.xml" >/dev/null || { record_failure missing-integrated-window; exit 1; }
-"$ADB" -s "$SERIAL" pull /sdcard/listen2-phase8-integrated.png "$RUN_DIR/integrated-phone.png" >/dev/null || { record_failure missing-integrated-screen; exit 1; }
+"$ADB" -s "$SERIAL" pull "/sdcard/Android/data/$PACKAGE/files/listen2-phase8-integrated.xml" "$RUN_DIR/integrated-window.xml" >/dev/null || { record_failure missing-integrated-window; exit 1; }
+"$ADB" -s "$SERIAL" pull "/sdcard/Android/data/$PACKAGE/files/listen2-phase8-integrated.png" "$RUN_DIR/integrated-phone.png" >/dev/null || { record_failure missing-integrated-screen; exit 1; }
 smoke_ui || { record_failure postrun-ui-smoke; exit 1; }
 "$ADB" -s "$SERIAL" pull /sdcard/listen2-phase8-smoke.xml "$RUN_DIR/postrun-window.xml" >/dev/null
 "$ADB" -s "$SERIAL" exec-out screencap -p > "$RUN_DIR/postrun-phone.png"

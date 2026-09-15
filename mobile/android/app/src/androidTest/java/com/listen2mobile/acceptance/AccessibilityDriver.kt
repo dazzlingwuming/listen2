@@ -2,10 +2,14 @@ package com.listen2mobile.acceptance
 
 import android.app.Instrumentation
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.Rect
 import android.os.SystemClock
 import android.util.Log
+import android.view.accessibility.AccessibilityNodeInfo
+import java.io.File
 import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.util.regex.Pattern
 
 /**
@@ -15,6 +19,9 @@ import java.util.regex.Pattern
  */
 class AccessibilityDriver(private val instrumentation: Instrumentation) {
     private val targetPackage = "com.dazzlingwuming.listen2"
+    private val maxNodesPerDump = 800
+    private val maxDumpDepth = 40
+    private val maxAttributeLength = 512
 
     fun launchTarget() {
         val intent = instrumentation.targetContext.packageManager
@@ -85,8 +92,20 @@ class AccessibilityDriver(private val instrumentation: Instrumentation) {
 
     /** Captured while the target Activity is foreground, before test teardown. */
     fun captureForegroundEvidence() {
-        shell("uiautomator dump /sdcard/listen2-phase8-integrated.xml >/dev/null")
-        shell("screencap -p /sdcard/listen2-phase8-integrated.png")
+        val directory = instrumentation.targetContext.getExternalFilesDir(null)
+            ?: throw AssertionError("target external-files evidence directory is unavailable")
+        File(directory, "listen2-phase8-integrated.xml").writeText(dumpWindow())
+        val screenshot = instrumentation.uiAutomation.takeScreenshot()
+            ?: throw AssertionError("foreground screenshot is unavailable")
+        try {
+            FileOutputStream(File(directory, "listen2-phase8-integrated.png")).use { output ->
+                check(screenshot.compress(Bitmap.CompressFormat.PNG, 100, output)) {
+                    "could not write foreground screenshot"
+                }
+            }
+        } finally {
+            screenshot.recycle()
+        }
     }
 
     fun record(event: String) = Log.i("Listen2Acceptance", "acceptance-event=$event")
@@ -98,8 +117,53 @@ class AccessibilityDriver(private val instrumentation: Instrumentation) {
     }
 
     private fun dumpWindow(): String {
-        shell("uiautomator dump /sdcard/listen2-acceptance-window.xml >/dev/null")
-        return shell("cat /sdcard/listen2-acceptance-window.xml")
+        val root = instrumentation.uiAutomation.rootInActiveWindow
+            ?: throw AssertionError("active accessibility window is unavailable")
+        return try {
+            val output = StringBuilder("<?xml version=\"1.0\" encoding=\"UTF-8\"?><hierarchy>")
+            val visited = intArrayOf(0)
+            appendNode(root, output, 0, visited)
+            output.append("</hierarchy>").toString()
+        } finally {
+            root.recycle()
+        }
+    }
+
+    /**
+     * AndroidJUnitRunner already owns UiAutomation. Starting `uiautomator dump`
+     * from this process attempts to register another service and fails on API 35,
+     * so serialize the runner-owned accessibility tree directly instead.
+     */
+    private fun appendNode(
+        node: AccessibilityNodeInfo,
+        output: StringBuilder,
+        depth: Int,
+        visited: IntArray,
+    ) {
+        if (visited[0] >= maxNodesPerDump || depth > maxDumpDepth) return
+        visited[0] += 1
+        val bounds = Rect().also(node::getBoundsInScreen)
+        output.append("<node text=\"").append(xmlAttribute(node.text?.toString()))
+            .append("\" content-desc=\"").append(xmlAttribute(node.contentDescription?.toString()))
+            .append("\" bounds=\"[").append(bounds.left).append(',').append(bounds.top)
+            .append("][").append(bounds.right).append(',').append(bounds.bottom).append("]\">")
+        for (index in 0 until node.childCount) {
+            val child = node.getChild(index) ?: continue
+            try {
+                appendNode(child, output, depth + 1, visited)
+            } finally {
+                child.recycle()
+            }
+        }
+        output.append("</node>")
+    }
+
+    private fun xmlAttribute(value: String?): String {
+        return value.orEmpty().take(maxAttributeLength)
+            .replace("&", "&amp;")
+            .replace("\"", "&quot;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
     }
 
     private fun shell(command: String): String {

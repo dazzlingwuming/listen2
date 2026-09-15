@@ -34,7 +34,16 @@ function generate(directory) {
 }
 if (args.includes('--self-test')) {
   const dir = mkdtempSync(resolve(tmpdir(), 'listen2-phase08-fixture-'));
-  try { const result = generate(dir); if (result.bytes <= 44 || result.durationSeconds !== 600) throw new Error('fixture self-test failed'); console.log('Phase 8 fixture self-test passed.'); }
+  try {
+    const result = generate(dir);
+    if (result.bytes <= 44 || result.durationSeconds !== 600) throw new Error('fixture self-test failed');
+    const driver = readFileSync(resolve(scriptDir, '../../android/app/src/androidTest/java/com/listen2mobile/acceptance/AccessibilityDriver.kt'), 'utf8');
+    if (driver.includes('shell("uiautomator dump')) throw new Error('instrumentation must not start a nested uiautomator service');
+    if (!driver.includes('rootInActiveWindow') || !driver.includes('getExternalFilesDir')) {
+      throw new Error('accessibility evidence must use runner-owned UI automation and target external files');
+    }
+    console.log('Phase 8 fixture self-test passed.');
+  }
   finally { rmSync(dir, { recursive: true, force: true }); }
 } else {
   if (!output || !existsSync(output)) throw new Error('use --out with an existing contained run directory');
