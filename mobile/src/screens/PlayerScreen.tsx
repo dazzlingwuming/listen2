@@ -39,10 +39,10 @@ import type {
 import { BilibiliLyricPicker } from '../components/BilibiliLyricPicker';
 import { toggleFavorite } from '../store/librarySlice';
 import { isLocalTrack } from '../types/music';
-import type { Lyric } from '../types/provider';
-import type { Track } from '../types/provider';
+import type { Lyric, SourceId, Track } from '../types/provider';
 import { findActiveLyricIndex, parseLyricTimeline } from '../lyrics/timeline';
 import { bilibiliLyricCache } from '../lyrics/cache';
+import { createLyricSession, lyricSessionKey } from '../lyrics/session';
 import { DeepSeekConsentSheet } from '../components/DeepSeekConsentSheet';
 import {
   createDeepSeekConsent,
@@ -101,7 +101,6 @@ export function PlayerScreen() {
   const candidateRequest = useRef<AbortController | null>(null);
   const candidateEpoch = useRef(0);
   const selectionEpoch = useRef(0);
-  const currentTrackId = useRef<string | null>(null);
   const translationEpoch = useRef(0);
   const translationOperation = useRef<string | null>(null);
   const favorite = current
@@ -109,7 +108,32 @@ export function PlayerScreen() {
         item => item.id === current.id && item.source === current.source,
       )
     : false;
-  currentTrackId.current = current?.id ?? null;
+  const lyricSession = useMemo(
+    () =>
+      current
+        ? createLyricSession({
+            source: trackSource(current) as SourceId,
+            trackId: current.id,
+            occurrenceId:
+              state.currentOccurrenceId ||
+              `track:${trackSource(current)}:${current.id}`,
+            revision: bilibiliCacheRevision ?? 0,
+          })
+        : null,
+    [
+      bilibiliCacheRevision,
+      current,
+      state.currentOccurrenceId,
+    ],
+  );
+  const lyricSessionRef = useRef(lyricSession);
+  lyricSessionRef.current = lyricSession;
+  const isCurrentLyricSession = (candidate: typeof lyricSession) =>
+    Boolean(
+      candidate &&
+        lyricSessionRef.current &&
+        lyricSessionKey(candidate) === lyricSessionKey(lyricSessionRef.current),
+    );
   useEffect(() => {
     const identity = parseExactBilibiliTrackId(currentBilibiliTrackId);
     if (!identity) return;
@@ -158,7 +182,7 @@ export function PlayerScreen() {
     setMachineTranslation(null);
     setTranslationError(null);
     invalidateTranslationWork(true);
-  }, [current?.id, current?.source]);
+  }, [current?.id, current?.source, state.currentOccurrenceId]);
   useEffect(() => {
     return () => {
       invalidateLyricWork();
@@ -176,7 +200,8 @@ export function PlayerScreen() {
     const controller = new AbortController();
     lyricRequest.current = controller;
     const epoch = ++lyricEpoch.current;
-    const trackId = current.id;
+    const requestSession = lyricSession;
+    if (!requestSession) return;
     setLyricsLoading(true);
     setLyricsUnavailable(false);
     try {
@@ -189,7 +214,7 @@ export function PlayerScreen() {
         if (
           cached &&
           epoch === lyricEpoch.current &&
-          currentTrackId.current === trackId &&
+          isCurrentLyricSession(requestSession) &&
           !controller.signal.aborted
         ) {
           setLyrics(cached.lyric);
@@ -202,7 +227,7 @@ export function PlayerScreen() {
       });
       if (
         epoch === lyricEpoch.current &&
-        currentTrackId.current === trackId &&
+        isCurrentLyricSession(requestSession) &&
         !controller.signal.aborted
       ) {
         setLyrics(response);
@@ -211,7 +236,7 @@ export function PlayerScreen() {
           if (
             saved.status === 'ok' &&
             epoch === lyricEpoch.current &&
-            currentTrackId.current === trackId &&
+            isCurrentLyricSession(requestSession) &&
             !controller.signal.aborted
           )
             setBilibiliCacheRevision(saved.record.revision);
@@ -220,14 +245,14 @@ export function PlayerScreen() {
     } catch {
       if (
         epoch === lyricEpoch.current &&
-        currentTrackId.current === trackId &&
+        isCurrentLyricSession(requestSession) &&
         !controller.signal.aborted
       ) {
         if (trackSource(current) === 'bilibili') setPickerVisible(true);
         else setLyricsUnavailable(true);
       }
     } finally {
-      if (epoch === lyricEpoch.current && currentTrackId.current === trackId)
+      if (epoch === lyricEpoch.current && isCurrentLyricSession(requestSession))
         setLyricsLoading(false);
     }
   };
@@ -240,7 +265,8 @@ export function PlayerScreen() {
     candidateRequest.current = controller;
     const epoch = ++candidateEpoch.current;
     const selectionGeneration = ++selectionEpoch.current;
-    const trackId = current.id;
+    const requestSession = lyricSession;
+    if (!requestSession) return;
     setCandidateLoading(true);
     setCandidateError(false);
     try {
@@ -251,7 +277,7 @@ export function PlayerScreen() {
       if (
         epoch === candidateEpoch.current &&
         selectionGeneration === selectionEpoch.current &&
-        currentTrackId.current === trackId &&
+        isCurrentLyricSession(requestSession) &&
         !controller.signal.aborted
       ) {
         setCandidates([...result.candidates]);
@@ -263,7 +289,7 @@ export function PlayerScreen() {
       if (
         epoch === candidateEpoch.current &&
         selectionGeneration === selectionEpoch.current &&
-        currentTrackId.current === trackId &&
+        isCurrentLyricSession(requestSession) &&
         !controller.signal.aborted
       ) {
         setCandidatePartial(true);
@@ -274,7 +300,7 @@ export function PlayerScreen() {
       if (
         epoch === candidateEpoch.current &&
         selectionGeneration === selectionEpoch.current &&
-        currentTrackId.current === trackId
+        isCurrentLyricSession(requestSession)
       )
         setCandidateLoading(false);
     }
@@ -285,6 +311,8 @@ export function PlayerScreen() {
     const token = ++selectionEpoch.current;
     const candidateGeneration = candidateEpoch.current;
     if (!identity) return;
+    const requestSession = lyricSession;
+    if (!requestSession) return;
     const lyric: Lyric = {
       trackId: identity.trackId,
       source: 'bilibili',
@@ -305,13 +333,13 @@ export function PlayerScreen() {
       saved.status === 'stale' &&
       token === selectionEpoch.current &&
       candidateGeneration === candidateEpoch.current &&
-      currentTrackId.current === identity.trackId
+      isCurrentLyricSession(requestSession)
     ) {
       const latest = await bilibiliLyricCache.get(identity.trackId);
       if (
         token === selectionEpoch.current &&
         candidateGeneration === candidateEpoch.current &&
-        currentTrackId.current === identity.trackId
+        isCurrentLyricSession(requestSession)
       ) {
         saved = await bilibiliLyricCache.put({ lyric }, latest?.revision ?? 0);
       }
@@ -319,7 +347,7 @@ export function PlayerScreen() {
     if (
       token !== selectionEpoch.current ||
       candidateGeneration !== candidateEpoch.current ||
-      currentTrackId.current !== identity.trackId ||
+      !isCurrentLyricSession(requestSession) ||
       saved.status !== 'ok'
     )
       return;
@@ -334,13 +362,14 @@ export function PlayerScreen() {
     const identity = parseExactBilibiliTrackId(current.id);
     if (!identity) return;
     const token = ++selectionEpoch.current;
-    const trackId = identity.trackId;
+    const requestSession = lyricSession;
+    if (!requestSession) return;
     lyricRequest.current?.abort();
     candidateRequest.current?.abort();
     lyricEpoch.current += 1;
     candidateEpoch.current += 1;
     await bilibiliLyricCache.clear(identity.trackId);
-    if (token !== selectionEpoch.current || currentTrackId.current !== trackId)
+    if (token !== selectionEpoch.current || !isCurrentLyricSession(requestSession))
       return;
     setLyrics(null);
     setMachineTranslation(null);

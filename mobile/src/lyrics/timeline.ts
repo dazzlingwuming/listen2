@@ -74,9 +74,15 @@ export function parseLyricTimeline(
 export function findActiveLyricIndex(
   lines: readonly LyricTimelineLine[],
   positionMs: number,
+  userOffsetMs = 0,
 ): number {
-  if (!Number.isFinite(positionMs)) return -1;
-  const safePosition = Math.max(0, positionMs);
+  if (
+    !Number.isFinite(positionMs) ||
+    !Number.isFinite(userOffsetMs) ||
+    Math.abs(userOffsetMs) > MAX_LYRIC_OFFSET_MS
+  )
+    return -1;
+  const safePosition = Math.max(0, positionMs + userOffsetMs);
   let active = -1;
   for (let index = 0; index < lines.length; index += 1) {
     const timestamp = lines[index].timestampMs;

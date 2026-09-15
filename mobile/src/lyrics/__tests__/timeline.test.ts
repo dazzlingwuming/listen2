@@ -1,4 +1,5 @@
 import {
+  MAX_LYRIC_OFFSET_MS,
   MAX_LYRIC_LINES,
   findActiveLyricIndex,
   parseLyricTimeline,
@@ -62,5 +63,13 @@ describe('findActiveLyricIndex', () => {
     expect(findActiveLyricIndex(lines, 1_000)).toBe(0);
     expect(findActiveLyricIndex(lines, 2_500)).toBe(1);
     expect(findActiveLyricIndex(lines, Number.NaN)).toBe(-1);
+  });
+
+  it('applies a bounded signed user offset to the confirmed player clock', () => {
+    expect(findActiveLyricIndex(lines, 1_500, 600)).toBe(1);
+    expect(findActiveLyricIndex(lines, 1_500, -600)).toBe(-1);
+    expect(findActiveLyricIndex(lines, 1_500, MAX_LYRIC_OFFSET_MS + 1)).toBe(
+      -1,
+    );
   });
 });
