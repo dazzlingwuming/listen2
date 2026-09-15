@@ -1,7 +1,7 @@
 # Phase 6: Personal Library & Continuity — Pattern Map
 
-**Mapped:** 2026-09-15  
-**Canonical implementation root:** `mobile/` only (React Native + Kotlin Android).  
+**Mapped:** 2026-09-15
+**Canonical implementation root:** `mobile/` only (React Native + Kotlin Android).
 **Files classified:** 30 planned create/modify targets. **Strong analogs:** 30 / 30.
 
 ## Scope and non-negotiable seams
@@ -218,6 +218,6 @@ Apply to all CRUD/import/repair/migration UI. Existing remote-detail loading (`P
 
 ## Metadata
 
-**Analog search scope:** `mobile/src`, `mobile/android/app/src/main`, `mobile/android/app/src/test`, Phase 05 patterns.  
-**Files scanned:** focused 25 source/test/planning artifacts.  
+**Analog search scope:** `mobile/src`, `mobile/android/app/src/main`, `mobile/android/app/src/test`, Phase 05 patterns.
+**Files scanned:** focused 25 source/test/planning artifacts.
 **Pattern extraction date:** 2026-09-15.
