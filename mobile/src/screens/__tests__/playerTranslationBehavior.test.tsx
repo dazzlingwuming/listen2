@@ -51,6 +51,13 @@ jest.mock('../../lyrics/cache', () => ({
     clear: jest.fn().mockResolvedValue({ status: 'ok' }),
   },
 }));
+jest.mock('../../lyrics/selectionStore', () => ({
+  lyricSelectionStore: {
+    get: jest.fn(() => Promise.resolve(null)),
+    put: jest.fn(() => Promise.resolve({ status: 'ok', record: { revision: 1 } })),
+    clearManual: jest.fn(() => Promise.resolve({ status: 'ok', record: { revision: 1 } })),
+  },
+}));
 jest.mock('../../store/playerSlice', () => ({
   togglePlayback: () => ({ type: 'player/togglePlayback' }),
 }));

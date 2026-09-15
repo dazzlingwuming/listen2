@@ -29,7 +29,7 @@ import {
 } from '../components/TrackRow';
 import { providerLabels } from '../components/SourceTabs';
 import { Sheet } from '../components/Sheet';
-import { providerClient } from '../api/client';
+import { PROVIDER_CAPABILITIES, providerClient } from '../api/client';
 import { parseExactBilibiliTrackId } from '../api/ids';
 import { findBilibiliLyricCandidates } from '../bilibili/lyrics';
 import type {
@@ -42,6 +42,7 @@ import { isLocalTrack } from '../types/music';
 import type { Lyric, SourceId, Track } from '../types/provider';
 import { findActiveLyricIndex, parseLyricTimeline } from '../lyrics/timeline';
 import { bilibiliLyricCache } from '../lyrics/cache';
+import { lyricSelectionStore, type LyricSelectionKey } from '../lyrics/selectionStore';
 import { createLyricSession, lyricSessionKey } from '../lyrics/session';
 import { DeepSeekConsentSheet } from '../components/DeepSeekConsentSheet';
 import {
@@ -89,6 +90,8 @@ export function PlayerScreen() {
   const [bilibiliCacheRevision, setBilibiliCacheRevision] = useState<
     number | undefined
   >();
+  const [lyricOffsetMs, setLyricOffsetMs] = useState(0);
+  const [selectionRevision, setSelectionRevision] = useState<number | undefined>();
   const [machineTranslation, setMachineTranslation] = useState<string | null>(
     null,
   );
@@ -134,6 +137,35 @@ export function PlayerScreen() {
         lyricSessionRef.current &&
         lyricSessionKey(candidate) === lyricSessionKey(lyricSessionRef.current),
     );
+  const selectionKey = useMemo<LyricSelectionKey | null>(() => {
+    const exact = parseExactBilibiliTrackId(currentBilibiliTrackId);
+    return exact
+      ? { source: 'bilibili', trackId: exact.trackId, partId: exact.cid }
+      : null;
+  }, [currentBilibiliTrackId]);
+  const operations = current
+    ? PROVIDER_CAPABILITIES?.[trackSource(current) as SourceId]?.operations
+    : undefined;
+  const manualLyricsAvailable = operations?.['manual-lyrics']?.status === 'available';
+  const offsetAvailable = operations?.offset?.status === 'available';
+  useEffect(() => {
+    setLyricOffsetMs(0);
+    setSelectionRevision(undefined);
+    const requestSession = lyricSession;
+    if (!selectionKey || !requestSession) return;
+    const requestKey = lyricSessionKey(requestSession);
+    lyricSelectionStore.get(selectionKey).then(record => {
+      if (
+        !lyricSessionRef.current ||
+        lyricSessionKey(lyricSessionRef.current) !== requestKey
+      )
+        return;
+      if (record) {
+        setLyricOffsetMs(record.offsetMs);
+        setSelectionRevision(record.revision);
+      }
+    });
+  }, [lyricSession, selectionKey]);
   useEffect(() => {
     const identity = parseExactBilibiliTrackId(currentBilibiliTrackId);
     if (!identity) return;
@@ -179,6 +211,8 @@ export function PlayerScreen() {
     setCandidateProviderErrors([]);
     setCandidateError(false);
     setBilibiliCacheRevision(undefined);
+    setLyricOffsetMs(0);
+    setSelectionRevision(undefined);
     setMachineTranslation(null);
     setTranslationError(null);
     invalidateTranslationWork(true);
@@ -248,7 +282,8 @@ export function PlayerScreen() {
         isCurrentLyricSession(requestSession) &&
         !controller.signal.aborted
       ) {
-        if (trackSource(current) === 'bilibili') setPickerVisible(true);
+        if (trackSource(current) === 'bilibili' && manualLyricsAvailable)
+          setPickerVisible(true);
         else setLyricsUnavailable(true);
       }
     } finally {
@@ -257,7 +292,8 @@ export function PlayerScreen() {
     }
   };
   const searchBilibiliCandidates = async (query: string) => {
-    if (!current || trackSource(current) !== 'bilibili') return;
+    if (!current || trackSource(current) !== 'bilibili' || !manualLyricsAvailable)
+      return;
     const identity = parseExactBilibiliTrackId(current.id);
     if (!identity) return;
     candidateRequest.current?.abort();
@@ -306,7 +342,8 @@ export function PlayerScreen() {
     }
   };
   const chooseBilibiliCandidate = async (candidate: BilibiliLyricCandidate) => {
-    if (!current || trackSource(current) !== 'bilibili') return;
+    if (!current || trackSource(current) !== 'bilibili' || !manualLyricsAvailable)
+      return;
     const identity = parseExactBilibiliTrackId(current.id);
     const token = ++selectionEpoch.current;
     const candidateGeneration = candidateEpoch.current;
@@ -353,12 +390,28 @@ export function PlayerScreen() {
       return;
     setLyrics(lyric);
     setBilibiliCacheRevision(saved.record.revision);
+    if (selectionKey) {
+      const selection = await lyricSelectionStore.put(
+        {
+          key: selectionKey,
+          offsetMs: lyricOffsetMs,
+          manual: {
+            provider: candidate.matchedProvider,
+            candidateId: candidate.id,
+          },
+        },
+        selectionRevision ?? 0,
+      );
+      if (selection.status === 'ok' && isCurrentLyricSession(requestSession))
+        setSelectionRevision(selection.record.revision);
+    }
     setMachineTranslation(null);
     setTranslationError(null);
     setPickerVisible(false);
   };
   const restoreBilibiliAutomatic = async () => {
-    if (!current || trackSource(current) !== 'bilibili') return;
+    if (!current || trackSource(current) !== 'bilibili' || !manualLyricsAvailable)
+      return;
     const identity = parseExactBilibiliTrackId(current.id);
     if (!identity) return;
     const token = ++selectionEpoch.current;
@@ -375,6 +428,14 @@ export function PlayerScreen() {
     setMachineTranslation(null);
     setTranslationError(null);
     setBilibiliCacheRevision(undefined);
+    if (selectionKey) {
+      const selection = await lyricSelectionStore.clearManual(
+        selectionKey,
+        selectionRevision,
+      );
+      if (selection.status === 'ok' && isCurrentLyricSession(requestSession))
+        setSelectionRevision(selection.record.revision);
+    }
     setPickerVisible(false);
     await openLyrics(true);
   };
@@ -736,6 +797,9 @@ export function PlayerScreen() {
         machineTranslation={machineTranslation}
         visible={showLyrics}
         position={currentPosition}
+        userOffsetMs={lyricOffsetMs}
+        offsetAvailable={offsetAvailable}
+        offsetReason={operations?.offset?.status === 'available' ? undefined : '当前来源尚未验证歌词偏移校正'}
         translationBusy={translationBusy}
         translationEligible={translationEligible}
         translationError={translationError}
@@ -993,6 +1057,9 @@ function LyricsSheet({
   localAudio,
   machineTranslation,
   position,
+  userOffsetMs,
+  offsetAvailable,
+  offsetReason,
   translationBusy,
   translationEligible,
   translationError,
@@ -1009,6 +1076,9 @@ function LyricsSheet({
   localAudio: boolean;
   machineTranslation: string | null;
   position: number;
+  userOffsetMs: number;
+  offsetAvailable: boolean;
+  offsetReason?: string;
   translationBusy: boolean;
   translationEligible: boolean;
   translationError: string | null;
@@ -1024,7 +1094,11 @@ function LyricsSheet({
       ),
     [lyrics?.text, lyrics?.translation, machineTranslation],
   );
-  const activeIndex = findActiveLyricIndex(lines, playbackPositionMs(position));
+  const activeIndex = findActiveLyricIndex(
+    lines,
+    playbackPositionMs(position),
+    userOffsetMs,
+  );
   const scrollView = useRef<React.ComponentRef<typeof ScrollView>>(null);
   const lineOffsets = useRef<Record<number, number>>({});
   const scrollToLine = useCallback((index: number) => {
@@ -1081,6 +1155,11 @@ function LyricsSheet({
               <Text style={styles.actionText}>重新翻译</Text>
             </Pressable>
           </View>
+        ) : null}
+        {offsetAvailable ? (
+          <Text style={text.meta}>歌词校正：{userOffsetMs >= 0 ? '+' : ''}{userOffsetMs}毫秒</Text>
+        ) : offsetReason ? (
+          <Text style={text.meta}>{offsetReason}</Text>
         ) : null}
         {machineTranslation ? (
           <Text style={styles.machineBadge}>DeepSeek 机器翻译</Text>

@@ -19,6 +19,14 @@ jest.mock('react-redux', () => ({
 }));
 jest.mock('../../api/client', () => ({
   providerClient: { getLyric: (...args: unknown[]) => mockGetLyric(...args) },
+  PROVIDER_CAPABILITIES: {
+    bilibili: {
+      operations: {
+        'manual-lyrics': { status: 'available' },
+        offset: { status: 'unverified', reason: 'unverified-route', action: 'return' },
+      },
+    },
+  },
 }));
 jest.mock('../../bilibili/lyrics', () => ({
   findBilibiliLyricCandidates: (...args: unknown[]) =>
@@ -29,6 +37,13 @@ jest.mock('../../lyrics/cache', () => ({
     get: (...args: unknown[]) => mockCacheGet(...args),
     put: (...args: unknown[]) => mockCachePut(...args),
     clear: (...args: unknown[]) => mockCacheClear(...args),
+  },
+}));
+jest.mock('../../lyrics/selectionStore', () => ({
+  lyricSelectionStore: {
+    get: jest.fn(() => Promise.resolve(null)),
+    put: jest.fn(() => Promise.resolve({ status: 'ok', record: { revision: 1 } })),
+    clearManual: jest.fn(() => Promise.resolve({ status: 'ok', record: { revision: 1 } })),
   },
 }));
 jest.mock('../../deepseek/client', () => ({
