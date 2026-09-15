@@ -46,14 +46,22 @@ import {
   type LyricTimelineLine,
 } from '../lyrics/timeline';
 import { bilibiliLyricCache } from '../lyrics/cache';
-import { lyricSelectionStore, type LyricSelectionKey } from '../lyrics/selectionStore';
+import {
+  lyricSelectionStore,
+  type LyricSelectionKey,
+} from '../lyrics/selectionStore';
 import { createLyricSession, lyricSessionKey } from '../lyrics/session';
 import { DeepSeekConsentSheet } from '../components/DeepSeekConsentSheet';
 import {
   createDeepSeekConsent,
   hasCompleteDeepSeekConsent,
 } from '../deepseek/consent';
-import { deepSeekClient, hashLyric, hashTrack } from '../deepseek/client';
+import {
+  DeepSeekClientError,
+  deepSeekClient,
+  hashLyric,
+  hashTrack,
+} from '../deepseek/client';
 import type { DeepSeekConsent } from '../deepseek/types';
 import { bilibiliMvClient } from '../bilibili/mvClient';
 
@@ -95,7 +103,9 @@ export function PlayerScreen() {
     number | undefined
   >();
   const [lyricOffsetMs, setLyricOffsetMs] = useState(0);
-  const [selectionRevision, setSelectionRevision] = useState<number | undefined>();
+  const [selectionRevision, setSelectionRevision] = useState<
+    number | undefined
+  >();
   const [machineTranslation, setMachineTranslation] = useState<string | null>(
     null,
   );
@@ -127,11 +137,7 @@ export function PlayerScreen() {
             revision: bilibiliCacheRevision ?? 0,
           })
         : null,
-    [
-      bilibiliCacheRevision,
-      current,
-      state.currentOccurrenceId,
-    ],
+    [bilibiliCacheRevision, current, state.currentOccurrenceId],
   );
   const lyricSessionRef = useRef(lyricSession);
   lyricSessionRef.current = lyricSession;
@@ -150,7 +156,8 @@ export function PlayerScreen() {
   const operations = current
     ? PROVIDER_CAPABILITIES?.[trackSource(current) as SourceId]?.operations
     : undefined;
-  const manualLyricsAvailable = operations?.['manual-lyrics']?.status === 'available';
+  const manualLyricsAvailable =
+    operations?.['manual-lyrics']?.status === 'available';
   const offsetAvailable = operations?.offset?.status === 'available';
   useEffect(() => {
     setLyricOffsetMs(0);
@@ -252,7 +259,6 @@ export function PlayerScreen() {
         if (
           cached &&
           epoch === lyricEpoch.current &&
-          isCurrentLyricSession(requestSession) &&
           !controller.signal.aborted
         ) {
           setLyrics(cached.lyric);
@@ -263,40 +269,35 @@ export function PlayerScreen() {
       const response = await providerClient.getLyric(current as Track, {
         signal: controller.signal,
       });
-      if (
-        epoch === lyricEpoch.current &&
-        isCurrentLyricSession(requestSession) &&
-        !controller.signal.aborted
-      ) {
+      if (epoch === lyricEpoch.current && !controller.signal.aborted) {
         setLyrics(response);
         if (bilibiliIdentity && response.provenance) {
           const saved = await bilibiliLyricCache.put({ lyric: response });
           if (
             saved.status === 'ok' &&
             epoch === lyricEpoch.current &&
-            isCurrentLyricSession(requestSession) &&
             !controller.signal.aborted
           )
             setBilibiliCacheRevision(saved.record.revision);
         }
       }
     } catch {
-      if (
-        epoch === lyricEpoch.current &&
-        isCurrentLyricSession(requestSession) &&
-        !controller.signal.aborted
-      ) {
+      if (epoch === lyricEpoch.current && !controller.signal.aborted) {
         if (trackSource(current) === 'bilibili' && manualLyricsAvailable)
           setPickerVisible(true);
         else setLyricsUnavailable(true);
       }
     } finally {
-      if (epoch === lyricEpoch.current && isCurrentLyricSession(requestSession))
+      if (epoch === lyricEpoch.current && !controller.signal.aborted)
         setLyricsLoading(false);
     }
   };
   const searchBilibiliCandidates = async (query: string) => {
-    if (!current || trackSource(current) !== 'bilibili' || !manualLyricsAvailable)
+    if (
+      !current ||
+      trackSource(current) !== 'bilibili' ||
+      !manualLyricsAvailable
+    )
       return;
     const identity = parseExactBilibiliTrackId(current.id);
     if (!identity) return;
@@ -346,7 +347,11 @@ export function PlayerScreen() {
     }
   };
   const chooseBilibiliCandidate = async (candidate: BilibiliLyricCandidate) => {
-    if (!current || trackSource(current) !== 'bilibili' || !manualLyricsAvailable)
+    if (
+      !current ||
+      trackSource(current) !== 'bilibili' ||
+      !manualLyricsAvailable
+    )
       return;
     const identity = parseExactBilibiliTrackId(current.id);
     const token = ++selectionEpoch.current;
@@ -414,7 +419,11 @@ export function PlayerScreen() {
     setPickerVisible(false);
   };
   const restoreBilibiliAutomatic = async () => {
-    if (!current || trackSource(current) !== 'bilibili' || !manualLyricsAvailable)
+    if (
+      !current ||
+      trackSource(current) !== 'bilibili' ||
+      !manualLyricsAvailable
+    )
       return;
     const identity = parseExactBilibiliTrackId(current.id);
     if (!identity) return;
@@ -425,21 +434,28 @@ export function PlayerScreen() {
     candidateRequest.current?.abort();
     lyricEpoch.current += 1;
     candidateEpoch.current += 1;
-    await bilibiliLyricCache.clear(identity.trackId);
-    if (token !== selectionEpoch.current || !isCurrentLyricSession(requestSession))
+    if (!selectionKey) return;
+    const selection = await lyricSelectionStore.clearManual(
+      selectionKey,
+      selectionRevision,
+    );
+    if (
+      selection.status !== 'ok' ||
+      token !== selectionEpoch.current ||
+      !isCurrentLyricSession(requestSession)
+    )
       return;
+    await bilibiliLyricCache.clear(identity.trackId);
+    if (
+      token !== selectionEpoch.current ||
+      !isCurrentLyricSession(requestSession)
+    )
+      return;
+    setSelectionRevision(selection.record.revision);
     setLyrics(null);
     setMachineTranslation(null);
     setTranslationError(null);
     setBilibiliCacheRevision(undefined);
-    if (selectionKey) {
-      const selection = await lyricSelectionStore.clearManual(
-        selectionKey,
-        selectionRevision,
-      );
-      if (selection.status === 'ok' && isCurrentLyricSession(requestSession))
-        setSelectionRevision(selection.record.revision);
-    }
     setPickerVisible(false);
     await openLyrics(true);
   };
@@ -531,7 +547,9 @@ export function PlayerScreen() {
     } catch (caught) {
       if (epoch === translationEpoch.current)
         setTranslationError(
-          caught instanceof Error ? caught.message : 'PROVIDER_ERROR',
+          caught instanceof DeepSeekClientError
+            ? caught.code
+            : 'PROVIDER_ERROR',
         );
     } finally {
       if (epoch === translationEpoch.current) {
@@ -803,7 +821,11 @@ export function PlayerScreen() {
         position={currentPosition}
         userOffsetMs={lyricOffsetMs}
         offsetAvailable={offsetAvailable}
-        offsetReason={operations?.offset?.status === 'available' ? undefined : '当前来源尚未验证歌词偏移校正'}
+        offsetReason={
+          operations?.offset?.status === 'available'
+            ? undefined
+            : '当前来源尚未验证歌词偏移校正'
+        }
         translationBusy={translationBusy}
         translationEligible={translationEligible}
         translationError={translationError}
@@ -890,11 +912,16 @@ export function lyricProvenanceLabel(
   if (machineTranslation) return 'DeepSeek 机器翻译';
   const provenance = lyric?.provenance;
   if (provenance) {
-    const provider = providerLabels[provenance.matchedProvider] || provenance.matchedProvider;
-    return `${provenance.mode === 'manual' ? '手动选择' : '自动匹配'}：${provider}歌词`;
+    const provider =
+      providerLabels[provenance.matchedProvider] || provenance.matchedProvider;
+    return `${
+      provenance.mode === 'manual' ? '手动选择' : '自动匹配'
+    }：${provider}歌词`;
   }
   if (!lyric || !current) return null;
-  return `来源直连：${providerLabels[trackSource(current)] || trackSource(current)} 歌词`;
+  return `来源直连：${
+    providerLabels[trackSource(current)] || trackSource(current)
+  } 歌词`;
 }
 
 export function lyricRowAccessibilityLabel(
@@ -1170,7 +1197,10 @@ function LyricsSheet({
           </Text>
         ) : null}
         {provenance ? (
-          <Text accessibilityLabel={`歌词来源：${provenance}`} style={styles.lyricMeta}>
+          <Text
+            accessibilityLabel={`歌词来源：${provenance}`}
+            style={styles.lyricMeta}
+          >
             歌词来源：{provenance}
           </Text>
         ) : null}
@@ -1201,7 +1231,10 @@ function LyricsSheet({
           </View>
         ) : null}
         {offsetAvailable ? (
-          <Text style={text.meta}>歌词校正：{userOffsetMs >= 0 ? '+' : ''}{userOffsetMs}毫秒</Text>
+          <Text style={text.meta}>
+            歌词校正：{userOffsetMs >= 0 ? '+' : ''}
+            {userOffsetMs}毫秒
+          </Text>
         ) : offsetReason ? (
           <Text style={text.meta}>{offsetReason}</Text>
         ) : null}
@@ -1236,7 +1269,9 @@ function LyricsSheet({
                     userOffsetMs,
                     provenance,
                   )}
-                  accessibilityLiveRegion={index === activeIndex ? 'polite' : 'none'}
+                  accessibilityLiveRegion={
+                    index === activeIndex ? 'polite' : 'none'
+                  }
                   accessibilityState={{ selected: index === activeIndex }}
                   style={[
                     styles.lyricLine,

@@ -38,7 +38,9 @@ type SearchStatus =
   | 'ready'
   | 'empty'
   | 'error'
-  | 'cancelled';
+  | 'errorMore'
+  | 'cancelled'
+  | 'cancelledMore';
 
 export function SearchScreen() {
   const navigation = useNavigation<any>();
@@ -65,6 +67,7 @@ export function SearchScreen() {
   > | null>(null);
   const requestEpoch = useRef(0);
   const requestController = useRef<AbortController | null>(null);
+  const requestPage = useRef(1);
   const handledRouteRequest = useRef<string | null>(null);
 
   const search = useCallback(
@@ -90,6 +93,7 @@ export function SearchScreen() {
       requestController.current?.abort();
       const controller = new AbortController();
       requestController.current = controller;
+      requestPage.current = nextPage;
       const epoch = ++requestEpoch.current;
       const requestId = `search-${epoch}`;
       setJourney(previous =>
@@ -160,7 +164,15 @@ export function SearchScreen() {
           setErrorCopy(
             controller.signal.aborted ? null : presentProviderError(error),
           );
-          setStatus(controller.signal.aborted ? 'cancelled' : 'error');
+          setStatus(
+            controller.signal.aborted
+              ? nextPage > 1
+                ? 'cancelledMore'
+                : 'cancelled'
+              : nextPage > 1
+              ? 'errorMore'
+              : 'error',
+          );
         }
       }
     },
@@ -204,8 +216,16 @@ export function SearchScreen() {
   };
   const cancel = () => {
     requestController.current?.abort();
-    requestEpoch.current += 1;
-    setStatus('cancelled');
+    setJourney(previous => {
+      const more = requestPage.current > 1 && previous.rows.length > 0;
+      setStatus(more ? 'cancelledMore' : 'cancelled');
+      return reduceSearchJourney(previous, {
+        type: 'cancelled',
+        requestId: previous.scope.requestId,
+        generation: previous.scope.generation,
+        page: requestPage.current,
+      });
+    });
   };
   const selectSearchKind = (kind: SearchKind) => {
     requestController.current?.abort();
@@ -335,7 +355,7 @@ export function SearchScreen() {
               ? `正在搜索${providerLabels[sourceId]}…`
               : '正在加载更多…'}
           </Text>
-          {status === 'loading' ? (
+          {status === 'loading' || status === 'loadingMore' ? (
             <Pressable
               accessibilityLabel="取消搜索"
               onPress={cancel}
@@ -431,7 +451,7 @@ function SearchSurface({
         <Text style={text.meta}>换个关键词，或选择其他音乐来源后再试。</Text>
       </View>
     );
-  if (status === 'error')
+  if (status === 'error' && !items.length)
     return (
       <View
         accessibilityRole="alert"
@@ -445,7 +465,7 @@ function SearchSurface({
         </Text>
       </View>
     );
-  if (status === 'cancelled')
+  if (status === 'cancelled' && !items.length)
     return (
       <View style={[sectionStyles.card, styles.state]}>
         <Text style={text.heading}>已取消本次搜索</Text>
@@ -454,6 +474,18 @@ function SearchSurface({
     );
   return (
     <View>
+      {status === 'errorMore' || status === 'cancelledMore' ? (
+        <View
+          accessibilityRole="alert"
+          style={[sectionStyles.card, styles.state]}
+        >
+          <Text style={text.meta}>
+            {status === 'cancelledMore'
+              ? '已取消加载更多，已显示的结果仍可使用。'
+              : errorCopy?.message || '加载更多失败，已显示的结果仍可使用。'}
+          </Text>
+        </View>
+      ) : null}
       {items.map((item, index) =>
         item.kind === 'track' ? (
           <TrackRow

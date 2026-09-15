@@ -53,6 +53,24 @@ describe('player persistence migration', () => {
     expect(result.history).toEqual([]);
   });
 
+  it('preserves the current track after its accepted play-next occurrence was consumed', () => {
+    const queued = track('ne_queued');
+    const result = sanitizePlayerState({
+      playlist: [track('ne_1')],
+      currentTrack: queued,
+      currentIndex: 0,
+      currentSource: 'play-next',
+      currentOccurrenceId: 'play-next-accepted',
+      playNextQueue: [],
+      volume: 1,
+    });
+    expect(result.currentTrack).toEqual(queued);
+    expect(result.nowPlaying).toEqual(queued);
+    expect(result.currentSource).toBe('play-next');
+    expect(result.currentOccurrenceId).toBe('play-next-accepted');
+    expect(result.currentIndex).toBe(0);
+  });
+
   it('drops transport-shaped or malformed state while preserving bounded semantics', () => {
     const result = sanitizePlayerState({
       playlist: [

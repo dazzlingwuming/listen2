@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Pressable,
@@ -69,15 +69,17 @@ export function PlaylistDetailScreen() {
   ) as PresentableTrack[];
   const [addTarget, setAddTarget] = useState<PlayableTrack | null>(null);
   const [startingPlayback, setStartingPlayback] = useState(false);
+  const remoteRequest = useRef<AbortController | null>(null);
+  const remoteGeneration = useRef(0);
   const loadRemotePlaylist = useCallback(
-    async (signal: AbortSignal) => {
+    async (signal: AbortSignal, generation: number) => {
       if (!remotePlaylistId || sourceId === 'local') return;
       setRemoteStatus('loading');
       try {
         const detail = await providerClient.getPlaylist(remotePlaylistId, {
           signal,
         });
-        if (signal.aborted) return;
+        if (signal.aborted || generation !== remoteGeneration.current) return;
         if (detail.id !== remotePlaylistId || detail.source !== sourceId) {
           setRemoteStatus('error');
           return;
@@ -85,7 +87,7 @@ export function PlaylistDetailScreen() {
         setRemoteDetail(detail);
         setRemoteStatus('ready');
       } catch {
-        if (signal.aborted) return;
+        if (signal.aborted || generation !== remoteGeneration.current) return;
         setRemoteStatus('error');
       }
     },
@@ -94,12 +96,17 @@ export function PlaylistDetailScreen() {
   useEffect(() => {
     if (!remotePlaylistId || sourceId === 'local') return;
     const controller = new AbortController();
-    loadRemotePlaylist(controller.signal);
+    remoteRequest.current?.abort();
+    remoteRequest.current = controller;
+    const generation = ++remoteGeneration.current;
+    loadRemotePlaylist(controller.signal, generation);
     return () => controller.abort();
   }, [loadRemotePlaylist, remotePlaylistId, sourceId]);
   const retryRemotePlaylist = () => {
+    remoteRequest.current?.abort();
     const controller = new AbortController();
-    loadRemotePlaylist(controller.signal);
+    remoteRequest.current = controller;
+    loadRemotePlaylist(controller.signal, ++remoteGeneration.current);
   };
   const play = async (_track: PresentableTrack, index: number) => {
     if (startingPlayback) return;

@@ -141,6 +141,25 @@ describe('collection playback rollback', () => {
     expect(state.isPlaying).toBe(false);
   });
 
+  it('restores the active native item when a queued transition cannot add its target', async () => {
+    const queued = track('netrack_queued');
+    state = reducer(state, playerActions.enqueueNext(queued));
+    mockNative.add.mockRejectedValueOnce(new Error('queued-add-failed'));
+    await expect(playerController.next(dispatch)).resolves.toBe(false);
+    expect(state.currentTrack?.id).toBe('netrack_1');
+    expect(state.playNextQueue.map(item => item.track.id)).toEqual([
+      'netrack_queued',
+    ]);
+    expect(mockNative.reset).toHaveBeenCalledTimes(2);
+    expect(mockNative.add).toHaveBeenCalledTimes(2);
+    expect(mockNative.add.mock.calls[1][0]).toEqual(
+      expect.objectContaining({ url: 'https://media.example/old.mp3' }),
+    );
+    expect(mockNative.play).toHaveBeenCalledTimes(1);
+    expect(state.isPlaying).toBe(true);
+    expect(state.error).toBe('playback-unavailable');
+  });
+
   it('uses bounded recovery when rollback itself fails', async () => {
     mockNative.add
       .mockRejectedValueOnce(new Error('new-add-failed'))

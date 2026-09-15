@@ -436,12 +436,41 @@ async function transition(
     );
     return false;
   }
+  let rollback: NativeRollbackSnapshot | null = null;
+  if (
+    payload.source === 'play-next' &&
+    playerState().nowPlaying &&
+    typeof (TrackPlayer as any).getActiveTrack === 'function'
+  ) {
+    try {
+      await ensurePlayer();
+      rollback = await captureRollbackSnapshot(playerState());
+    } catch {
+      emit(dispatch, 'player/setError', 'playback-transition-unavailable');
+      return false;
+    }
+  }
   const started = await loadAndPlay(
     dispatch,
     payload.track,
     payload.position || 0,
     media,
   );
+  if (!started && rollback) {
+    try {
+      await restoreRollbackSnapshot(rollback);
+      emit(dispatch, 'player/setPlaying', rollback.playing);
+    } catch {
+      try {
+        await TrackPlayer.pause();
+      } catch {
+        // Recovery is bounded to a single best-effort native pause.
+      }
+      emit(dispatch, 'player/setPlaying', false);
+      emit(dispatch, 'player/setError', 'playback-recovery-required');
+    }
+    return false;
+  }
   if (started) {
     playerController.markNativeTrackLoaded();
     if (payload.appendToPlaylist)

@@ -199,12 +199,18 @@ export function sanitizePlayerState(value: unknown): PlayerState {
       ? playNextQueue.find(item => item.occurrenceId === currentOccurrenceId)
           ?.track || null
       : null;
+  const currentFromConsumedOccurrence =
+    currentSource === 'play-next' && currentOccurrenceId
+      ? requestedCurrent
+      : null;
   const currentTrack =
     currentFromPlaylist && requestedCurrent?.id === currentFromPlaylist.id
       ? currentFromPlaylist
       : currentFromOccurrence &&
         requestedCurrent?.id === currentFromOccurrence.id
       ? currentFromOccurrence
+      : currentFromConsumedOccurrence
+      ? currentFromConsumedOccurrence
       : null;
   const normalizedCurrentSource = currentTrack ? currentSource : 'playlist';
   const normalizedIndex = currentTrack ? currentIndex : -1;
