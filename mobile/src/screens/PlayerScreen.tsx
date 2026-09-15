@@ -40,7 +40,11 @@ import { BilibiliLyricPicker } from '../components/BilibiliLyricPicker';
 import { toggleFavorite } from '../store/librarySlice';
 import { isLocalTrack } from '../types/music';
 import type { Lyric, SourceId, Track } from '../types/provider';
-import { findActiveLyricIndex, parseLyricTimeline } from '../lyrics/timeline';
+import {
+  findActiveLyricIndex,
+  parseLyricTimeline,
+  type LyricTimelineLine,
+} from '../lyrics/timeline';
 import { bilibiliLyricCache } from '../lyrics/cache';
 import { lyricSelectionStore, type LyricSelectionKey } from '../lyrics/selectionStore';
 import { createLyricSession, lyricSessionKey } from '../lyrics/session';
@@ -877,6 +881,40 @@ export function shouldApplyPlayerTranslation(
   );
 }
 
+/** Only normalized provenance is rendered; provider replies never become UI copy. */
+export function lyricProvenanceLabel(
+  lyric: Lyric | null,
+  current?: PresentableTrack,
+  machineTranslation?: string | null,
+): string | null {
+  if (machineTranslation) return 'DeepSeek 机器翻译';
+  const provenance = lyric?.provenance;
+  if (provenance) {
+    const provider = providerLabels[provenance.matchedProvider] || provenance.matchedProvider;
+    return `${provenance.mode === 'manual' ? '手动选择' : '自动匹配'}：${provider}歌词`;
+  }
+  if (!lyric || !current) return null;
+  return `来源直连：${providerLabels[trackSource(current)] || trackSource(current)} 歌词`;
+}
+
+export function lyricRowAccessibilityLabel(
+  line: LyricTimelineLine,
+  active: boolean,
+  offsetMs: number,
+  provenance: string | null,
+): string {
+  const offset = `${offsetMs >= 0 ? '+' : ''}${offsetMs}毫秒`;
+  return [
+    active ? '当前歌词' : '歌词',
+    `原文：${line.text}`,
+    line.translation ? `译文：${line.translation}` : '无译文',
+    active ? `歌词校正 ${offset}` : null,
+    active && provenance ? `来源：${provenance}` : null,
+  ]
+    .filter(Boolean)
+    .join('；');
+}
+
 export function cancelPlayerTranslation(operationId: string | null): void {
   if (operationId) deepSeekClient.cancel(operationId).catch(() => undefined);
 }
@@ -1099,6 +1137,7 @@ function LyricsSheet({
     playbackPositionMs(position),
     userOffsetMs,
   );
+  const provenance = lyricProvenanceLabel(lyrics, current, machineTranslation);
   const scrollView = useRef<React.ComponentRef<typeof ScrollView>>(null);
   const lineOffsets = useRef<Record<number, number>>({});
   const scrollToLine = useCallback((index: number) => {
@@ -1128,6 +1167,11 @@ function LyricsSheet({
           <Text style={styles.lyricMeta}>
             {trackTitle(current)} ·{' '}
             {providerLabels[trackSource(current)] || trackSource(current)}
+          </Text>
+        ) : null}
+        {provenance ? (
+          <Text accessibilityLabel={`歌词来源：${provenance}`} style={styles.lyricMeta}>
+            歌词来源：{provenance}
           </Text>
         ) : null}
         {translationEligible ? (
@@ -1186,6 +1230,14 @@ function LyricsSheet({
                 style={styles.lyricRow}
               >
                 <Text
+                  accessibilityLabel={lyricRowAccessibilityLabel(
+                    line,
+                    index === activeIndex,
+                    userOffsetMs,
+                    provenance,
+                  )}
+                  accessibilityLiveRegion={index === activeIndex ? 'polite' : 'none'}
+                  accessibilityState={{ selected: index === activeIndex }}
                   style={[
                     styles.lyricLine,
                     index === activeIndex && styles.activeLyricLine,

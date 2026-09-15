@@ -56,6 +56,8 @@ export function BilibiliLyricPicker({
           />
           <Pressable
             accessibilityLabel="搜索歌词候选"
+            accessibilityRole="button"
+            accessibilityState={{ disabled: loading || !query.trim() }}
             disabled={loading || !query.trim()}
             onPress={() => onSearch(query)}
             style={styles.button}
@@ -65,7 +67,7 @@ export function BilibiliLyricPicker({
         </View>
         {loading ? <Text style={text.meta}>正在搜索歌词候选…</Text> : null}
         {partial ? (
-          <Text style={styles.notice}>
+          <Text accessibilityLiveRegion="polite" style={styles.notice}>
             部分歌词来源暂不可用：
             {providerErrors
               .map(
@@ -78,7 +80,7 @@ export function BilibiliLyricPicker({
           </Text>
         ) : null}
         {error ? (
-          <Text style={styles.notice}>歌词候选加载失败，可重试。</Text>
+          <Text accessibilityLiveRegion="polite" style={styles.notice}>歌词候选加载失败，可重试。</Text>
         ) : null}
         {candidates.map(candidate => (
           <Pressable
@@ -111,6 +113,7 @@ export function BilibiliLyricPicker({
         ) : null}
         <Pressable
           accessibilityLabel="恢复自动歌词"
+          accessibilityRole="button"
           onPress={onRestore}
           style={styles.restore}
         >
