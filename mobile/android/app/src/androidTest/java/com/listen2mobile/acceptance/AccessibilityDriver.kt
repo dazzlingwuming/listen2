@@ -94,7 +94,9 @@ class AccessibilityDriver(private val instrumentation: Instrumentation) {
     fun captureForegroundEvidence() {
         val directory = instrumentation.targetContext.getExternalFilesDir(null)
             ?: throw AssertionError("target external-files evidence directory is unavailable")
-        File(directory, "listen2-phase8-integrated.xml").writeText(dumpWindow())
+        val window = dumpWindow()
+        check(window.isNotEmpty()) { "foreground accessibility window is unavailable" }
+        File(directory, "listen2-phase8-integrated.xml").writeText(window)
         val screenshot = instrumentation.uiAutomation.takeScreenshot()
             ?: throw AssertionError("foreground screenshot is unavailable")
         try {
@@ -117,8 +119,11 @@ class AccessibilityDriver(private val instrumentation: Instrumentation) {
     }
 
     private fun dumpWindow(): String {
-        val root = instrumentation.uiAutomation.rootInActiveWindow
-            ?: throw AssertionError("active accessibility window is unavailable")
+        // A just-launched React Native Activity can publish its first window
+        // after instrumentation begins polling. It is not success until a
+        // label is found, but returning an empty snapshot lets waitForLabel
+        // honor its bounded timeout instead of failing on that transient.
+        val root = instrumentation.uiAutomation.rootInActiveWindow ?: return ""
         return try {
             val output = StringBuilder("<?xml version=\"1.0\" encoding=\"UTF-8\"?><hierarchy>")
             val visited = intArrayOf(0)
