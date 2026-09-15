@@ -73,6 +73,11 @@ import {
 } from '../deepseek/client';
 import type { DeepSeekConsent } from '../deepseek/types';
 import { bilibiliMvClient } from '../bilibili/mvClient';
+import {
+  audioEffectsClient,
+  audioEffectsLabel,
+  type AudioEffectsSnapshot,
+} from '../audiofx/audioEffectsClient';
 
 export type LyricFailurePresentation = Readonly<{
   code:
@@ -225,6 +230,11 @@ export function PlayerScreen() {
   const [consentVisible, setConsentVisible] = useState(false);
   const [forceRefreshRequested, setForceRefreshRequested] = useState(false);
   const [translationBusy, setTranslationBusy] = useState(false);
+  const [audioEffects, setAudioEffects] = useState<AudioEffectsSnapshot>({
+    status: 'unavailable',
+    preset: 'neutral',
+    fixedGain: 1,
+  });
   const lyricRequest = useRef<AbortController | null>(null);
   const lyricEpoch = useRef(0);
   const candidateRequest = useRef<AbortController | null>(null);
@@ -963,6 +973,15 @@ export function PlayerScreen() {
       dispatch,
       playing ? ['pause', 'togglePlayback'] : ['play', 'togglePlayback'],
     );
+  useEffect(() => {
+    let active = true;
+    void audioEffectsClient.status().then(snapshot => {
+      if (active) setAudioEffects(snapshot);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
   return (
     <View style={styles.page}>
       <View style={styles.top}>
@@ -1090,6 +1109,25 @@ export function PlayerScreen() {
                 {['循环', '随机', '单曲'][state.playMode ?? 0]}
               </Text>
             </Pressable>
+          </View>
+          <View style={styles.audioEffects}>
+            <Text accessibilityLabel="音效状态" style={text.meta}>
+              {audioEffectsLabel(audioEffects)}
+            </Text>
+            <View style={styles.effectsActions}>
+              {(['neutral', 'bass', 'vocal', 'treble'] as const).map(preset => (
+                <Pressable
+                  accessibilityLabel={`选择${preset}音效预设`}
+                  key={preset}
+                  onPress={() => {
+                    void audioEffectsClient.selectPreset(preset).then(setAudioEffects);
+                  }}
+                  style={styles.effectButton}
+                >
+                  <Text style={styles.actionText}>{preset === 'neutral' ? '原声' : preset}</Text>
+                </Pressable>
+              ))}
+            </View>
           </View>
           <View style={styles.controls}>
             <Pressable
@@ -1970,6 +2008,16 @@ const styles = StyleSheet.create({
   },
   primaryIcon: { color: colors.text, fontSize: 28 },
   actions: { width: '100%', flexDirection: 'row', gap: spacing.md },
+  audioEffects: { width: '100%', gap: spacing.sm },
+  effectsActions: { flexDirection: 'row', gap: spacing.xs, flexWrap: 'wrap' },
+  effectButton: {
+    minHeight: 38,
+    paddingHorizontal: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    backgroundColor: colors.surface,
+  },
   action: {
     flex: 1,
     minHeight: 48,
