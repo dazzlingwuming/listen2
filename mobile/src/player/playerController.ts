@@ -16,6 +16,7 @@ import {
   isOfflineDownloadEligible,
   offlineAudio,
 } from '../offline/offlineAudio';
+import { audioEffectsClient } from '../audiofx/audioEffectsClient';
 import {
   PLAY_MODE,
   type HistoryEntry,
@@ -23,6 +24,18 @@ import {
 } from '../store/playerSlice';
 
 type Dispatch = (action: unknown) => unknown;
+
+/**
+ * Effects are deliberately fire-and-forget: RNTP owns transport and a missing,
+ * stale, or failed analysis must never postpone first playback.
+ */
+export function scheduleFixedNormalizationGain(gain: number | undefined) {
+  const safeGain =
+    typeof gain === 'number' && Number.isFinite(gain)
+      ? Math.max(0, Math.min(1, gain))
+      : 1;
+  void audioEffectsClient.setFixedNormalizationGain(safeGain);
+}
 
 type ControllerRuntime = {
   dispatch: Dispatch;
@@ -425,6 +438,10 @@ async function configureNativeSnapshot(
   );
   assertNativeOperationCurrent(context);
   await TrackPlayer.setVolume(state.muted ? 0 : state.volume);
+  // The current catalog has no matching completed metrics at startup. Unity is
+  // applied asynchronously; a future matching result may replace it without
+  // touching RNTP user volume or mute.
+  scheduleFixedNormalizationGain(undefined);
 }
 
 async function loadAndPlay(
