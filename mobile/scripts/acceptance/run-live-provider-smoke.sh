@@ -101,7 +101,11 @@ cleanup_status='pending'
 cleanup() { bash mobile/scripts/acceptance/device-state.sh restore --serial "$SERIAL" --file "$STATE" >/dev/null 2>&1 && cleanup_status='restored' || cleanup_status='restore-failed'; }
 trap cleanup EXIT
 
-"$ADB" -s "$SERIAL" shell pm clear "$PACKAGE" > "$RUN_DIR/live-provider-reset.txt"
+if "$ADB" -s "$SERIAL" shell pm path "$PACKAGE" | grep -Fq 'package:'; then
+  "$ADB" -s "$SERIAL" shell pm clear "$PACKAGE" > "$RUN_DIR/live-provider-reset.txt"
+else
+  printf '%s\n' 'package was not installed before sealed-product test' > "$RUN_DIR/live-provider-reset.txt"
+fi
 "$ADB" -s "$SERIAL" install -r "$PRODUCT_APK" > "$RUN_DIR/live-provider-product-install.txt"
 "$ADB" -s "$SERIAL" install -r "$TEST_APK" > "$RUN_DIR/live-provider-test-install.txt"
 "$ADB" -s "$SERIAL" shell logcat -c > "$RUN_DIR/diagnostics/live-provider-logcat-clear.txt" 2>&1 || true
