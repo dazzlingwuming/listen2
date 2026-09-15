@@ -1,5 +1,6 @@
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
+apply plugin: "kotlin-kapt"
 apply plugin: "com.facebook.react"
 
 /**
@@ -84,6 +85,7 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "2.34.0-android"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
         debug {
@@ -119,4 +121,17 @@ dependencies {
     testImplementation("org.json:json:20240303")
     implementation 'com.google.zxing:core:3.5.3'
     implementation 'androidx.media3:media3-exoplayer:1.9.4'
+    implementation 'androidx.room:room-runtime:2.8.5'
+    implementation 'androidx.room:room-ktx:2.8.5'
+    kapt 'androidx.room:room-compiler:2.8.5'
+    implementation 'androidx.datastore:datastore-preferences:1.2.1'
+    // React Native's test classpath strictly pins this official runner line.
+    androidTestImplementation 'androidx.test:runner:1.4.0'
+    androidTestImplementation 'androidx.room:room-testing:2.8.5'
+}
+
+kapt {
+    arguments {
+        arg('room.schemaLocation', "$projectDir/schemas")
+    }
 }
