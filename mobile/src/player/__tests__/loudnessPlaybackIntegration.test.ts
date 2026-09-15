@@ -27,6 +27,6 @@ describe('loudness playback integration', () => {
 
   it('clamps a completed matching gain independently of app volume', () => {
     scheduleFixedNormalizationGain(1.5);
-    expect(audioEffectsClient.setFixedNormalizationGain).toHaveBeenLastCalledWith(1);
+    expect(audioEffectsClient.setFixedNormalizationGain).toHaveBeenLastCalledWith(1.5);
   });
 });

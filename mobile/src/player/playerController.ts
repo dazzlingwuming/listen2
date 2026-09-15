@@ -32,7 +32,7 @@ type Dispatch = (action: unknown) => unknown;
 export function scheduleFixedNormalizationGain(gain: number | undefined) {
   const safeGain =
     typeof gain === 'number' && Number.isFinite(gain)
-      ? Math.max(0, Math.min(1, gain))
+      ? Math.max(0, Math.min(4, gain))
       : 1;
   void audioEffectsClient.setFixedNormalizationGain(safeGain);
 }

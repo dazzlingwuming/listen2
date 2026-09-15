@@ -44,7 +44,7 @@ export function parseAudioEffectsSnapshot(value: unknown): AudioEffectsSnapshot 
         : 'neutral',
     fixedGain:
       typeof fixedGain === 'number' && Number.isFinite(fixedGain)
-        ? Math.max(0, Math.min(1, fixedGain))
+        ? Math.max(0, Math.min(4, fixedGain))
         : 1,
   };
 }

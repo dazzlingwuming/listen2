@@ -10,6 +10,9 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
 import java.security.MessageDigest
+import androidx.sqlite.db.SimpleSQLiteQuery
+import com.listen2mobile.audiofx.LoudnessPolicy
+import kotlin.math.pow
 
 enum class OfflineOwnerKind { TEMPORARY, PLAYLIST, EXPLICIT }
 
@@ -75,6 +78,34 @@ internal class OfflineCatalogRepository(private val database: Listen2Database, p
         if (blob.state != "ready" || database.libraryDao().cacheOwners(blobKey).isEmpty()) return null
         val file = File(root, blob.privateRelativeKey)
         return file.takeIf { canRead(it) && it.length() == blob.byteLength && hash(it) == blob.contentHash }
+    }
+
+    /** A metric may cross the cache boundary only when every content identity component matches. */
+    fun normalizationGain(blobKey: String, sampleRate: Int, codec: String): Double {
+        val blob = database.libraryDao().cacheBlob(blobKey) ?: return 1.0
+        val identity = LoudnessPolicy.Identity(blob.contentHash, sampleRate, codec)
+        if (!identity.isValid()) return 1.0
+        database.openHelper.readableDatabase.query(SimpleSQLiteQuery(
+            "SELECT sampleRate, codec, gainDb, status FROM cache_analysis WHERE contentHash = ? AND analyzerVersion = ? LIMIT 1",
+            arrayOf<Any>(blob.contentHash, LoudnessPolicy.ANALYZER_VERSION),
+        )).use { cursor ->
+            if (!cursor.moveToFirst() || cursor.getString(3) != "complete") return 1.0
+            val stored = LoudnessPolicy.Identity(blob.contentHash, cursor.getInt(0), cursor.getString(1))
+            if (!LoudnessPolicy.reusable(stored, identity) || cursor.isNull(2)) return 1.0
+            val gain = 10.0.pow(cursor.getDouble(2) / 20.0)
+            return if (gain.isFinite()) gain.coerceIn(0.0, 4.0) else 1.0
+        }
+    }
+
+    /** Persist only bounded numeric results; decoded samples never enter Room or JS. */
+    fun recordLoudness(identity: LoudnessPolicy.Identity, metrics: LoudnessPolicy.Metrics?) {
+        if (!identity.isValid()) return
+        val status = if (metrics == null) "failed" else "complete"
+        val db = database.openHelper.writableDatabase
+        db.execSQL(
+            "INSERT OR REPLACE INTO cache_analysis(contentHash, analyzerVersion, sampleRate, codec, lufs, dbtp, gainDb, status, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            arrayOf<Any?>(identity.contentHash, identity.analyzerVersion, identity.sampleRate, identity.codec, metrics?.lufs, metrics?.truePeakDbtp, metrics?.gainDb, status, now()),
+        )
     }
 
     private fun canRead(file: File) = try { FileInputStream(file).use { it.read() >= 0 } } catch (_: IOException) { false }

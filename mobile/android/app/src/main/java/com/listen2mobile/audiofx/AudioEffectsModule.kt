@@ -11,7 +11,8 @@ import com.facebook.react.module.annotations.ReactModule
 internal object AudioEffectsPolicy {
     val presets = setOf("neutral", "bass", "vocal", "treble")
     fun status(session: Int, enabled: Boolean) = when { session <= 0 -> "unavailable"; !enabled -> "disabled"; else -> "enabled" }
-    fun gain(value: Double) = if (value.isFinite()) value.coerceIn(0.0, 1.0) else 1.0
+    /** Separate app gain: bounded but intentionally independent from RNTP user volume/mute. */
+    fun gain(value: Double) = if (value.isFinite()) value.coerceIn(0.0, 4.0) else 1.0
 }
 
 @ReactModule(name = AudioEffectsModule.NAME)

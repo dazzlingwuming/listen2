@@ -10,7 +10,7 @@ describe('audio effects presentation', () => {
 
   it('bounds native gain and keeps neutral as the safe fallback', () => {
     expect(parseAudioEffectsSnapshot({ status: 'enabled', preset: 'bass', fixedGain: 4 })).toEqual({
-      status: 'enabled', preset: 'bass', fixedGain: 1,
+      status: 'enabled', preset: 'bass', fixedGain: 4,
     });
   });
 });
