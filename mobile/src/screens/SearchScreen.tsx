@@ -25,6 +25,10 @@ import { ScreenLayout, sectionStyles } from './ScreenLayout';
 import { isOfflineDownloadEligible } from '../offline/offlineAudio';
 import { requestDownload } from '../store/downloadSlice';
 import type { RootState } from '../store';
+import {
+  createSearchJourneyState,
+  reduceSearchJourney,
+} from '../search/searchJourneyState';
 
 type SearchStatus =
   | 'guide'
@@ -45,9 +49,15 @@ export function SearchScreen() {
   );
   const [query, setQuery] = useState(route.params?.query || '');
   const [searchKind, setSearchKind] = useState<SearchKind>('track');
-  const [items, setItems] = useState<SearchResult[]>([]);
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(false);
+  const [journey, setJourney] = useState(() =>
+    createSearchJourneyState({
+      source: route.params?.sourceId || ('netease' as SourceId),
+      query: route.params?.query || '',
+      kind: 'track',
+      requestId: 'initial',
+      generation: 0,
+    }),
+  );
   const [status, setStatus] = useState<SearchStatus>('guide');
   const requestEpoch = useRef(0);
   const requestController = useRef<AbortController | null>(null);
@@ -63,13 +73,37 @@ export function SearchScreen() {
       const trimmed = requestedQuery.trim();
       if (!trimmed) {
         setStatus('guide');
-        setItems([]);
+        setJourney(previous =>
+          createSearchJourneyState({
+            ...previous.scope,
+            query: '',
+            rows: [],
+            terminal: 'guide',
+          }),
+        );
         return;
       }
       requestController.current?.abort();
       const controller = new AbortController();
       requestController.current = controller;
       const epoch = ++requestEpoch.current;
+      const requestId = `search-${epoch}`;
+      setJourney(previous =>
+        createSearchJourneyState({
+          source: requestedSource,
+          query: trimmed,
+          kind: requestedKind,
+          requestId,
+          generation: epoch,
+          rows: nextPage === 1 ? [] : previous.rows,
+          page: nextPage === 1 ? 0 : previous.page,
+          cursor: nextPage === 1 ? undefined : previous.cursor,
+          hasMore: nextPage === 1 ? false : previous.hasMore,
+          selectedIdentity: previous.selectedIdentity,
+          scrollAnchor: previous.scrollAnchor,
+          terminal: nextPage === 1 ? 'loading' : 'loading-more',
+        }),
+      );
       setStatus(nextPage === 1 ? 'loading' : 'loadingMore');
       try {
         const response = await searchProvider(
@@ -80,36 +114,49 @@ export function SearchScreen() {
           requestedKind,
         );
         if (epoch !== requestEpoch.current) return;
-        const resultItems = response.results;
-        const previousCount = nextPage === 1 ? 0 : items.length;
-        const uniqueItems =
-          nextPage === 1
-            ? resultItems
-            : resultItems.filter(
-                item => !items.some(old => identity(old) === identity(item)),
-              );
-        setItems(previous =>
-          nextPage === 1 ? resultItems : [...previous, ...uniqueItems],
-        );
-        setPage(nextPage);
-        const total = Number((response as any)?.total);
-        setHasMore(
-          Boolean(
+        setJourney(previous => {
+          const total = Number((response as any)?.total);
+          const currentRows = nextPage === 1 ? 0 : previous.rows.length;
+          const hasMore = Boolean(
             (response as any)?.hasMore ??
               (response as any)?.nextCursor ??
               (response as any)?.nextPage ??
               (Number.isFinite(total) &&
-                previousCount + uniqueItems.length < total &&
-                resultItems.length > 0),
-          ),
-        );
-        setStatus(resultItems.length || nextPage > 1 ? 'ready' : 'empty');
+                currentRows + response.results.length < total &&
+                response.results.length > 0),
+          );
+          const next = reduceSearchJourney(previous, {
+            type: 'success',
+            requestId,
+            generation: epoch,
+            page: nextPage,
+            cursor:
+              typeof (response as any)?.nextCursor === 'string'
+                ? (response as any).nextCursor
+                : undefined,
+            hasMore,
+            results: response.results,
+          });
+          setStatus(next.terminal === 'empty' ? 'empty' : 'ready');
+          return next;
+        });
       } catch {
-        if (epoch === requestEpoch.current)
+        if (epoch === requestEpoch.current) {
+          if (controller.signal.aborted) {
+            setJourney(previous =>
+              reduceSearchJourney(previous, {
+                type: 'cancelled',
+                requestId,
+                generation: epoch,
+                page: nextPage,
+              }),
+            );
+          }
           setStatus(controller.signal.aborted ? 'cancelled' : 'error');
+        }
       }
     },
-    [items, query, searchKind, sourceId],
+    [query, searchKind, sourceId],
   );
 
   useEffect(() => {
@@ -121,16 +168,30 @@ export function SearchScreen() {
     handledRouteRequest.current = signature;
     setSourceId(requestedSource);
     setQuery(requestedQuery);
-    setItems([]);
-    setPage(1);
+    setJourney(
+      createSearchJourneyState({
+        source: requestedSource,
+        query: requestedQuery,
+        kind: 'track',
+        requestId: 'route',
+        generation: requestEpoch.current,
+      }),
+    );
     search(1, requestedSource, requestedQuery);
   }, [route.params?.query, route.params?.sourceId, search]);
   const selectSource = (source: SourceId) => {
     requestController.current?.abort();
     requestEpoch.current += 1;
     setSourceId(source);
-    setItems([]);
-    setPage(1);
+    setJourney(
+      createSearchJourneyState({
+        source,
+        query,
+        kind: searchKind,
+        requestId: 'source-change',
+        generation: requestEpoch.current,
+      }),
+    );
     setStatus('guide');
   };
   const cancel = () => {
@@ -142,9 +203,15 @@ export function SearchScreen() {
     requestController.current?.abort();
     requestEpoch.current += 1;
     setSearchKind(kind);
-    setItems([]);
-    setPage(1);
-    setHasMore(false);
+    setJourney(
+      createSearchJourneyState({
+        source: sourceId,
+        query,
+        kind,
+        requestId: 'kind-change',
+        generation: requestEpoch.current,
+      }),
+    );
     setStatus('guide');
   };
   const play = (track: PresentableTrack) => {
@@ -186,8 +253,15 @@ export function SearchScreen() {
               requestController.current?.abort();
               requestEpoch.current += 1;
               setQuery('');
-              setItems([]);
-              setHasMore(false);
+              setJourney(
+                createSearchJourneyState({
+                  source: sourceId,
+                  query: '',
+                  kind: searchKind,
+                  requestId: 'clear',
+                  generation: requestEpoch.current,
+                }),
+              );
               setStatus('guide');
             }}
             style={styles.clear}
@@ -264,7 +338,7 @@ export function SearchScreen() {
         </View>
       ) : null}
       <SearchSurface
-        items={items}
+        items={journey.rows}
         onPlay={play}
         downloads={downloads}
         onDownload={track => dispatch(requestDownload(track as Track))}
@@ -279,10 +353,10 @@ export function SearchScreen() {
         sourceId={sourceId}
         status={status}
       />
-      {status === 'ready' && hasMore ? (
+      {status === 'ready' && journey.hasMore ? (
         <Pressable
           accessibilityLabel="加载更多搜索结果"
-          onPress={() => search(page + 1)}
+          onPress={() => search(journey.page + 1)}
           style={sectionStyles.secondaryButton}
         >
           <Text style={sectionStyles.secondaryText}>加载更多</Text>
@@ -319,7 +393,7 @@ function SearchSurface({
         <Text style={text.heading}>开始搜索</Text>
         <Text style={text.meta}>
           {searchKind === 'playlist' &&
-          !PROVIDER_CAPABILITIES[sourceId].playlistSearch
+          !isOperationAvailable(sourceId, 'detail')
             ? `${providerLabels[sourceId]}暂不提供经过验证的公开歌单搜索。`
             : '输入关键词后选择来源，结果会显示在这里。'}
         </Text>
@@ -366,12 +440,12 @@ function SearchSurface({
           <TrackRow
             key={`${identity(item)}-${index}`}
             onPlay={
-              PROVIDER_CAPABILITIES[item.track.source].playback
+              isOperationAvailable(item.track.source, 'playback')
                 ? () => onPlay(item.track)
                 : undefined
             }
             onPress={
-              PROVIDER_CAPABILITIES[item.track.source].playback
+              isOperationAvailable(item.track.source, 'playback')
                 ? () => onPlay(item.track)
                 : undefined
             }
@@ -428,6 +502,20 @@ async function searchProvider(
   kind: SearchKind,
 ): Promise<SearchPage> {
   return providerClient.search(sourceId, query, page, { signal, kind });
+}
+
+function isOperationAvailable(
+  source: SourceId,
+  operation: 'detail' | 'playback',
+): boolean {
+  const capabilities = PROVIDER_CAPABILITIES[source] as any;
+  const projected = capabilities?.operations?.[operation];
+  if (projected) return projected.status === 'available';
+  // Keeps isolated older test seams compatible while production always reads
+  // the operation-level projection.
+  return operation === 'detail'
+    ? capabilities?.playlist === true || capabilities?.playlistSearch === true
+    : capabilities?.playback === true;
 }
 function identity(item: SearchResult) {
   return item.kind === 'track'

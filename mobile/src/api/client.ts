@@ -5,6 +5,8 @@ import type {
   Lyric,
   PlaylistDetail,
   ProviderRequestOptions,
+  ProviderCapabilities,
+  ProviderOperation,
   SearchPage,
   SearchRequestOptions,
   SourceId,
@@ -33,58 +35,115 @@ import {
 } from './providers';
 import { resolveBilibiliLyric } from '../bilibili/lyrics';
 
+const available = { status: 'available' } as const;
+const unavailableRoute = {
+  status: 'unavailable',
+  reason: 'no-authorized-route',
+  action: 'choose-another-source',
+} as const;
+const unverifiedRoute = {
+  status: 'unverified',
+  reason: 'unverified-route',
+  action: 'return',
+} as const;
+
+type SourceCapabilityProjection = Readonly<{
+  operations: ProviderCapabilities;
+  /** Compatibility fields for legacy call sites; new screens use `operations`. */
+  search: boolean;
+  playlistSearch: boolean;
+  playback: boolean;
+  lyric: boolean;
+  playlist: boolean;
+  discover: boolean;
+}>;
+
+const capabilityProjection = (
+  supported: Partial<Record<ProviderOperation, typeof available>>,
+): SourceCapabilityProjection => {
+  const operationKeys: ProviderOperation[] = [
+    'search',
+    'discover',
+    'detail',
+    'playback',
+    'lyrics',
+    'manual-lyrics',
+    'offset',
+    'login',
+    'download',
+    'mv',
+    'playlist',
+    'bootstrap',
+    'lyric',
+  ];
+  const operations = Object.freeze(
+    Object.fromEntries(
+      operationKeys.map(operation => [
+        operation,
+        supported[operation] ??
+          (operation === 'search' ? unavailableRoute : unverifiedRoute),
+      ]),
+    ) as ProviderCapabilities,
+  );
+  return Object.freeze({
+    operations,
+    search: operations.search.status === 'available',
+    playlistSearch: operations.playlist.status === 'available',
+    playback: operations.playback.status === 'available',
+    lyric: operations.lyrics.status === 'available',
+    playlist: operations.detail.status === 'available',
+    discover: operations.discover.status === 'available',
+  });
+};
+
 export const PROVIDER_CAPABILITIES: Readonly<
-  Record<
-    SourceId,
-    {
-      search: boolean;
-      playlistSearch: boolean;
-      playback: boolean;
-      lyric: boolean;
-      playlist: boolean;
-      discover: boolean;
-    }
-  >
+  Record<SourceId, SourceCapabilityProjection>
 > = Object.freeze({
   netease: {
-    search: true,
-    playlistSearch: true,
-    playback: true,
-    lyric: true,
-    playlist: true,
-    discover: true,
+    ...capabilityProjection({
+      search: available,
+      discover: available,
+      detail: available,
+      playback: available,
+      lyrics: available,
+      playlist: available,
+      bootstrap: available,
+      lyric: available,
+      download: available,
+    }),
   },
   kugou: {
-    search: true,
-    playlistSearch: false,
-    playback: true,
-    lyric: false,
-    playlist: false,
-    discover: true,
+    ...capabilityProjection({
+      search: available,
+      discover: available,
+      detail: available,
+      playback: available,
+      bootstrap: available,
+      download: available,
+    }),
   },
   kuwo: {
-    search: true,
-    playlistSearch: false,
-    playback: false,
-    lyric: false,
-    playlist: false,
-    discover: false,
+    ...capabilityProjection({ search: available }),
   },
   qq: {
-    search: true,
-    playlistSearch: false,
-    playback: false,
-    lyric: true,
-    playlist: false,
-    discover: false,
+    ...capabilityProjection({
+      search: available,
+      lyrics: available,
+      lyric: available,
+    }),
   },
   bilibili: {
-    search: true,
-    playlistSearch: false,
-    playback: true,
-    lyric: true,
-    playlist: false,
-    discover: false,
+    ...capabilityProjection({
+      search: available,
+      detail: available,
+      playback: available,
+      lyrics: available,
+      'manual-lyrics': available,
+      login: available,
+      mv: available,
+      bootstrap: available,
+      lyric: available,
+    }),
   },
 });
 

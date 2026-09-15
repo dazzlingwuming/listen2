@@ -13,10 +13,32 @@ export const SOURCE_IDS = [
 export type SourceId = (typeof SOURCE_IDS)[number];
 export type ProviderOperation =
   | 'search'
+  | 'discover'
+  | 'detail'
+  | 'playback'
+  | 'lyrics'
+  | 'manual-lyrics'
+  | 'offset'
+  | 'login'
+  | 'download'
+  | 'mv'
+  // Existing adapter names remain explicit compatibility aliases until all
+  // callers move to the product-level operation vocabulary.
   | 'playlist'
   | 'bootstrap'
-  | 'lyric'
-  | 'discover';
+  | 'lyric';
+
+export type ProviderOperationCapability =
+  | { status: 'available' }
+  | {
+      status: 'unavailable' | 'unverified';
+      reason: 'no-authorized-route' | 'unverified-route' | 'login-required';
+      action: 'retry' | 'sign-in' | 'choose-another-source' | 'return';
+    };
+
+export type ProviderCapabilities = Readonly<
+  Record<ProviderOperation, ProviderOperationCapability>
+>;
 export type SearchKind = 'track' | 'playlist';
 export type DiscoverSource = 'netease' | 'kugou';
 export type DiscoverSectionKind = 'featured' | 'charts';
