@@ -21,9 +21,10 @@ internal class QqPlaybackGateway(
         fun cancel(requestId: String)
     }
 
-    fun resolve(requestId: String, track: QqPlaybackPolicy.SemanticTrack): QqPlaybackPolicy.Descriptor {
+    fun resolve(requestId: String, track: QqPlaybackPolicy.SemanticTrack, isCancelled: () -> Boolean = { false }): QqPlaybackPolicy.Descriptor {
         if (!QqPlaybackPolicy.isRequestId(requestId) || !QqPlaybackPolicy.policyReady())
             throw QqPlaybackPolicy.ProviderException(QqPlaybackPolicy.ErrorCode.INVALID_REQUEST)
+        requireActive(requestId, isCancelled)
         val metadata = transport.metadata(
             MetadataRequest(
                 QqPlaybackPolicy.METADATA_URL,
@@ -33,10 +34,13 @@ internal class QqPlaybackGateway(
                 QqPlaybackPolicy.MAX_METADATA_BYTES,
             ),
         )
+        requireActive(requestId, isCancelled)
         if (metadata.status !in 200..299 || metadata.body.toByteArray(Charsets.UTF_8).size > QqPlaybackPolicy.MAX_METADATA_BYTES)
             throw QqPlaybackPolicy.ProviderException(QqPlaybackPolicy.ErrorCode.INVALID_RESPONSE)
         val mediaUrl = QqPlaybackPolicy.resolveMediaUrl(metadata.body)
+        requireActive(requestId, isCancelled)
         val probe = transport.probe(ProbeRequest(mediaUrl, QqPlaybackPolicy.fixedProbeHeaders(), 1, 0))
+        requireActive(requestId, isCancelled)
         val (mimeType, sizeBytes) = QqPlaybackPolicy.validateProbe(probe.status, probe.headers)
         return QqPlaybackPolicy.Descriptor(
             QqPlaybackPolicy.CONTRACT_VERSION,
@@ -51,6 +55,13 @@ internal class QqPlaybackGateway(
     }
 
     fun cancel(requestId: String) = transport.cancel(requestId)
+
+    private fun requireActive(requestId: String, isCancelled: () -> Boolean) {
+        if (isCancelled()) {
+            transport.cancel(requestId)
+            throw QqPlaybackPolicy.ProviderException(QqPlaybackPolicy.ErrorCode.CANCELLED)
+        }
+    }
 
     private class HttpsTransport : Transport {
         @Volatile private var active: HttpsURLConnection? = null
@@ -78,7 +89,13 @@ internal class QqPlaybackGateway(
                 val status = connection.responseCode
                 val stream = if (status in 200..299) connection.inputStream else connection.errorStream
                 val responseBody = stream?.use { readBounded(it, maxBytes) } ?: ""
-                return HttpResponse(status, responseBody, connection.headerFields.filterKeys { it != null })
+                // HttpURLConnection includes the status line under a null header key. Do not
+                // pass that platform-specific entry into the strict probe-header parser.
+                val responseHeaders = linkedMapOf<String, List<String>>()
+                connection.headerFields.forEach { (name, values) ->
+                    if (name != null && values != null) responseHeaders[name] = values
+                }
+                return HttpResponse(status, responseBody, responseHeaders)
             } catch (_: SocketTimeoutException) {
                 throw QqPlaybackPolicy.ProviderException(QqPlaybackPolicy.ErrorCode.REQUEST_TIMEOUT)
             } catch (error: QqPlaybackPolicy.ProviderException) {

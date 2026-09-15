@@ -9,7 +9,7 @@ import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.ReadableType
 import com.facebook.react.module.annotations.ReactModule
 import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.RejectedExecutionException
 
 /** Unregistered semantic-only RN boundary. Plan 05-05 owns runtime registration and capability activation. */
 @ReactModule(name = QqPlaybackModule.NAME)
@@ -25,7 +25,7 @@ internal class QqPlaybackModule(
     }
 
     private val worker = Executors.newSingleThreadExecutor()
-    private val active = LinkedHashMap<String, AtomicBoolean>()
+    private val ledger = QqPlaybackPolicy.RequestLedger()
     @Volatile private var invalidated = false
 
     override fun getName() = NAME
@@ -35,21 +35,35 @@ internal class QqPlaybackModule(
         val parsed = try { parseRequest(request) } catch (_: Exception) {
             return promise.resolve(error(QqPlaybackPolicy.ErrorCode.INVALID_REQUEST))
         }
-        synchronized(active) {
-            if (invalidated || active.containsKey(parsed.requestId)) return promise.resolve(error(if (invalidated) QqPlaybackPolicy.ErrorCode.CANCELLED else QqPlaybackPolicy.ErrorCode.INVALID_REQUEST))
-            active[parsed.requestId] = AtomicBoolean(false)
+        val lease = if (invalidated) null else ledger.claim(parsed.requestId)
+        if (lease == null) {
+            return promise.resolve(error(if (invalidated) QqPlaybackPolicy.ErrorCode.CANCELLED else QqPlaybackPolicy.ErrorCode.INVALID_REQUEST))
         }
-        worker.execute {
-            val cancelled = synchronized(active) { active[parsed.requestId] } ?: return@execute
-            val result = try {
-                if (cancelled.get() || invalidated) error(QqPlaybackPolicy.ErrorCode.CANCELLED) else descriptor(gateway.resolve(parsed.requestId, parsed.track))
-            } catch (failure: QqPlaybackPolicy.ProviderException) {
-                error(if (cancelled.get() || invalidated) QqPlaybackPolicy.ErrorCode.CANCELLED else failure.code)
-            } catch (_: Exception) {
-                error(if (cancelled.get() || invalidated) QqPlaybackPolicy.ErrorCode.CANCELLED else QqPlaybackPolicy.ErrorCode.INVALID_RESPONSE)
+        try {
+            worker.execute {
+                val result = try {
+                    if (!ledger.isCurrent(lease) || invalidated) {
+                        error(QqPlaybackPolicy.ErrorCode.CANCELLED)
+                    } else {
+                        descriptor(gateway.resolve(parsed.requestId, parsed.track) {
+                            !ledger.isCurrent(lease) || invalidated
+                        })
+                    }
+                } catch (failure: QqPlaybackPolicy.ProviderException) {
+                    error(if (!ledger.isCurrent(lease) || invalidated) QqPlaybackPolicy.ErrorCode.CANCELLED else failure.code)
+                } catch (_: Exception) {
+                    error(if (!ledger.isCurrent(lease) || invalidated) QqPlaybackPolicy.ErrorCode.CANCELLED else QqPlaybackPolicy.ErrorCode.INVALID_RESPONSE)
+                }
+                ledger.complete(lease)
+                if (lease.cancelled.get() || invalidated) {
+                    promise.resolve(error(QqPlaybackPolicy.ErrorCode.CANCELLED))
+                } else {
+                    promise.resolve(result)
+                }
             }
-            synchronized(active) { active.remove(parsed.requestId) }
-            if (cancelled.get() || invalidated) promise.resolve(error(QqPlaybackPolicy.ErrorCode.CANCELLED)) else promise.resolve(result)
+        } catch (_: RejectedExecutionException) {
+            ledger.complete(lease)
+            promise.resolve(error(QqPlaybackPolicy.ErrorCode.CANCELLED))
         }
     }
 
@@ -60,15 +74,13 @@ internal class QqPlaybackModule(
             require(request.getType("version") == ReadableType.Number && request.getDouble("version").toInt() == CONTRACT_VERSION)
             requireRequestId(request, "requestId")
         } catch (_: Exception) { return promise.resolve(error(QqPlaybackPolicy.ErrorCode.INVALID_REQUEST)) }
-        synchronized(active) { active[requestId]?.set(true) }
-        gateway.cancel(requestId)
+        if (ledger.cancel(requestId) != null) gateway.cancel(requestId)
         promise.resolve(Arguments.createMap().apply { putBoolean("ok", true) })
     }
 
     override fun invalidate() {
         invalidated = true
-        val ids = synchronized(active) { active.map { (id, cancelled) -> cancelled.set(true); id }.also { active.clear() } }
-        ids.forEach(gateway::cancel)
+        ledger.cancelAll().forEach { gateway.cancel(it.requestId) }
         worker.shutdownNow()
         super.invalidate()
     }

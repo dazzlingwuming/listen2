@@ -4,6 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URI
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** Pure, fail-closed QQ media policy. The host below is a deterministic fixture assumption only. */
 internal object QqPlaybackPolicy {
@@ -12,6 +13,7 @@ internal object QqPlaybackPolicy {
     const val METADATA_URL = "https://u.y.qq.com/cgi-bin/musicu.fcg"
     const val MAX_METADATA_BYTES = 256 * 1024
     const val MAX_MEDIA_BYTES = 512L * 1024L * 1024L
+    const val MAX_MEDIA_URL_BYTES = 4096
     const val MAX_LEASE_MS = 60_000L
     const val CONNECT_TIMEOUT_MS = 10_000
     const val READ_TIMEOUT_MS = 15_000
@@ -112,11 +114,14 @@ internal object QqPlaybackPolicy {
         return url
     }
 
-    fun isApprovedMediaUrl(raw: String?): Boolean = try {
-        val uri = URI(raw)
-        uri.scheme == "https" && uri.userInfo == null && uri.port == -1 && uri.fragment == null &&
-            uri.host?.lowercase(Locale.ROOT) in fixtureHosts && uri.rawPath?.startsWith("/") == true
-    } catch (_: Exception) { false }
+    fun isApprovedMediaUrl(raw: String?): Boolean {
+        if (raw == null || raw.toByteArray(Charsets.UTF_8).size > MAX_MEDIA_URL_BYTES) return false
+        return try {
+            val uri = URI(raw)
+            uri.scheme == "https" && uri.userInfo == null && uri.port == -1 && uri.fragment == null &&
+                uri.host?.lowercase(Locale.ROOT) in fixtureHosts && uri.rawPath?.startsWith("/") == true
+        } catch (_: Exception) { false }
+    }
 
     fun validateProbe(status: Int, headers: Map<String, List<String>>): Pair<String, Long> {
         if (status != 206) throw ProviderException(ErrorCode.INVALID_RESPONSE)
@@ -149,4 +154,28 @@ internal object QqPlaybackPolicy {
         headers.entries.firstOrNull { it.key.equals(name, true) }?.value?.singleOrNull()
 
     class ProviderException(val code: ErrorCode) : Exception(code.name)
+
+    /** Bounded request ownership prevents duplicate IDs and stale terminal success. */
+    class RequestLedger {
+        class Lease internal constructor(
+            val requestId: String,
+            val generation: Long,
+            internal val cancelled: AtomicBoolean = AtomicBoolean(false),
+        )
+
+        private val active = LinkedHashMap<String, Lease>()
+        private var nextGeneration = 0L
+
+        @Synchronized fun claim(requestId: String): Lease? {
+            if (!isRequestId(requestId) || active.containsKey(requestId)) return null
+            val lease = Lease(requestId, ++nextGeneration)
+            active[requestId] = lease
+            return lease
+        }
+
+        @Synchronized fun cancel(requestId: String): Lease? = active[requestId]?.also { it.cancelled.set(true) }
+        @Synchronized fun isCurrent(lease: Lease): Boolean = active[lease.requestId] === lease && !lease.cancelled.get()
+        @Synchronized fun complete(lease: Lease) { if (active[lease.requestId] === lease) active.remove(lease.requestId) }
+        @Synchronized fun cancelAll(): List<Lease> = active.values.onEach { it.cancelled.set(true) }.toList()
+    }
 }
