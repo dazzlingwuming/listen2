@@ -16,7 +16,7 @@ import {
   isOfflineDownloadEligible,
   offlineAudio,
 } from '../offline/offlineAudio';
-import { audioEffectsClient } from '../audiofx/audioEffectsClient';
+import { audioEffectsClient } from '../audioFx/audioEffectsClient';
 import {
   PLAY_MODE,
   type HistoryEntry,
