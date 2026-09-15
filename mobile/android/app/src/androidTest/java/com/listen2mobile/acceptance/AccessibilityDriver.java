@@ -16,6 +16,9 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -131,6 +134,80 @@ public final class AccessibilityDriver {
         throw new AssertionError("no truthful terminal search state for " + source);
     }
 
+    /**
+     * Unlike the broad Phase 8 terminal assertion, live-provider acceptance only
+     * succeeds when the visible production response contains a real TrackRow.
+     * A guide, empty state, or provider error is a failed live-search proof.
+     */
+    List<String> requireLiveSearchResults(String source) {
+        require(waitForLabel("青花瓷", 8_000L), "query did not remain visible for " + source);
+        long deadline = SystemClock.elapsedRealtime() + 20_000L;
+        while (SystemClock.elapsedRealtime() < deadline) {
+            String view = dumpWindow();
+            List<String> titles = visiblePlayableTitles(view);
+            if (!titles.isEmpty()) {
+                appendLiveResults(source, titles);
+                record("live-search-results-" + source + "-" + titles.size());
+                return titles;
+            }
+            if (!view.contains("正在搜索")) {
+                String terminal = liveSearchTerminal(view);
+                if (terminal != null) {
+                    throw new AssertionError("live-search-" + source + "-" + terminal);
+                }
+            }
+            SystemClock.sleep(300L);
+        }
+        throw new AssertionError("live-search-" + source + "-timed-out");
+    }
+
+    /**
+     * This makes one anonymous, visible playback attempt only after a real
+     * provider result advertises its own Play action. Access restrictions stay
+     * NOT_VERIFIED instead of being worked around or represented as a pass.
+     */
+    PlaybackProbe attemptNativePlayback(String title) {
+        String safeTitle = sanitizeVisibleTitle(title);
+        String playLabel = "播放" + title;
+        if (nodeFor(playLabel) == null) {
+            return PlaybackProbe.notVerified("no-visible-play-action-" + safeTitle);
+        }
+        tapLabel(playLabel);
+        if (!waitForLabel("打开播放器", 12_000L)) {
+            return PlaybackProbe.notVerified("no-mini-player-" + safeTitle);
+        }
+        if (!waitForLabel("暂停播放", 8_000L)) {
+            return PlaybackProbe.notVerified("ui-not-playing-" + safeTitle);
+        }
+        tapLabel("打开播放器");
+        Long firstPosition = waitForProgressPosition(8_000L);
+        if (firstPosition == null) {
+            return PlaybackProbe.notVerified("no-progress-control-" + safeTitle);
+        }
+        SystemClock.sleep(2_500L);
+        Long laterPosition = progressPosition(dumpWindow());
+        if (laterPosition == null || laterPosition <= firstPosition) {
+            return PlaybackProbe.notVerified("position-not-advancing-" + safeTitle);
+        }
+        String mediaSession = shell("dumpsys media_session");
+        if (!mediaSession.contains(TARGET_PACKAGE) || !isNativePlayingState(mediaSession)) {
+            return PlaybackProbe.notVerified("native-session-not-playing-" + safeTitle);
+        }
+        return PlaybackProbe.verified(safeTitle, firstPosition, laterPosition);
+    }
+
+    /** Captures the final foreground state and the bounded visible titles. */
+    void captureLiveProviderEvidence() {
+        File directory = evidenceDirectory();
+        writeText(new File(directory, "listen2-phase8-live-provider.xml"), dumpWindow());
+        captureScreenshot(new File(directory, "listen2-phase8-live-provider.png"));
+        StringBuilder result = new StringBuilder();
+        for (String line : liveResultLines) {
+            result.append(line).append('\n');
+        }
+        writeText(new File(directory, "listen2-phase8-live-provider-results.txt"), result.toString());
+    }
+
     void exerciseVisibleSafeDomains() {
         tapLabel("我的");
         require(waitForLabel("打开听歌历史与年度回响", 8_000L), "library shell unavailable");
@@ -142,41 +219,37 @@ public final class AccessibilityDriver {
 
     /** Captured while the target activity is foreground, before test teardown. */
     void captureForegroundEvidence() {
-        File directory = instrumentation.getTargetContext().getExternalFilesDir(null);
-        if (directory == null) {
-            throw new AssertionError("target external-files evidence directory is unavailable");
-        }
+        File directory = evidenceDirectory();
         String window = dumpWindow();
         require(!window.isEmpty(), "foreground accessibility window is unavailable");
         writeText(new File(directory, "listen2-phase8-integrated.xml"), window);
-        Bitmap screenshot = instrumentation.getUiAutomation().takeScreenshot();
-        if (screenshot == null) {
-            throw new AssertionError("foreground screenshot is unavailable");
-        }
-        try (FileOutputStream output = new FileOutputStream(new File(directory, "listen2-phase8-integrated.png"))) {
-            require(screenshot.compress(Bitmap.CompressFormat.PNG, 100, output), "could not write foreground screenshot");
-        } catch (Exception error) {
-            throw new AssertionError("could not write foreground screenshot", error);
-        } finally {
-            screenshot.recycle();
-        }
+        captureScreenshot(new File(directory, "listen2-phase8-integrated.png"));
     }
 
     /** Failure capture is best-effort and must never replace the primary assertion. */
     void captureFailureEvidence() {
+        File directory = evidenceDirectory();
+        writeText(new File(directory, "listen2-phase8-failure.xml"), dumpWindow());
+        captureScreenshot(new File(directory, "listen2-phase8-failure.png"));
+    }
+
+    private File evidenceDirectory() {
         File directory = instrumentation.getTargetContext().getExternalFilesDir(null);
         if (directory == null) {
-            throw new AssertionError("target external-files failure evidence directory is unavailable");
+            throw new AssertionError("target external-files evidence directory is unavailable");
         }
-        writeText(new File(directory, "listen2-phase8-failure.xml"), dumpWindow());
+        return directory;
+    }
+
+    private void captureScreenshot(File destination) {
         Bitmap screenshot = instrumentation.getUiAutomation().takeScreenshot();
         if (screenshot == null) {
-            throw new AssertionError("failure screenshot is unavailable");
+            throw new AssertionError("foreground screenshot is unavailable");
         }
-        try (FileOutputStream output = new FileOutputStream(new File(directory, "listen2-phase8-failure.png"))) {
-            require(screenshot.compress(Bitmap.CompressFormat.PNG, 100, output), "could not write failure screenshot");
+        try (FileOutputStream output = new FileOutputStream(destination)) {
+            require(screenshot.compress(Bitmap.CompressFormat.PNG, 100, output), "could not write foreground screenshot");
         } catch (Exception error) {
-            throw new AssertionError("could not write failure screenshot", error);
+            throw new AssertionError("could not write foreground screenshot", error);
         } finally {
             screenshot.recycle();
         }
@@ -284,6 +357,103 @@ public final class AccessibilityDriver {
         return label.contentEquals(stringValue(node.getText())) ||
             label.contentEquals(stringValue(node.getContentDescription())) ||
             label.contentEquals(stringValue(node.getHintText()));
+    }
+
+    private final List<String> liveResultLines = new ArrayList<>();
+
+    private static List<String> visiblePlayableTitles(String view) {
+        Pattern detail = Pattern.compile("content-desc=\\\"查看([^\\\"]{1,160})详情\\\"");
+        Matcher match = detail.matcher(view);
+        LinkedHashSet<String> titles = new LinkedHashSet<>();
+        while (match.find() && titles.size() < 3) {
+            String title = match.group(1);
+            if (view.contains("content-desc=\"播放" + title + "\"")) {
+                titles.add(title);
+            }
+        }
+        return new ArrayList<>(titles);
+    }
+
+    private void appendLiveResults(String source, List<String> titles) {
+        StringBuilder line = new StringBuilder(source).append(':');
+        for (int index = 0; index < titles.size(); index += 1) {
+            if (index > 0) {
+                line.append('|');
+            }
+            line.append(sanitizeVisibleTitle(titles.get(index)));
+        }
+        liveResultLines.add(line.toString());
+    }
+
+    private static String sanitizeVisibleTitle(String title) {
+        String value = title == null ? "untitled" : title.replaceAll("[^\\p{L}\\p{N} .,_-]", "_").trim();
+        return value.length() > 80 ? value.substring(0, 80) : (value.isEmpty() ? "untitled" : value);
+    }
+
+    private static String liveSearchTerminal(String view) {
+        if (view.contains("还没有搜索结果")) {
+            return "empty";
+        }
+        if (view.contains("暂时无法完成") || view.contains("重试搜索")) {
+            return "provider-error";
+        }
+        if (view.contains("开始搜索") || view.contains("输入关键词后选择来源")) {
+            return "guide";
+        }
+        return null;
+    }
+
+    private Long waitForProgressPosition(long timeoutMillis) {
+        long deadline = SystemClock.elapsedRealtime() + timeoutMillis;
+        while (SystemClock.elapsedRealtime() < deadline) {
+            Long position = progressPosition(dumpWindow());
+            if (position != null) {
+                return position;
+            }
+            SystemClock.sleep(250L);
+        }
+        return null;
+    }
+
+    private static Long progressPosition(String view) {
+        Matcher match = Pattern.compile("content-desc=\\\"播放进度 ([0-9:]+) /").matcher(view);
+        if (!match.find()) {
+            return null;
+        }
+        String[] values = match.group(1).split(":");
+        try {
+            if (values.length == 2) {
+                return Long.parseLong(values[0]) * 60L + Long.parseLong(values[1]);
+            }
+            if (values.length == 3) {
+                return Long.parseLong(values[0]) * 3600L + Long.parseLong(values[1]) * 60L + Long.parseLong(values[2]);
+            }
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+        return null;
+    }
+
+    private static boolean isNativePlayingState(String mediaSession) {
+        return Pattern.compile("(?i)(state=3|state=playing|STATE_PLAYING)").matcher(mediaSession).find();
+    }
+
+    static final class PlaybackProbe {
+        final boolean verified;
+        final String detail;
+
+        private PlaybackProbe(boolean verified, String detail) {
+            this.verified = verified;
+            this.detail = detail;
+        }
+
+        static PlaybackProbe verified(String title, long firstPosition, long laterPosition) {
+            return new PlaybackProbe(true, "playing-" + title + "-" + firstPosition + "-" + laterPosition);
+        }
+
+        static PlaybackProbe notVerified(String detail) {
+            return new PlaybackProbe(false, detail);
+        }
     }
 
     private String dumpWindow() {

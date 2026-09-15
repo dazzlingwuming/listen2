@@ -93,6 +93,10 @@ public final class Phase08Instrumentation extends Instrumentation {
             IntegratedJourneyTest.run(this, progress);
             return;
         }
+        if ("com.listen2mobile.acceptance.LiveProviderSmokeTest".equals(scenarioClass)) {
+            LiveProviderSmokeTest.run(this, progress);
+            return;
+        }
         if ("com.listen2mobile.acceptance.PerformanceRecoveryTest#api35Full".equals(scenarioClass)) {
             PerformanceRecoveryTest.api35Full(this, progress, requestedArguments);
             return;
