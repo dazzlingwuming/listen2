@@ -77,6 +77,23 @@ class MediaDescriptorContractTest {
         }
     }
 
+    @Test fun `cache authorization is bound to the current native descriptor generation`() {
+        val registry = MediaLeaseRegistry("com.dazzlingwuming.listen2.media", clock = { now })
+        val identity = MediaIdentity("netease", "netrack_1", null, 7L)
+        val descriptor = registry.register(
+            "request-cache-12345678",
+            identity,
+            MediaRendition("default", "authorized", "audio/mpeg", "mp3", "mp3", 1L, null),
+            NativeTransport("https://music.163.com/song/media/outer/url?id=1.mp3", emptyMap(), source = "netease"),
+            7L,
+        )
+        val grant = requireNotNull(registry.cacheAuthorization("request-cache-12345678", "netease", "netrack_1"))
+        assertTrue(registry.isCurrentCacheAuthorization(grant))
+        registry.invalidateAccount(8L)
+        assertFalse(registry.isCurrentCacheAuthorization(grant))
+        assertNull(registry.transportForProvider(requireNotNull(descriptor.leaseId)))
+    }
+
     @Test fun `api 24 only permits complete verified local playback`() {
         val remote = MediaDescriptor.downloadFirst(MediaIdentity("bilibili", "track", null, 1L))
         assertEquals(EntitlementStatus.DOWNLOAD_FIRST, remote.entitlement)
