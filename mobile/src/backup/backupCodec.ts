@@ -12,7 +12,6 @@ export const BACKUP_LIMITS = Object.freeze({
   maxBytes: 5 * 1024 * 1024,
   maxPlaylists: 500,
   maxTracksPerPlaylist: 5000,
-  maxQueueTracks: 5000,
   maxTotalTracks: 50000,
   maxIdLength: 200,
   maxTitleLength: 80,
@@ -20,8 +19,6 @@ export const BACKUP_LIMITS = Object.freeze({
   maxArtworkUrlLength: 4096,
   maxDurationMs: 24 * 60 * 60 * 1000,
 });
-
-export type QueueMode = 'playlist' | 'play-next';
 
 export type BackupPlaylist = {
   id: string;
@@ -32,8 +29,6 @@ export type BackupPlaylist = {
 export type BackupSnapshot = {
   favorites: Track[];
   playlists: BackupPlaylist[];
-  queue: Track[];
-  queueMode?: QueueMode;
 };
 
 export type BackupDocument = {
@@ -42,8 +37,6 @@ export type BackupDocument = {
   exportedAt: string;
   favorites: Track[];
   playlists: BackupPlaylist[];
-  queue: Track[];
-  queueMode: QueueMode;
 };
 
 export type BackupErrorCode =
@@ -71,16 +64,12 @@ export type BackupPreview = {
   favorites: number;
   playlists: number;
   playlistTracks: number;
-  queueTracks: number;
   totalTracks: number;
-  queueMode: QueueMode;
 };
 
 export type BackupImportState = {
   favorites: Track[];
   playlists: BackupPlaylist[];
-  queue: Track[];
-  queueMode?: QueueMode;
 };
 
 export type ImportMode = 'merge' | 'overwrite';
@@ -91,21 +80,14 @@ export type ImportPlanSummary = {
   addedPlaylists: number;
   skippedPlaylists: number;
   conflictedPlaylists: number;
-  queueTracks: number;
-  queueTracksToAdd: number;
   overwrittenFavorites: number;
   overwrittenPlaylists: number;
-  overwrittenQueueTracks: number;
 };
 
 export type ImportPlan = {
   mode: ImportMode;
   favorites: Track[];
   playlists: BackupPlaylist[];
-  queue: Track[];
-  queueMode: QueueMode;
-  /** Only the imported queue entries; useful for append-only reducer actions. */
-  queueToAppend: Track[];
   /** Only newly accepted playlists; existing playlists are already in `playlists`. */
   playlistsToAdd: BackupPlaylist[];
   summary: ImportPlanSummary;
@@ -117,8 +99,6 @@ const ROOT_KEYS = new Set([
   'exportedAt',
   'favorites',
   'playlists',
-  'queue',
-  'queueMode',
 ]);
 const TRACK_KEYS = new Set([
   'id',
@@ -326,27 +306,16 @@ function normalizePlaylist(value: unknown, strict: boolean): BackupPlaylist {
   return { id, title, tracks };
 }
 
-function assertTrackTotals(
-  favorites: Track[],
-  playlists: BackupPlaylist[],
-  queue: Track[],
-) {
+function assertTrackTotals(favorites: Track[], playlists: BackupPlaylist[]) {
   if (playlists.length > BACKUP_LIMITS.maxPlaylists)
     fail('BACKUP_TOO_LARGE', '歌单数量过多');
   const playlistTracks = playlists.reduce(
     (total, playlist) => total + playlist.tracks.length,
     0,
   );
-  const total = favorites.length + playlistTracks + queue.length;
+  const total = favorites.length + playlistTracks;
   if (total > BACKUP_LIMITS.maxTotalTracks)
     fail('BACKUP_TOO_LARGE', '备份歌曲总数过多');
-}
-
-function normalizeQueueMode(value: unknown): QueueMode {
-  if (value === undefined) return 'play-next';
-  if (value !== 'playlist' && value !== 'play-next')
-    fail('INVALID_BACKUP', '播放队列模式不可用');
-  return value;
 }
 
 function normalizeDocument(value: unknown, strict: boolean): BackupDocument {
@@ -380,13 +349,6 @@ function normalizeDocument(value: unknown, strict: boolean): BackupDocument {
     if (ids.has(playlist.id)) fail('INVALID_PLAYLIST', '歌单 ID 重复');
     ids.add(playlist.id);
   });
-  const queue = normalizeTrackList(
-    value.queue,
-    '播放队列',
-    BACKUP_LIMITS.maxQueueTracks,
-    false,
-    strict,
-  );
   const exportedAt = value.exportedAt;
   if (
     typeof exportedAt !== 'string' ||
@@ -396,15 +358,13 @@ function normalizeDocument(value: unknown, strict: boolean): BackupDocument {
   ) {
     fail('INVALID_BACKUP', '导出时间格式错误');
   }
-  assertTrackTotals(favorites, playlists, queue);
+  assertTrackTotals(favorites, playlists);
   return {
     format: BACKUP_FORMAT,
     version: BACKUP_VERSION,
     exportedAt,
     favorites,
     playlists,
-    queue,
-    queueMode: normalizeQueueMode(value.queueMode),
   };
 }
 
@@ -429,22 +389,13 @@ export function createBackup(
   const playlists = snapshot.playlists.map(item =>
     normalizePlaylist(item, false),
   );
-  const queue = normalizeTrackList(
-    snapshot.queue,
-    '播放队列',
-    BACKUP_LIMITS.maxQueueTracks,
-    false,
-    false,
-  );
-  assertTrackTotals(favorites, playlists, queue);
+  assertTrackTotals(favorites, playlists);
   const document: BackupDocument = {
     format: BACKUP_FORMAT,
     version: BACKUP_VERSION,
     exportedAt,
     favorites,
     playlists,
-    queue,
-    queueMode: normalizeQueueMode(snapshot.queueMode),
   };
   assertSize(JSON.stringify(document));
   return document;
@@ -489,10 +440,7 @@ export function previewBackup(raw: unknown): BackupPreview {
     favorites: document.favorites.length,
     playlists: document.playlists.length,
     playlistTracks,
-    queueTracks: document.queue.length,
-    totalTracks:
-      document.favorites.length + playlistTracks + document.queue.length,
-    queueMode: document.queueMode,
+    totalTracks: document.favorites.length + playlistTracks,
   };
 }
 
@@ -536,19 +484,10 @@ function normalizedImportState(state: BackupImportState): BackupImportState {
   if (!Array.isArray(state.playlists))
     fail('INVALID_BACKUP', '本机歌单列表格式错误');
   const playlists = state.playlists.map(item => normalizePlaylist(item, false));
-  const queue = normalizeTrackList(
-    state.queue,
-    '本机播放队列',
-    BACKUP_LIMITS.maxQueueTracks,
-    false,
-    false,
-  );
-  assertTrackTotals(favorites, playlists, queue);
+  assertTrackTotals(favorites, playlists);
   return {
     favorites,
     playlists,
-    queue,
-    queueMode: normalizeQueueMode(state.queueMode),
   };
 }
 
@@ -569,14 +508,10 @@ export function planImport(
   if (mode === 'overwrite') {
     const favorites = document.favorites.map(cloneTrack);
     const playlists = document.playlists.map(clonePlaylist);
-    const queue = document.queue.map(cloneTrack);
     return {
       mode,
       favorites,
       playlists,
-      queue,
-      queueMode: document.queueMode,
-      queueToAppend: queue.map(cloneTrack),
       playlistsToAdd: playlists.map(clonePlaylist),
       summary: {
         mode,
@@ -584,11 +519,8 @@ export function planImport(
         addedPlaylists: playlists.length,
         skippedPlaylists: 0,
         conflictedPlaylists: 0,
-        queueTracks: queue.length,
-        queueTracksToAdd: queue.length,
         overwrittenFavorites: current.favorites.length,
         overwrittenPlaylists: current.playlists.length,
-        overwrittenQueueTracks: current.queue.length,
       },
     };
   }
@@ -628,21 +560,11 @@ export function planImport(
     playlistsToAdd.push(clonePlaylist(target));
   });
 
-  const queue = [
-    ...current.queue.map(cloneTrack),
-    ...document.queue.map(cloneTrack),
-  ];
-  const queueMode = current.queue.length
-    ? current.queueMode || 'play-next'
-    : document.queueMode;
-  assertTrackTotals(favorites, playlists, queue);
+  assertTrackTotals(favorites, playlists);
   return {
     mode,
     favorites,
     playlists,
-    queue,
-    queueMode,
-    queueToAppend: document.queue.map(cloneTrack),
     playlistsToAdd,
     summary: {
       mode,
@@ -650,11 +572,8 @@ export function planImport(
       addedPlaylists: playlistsToAdd.length,
       skippedPlaylists,
       conflictedPlaylists,
-      queueTracks: queue.length,
-      queueTracksToAdd: document.queue.length,
       overwrittenFavorites: 0,
       overwrittenPlaylists: 0,
-      overwrittenQueueTracks: 0,
     },
   };
 }

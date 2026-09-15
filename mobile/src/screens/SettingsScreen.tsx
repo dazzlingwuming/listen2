@@ -17,20 +17,17 @@ import { colors, spacing, text } from '../theme';
 import { PROVIDER_CAPABILITIES } from '../api/client';
 import { providerLabels, providerOrder } from '../components/SourceTabs';
 import type { AppDispatch, RootState } from '../store';
-import * as playerActions from '../store/playerSlice';
-import { clearRecent, restoreLibrary } from '../store/librarySlice';
+import { clearRecent, mutationReceived } from '../store/librarySlice';
 import {
   BACKUP_LIMITS,
   backupErrorMessage,
   parseBackup,
-  planImport,
   stringifyBackup,
   type BackupDocument,
   type BackupImportState,
-  type ImportMode,
-  type ImportPlan,
 } from '../backup/backupCodec';
 import { createPortableBackupState } from '../localAudio/backup';
+import { libraryClient, type LibraryBackupPreview } from '../library/libraryClient';
 import {
   cancelDownload,
   clearDownloads,
@@ -47,16 +44,13 @@ import type { DeepSeekStatus } from '../deepseek/types';
 export function SettingsScreen() {
   const dispatch = useDispatch<AppDispatch>();
   const library = useSelector((state: RootState) => state.library);
-  const player = useSelector((state: RootState) => state.player);
   const downloads = useSelector((state: RootState) => state.downloads);
   const [importVisible, setImportVisible] = useState(false);
   const [importText, setImportText] = useState('');
   const [importDocument, setImportDocument] = useState<BackupDocument | null>(
     null,
   );
-  const [importPreview, setImportPreview] = useState<
-    ImportPlan['summary'] | null
-  >(null);
+  const [importPreview, setImportPreview] = useState<LibraryBackupPreview | null>(null);
   const [backupError, setBackupError] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
   const [bilibili, setBilibili] = useState<BilibiliPublicState | null>(null);
@@ -276,7 +270,7 @@ export function SettingsScreen() {
     ]);
 
   const currentBackupState = (): BackupImportState =>
-    createPortableBackupState(library, player);
+    createPortableBackupState(library);
 
   const resetImport = () => {
     setImportText('');
@@ -311,12 +305,16 @@ export function SettingsScreen() {
     }
   };
 
-  const previewImport = () => {
+  const previewImport = async () => {
     try {
       const document = parseBackup(importText);
-      const plan = planImport(currentBackupState(), document, 'merge');
+      const preview = await libraryClient.previewBackup(
+        document,
+        library.revision || 0,
+        'merge',
+      );
       setImportDocument(document);
-      setImportPreview(plan.summary);
+      setImportPreview(preview);
       setBackupError(null);
     } catch (error) {
       setImportDocument(null);
@@ -325,27 +323,24 @@ export function SettingsScreen() {
     }
   };
 
-  const applyImport = async (mode: ImportMode) => {
-    if (!importDocument) return;
+  const applyImport = async (mode: 'merge' | 'overwrite') => {
+    if (!importDocument || !importPreview) return;
     try {
-      const plan = planImport(currentBackupState(), importDocument, mode);
-      const queueApplied = await applyQueuePlan(dispatch, plan);
-      if (!queueApplied) {
-        setBackupError('播放队列未能安全切换，请稍后重试。');
+      const preview = mode === 'merge'
+        ? importPreview
+        : await libraryClient.previewBackup(importDocument, library.revision || 0, mode);
+      const receipt = await libraryClient.applyBackup(preview);
+      dispatch(mutationReceived(receipt));
+      if (receipt.status !== 'accepted') {
+        setBackupError('备份预览已过期；本机数据没有修改，请重新预览。');
         return;
       }
-      dispatch(
-        restoreLibrary({
-          favorites: plan.favorites,
-          playlists: plan.playlists,
-        }),
-      );
       closeImport();
       Alert.alert(
         mode === 'merge' ? '合并导入完成' : '覆盖导入完成',
         mode === 'merge'
-          ? `新增 ${plan.summary.addedFavorites} 首收藏、${plan.summary.addedPlaylists} 个歌单。`
-          : '收藏、歌单和播放队列已按备份恢复。',
+          ? `新增 ${preview.addedFavorites} 首收藏、${preview.addedPlaylists} 个歌单。`
+          : '收藏和自建歌单已按备份恢复。',
       );
     } catch (error) {
       setBackupError(backupErrorMessage(error));
@@ -355,7 +350,7 @@ export function SettingsScreen() {
   const confirmOverwrite = () => {
     Alert.alert(
       '覆盖当前收藏、歌单和队列？',
-      '这会移除本机现有的收藏和自建歌单；最近播放记录不受影响。此操作需要再次确认。',
+      '这会移除本机现有的收藏和自建歌单；本地音频、历史、歌词、设置、缓存和账号不受影响。此操作需要再次确认。',
       [
         { text: '取消', style: 'cancel' },
         {
@@ -605,7 +600,7 @@ export function SettingsScreen() {
         <Text style={text.heading}>数据备份</Text>
         <View style={sectionStyles.card}>
           <Text style={text.meta}>
-            仅包含收藏、自建歌单和当前播放队列。本地音频不会导出，也不会导出登录凭据、本地路径、歌词或设置。
+            仅包含收藏和自建歌单。本地音频、播放队列、历史、歌词、设置、缓存和账号不会导出，也不会导出登录凭据或本地路径。
           </Text>
           <View style={styles.backupActions}>
             <Pressable
@@ -694,8 +689,7 @@ export function SettingsScreen() {
                 <Text style={text.meta}>
                   备份 v{importDocument?.version} · 歌单{' '}
                   {importDocument?.playlists.length ?? 0} 个 · 收藏{' '}
-                  {importDocument?.favorites.length ?? 0} 首 · 队列{' '}
-                  {importDocument?.queue.length ?? 0} 首
+                  {importDocument?.favorites.length ?? 0} 首
                 </Text>
                 <Text style={text.meta}>
                   合并将新增 {importPreview.addedFavorites} 首收藏、
@@ -727,32 +721,6 @@ export function SettingsScreen() {
       </Modal>
     </ScreenLayout>
   );
-}
-
-async function applyQueuePlan(dispatch: AppDispatch, plan: ImportPlan) {
-  if (plan.mode === 'overwrite') {
-    if (plan.queueMode === 'playlist') {
-      const replaced = await dispatch(
-        playerActions.replacePlaylistForImport(plan.queue),
-      );
-      if (!replaced) return false;
-      dispatch(playerActions.clearPlayNextQueue());
-    } else {
-      dispatch(playerActions.clearPlayNextQueue());
-      plan.queue.forEach(track => dispatch(playerActions.enqueueNext(track)));
-    }
-    return true;
-  }
-  if (plan.queueMode === 'playlist') {
-    plan.queueToAppend.forEach(track =>
-      dispatch(playerActions.appendPlaylistTrack(track)),
-    );
-  } else {
-    plan.queueToAppend.forEach(track =>
-      dispatch(playerActions.enqueueNext(track)),
-    );
-  }
-  return true;
 }
 
 const styles = StyleSheet.create({

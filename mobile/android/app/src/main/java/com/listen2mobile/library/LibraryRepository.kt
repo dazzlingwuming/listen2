@@ -2,6 +2,8 @@ package com.listen2mobile.library
 
 import android.content.Context
 import androidx.room.Room
+import java.security.MessageDigest
+import java.util.UUID
 
 internal object LibraryLimits {
     const val MAX_REQUEST_ID = 96
@@ -61,9 +63,15 @@ internal data class SafeTrack(val source: String, val trackId: String, val title
 internal data class SafePlaylist(val playlistId: String, val title: String, val position: Int, val tracks: List<SafeTrack>)
 internal data class LibrarySnapshot(val schemaVersion: Int, val revision: Long, val personalPlaylists: List<SafePlaylist>, val favorites: List<SafeTrack>)
 internal data class LibraryReceipt(val requestId: String, val status: String, val revision: Long, val errorCode: String? = null, val snapshot: LibrarySnapshot? = null)
+internal data class BackupPlaylistInput(val playlistId: String, val title: String, val tracks: List<SafeTrack>)
+internal data class BackupInput(val expectedRevision: Long, val mode: String, val favorites: List<SafeTrack>, val playlists: List<BackupPlaylistInput>)
+internal data class BackupPreview(val status: String, val token: String?, val checksum: String?, val baseRevision: Long, val addedFavorites: Int, val addedPlaylists: Int, val skippedPlaylists: Int, val conflictedPlaylists: Int, val errorCode: String? = null)
+private data class PendingBackup(val checksum: String, val baseRevision: Long, val mode: String, val input: BackupInput, val createdAt: Long)
+private data class PlannedBackup(val input: BackupInput, val addedFavorites: Int, val addedPlaylists: Int, val skippedPlaylists: Int, val conflictedPlaylists: Int)
 
 /** All writes are serialized by Room's transaction. Replaying a request id returns its original receipt. */
 internal class LibraryRepository internal constructor(private val database: Listen2Database) {
+    private val pendingBackups = LinkedHashMap<String, PendingBackup>()
     fun snapshot(): LibrarySnapshot = database.runInTransaction<LibrarySnapshot> { snapshotLocked() }
 
     fun apply(mutation: LibraryMutation): LibraryReceipt = database.runInTransaction<LibraryReceipt> {
@@ -133,6 +141,80 @@ internal class LibraryRepository internal constructor(private val database: List
         val receipt = MutationReceiptEntity(mutation.requestId, "applied", nextRevision, null)
         dao.insertReceipt(receipt)
         LibraryReceipt(receipt.requestId, receipt.status, receipt.revision, snapshot = snapshotLocked())
+    }
+
+    /** Backup import never receives local/queue/history/cache/session entities, only safe semantic library rows. */
+    fun previewBackup(input: BackupInput): BackupPreview = database.runInTransaction<BackupPreview> {
+        val dao = database.libraryDao()
+        val current = dao.meta() ?: LibraryMetaEntity(revision = 0L).also(dao::insertMeta)
+        if (input.expectedRevision != current.revision) return@runInTransaction BackupPreview("stale", null, null, current.revision, 0, 0, 0, 0, "STALE_REVISION")
+        if (!validBackup(input)) return@runInTransaction BackupPreview("rejected", null, null, current.revision, 0, 0, 0, 0, "INVALID_BACKUP")
+        val planned = planBackup(input)
+        val checksum = backupChecksum(planned.input)
+        val token = UUID.randomUUID().toString().replace("-", "")
+        while (pendingBackups.size >= 8) pendingBackups.remove(pendingBackups.entries.first().key)
+        pendingBackups[token] = PendingBackup(checksum, current.revision, input.mode, planned.input, System.currentTimeMillis())
+        BackupPreview("ready", token, checksum, current.revision, planned.addedFavorites, planned.addedPlaylists, planned.skippedPlaylists, planned.conflictedPlaylists)
+    }
+
+    fun applyBackup(token: String, checksum: String, expectedRevision: Long): LibraryReceipt = database.runInTransaction<LibraryReceipt> {
+        val dao = database.libraryDao()
+        val current = dao.meta() ?: LibraryMetaEntity(revision = 0L).also(dao::insertMeta)
+        val pending = pendingBackups.remove(token)
+            ?: return@runInTransaction LibraryReceipt(token, "rejected", current.revision, "PREVIEW_EXPIRED", snapshotLocked())
+        if (pending.createdAt + 5 * 60_000L < System.currentTimeMillis() || pending.checksum != checksum || pending.baseRevision != expectedRevision || current.revision != expectedRevision)
+            return@runInTransaction LibraryReceipt(token, "stale", current.revision, "STALE_REVISION", snapshotLocked())
+        if (pending.mode == "overwrite") {
+            dao.deleteAllMemberships(); dao.deleteAllPlaylists(); dao.deleteAllFavorites()
+        }
+        val existingIds = dao.playlists(LibraryLimits.MAX_PLAYLISTS).map { it.playlistId }.toMutableSet()
+        pending.input.favorites.forEach { dao.putFavorite(FavoriteEntity(it.source, it.trackId, it.title, it.artist)) }
+        pending.input.playlists.forEachIndexed { index, playlist ->
+            if (playlist.playlistId in existingIds && pending.mode == "merge") return@forEachIndexed
+            dao.insertPlaylist(PersonalPlaylistEntity(playlist.playlistId, playlist.title, dao.playlists(LibraryLimits.MAX_PLAYLISTS).size + index))
+            playlist.tracks.forEachIndexed { position, track -> dao.putMembership(PlaylistMembershipEntity(playlist.playlistId, track.source, track.trackId, position, track.title, track.artist)) }
+            existingIds += playlist.playlistId
+        }
+        dao.playlists(LibraryLimits.MAX_PLAYLISTS).forEachIndexed { position, playlist -> dao.insertPlaylist(playlist.copy(position = position)) }
+        val nextRevision = current.revision + 1
+        dao.updateMeta(LibraryMetaEntity(revision = nextRevision))
+        LibraryReceipt(token, "applied", nextRevision, snapshot = snapshotLocked())
+    }
+
+    private fun validBackup(input: BackupInput): Boolean = input.expectedRevision >= 0 && input.mode in setOf("merge", "overwrite") && input.playlists.size <= LibraryLimits.MAX_PLAYLISTS && input.favorites.size <= 50_000 &&
+        (input.favorites + input.playlists.flatMap { it.tracks }).all { it.source in setOf("netease", "kugou", "kuwo", "qq", "bilibili") && it.trackId.matches(Regex("^[A-Za-z0-9._:-]{1,128}$")) && it.title.isNotBlank() && it.title.length <= LibraryLimits.MAX_TITLE && it.artist.isNotBlank() && it.artist.length <= LibraryLimits.MAX_TITLE } &&
+        input.playlists.all { it.playlistId.matches(Regex("^[A-Za-z0-9_-]{1,64}$")) && it.title.isNotBlank() && it.title.length <= LibraryLimits.MAX_TITLE && it.tracks.size <= 5_000 && it.tracks.distinctBy { track -> "${track.source}:${track.trackId}" }.size == it.tracks.size }
+
+    private fun planBackup(input: BackupInput): PlannedBackup {
+        if (input.mode == "overwrite") return PlannedBackup(input, input.favorites.size, input.playlists.size, 0, 0)
+        val existing = snapshotLocked()
+        val existingFavoriteKeys = existing.favorites.map { "${it.source}:${it.trackId}" }.toSet()
+        val incomingFavorites = input.favorites.distinctBy { "${it.source}:${it.trackId}" }
+        val favorites = (existing.favorites + incomingFavorites).distinctBy { "${it.source}:${it.trackId}" }
+        val usedIds = existing.personalPlaylists.map { it.playlistId }.toMutableSet()
+        var skipped = 0
+        var conflicted = 0
+        val extra = input.playlists.filter { candidate ->
+            existing.personalPlaylists.none { it.playlistId == candidate.playlistId && it.title == candidate.title && it.tracks == candidate.tracks }
+        }.map { candidate ->
+            var id = candidate.playlistId
+            var suffix = 0
+            if (id in usedIds) conflicted += 1
+            while (id in usedIds) { suffix += 1; id = "myplaylist_import_${candidate.playlistId.take(48)}_$suffix" }
+            usedIds += id
+            candidate.copy(playlistId = id)
+        }
+        skipped = input.playlists.size - extra.size
+        return PlannedBackup(BackupInput(input.expectedRevision, input.mode, favorites, extra), incomingFavorites.count { "${it.source}:${it.trackId}" !in existingFavoriteKeys }, extra.size, skipped, conflicted)
+    }
+
+    private fun backupChecksum(input: BackupInput): String {
+        val stable = buildString {
+            append(input.mode).append('|')
+            input.favorites.sortedBy { "${it.source}:${it.trackId}" }.forEach { append(it.source).append(':').append(it.trackId).append(':').append(it.title).append(':').append(it.artist).append('|') }
+            input.playlists.forEach { playlist -> append(playlist.playlistId).append(':').append(playlist.title).append('|'); playlist.tracks.forEach { append(it.source).append(':').append(it.trackId).append('|') } }
+        }
+        return MessageDigest.getInstance("SHA-256").digest(stable.toByteArray()).joinToString("") { "%02x".format(it) }
     }
 
     private fun snapshotLocked(): LibrarySnapshot {

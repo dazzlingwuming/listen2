@@ -105,12 +105,15 @@ interface LibraryDao {
     @Query("SELECT * FROM playlist_memberships WHERE playlistId = :playlistId AND source = :source AND semanticTrackId = :trackId") fun membership(playlistId: String, source: String, trackId: String): PlaylistMembershipEntity?
     @Query("DELETE FROM playlist_memberships WHERE playlistId = :playlistId AND source = :source AND semanticTrackId = :trackId") fun deleteMembership(playlistId: String, source: String, trackId: String)
     @Query("DELETE FROM playlist_memberships WHERE playlistId = :playlistId") fun deleteMemberships(playlistId: String)
+    @Query("DELETE FROM playlist_memberships") fun deleteAllMemberships()
     @Query("DELETE FROM personal_playlists WHERE playlistId = :playlistId") fun deletePlaylist(playlistId: String)
+    @Query("DELETE FROM personal_playlists") fun deleteAllPlaylists()
     @Insert(onConflict = OnConflictStrategy.ABORT) fun insertQueue(value: QueueCheckpointEntity)
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putFavorite(value: FavoriteEntity)
     @Query("SELECT * FROM favorites ORDER BY source ASC, semanticTrackId ASC") fun favorites(): List<FavoriteEntity>
     @Query("SELECT * FROM favorites WHERE source = :source AND semanticTrackId = :trackId") fun favorite(source: String, trackId: String): FavoriteEntity?
     @Query("DELETE FROM favorites WHERE source = :source AND semanticTrackId = :trackId") fun deleteFavorite(source: String, trackId: String)
+    @Query("DELETE FROM favorites") fun deleteAllFavorites()
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putRemoteCollection(value: RemoteCollectionEntity)
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putLocalRecord(value: LocalRecordEntity)
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putLyricMetadata(value: LyricMetadataEntity)

@@ -2,7 +2,6 @@ import { createBackup, stringifyBackup } from '../../backup/backupCodec';
 import { createPortableBackupState } from '../backup';
 import type { LocalTrack, Track } from '../../types/music';
 import type { LibraryState } from '../../store/librarySlice';
-import type { PlayerState } from '../../store/playerSlice';
 
 const remote: Track = {
   id: 'netrack_1',
@@ -33,12 +32,7 @@ it('filters local audio from every portable backup collection', () => {
       },
     ],
   };
-  const player = {
-    playlist: [remote, local as unknown as Track],
-    playNextQueue: [],
-  } as unknown as PlayerState;
-
-  const snapshot = createPortableBackupState(library, player);
+  const snapshot = createPortableBackupState(library);
   const serialized = stringifyBackup(
     snapshot,
     new Date('2026-09-12T00:00:00Z'),
@@ -48,7 +42,6 @@ it('filters local audio from every portable backup collection', () => {
   expect(JSON.parse(serialized)).toMatchObject({
     favorites: [remote],
     playlists: [{ tracks: [remote] }],
-    queue: [remote],
   });
   expect(serialized).not.toContain('content://');
 });

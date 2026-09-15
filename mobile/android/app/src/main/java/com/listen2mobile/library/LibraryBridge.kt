@@ -52,6 +52,29 @@ internal object LibraryBridgeContract {
         return LegacyLibraryInput(schemaVersion, safePlaylists, safeLocalEntries) to (attemptId to checksum)
     }
 
+    fun parseBackup(value: Map<String, Any?>): BackupInput? {
+        if (value.keys != setOf("schemaVersion", "expectedRevision", "mode", "favorites", "playlists") || hasPrivateTree(value)) return null
+        if ((value["schemaVersion"] as? Number)?.toInt() != SCHEMA_VERSION) return null
+        val revision = (value["expectedRevision"] as? Number)?.toLong() ?: return null
+        val mode = value["mode"] as? String ?: return null
+        val favorites = (value["favorites"] as? List<*>)?.map { parseTrack(it) ?: return null } ?: return null
+        val playlists = (value["playlists"] as? List<*>)?.map { raw ->
+            val item = raw as? Map<*, *> ?: return null
+            if (item.keys != setOf("playlistId", "title", "tracks")) return null
+            val id = item["playlistId"] as? String ?: return null
+            val title = item["title"] as? String ?: return null
+            val tracks = (item["tracks"] as? List<*>)?.map { parseTrack(it) ?: return null } ?: return null
+            BackupPlaylistInput(id, title, tracks)
+        } ?: return null
+        return BackupInput(revision, mode, favorites, playlists)
+    }
+
+    private fun parseTrack(raw: Any?): SafeTrack? {
+        val item = raw as? Map<*, *> ?: return null
+        if (item.keys != setOf("source", "trackId", "title", "artist")) return null
+        return SafeTrack(item["source"] as? String ?: return null, item["trackId"] as? String ?: return null, item["title"] as? String ?: return null, item["artist"] as? String ?: return null)
+    }
+
     /** Defensive recursion rejects a future caller that tries to smuggle a private native handle. */
     private fun hasPrivateTree(value: Any?, depth: Int = 0): Boolean {
         if (depth > 4) return true
@@ -88,6 +111,19 @@ class LibraryBridge internal constructor(
             is LibraryValidation.Accepted -> receipt(repository.apply(parsed.mutation))
             is LibraryValidation.Rejected -> error(parsed.errorCode)
         }
+    }
+
+    /** Narrow, native-owned backup handoff. It accepts only allow-listed semantic library DTOs. */
+    @ReactMethod
+    fun previewBackup(request: ReadableMap, promise: Promise) = execute(promise) {
+        val parsed = LibraryBridgeContract.parseBackup(readMap(request)) ?: return@execute error("INVALID_BACKUP")
+        backupPreview(repository.previewBackup(parsed))
+    }
+
+    @ReactMethod
+    fun applyBackup(token: String, checksum: String, expectedRevision: Double, promise: Promise) = execute(promise) {
+        if (!token.matches(Regex("^[A-Za-z0-9]{16,64}$")) || !checksum.matches(Regex("^[a-f0-9]{64}$")) || expectedRevision < 0 || expectedRevision != expectedRevision.toLong().toDouble()) return@execute error("INVALID_BACKUP")
+        receipt(repository.applyBackup(token, checksum, expectedRevision.toLong()))
     }
 
     /** Public status exposes no legacy payload, storage handle, checksum source, or native exception. */
@@ -209,6 +245,18 @@ class LibraryBridge internal constructor(
         putDouble("revision", value.revision.toDouble())
         putString("errorCode", value.errorCode)
         value.snapshot?.let { putMap("snapshot", snapshot(it)) }
+    }
+
+    private fun backupPreview(value: BackupPreview) = Arguments.createMap().apply {
+        putString("status", value.status)
+        putString("token", value.token)
+        putString("checksum", value.checksum)
+        putDouble("baseRevision", value.baseRevision.toDouble())
+        putInt("addedFavorites", value.addedFavorites)
+        putInt("addedPlaylists", value.addedPlaylists)
+        putInt("skippedPlaylists", value.skippedPlaylists)
+        putInt("conflictedPlaylists", value.conflictedPlaylists)
+        putString("errorCode", value.errorCode)
     }
 
     private fun error(code: String) = Arguments.createMap().apply {

@@ -1,6 +1,5 @@
 import {
   BACKUP_FORMAT,
-  BACKUP_LIMITS,
   BACKUP_VERSION,
   BackupValidationError,
   createBackup,
@@ -26,8 +25,6 @@ const snapshot = {
   playlists: [
     { id: 'myplaylist_road', title: 'Road trip', tracks: [track('ne_1')] },
   ],
-  queue: [track('ne_2'), track('ne_2')],
-  queueMode: 'play-next' as const,
 };
 
 describe('backupCodec', () => {
@@ -43,15 +40,12 @@ describe('backupCodec', () => {
       format: BACKUP_FORMAT,
       version: BACKUP_VERSION,
       exportedAt: '2026-09-12T06:00:00.000Z',
-      queueMode: 'play-next',
     });
-    expect(parsed.queue.map(item => item.id)).toEqual(['ne_2', 'ne_2']);
     expect(preview).toMatchObject({
       favorites: 1,
       playlists: 1,
       playlistTracks: 1,
-      queueTracks: 2,
-      totalTracks: 4,
+      totalTracks: 2,
     });
   });
 
@@ -83,7 +77,6 @@ describe('backupCodec', () => {
         exportedAt: '2026-09-12T06:00:00.000Z',
         favorites: [{ ...track('ne_5'), token: 'secret' }],
         playlists: [],
-        queue: [],
       }),
     ],
     [
@@ -94,7 +87,6 @@ describe('backupCodec', () => {
         exportedAt: '2026-09-12T06:00:00.000Z',
         favorites: [{ ...track('ne_6'), artworkUrl: 'file:///sdcard/a.mp3' }],
         playlists: [],
-        queue: [],
       }),
     ],
     [
@@ -105,14 +97,13 @@ describe('backupCodec', () => {
         exportedAt: '2026-09-12T06:00:00.000Z',
         favorites: [{ ...track('__proto__') }],
         playlists: [],
-        queue: [],
       }),
     ],
   ])('rejects unsafe %s input before planning', (_name, raw) => {
     expect(() => parseBackup(raw)).toThrow(BackupValidationError);
   });
 
-  it('rejects unsupported versions and bounded queue/list sizes', () => {
+  it('rejects unsupported versions and unknown queue fields', () => {
     expect(() =>
       parseBackup(
         JSON.stringify({
@@ -126,9 +117,7 @@ describe('backupCodec', () => {
       parseBackup(
         JSON.stringify({
           ...createBackup(snapshot),
-          queue: Array.from({ length: BACKUP_LIMITS.maxQueueTracks + 1 }, () =>
-            track('ne_queue'),
-          ),
+          queue: [track('ne_queue')],
         }),
       ),
     ).toThrow(BackupValidationError);
@@ -145,8 +134,6 @@ describe('backupCodec', () => {
         },
         { id: 'myplaylist_same', title: 'Same', tracks: [] },
       ],
-      queue: [track('ne_4'), track('ne_4')],
-      queueMode: 'playlist',
     });
     const plan = planImport(
       {
@@ -159,8 +146,6 @@ describe('backupCodec', () => {
           },
           { id: 'myplaylist_same', title: 'Same', tracks: [] },
         ],
-        queue: [track('ne_2')],
-        queueMode: 'playlist',
       },
       incoming,
     );
@@ -171,41 +156,32 @@ describe('backupCodec', () => {
       addedPlaylists: 1,
       skippedPlaylists: 1,
       conflictedPlaylists: 1,
-      queueTracks: 3,
-      queueTracksToAdd: 2,
     });
     expect(plan.playlists.map(item => item.id)).toEqual([
       'myplaylist_road',
       'myplaylist_same',
       expect.stringMatching(/^myplaylist_import_myplaylist_road/),
     ]);
-    expect(plan.queueToAppend.map(item => item.id)).toEqual(['ne_4', 'ne_4']);
   });
 
   it('makes overwrite explicit in the plan while keeping it side-effect free', () => {
     const incoming = createBackup({
       favorites: [track('ne_new')],
       playlists: [],
-      queue: [track('ne_queue')],
-      queueMode: 'play-next',
     });
     const existing = {
       favorites: [track('ne_old')],
       playlists: [
         { id: 'myplaylist_old', title: 'Old', tracks: [track('ne_old')] },
       ],
-      queue: [track('ne_old')],
-      queueMode: 'playlist' as const,
     };
     const plan = planImport(existing, incoming, 'overwrite');
 
     expect(plan.favorites.map(item => item.id)).toEqual(['ne_new']);
     expect(plan.playlists).toEqual([]);
-    expect(plan.queue.map(item => item.id)).toEqual(['ne_queue']);
     expect(plan.summary).toMatchObject({
       overwrittenFavorites: 1,
       overwrittenPlaylists: 1,
-      overwrittenQueueTracks: 1,
     });
     expect(existing.favorites.map(item => item.id)).toEqual(['ne_old']);
   });

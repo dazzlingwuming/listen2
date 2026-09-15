@@ -10,6 +10,7 @@ import {
   type LibraryPlaylistRecord,
   type LibrarySnapshot,
 } from './types';
+import type { BackupDocument, ImportMode } from '../backup/backupCodec';
 
 const CALL_TIMEOUT_MS = 8_000;
 const MAX_ID_LENGTH = 128;
@@ -29,6 +30,18 @@ type NativeLibraryModule = {
   }): Promise<unknown>;
   getMigrationStatus(): Promise<unknown>;
   beginLegacyMigration?(request: LegacyMigrationRequest): Promise<unknown>;
+  previewBackup?(request: unknown): Promise<unknown>;
+  applyBackup?(token: string, checksum: string, expectedRevision: number): Promise<unknown>;
+};
+
+export type LibraryBackupPreview = {
+  token: string;
+  checksum: string;
+  baseRevision: number;
+  addedFavorites: number;
+  addedPlaylists: number;
+  skippedPlaylists: number;
+  conflictedPlaylists: number;
 };
 
 export class LibraryClientError extends Error {
@@ -177,6 +190,32 @@ function parseReceipt(value: unknown): LibraryMutationReceipt {
   };
 }
 
+function parseBackupPreview(value: unknown): LibraryBackupPreview {
+  const candidate = object(value);
+  if (!candidate || !exactKeys(candidate, ['status', 'token', 'checksum', 'baseRevision', 'addedFavorites', 'addedPlaylists', 'skippedPlaylists', 'conflictedPlaylists', 'errorCode']) || candidate.status !== 'ready' || !boundedString(candidate.token, MAX_ID_LENGTH, SAFE_ID) || !boundedString(candidate.checksum, 64, /^[a-f0-9]{64}$/) || revision(candidate.baseRevision) === null || !['addedFavorites', 'addedPlaylists', 'skippedPlaylists', 'conflictedPlaylists'].every(key => revision(candidate[key]) !== null) || candidate.errorCode !== null)
+    throw new LibraryClientError('INVALID_RESPONSE');
+  return {
+    token: candidate.token as string,
+    checksum: candidate.checksum as string,
+    baseRevision: candidate.baseRevision as number,
+    addedFavorites: candidate.addedFavorites as number,
+    addedPlaylists: candidate.addedPlaylists as number,
+    skippedPlaylists: candidate.skippedPlaylists as number,
+    conflictedPlaylists: candidate.conflictedPlaylists as number,
+  };
+}
+
+function backupRequest(document: BackupDocument, expectedRevision: number, mode: ImportMode) {
+  const track = (value: BackupDocument['favorites'][number]) => ({ source: value.source, trackId: value.id, title: value.title, artist: value.artist });
+  return {
+    schemaVersion: LIBRARY_SCHEMA_VERSION,
+    expectedRevision,
+    mode,
+    favorites: document.favorites.map(track),
+    playlists: document.playlists.map(playlist => ({ playlistId: playlist.id, title: playlist.title, tracks: playlist.tracks.map(track) })),
+  };
+}
+
 function validateMutation(mutation: LibraryMutation) {
   const candidate = object(mutation);
   const payload = candidate && object(candidate.payload);
@@ -267,5 +306,16 @@ export const libraryClient = {
     )
       throw new LibraryClientError('INVALID_REQUEST');
     return withTimeout(module.beginLegacyMigration(request)).then(parseMigrationStatus);
+  },
+  async previewBackup(document: BackupDocument, expectedRevision: number, mode: ImportMode): Promise<LibraryBackupPreview> {
+    if (revision(expectedRevision) === null) throw new LibraryClientError('INVALID_REQUEST');
+    const module = nativeModule();
+    if (typeof module.previewBackup !== 'function') throw new LibraryClientError('NATIVE_UNAVAILABLE');
+    return parseBackupPreview(await withTimeout(module.previewBackup(backupRequest(document, expectedRevision, mode))));
+  },
+  async applyBackup(preview: LibraryBackupPreview): Promise<LibraryMutationReceipt> {
+    const module = nativeModule();
+    if (typeof module.applyBackup !== 'function') throw new LibraryClientError('NATIVE_UNAVAILABLE');
+    return parseReceipt(await withTimeout(module.applyBackup(preview.token, preview.checksum, preview.baseRevision)));
   },
 };
