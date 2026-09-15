@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
+  Alert,
   Image,
   Modal,
   Pressable,
@@ -14,7 +15,7 @@ import type { RootState } from '../store';
 import { ScreenLayout, sectionStyles } from './ScreenLayout';
 import { colors, spacing, text } from '../theme';
 import { hydrationSucceeded, mutationPending, mutationReceived } from '../store/librarySlice';
-import { attachExplicitLrc, loadLocalArtwork, pickLocalAudio } from '../localAudio/picker';
+import { attachExplicitLrc, loadLocalArtwork, pickLocalAudio, removeLocalAudio, repairLocalAudio } from '../localAudio/picker';
 import { libraryClient } from '../library/libraryClient';
 import * as playerActions from '../store/playerSlice';
 
@@ -28,6 +29,7 @@ export function MyMusicScreen() {
   );
   const [importingLocalAudio, setImportingLocalAudio] = useState(false);
   const [creatingRequest, setCreatingRequest] = useState(false);
+  const [localActionRecordId, setLocalActionRecordId] = useState<string | null>(null);
   const favorites = useSelector((state: RootState) => state.library.favorites);
   const recentTracks = useSelector(
     (state: RootState) => state.library.recentTracks,
@@ -64,6 +66,45 @@ export function MyMusicScreen() {
     if (status === 'success') {
       try { dispatch(hydrationSucceeded(await libraryClient.getSnapshot())); setLocalImportStatus('歌词已附加到这首本地音频。'); } catch { setLocalImportStatus('歌词已附加；列表将在下次打开时刷新。'); }
     } else if (status !== 'cancelled') setLocalImportStatus('无法附加歌词，请选择 UTF-8 LRC 文件后重试。');
+  };
+  const refreshLocalLibrary = async () => {
+    dispatch(hydrationSucceeded(await libraryClient.getSnapshot()));
+  };
+  const repairLocal = async (recordId: string) => {
+    if (localActionRecordId) return;
+    setLocalActionRecordId(recordId);
+    const status = await repairLocalAudio(recordId);
+    setLocalActionRecordId(null);
+    if (status === 'cancelled') return;
+    if (status !== 'repaired') {
+      setLocalImportStatus(status === 'mismatch' ? '所选文件不是兼容的音频，保留原本地记录。' : '无法重新取得文件访问权限，保留原本地记录。');
+      return;
+    }
+    try { await refreshLocalLibrary(); setLocalImportStatus('已重新连接本地音频。'); } catch { setLocalImportStatus('文件已重新连接；列表将在下次打开时刷新。'); }
+  };
+  const confirmRemoveLocal = (recordId: string) => {
+    Alert.alert(
+      '从本地音乐移除？只会移除 Listen2 记录，不会删除设备上的原文件。',
+      undefined,
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '移除', style: 'destructive', onPress: () => {
+            void (async () => {
+              if (localActionRecordId) return;
+              setLocalActionRecordId(recordId);
+              const status = await removeLocalAudio(recordId);
+              setLocalActionRecordId(null);
+              if (status !== 'repaired') {
+                if (status !== 'cancelled') setLocalImportStatus('无法移除本地记录，已保留原记录。');
+                return;
+              }
+              try { await refreshLocalLibrary(); setLocalImportStatus('已移除 Listen2 本地记录，设备原文件未被删除。'); } catch { setLocalImportStatus('已移除本地记录；列表将在下次打开时刷新。'); }
+            })();
+          },
+        },
+      ],
+    );
   };
   const submitPlaylist = async () => {
     const title = playlistTitle.trim();
@@ -183,13 +224,20 @@ export function MyMusicScreen() {
                   {track.hasArtwork ? <LocalArtworkPreview recordId={track.id} /> : <View style={styles.artworkFallback}><Text style={styles.artworkNote}>♫</Text></View>}
                   <View style={styles.localCopy}>
                     <Text numberOfLines={1} style={text.body}>{track.title}</Text>
-                    <Text numberOfLines={1} style={text.meta}>{track.artist}{track.album ? ` · ${track.album}` : ''}{track.lyricState === 'attached' ? ' · 已有歌词' : ''}</Text>
+                    <Text numberOfLines={1} style={text.meta}>{track.artist}{track.album ? ` · ${track.album}` : ''}{track.lyricState === 'attached' ? ' · 已有歌词' : ''}{track.seekable === false ? ' · 仅顺序播放' : ''}</Text>
+                    {track.accessStatus !== 'available' ? <Text accessibilityRole="alert" style={text.meta}>文件当前不可访问，请重新选择。</Text> : null}
                   </View>
                   <Pressable accessibilityLabel={`为${track.title}选择歌词`} onPress={() => { void chooseLyric(track.id); }} style={styles.localAction}>
                     <Text style={styles.localActionText}>歌词</Text>
                   </Pressable>
                   <Pressable accessibilityLabel={`下一首播放${track.title}`} onPress={() => dispatch(playerActions.addNextTrack(track))} style={styles.localAction}>
                     <Text style={styles.localActionText}>下一首</Text>
+                  </Pressable>
+                  {track.accessStatus !== 'available' ? <Pressable accessibilityLabel={`重新选择${track.title}`} disabled={localActionRecordId === track.id} onPress={() => { void repairLocal(track.id); }} style={styles.localAction}>
+                    <Text style={styles.localActionText}>{localActionRecordId === track.id ? '处理中…' : '重新选择'}</Text>
+                  </Pressable> : null}
+                  <Pressable accessibilityLabel={`移除本地记录${track.title}`} disabled={localActionRecordId === track.id} onPress={() => confirmRemoveLocal(track.id)} style={styles.localAction}>
+                    <Text style={styles.localActionText}>移除</Text>
                   </Pressable>
                 </View>
               ))}

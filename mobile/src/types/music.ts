@@ -30,7 +30,8 @@ export type LocalTrack = {
   hasArtwork?: boolean;
   lyricState?: 'none' | 'attached';
   capabilities?: Array<'playlist' | 'queue' | 'lyrics'>;
-  accessStatus?: 'available' | 'needs-repair' | 'revoked';
+  seekable?: boolean;
+  accessStatus?: 'available' | 'needs-repair' | 'revoked' | 'unreadable' | 'unsupported' | 'duplicate';
 };
 
 export type PlayableTrack = Track | LocalTrack;
@@ -44,6 +45,6 @@ export function isLocalTrack(value: unknown): value is LocalTrack {
     /^[A-Za-z0-9-]{16,64}$/.test(track.id) &&
     typeof track.title === 'string' && track.title.length > 0 && track.title.length <= 256 &&
     typeof track.artist === 'string' && track.artist.length > 0 && track.artist.length <= 256 &&
-    ['available', 'needs-repair', 'revoked', undefined].includes(track.accessStatus)
+    ['available', 'needs-repair', 'revoked', 'unreadable', 'unsupported', 'duplicate', undefined].includes(track.accessStatus)
   );
 }

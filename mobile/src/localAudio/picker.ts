@@ -3,7 +3,8 @@ import { NativeModules } from 'react-native';
 export const MAX_LOCAL_AUDIO_IMPORTS = 500;
 export type LocalAudioImport = { status: 'success' | 'cancelled' | 'error'; imported: number; rejected: number };
 export type LocalArtwork = { status: 'success' | 'unavailable' | 'error'; data?: string };
-type NativeLocal = { importAudio(requestId: string): Promise<unknown>; attachExplicitLrc(recordId: string, requestId: string): Promise<unknown>; loadArtwork(recordId: string): Promise<unknown>; cancelLocalRequest(requestId: string): Promise<unknown> };
+export type LocalRecordOperation = 'repaired' | 'mismatch' | 'cancelled' | 'rejected';
+type NativeLocal = { importAudio(requestId: string): Promise<unknown>; attachExplicitLrc(recordId: string, requestId: string): Promise<unknown>; loadArtwork(recordId: string): Promise<unknown>; cancelLocalRequest(requestId: string): Promise<unknown>; repairLocalAudio?(recordId: string, requestId: string): Promise<unknown>; removeLocalAudio?(recordId: string, requestId: string): Promise<unknown> };
 const native = (): NativeLocal => {
   const module = NativeModules.Listen2LocalAudio as NativeLocal | undefined;
   if (!module || typeof module.importAudio !== 'function') throw new Error('NATIVE_UNAVAILABLE');
@@ -26,6 +27,30 @@ export async function attachExplicitLrc(recordId: string): Promise<'success' | '
   if (!/^[A-Za-z0-9-]{16,64}$/.test(recordId) || typeof native().attachExplicitLrc !== 'function') return 'error';
   const requestId = `lrc_${Date.now().toString(36)}`;
   try { return parse(await native().attachExplicitLrc(recordId, requestId), requestId).status; } catch { return 'error'; }
+}
+function parseRecordOperation(value: unknown, requestId: string, recordId: string): LocalRecordOperation {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return 'rejected';
+  const item = value as Record<string, unknown>;
+  if (Object.keys(item).length !== 3 || Object.keys(item).some(key => !['requestId', 'recordId', 'status'].includes(key)) || item.requestId !== requestId || item.recordId !== recordId || !['repaired', 'mismatch', 'cancelled', 'rejected'].includes(String(item.status))) return 'rejected';
+  return item.status as LocalRecordOperation;
+}
+export async function repairLocalAudio(recordId: string): Promise<LocalRecordOperation> {
+  if (!/^[A-Za-z0-9-]{16,64}$/.test(recordId)) return 'rejected';
+  const requestId = `repair_${Date.now().toString(36)}`;
+  try {
+    const module = native();
+    if (typeof module.repairLocalAudio !== 'function') return 'rejected';
+    return parseRecordOperation(await module.repairLocalAudio(recordId, requestId), requestId, recordId);
+  } catch { return 'rejected'; }
+}
+export async function removeLocalAudio(recordId: string): Promise<LocalRecordOperation> {
+  if (!/^[A-Za-z0-9-]{16,64}$/.test(recordId)) return 'rejected';
+  const requestId = `remove_${Date.now().toString(36)}`;
+  try {
+    const module = native();
+    if (typeof module.removeLocalAudio !== 'function') return 'rejected';
+    return parseRecordOperation(await module.removeLocalAudio(recordId, requestId), requestId, recordId);
+  } catch { return 'rejected'; }
 }
 /** Artwork is transient screen data, not a Redux, backup, route, or accessibility value. */
 export async function loadLocalArtwork(recordId: string): Promise<LocalArtwork> {

@@ -16,6 +16,7 @@ const mockNativePlayer = {
 const mockBootstrapTrack = jest.fn();
 const mockResolveVerified = jest.fn().mockResolvedValue({ status: 'miss' });
 const mockInvalidate = jest.fn().mockResolvedValue({});
+const mockPrepareLocalPlayback = jest.fn();
 
 jest.mock('react-native-track-player', () => ({
   __esModule: true,
@@ -74,7 +75,7 @@ import {
 } from '../playerController';
 import type { Track } from '../../types/music';
 import type { LocalTrack } from '../../types/music';
-import { Platform } from 'react-native';
+import { NativeModules, Platform } from 'react-native';
 import { playerErrorCopy } from '../playerErrorCopy';
 
 const track = (id: string): Track => ({
@@ -132,6 +133,14 @@ describe('PlayerController queue transitions', () => {
       .mockReset()
       .mockResolvedValue({ state: 'playing' });
     mockResolveVerified.mockResolvedValue({ status: 'miss' });
+    mockPrepareLocalPlayback.mockReset();
+    Object.defineProperty(NativeModules, 'Listen2LocalAudio', {
+      configurable: true,
+      value: {
+        prepareLocalPlayback: (...args: unknown[]) =>
+          mockPrepareLocalPlayback(...args),
+      },
+    });
     Object.defineProperty(Platform, 'Version', {
       value: 32,
       configurable: true,
@@ -490,6 +499,29 @@ describe('PlayerController queue transitions', () => {
     expect(mockBootstrapTrack).not.toHaveBeenCalled();
     expect(state.playNextQueue.map(item => item.track.id)).toEqual([local.id]);
     expect(state.error).toBe('local-media-unavailable');
+  });
+
+  it('hands an opaque local record directly to RNTP without persisting its private provider URI', async () => {
+    const local = localTrack('local_handoff');
+    mockPrepareLocalPlayback.mockImplementationOnce(
+      (recordId: string, playbackRequestId: string) =>
+        Promise.resolve({
+          recordId,
+          playbackRequestId,
+          status: 'success',
+          privatePlaybackUri:
+            'content://com.listen2mobile.local-media/play/abcdefghijklmnopqrstuvwxyzABCDEF',
+          seekable: true,
+        }),
+    );
+
+    await expect(playerController.playTrack(dispatch, local)).resolves.toBe(true);
+
+    expect(mockPrepareLocalPlayback).toHaveBeenCalledWith(local.id, expect.stringMatching(/^local_play_/));
+    expect(mockNativePlayer.add).toHaveBeenCalledWith(expect.objectContaining({
+      url: 'content://com.listen2mobile.local-media/play/abcdefghijklmnopqrstuvwxyzABCDEF',
+    }));
+    expect(JSON.stringify(state)).not.toContain('.local-media/play/');
   });
 
   it('stops native playback and purges a forgotten current local track', async () => {
@@ -907,6 +939,17 @@ describe('PlayerController queue transitions', () => {
     expect(mockNativePlayer.seekTo.mock.calls.length).toBe(seekBefore);
     expect(mockNativePlayer.setRepeatMode.mock.calls.length).toBe(modeBefore);
     expect(state.error).toBe('mode-unavailable');
+  });
+
+  it('does not seek non-seekable local audio while leaving sequential playback available', async () => {
+    const local = { ...localTrack('local_stream'), seekable: false };
+    state = reducer(state, playerActions.replacePlaylist({ tracks: [local] }));
+    const before = mockNativePlayer.seekTo.mock.calls.length;
+
+    await expect(playerController.seek(dispatch, 12)).resolves.toBe(false);
+
+    expect(mockNativePlayer.seekTo.mock.calls.length).toBe(before);
+    expect(state.error).toBe('seek-unavailable');
   });
 
   it('ignores a progress callback identified as belonging to an older native track', async () => {

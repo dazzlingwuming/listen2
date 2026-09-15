@@ -30,6 +30,7 @@ export function projectLibrarySnapshot(snapshot: LibrarySnapshot): LibraryProjec
       lyricState: record?.lyricState || 'none',
       hasArtwork: record?.hasArtwork || false,
       capabilities: record?.capabilities || [],
+      seekable: Boolean(record?.durationMs && record.durationMs > 0),
     };
   };
   return {
@@ -53,6 +54,7 @@ export function projectLibrarySnapshot(snapshot: LibrarySnapshot): LibraryProjec
       lyricState: record.lyricState,
       hasArtwork: record.hasArtwork,
       capabilities: record.capabilities,
+      seekable: Boolean(record.durationMs && record.durationMs > 0),
     })),
   };
 }

@@ -33,7 +33,7 @@ export type LibraryLocalRecord = {
   durationMs: number | null;
   hasArtwork: boolean;
   lyricState: 'none' | 'attached';
-  availability: 'available' | 'needs-repair' | 'revoked';
+  availability: 'available' | 'needs-repair' | 'revoked' | 'unreadable' | 'unsupported' | 'duplicate';
   capabilities: Array<'playlist' | 'queue' | 'lyrics'>;
 };
 

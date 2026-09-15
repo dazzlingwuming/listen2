@@ -3,7 +3,7 @@ import TrackPlayer, {
   RepeatMode,
   State,
 } from 'react-native-track-player';
-import { PermissionsAndroid, Platform } from 'react-native';
+import { NativeModules, PermissionsAndroid, Platform } from 'react-native';
 import { providerClient } from '../api/client';
 import { ProviderClientError } from '../api/errors';
 import { isLocalTrack, type PlayableTrack } from '../types/music';
@@ -137,10 +137,16 @@ function shuffledIndexes(length: number): number[] {
 
 async function resolveTrackUrl(track: PlayableTrack, signal?: AbortSignal) {
   if (isLocalTrack(track)) {
-    // SAF document grants remain native-private. Native local playback is
-    // deliberately introduced through a dedicated native player contract,
-    // never by leaking a content URI into the JS/RNTP queue.
-    throw Object.assign(new Error('local-playback-unavailable'), { code: 'local-media-unavailable' });
+    if (signal?.aborted) throw Object.assign(new Error('cancelled'), { code: 'CANCELLED' });
+    const playbackRequestId = `local_play_${Date.now().toString(36)}`;
+    const module = NativeModules.Listen2LocalAudio as { prepareLocalPlayback?: (recordId: string, requestId: string) => Promise<unknown> } | undefined;
+    if (!module || typeof module.prepareLocalPlayback !== 'function') throw Object.assign(new Error('local-unavailable'), { code: 'local-media-unavailable' });
+    const value = await module.prepareLocalPlayback(track.id, playbackRequestId);
+    if (signal?.aborted || !value || typeof value !== 'object' || Array.isArray(value)) throw Object.assign(new Error('local-unavailable'), { code: signal?.aborted ? 'CANCELLED' : 'local-media-unavailable' });
+    const receipt = value as Record<string, unknown>;
+    const privateUri = receipt.privatePlaybackUri;
+    if (Object.keys(receipt).length !== 5 || Object.keys(receipt).some(key => !['recordId', 'playbackRequestId', 'status', 'privatePlaybackUri', 'seekable'].includes(key)) || receipt.recordId !== track.id || receipt.playbackRequestId !== playbackRequestId || receipt.status !== 'success' || typeof privateUri !== 'string' || !/^content:\/\/[A-Za-z0-9._-]+\.local-media\/play\/[A-Za-z0-9_-]{32,128}$/.test(privateUri) || typeof receipt.seekable !== 'boolean') throw Object.assign(new Error('local-unavailable'), { code: 'local-media-unavailable' });
+    return { url: privateUri };
   }
   if (isOfflineDownloadEligible(track)) {
     const cached = await offlineAudio.resolveVerified(track.source, track.id);
@@ -1221,6 +1227,11 @@ class PlayerController {
   }
 
   async seek(dispatch: Dispatch | undefined, position: number) {
+    const current = playerState().currentTrack;
+    if (current && isLocalTrack(current) && current.seekable === false) {
+      emit(dispatch, 'player/setError', 'seek-unavailable');
+      return false;
+    }
     if (
       !Number.isFinite(position) ||
       position < 0 ||

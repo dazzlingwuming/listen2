@@ -128,6 +128,11 @@ interface LibraryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putRemoteCollection(value: RemoteCollectionEntity)
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putLocalRecord(value: LocalRecordEntity)
     @Query("SELECT * FROM local_records WHERE localRecordId = :recordId") fun localRecord(recordId: String): LocalRecordEntity?
+    @Query("DELETE FROM local_records WHERE localRecordId = :recordId") fun deleteLocalRecord(recordId: String)
+    @Query("DELETE FROM playlist_memberships WHERE source = 'local' AND semanticTrackId = :recordId") fun deleteLocalMemberships(recordId: String)
+    @Query("DELETE FROM favorites WHERE source = 'local' AND semanticTrackId = :recordId") fun deleteLocalFavorite(recordId: String)
+    @Query("DELETE FROM queue_checkpoint WHERE source = 'local' AND semanticTrackId = :recordId") fun deleteLocalQueueEntries(recordId: String)
+    @Query("DELETE FROM lyric_metadata WHERE source = 'local' AND semanticTrackId = :recordId") fun deleteLocalLyricMetadata(recordId: String)
     @Query("SELECT * FROM local_records ORDER BY localRecordId ASC") fun localRecords(): List<LocalRecordEntity>
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putLyricMetadata(value: LyricMetadataEntity)
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putMigrationJournal(value: MigrationJournalEntity)

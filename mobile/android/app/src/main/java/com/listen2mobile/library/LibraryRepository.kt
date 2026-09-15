@@ -107,6 +107,35 @@ internal class LibraryRepository internal constructor(private val database: List
         true
     }
 
+    internal fun localRecord(recordId: String): SafeLocalRecord? = database.libraryDao().localRecord(recordId)?.let { record ->
+        SafeLocalRecord(record.localRecordId, record.title, record.artist, record.accessState, record.album, record.durationMs, record.hasArtwork, record.lyricState)
+    }
+
+    internal fun repairLocalRecord(recordId: String, replacement: SafeLocalRecord): Boolean = database.runInTransaction<Boolean> {
+        val dao = database.libraryDao(); val existing = dao.localRecord(recordId) ?: return@runInTransaction false
+        val current = dao.meta() ?: LibraryMetaEntity(revision = 0L).also(dao::insertMeta)
+        dao.putLocalRecord(existing.copy(title = replacement.title, artist = replacement.artist, album = replacement.album, durationMs = replacement.durationMs, hasArtwork = replacement.hasArtwork, accessState = "available"))
+        dao.updateMeta(LibraryMetaEntity(revision = current.revision + 1)); true
+    }
+
+    /** Access failures retain the semantic record and its relations for a future repair. */
+    internal fun markLocalAvailability(recordId: String, availability: String): Boolean = database.runInTransaction<Boolean> {
+        if (availability !in setOf("needs-repair", "revoked", "unreadable", "unsupported")) return@runInTransaction false
+        val dao = database.libraryDao(); val existing = dao.localRecord(recordId) ?: return@runInTransaction false
+        if (existing.accessState == availability) return@runInTransaction true
+        val current = dao.meta() ?: LibraryMetaEntity(revision = 0L).also(dao::insertMeta)
+        dao.putLocalRecord(existing.copy(accessState = availability))
+        dao.updateMeta(LibraryMetaEntity(revision = current.revision + 1)); true
+    }
+
+    internal fun removeLocalRecord(recordId: String): Boolean = database.runInTransaction<Boolean> {
+        val dao = database.libraryDao(); if (dao.localRecord(recordId) == null) return@runInTransaction false
+        val current = dao.meta() ?: LibraryMetaEntity(revision = 0L).also(dao::insertMeta)
+        dao.deleteLocalMemberships(recordId); dao.deleteLocalFavorite(recordId); dao.deleteLocalQueueEntries(recordId)
+        dao.deleteLocalLyricMetadata(recordId); dao.deleteLocalRecord(recordId)
+        dao.updateMeta(LibraryMetaEntity(revision = current.revision + 1)); true
+    }
+
     fun apply(mutation: LibraryMutation): LibraryReceipt = database.runInTransaction<LibraryReceipt> {
         val dao = database.libraryDao()
         val current = dao.meta() ?: LibraryMetaEntity(revision = 0L).also(dao::insertMeta)

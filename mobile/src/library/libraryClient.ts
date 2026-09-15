@@ -168,12 +168,12 @@ function parseLocalRecord(value: unknown): LibraryLocalRecord {
     !(durationMs === null || (typeof durationMs === 'number' && Number.isSafeInteger(durationMs) && durationMs >= 0 && durationMs <= 86_400_000)) ||
     typeof candidate.hasArtwork !== 'boolean' ||
     !['none', 'attached'].includes(String(lyricState)) ||
-    !['available', 'needs-repair', 'revoked'].includes(String(availability)) ||
+    !['available', 'needs-repair', 'revoked', 'unreadable', 'unsupported', 'duplicate'].includes(String(availability)) ||
     !Array.isArray(capabilities) || capabilities.length > 3 ||
     capabilities.some(item => !['playlist', 'queue', 'lyrics'].includes(String(item))) ||
     new Set(capabilities).size !== capabilities.length
   ) throw new LibraryClientError('INVALID_RESPONSE');
-  return { recordId, title, artist, album: album as string | null, durationMs: durationMs as number | null, hasArtwork: candidate.hasArtwork, lyricState: lyricState as 'none' | 'attached', availability: availability as 'available' | 'needs-repair' | 'revoked', capabilities: capabilities as Array<'playlist' | 'queue' | 'lyrics'> };
+  return { recordId, title, artist, album: album as string | null, durationMs: durationMs as number | null, hasArtwork: candidate.hasArtwork, lyricState: lyricState as 'none' | 'attached', availability: availability as LibraryLocalRecord['availability'], capabilities: capabilities as Array<'playlist' | 'queue' | 'lyrics'> };
 }
 
 function parseTrack(value: unknown) {

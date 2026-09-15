@@ -16,4 +16,17 @@ describe('local-library safe projection', () => {
     expect(JSON.stringify(library.localTracks)).not.toContain('content://');
     expect(library.localTracks[0].capabilities).toContain('queue');
   });
+
+  it('keeps a repairable unavailable record opaque and exposes its non-seekable capability', () => {
+    const snapshot = {
+      schemaVersion: 1 as const,
+      revision: 3,
+      personalPlaylists: [],
+      favorites: [],
+      localRecords: [{ recordId, title: '云端文件', artist: '歌手', album: null, durationMs: null, hasArtwork: false, lyricState: 'none' as const, availability: 'unreadable' as const, capabilities: ['playlist', 'queue', 'lyrics'] as Array<'playlist' | 'queue' | 'lyrics'> }],
+    };
+    const library = libraryReducer(undefined, hydrationSucceeded(snapshot));
+    expect(library.localTracks[0]).toEqual(expect.objectContaining({ id: recordId, accessStatus: 'unreadable', seekable: false }));
+    expect(JSON.stringify(library)).not.toContain('content://');
+  });
 });
