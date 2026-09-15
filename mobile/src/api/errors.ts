@@ -91,6 +91,27 @@ export function presentProviderError(
       message: '请重试或选择其他来源。',
       action: 'choose-another-source',
     };
+  if (code === 'DOWNLOAD_FIRST')
+    return {
+      terminal: 'unavailable',
+      title: '需要先下载',
+      message: '当前系统版本不支持直接流式播放，请先下载到本机。',
+      action: 'return',
+    };
+  if (code === 'API_LEVEL_UNSUPPORTED')
+    return {
+      terminal: 'unavailable',
+      title: '系统版本不支持',
+      message: '当前设备无法使用该播放路径。',
+      action: 'choose-another-source',
+    };
+  if (code === 'EXPIRED')
+    return {
+      terminal: 'unavailable',
+      title: '播放授权已过期',
+      message: '请重新尝试播放。',
+      action: 'retry',
+    };
   if (code === 'LOGIN_REQUIRED')
     return {
       terminal: 'login-required',

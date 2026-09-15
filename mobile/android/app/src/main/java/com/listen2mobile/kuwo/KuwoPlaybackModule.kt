@@ -8,6 +8,12 @@ import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.ReadableType
 import com.facebook.react.module.annotations.ReactModule
+import com.listen2mobile.media.MediaDescriptor
+import com.listen2mobile.media.MediaIdentity
+import com.listen2mobile.media.MediaLeaseRegistry
+import com.listen2mobile.media.MediaRendition
+import com.listen2mobile.media.NativeTransport
+import com.listen2mobile.media.toWritableMap
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 
@@ -16,11 +22,13 @@ import java.util.concurrent.RejectedExecutionException
 internal class KuwoPlaybackModule(
     context: ReactApplicationContext,
     private val gateway: KuwoPlaybackGateway = KuwoPlaybackGateway(),
+    private val mediaLeases: MediaLeaseRegistry,
 ) : ReactContextBaseJavaModule(context) {
     companion object {
         const val NAME = "Listen2KuwoPlayback"
         const val PROVIDER = KuwoPlaybackPolicy.PROVIDER
         const val CONTRACT_VERSION = KuwoPlaybackPolicy.CONTRACT_VERSION
+        const val MEDIA_AUTHORITY = "com.dazzlingwuming.listen2.media"
         val POLICY_READY: Boolean get() = KuwoPlaybackPolicy.policyReady()
         val APPROVED_HOSTS: List<String> get() = if (POLICY_READY) listOf("er-sycdn.kuwo.cn") else emptyList()
     }
@@ -36,6 +44,7 @@ internal class KuwoPlaybackModule(
         "version" to CONTRACT_VERSION,
         "policyReady" to POLICY_READY,
         "approvedHosts" to APPROVED_HOSTS,
+        "mediaAuthority" to MEDIA_AUTHORITY,
     )
 
     @ReactMethod
@@ -99,9 +108,14 @@ internal class KuwoPlaybackModule(
         require(map.hasKey("trackId") && map.getType("trackId") == ReadableType.String)
         return map.getString("trackId")?.takeIf { it.length <= 136 && it.none { char -> char.code <= 31 } } ?: throw IllegalArgumentException()
     }
-    private fun descriptor(value: KuwoPlaybackPolicy.Descriptor) = Arguments.createMap().apply {
-        putInt("version", value.version); putString("requestId", value.requestId); putString("trackId", value.trackId); putString("source", value.source)
-        putString("url", value.url); putString("mimeType", value.mimeType); putDouble("sizeBytes", value.sizeBytes.toDouble()); putDouble("expiresAt", value.expiresAt.toDouble())
+    /** Cookie and Secret remain inside the gateway; this emits only the common descriptor. */
+    private fun descriptor(value: KuwoPlaybackPolicy.Descriptor): com.facebook.react.bridge.WritableMap {
+        val descriptor = mediaLeases.register(
+            value.requestId, MediaIdentity(value.source, value.trackId, null, 0L),
+            MediaRendition("default", "authorized", value.mimeType, if (value.mimeType == "audio/mpeg") "mp3" else "mp4", if (value.mimeType == "audio/mpeg") "mp3" else "aac", 1L, value.sizeBytes),
+            NativeTransport(value.url, KuwoPlaybackPolicy.fixedProbeHeaders(), source = "kuwo"), 0L,
+        )
+        return descriptor.toWritableMap()
     }
     private fun error(code: KuwoPlaybackPolicy.ErrorCode) = Arguments.createMap().apply { putString("errorCode", code.name) }
 }

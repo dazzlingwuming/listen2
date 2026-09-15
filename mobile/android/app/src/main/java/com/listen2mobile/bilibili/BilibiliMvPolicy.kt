@@ -22,6 +22,8 @@ internal object BilibiliMvPolicy {
         val qualityId: String,
         val preferredCodecs: List<String>,
         val forceRefresh: Boolean,
+        /** Native session generation; never supplied by JS. */
+        val accountGeneration: Long = 0L,
     )
     data class VideoCandidate(
         val id: Int,
@@ -39,14 +41,14 @@ internal object BilibiliMvPolicy {
     data class VideoManifest(val bvid: String, val cid: Long, val candidates: List<VideoCandidate>)
     data class PublicVariant(val id: String, val label: String, val codec: String, val width: Int, val height: Int)
 
-    fun request(bvid: String?, cid: Long, qualityId: String?, preferredCodecs: List<String>?, forceRefresh: Boolean): MvRequest? {
+    fun request(bvid: String?, cid: Long, qualityId: String?, preferredCodecs: List<String>?, forceRefresh: Boolean, accountGeneration: Long = 0L): MvRequest? {
         val normalizedQuality = qualityId ?: "auto"
         val normalizedCodecs = preferredCodecs ?: emptyList()
         if (!BilibiliPolicy.isCanonicalBvid(bvid) || cid <= 0 || normalizedQuality !in qualityIds ||
             normalizedCodecs.size > codecs.size || normalizedCodecs.distinct().size != normalizedCodecs.size ||
-            normalizedCodecs.any { it !in codecs }
+            normalizedCodecs.any { it !in codecs } || accountGeneration < 0L
         ) return null
-        return MvRequest(bvid!!, cid, normalizedQuality, normalizedCodecs, forceRefresh)
+        return MvRequest(bvid!!, cid, normalizedQuality, normalizedCodecs, forceRefresh, accountGeneration)
     }
 
     fun selectVideoCandidate(candidates: List<VideoCandidate>, qualityId: String, preferredCodecs: List<String>, now: Long): VideoCandidate? {
@@ -59,6 +61,9 @@ internal object BilibiliMvPolicy {
     }
 
     fun publicVariant(candidate: VideoCandidate): PublicVariant = PublicVariant(candidate.id.toString(), candidate.label, candidate.codecs.substringBefore('.'), candidate.width, candidate.height)
+    /** The UI may select only an exact ID from this native-reported projection. */
+    fun selectAuthorizedVariant(variants: List<PublicVariant>, requestedId: String?): PublicVariant? =
+        variants.takeIf { it.size in 1..MAX_CANDIDATES }?.singleOrNull { it.id == requestedId && requestedId in qualityIds }
     fun parseFrameRate(value: String?): Int? {
         val match = Regex("([1-9][0-9]{0,8})(?:/([1-9][0-9]{0,8}))?").matchEntire(value ?: "") ?: return null
         val numerator = match.groupValues[1].toLongOrNull() ?: return null

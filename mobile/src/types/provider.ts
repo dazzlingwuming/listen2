@@ -135,13 +135,57 @@ export interface Lyric {
   };
 }
 
-export interface BootstrapTrack {
-  trackId: string;
+export type MediaEntitlementStatus =
+  | 'allowed'
+  | 'requires-login'
+  | 'membership-required'
+  | 'region-blocked'
+  | 'drm-unsupported'
+  | 'expired'
+  | 'provider-unavailable'
+  | 'download-first';
+
+export type MediaRendition = Readonly<{
+  id: string;
+  label: string;
+  mimeType: string;
+  container: string;
+  codec: string;
+  durationMs: number;
+  sizeBytes?: number;
+}>;
+
+export type MediaPart = Readonly<{
+  cid: string;
+  page: string;
+  title: string;
+  durationMs?: number;
+}>;
+
+/**
+ * Exact native-owned playback receipt. The only playable value is an
+ * app-owned content URI backed by a short-lived native lease. Signed
+ * transports, provider headers, cookies, candidates, and filesystem paths
+ * never enter this type or any player-facing state.
+ */
+export interface MediaDescriptor {
+  version: 1;
+  requestId: string;
   source: SourceId;
-  /** Present only after a future source-approved native rendition contract. */
-  url: string;
-  /** Provider-owned headers only; never accepted from UI or persisted. */
-  headers?: Readonly<Record<string, string>>;
+  semanticTrackId: string;
+  partId?: string;
+  generation: number;
+  playableUri: string;
+  mimeType: string;
+  container: string;
+  codec: string;
+  durationMs: number;
+  sizeBytes?: number;
+  selectedRenditionId: string;
+  renditions: readonly MediaRendition[];
+  parts?: readonly MediaPart[];
+  entitlementStatus: 'allowed';
+  leaseExpiresAt: number;
 }
 
 export type ProviderErrorCode =
@@ -159,7 +203,10 @@ export type ProviderErrorCode =
   | 'LOGIN_REQUIRED'
   | 'MEMBERSHIP_REQUIRED'
   | 'DRM_RESTRICTED'
-  | 'REGION_RESTRICTED';
+  | 'REGION_RESTRICTED'
+  | 'DOWNLOAD_FIRST'
+  | 'API_LEVEL_UNSUPPORTED'
+  | 'EXPIRED';
 
 export interface ProviderErrorShape {
   code: ProviderErrorCode;

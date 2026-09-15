@@ -1,7 +1,8 @@
 import { NativeModules } from 'react-native';
 import { parseExactBilibiliTrackId } from '../api/ids';
+import { resolveNativeMedia } from '../api/nativePlayback';
+import type { MediaDescriptor } from '../types';
 import type {
-  BilibiliAudioHandoff,
   BilibiliAudioRequest,
   BilibiliPart,
   BilibiliPublicState,
@@ -11,7 +12,6 @@ import type {
 
 const MAX_TEXT = 256;
 const MAX_QR_DATA_URI = 192 * 1024;
-const MAX_MEDIA_URL = 4096;
 const statusValues = new Set<BilibiliPublicStatus>([
   'idle',
   'waiting',
@@ -175,66 +175,6 @@ function detail(value: unknown): BilibiliVideoDetail {
     parts: (parts as unknown[]).map(part),
   };
 }
-function handoff(
-  value: unknown,
-  requested: BilibiliAudioRequest,
-): BilibiliAudioHandoff {
-  const raw = object(value);
-  if (
-    Object.keys(raw).length === 1 &&
-    typeof raw.errorCode === 'string' &&
-    /^[A-Z_]{3,64}$/.test(raw.errorCode)
-  )
-    fail(raw.errorCode);
-  keys(raw, ['bvid', 'cid', 'page', 'url', 'deadline', 'headers']);
-  if (
-    bvid(raw.bvid) !== requested.bvid ||
-    numericText(raw.cid) !== requested.cid
-  )
-    fail();
-  const url = text(raw.url, MAX_MEDIA_URL);
-  const deadline = raw.deadline;
-  if (
-    typeof deadline !== 'number' ||
-    !Number.isSafeInteger(deadline) ||
-    deadline - Date.now() <= 30_000 ||
-    deadline - Date.now() > 24 * 60 * 60 * 1000
-  )
-    fail();
-  try {
-    const parsed = new URL(url);
-    if (
-      parsed.protocol !== 'https:' ||
-      (!parsed.hostname.endsWith('.bilivideo.com') &&
-        parsed.hostname !== 'bilivideo.com') ||
-      parsed.username ||
-      parsed.password ||
-      parsed.hash
-    )
-      fail();
-    const signedDeadlines = parsed.searchParams.getAll('deadline');
-    if (
-      signedDeadlines.length !== 1 ||
-      !/^[1-9][0-9]{8,12}$/.test(signedDeadlines[0]) ||
-      !Number.isSafeInteger(Number(signedDeadlines[0])) ||
-      Number(signedDeadlines[0]) * 1000 !== deadline
-    )
-      fail();
-  } catch {
-    fail();
-  }
-  const headers = object(raw.headers);
-  keys(headers, ['Referer']);
-  if (headers.Referer !== 'https://www.bilibili.com/') fail();
-  return {
-    ...requested,
-    page: numericText(raw.page),
-    url,
-    deadline: deadline as number,
-    headers: { Referer: 'https://www.bilibili.com/' },
-  };
-}
-
 export const bilibiliClient = {
   status: () => call('status').then(publicState),
   qrBegin: () => call('qrBegin').then(publicState),
@@ -245,9 +185,15 @@ export const bilibiliClient = {
   logout: () => call('logout').then(publicState),
   videoDetail: (id: string, _options?: { signal?: AbortSignal }) =>
     call('videoDetail', { bvid: bvid(id) }).then(detail),
-  resolveAudio: (request: BilibiliAudioRequest) => {
+  resolveAudio: (request: BilibiliAudioRequest): Promise<MediaDescriptor> => {
     const exact = { bvid: bvid(request.bvid), cid: numericText(request.cid) };
-    return call('resolveAudio', exact).then(value => handoff(value, exact));
+    const track = {
+      id: `bitrack_v_${exact.bvid}-${exact.cid}`,
+      source: 'bilibili' as const,
+      title: 'Bilibili',
+      artist: 'Bilibili',
+    };
+    return resolveNativeMedia(track);
   },
 };
 

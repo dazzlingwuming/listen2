@@ -54,11 +54,13 @@ internal class BilibiliMvController(
     )
     private val lock = Any()
     private var generation = 0L
+    private var accountGeneration = 0L
     private var active: Active? = null
     private var state = State.IDLE
     private var error: BilibiliPolicy.ErrorCode? = null
 
     fun open(request: BilibiliMvPolicy.MvRequest): PublicState {
+        if (request.accountGeneration != synchronized(lock) { accountGeneration }) return rejected(BilibiliPolicy.ErrorCode.CANCELLED)
         val pending = synchronized(lock) { generation += 1; active = null; error = null; state = State.RESOLVING; Pending(generation, request, 0, 0L, false) }
         return resolve(pending)
     }
@@ -67,7 +69,7 @@ internal class BilibiliMvController(
         val pending = synchronized(lock) {
         val current = active ?: return rejected(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
         if (current.handle != handle) return rejected(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
-        val request = BilibiliMvPolicy.request(current.request.bvid, current.request.cid, qualityId, current.request.preferredCodecs, true)
+        val request = BilibiliMvPolicy.request(current.request.bvid, current.request.cid, qualityId, current.request.preferredCodecs, true, current.request.accountGeneration)
             ?: return rejected(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
         state = State.REFRESHING
         generation += 1
@@ -132,7 +134,7 @@ internal class BilibiliMvController(
     }
 
     fun restoreSemantic(snapshot: SemanticSnapshot): PublicState {
-        val request = BilibiliMvPolicy.request(snapshot.bvid, snapshot.cid, snapshot.qualityId, emptyList(), true)
+        val request = BilibiliMvPolicy.request(snapshot.bvid, snapshot.cid, snapshot.qualityId, emptyList(), true, synchronized(lock) { accountGeneration })
             ?: return rejected(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
         val pending = synchronized(lock) { generation += 1; active = null; error = null; state = State.RESOLVING; Pending(generation, request, 0, snapshot.positionMs, snapshot.playIntent) }
         return resolve(pending)
@@ -142,6 +144,18 @@ internal class BilibiliMvController(
         if (active?.handle != handle) return@synchronized rejected(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
         generation += 1
         failLocked(BilibiliPolicy.ErrorCode.VIDEO_UNAVAILABLE)
+    }
+
+    /** Login/logout changes revoke every old part, quality and opaque MV handle. */
+    fun setAccountGeneration(value: Long): PublicState = synchronized(lock) {
+        if (value < 0L) return@synchronized rejected(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
+        if (value == accountGeneration) return@synchronized projectionLocked()
+        accountGeneration = value
+        generation += 1
+        active = null
+        state = State.CLOSED
+        error = BilibiliPolicy.ErrorCode.CANCELLED
+        projectionLocked()
     }
 
     /** Provider I/O deliberately happens before re-entering lock; lifecycle reads stay responsive. */
@@ -155,7 +169,7 @@ internal class BilibiliMvController(
                 ?: throw BilibiliHttpsGateway.ProviderException(BilibiliPolicy.ErrorCode.UNSUPPORTED_VIDEO_CODEC)
             val handle = pending.handle ?: BilibiliMvPolicy.opaqueHandle(ByteArray(32).also { SecureRandom().nextBytes(it) })
             synchronized(lock) {
-                if (generation != pending.generation) rejected(BilibiliPolicy.ErrorCode.CANCELLED)
+                if (generation != pending.generation || pending.request.accountGeneration != accountGeneration) rejected(BilibiliPolicy.ErrorCode.CANCELLED)
                 else {
                     val selectedRequest = pending.request.copy(qualityId = selected.id.toString())
                     active = Active(pending.generation, handle, selectedRequest, selected, manifest.candidates.map(BilibiliMvPolicy::publicVariant).distinctBy { it.id }, pending.positionMs, pending.playIntent, pending.refreshes)

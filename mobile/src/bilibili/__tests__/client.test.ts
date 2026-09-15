@@ -1,4 +1,9 @@
 const nativeModule = {
+  provider: 'bilibili',
+  version: 1,
+  policyReady: true,
+  mediaAuthority: 'com.dazzlingwuming.listen2.media',
+  approvedHosts: ['bilivideo.com'],
   status: jest.fn(),
   qrBegin: jest.fn(),
   qrPoll: jest.fn(),
@@ -6,6 +11,7 @@ const nativeModule = {
   logout: jest.fn(),
   videoDetail: jest.fn(),
   resolveAudio: jest.fn(),
+  cancelAudio: jest.fn(),
 };
 
 let bilibiliClient: typeof import('../client').bilibiliClient;
@@ -28,17 +34,26 @@ const terminalState = (status: string, extra = {}) => ({
   nextAction: status === 'authenticated' ? 'logout' : 'begin',
   ...extra,
 });
-const audioReply = (overrides = {}) => {
-  const value = deadline();
+const mediaReply = (request: { requestId: string; bvid: string; cid: string }, overrides = {}) => {
   return {
-    bvid: 'BV1xx411c7mD',
-    cid: '12',
-    page: '2',
-    url: `https://upos-sz-mirrorcos.bilivideo.com/audio.m4s?deadline=${
-      value / 1000
-    }`,
-    deadline: value,
-    headers: { Referer: 'https://www.bilibili.com/' },
+    version: 1,
+    requestId: request.requestId,
+    source: 'bilibili',
+    semanticTrackId: `bitrack_v_${request.bvid}-${request.cid}`,
+    partId: request.cid,
+    generation: 3,
+    playableUri: `content://com.dazzlingwuming.listen2.media/lease/${'b'.repeat(48)}`,
+    mimeType: 'audio/mp4',
+    container: 'mp4',
+    codec: 'mp4a.40.2',
+    durationMs: 12000,
+    selectedRenditionId: 'audio',
+    renditions: [{
+      id: 'audio', label: 'authorized', mimeType: 'audio/mp4', container: 'mp4', codec: 'mp4a.40.2', durationMs: 12000,
+    }],
+    parts: [{ cid: request.cid, page: '2', title: '第二段', durationMs: 12000 }],
+    entitlementStatus: 'allowed',
+    leaseExpiresAt: Date.now() + 60_000,
     ...overrides,
   };
 };
@@ -102,73 +117,14 @@ describe('strict Bilibili native adapter', () => {
     });
   });
 
-  it.each([
-    ['expired signed URL', () => audioReply({ deadline: deadline() - 1 })],
-    [
-      'deadline longer than a day',
-      () => {
-        const tooLate =
-          (Math.floor(Date.now() / 1000) + 24 * 60 * 60 + 1) * 1000;
-        return audioReply({
-          url: `https://upos-sz-mirrorcos.bilivideo.com/audio.m4s?deadline=${
-            tooLate / 1000
-          }`,
-          deadline: tooLate,
-        });
-      },
-    ],
-    [
-      'wrong media host',
-      () =>
-        audioReply({
-          url: `https://example.com/audio.m4s?deadline=${deadline() / 1000}`,
-        }),
-    ],
-    [
-      'mismatched signed deadline',
-      () => audioReply({ deadline: deadline() + 1 }),
-    ],
-    [
-      'duplicate signed deadline',
-      () => {
-        const value = deadline();
-        return audioReply({
-          url: `https://upos-sz-mirrorcos.bilivideo.com/audio.m4s?deadline=${
-            value / 1000
-          }&deadline=${value / 1000}`,
-          deadline: value,
-        });
-      },
-    ],
-    [
-      'unapproved credential header',
-      () =>
-        audioReply({
-          headers: { Referer: 'https://www.bilibili.com/', Cookie: 'secret' },
-        }),
-    ],
-    [
-      'unknown handoff key',
-      () => ({ ...audioReply(), alternate: 'https://bad.example/' }),
-    ],
-  ])(
-    'rejects hostile audio manifest: %s',
-    async (_name, reply: () => unknown) => {
-      nativeModule.resolveAudio.mockResolvedValue(reply());
-      await expect(
-        bilibiliClient.resolveAudio({ bvid: 'BV1xx411c7mD', cid: '12' }),
-      ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
-    },
-  );
-
-  it('sends one exact semantic detail/audio request and validates a signed reply', async () => {
+  it('sends one exact semantic detail/audio request and validates a native descriptor', async () => {
     nativeModule.videoDetail.mockResolvedValue({
       bvid: 'BV1xx411c7mD',
       title: '视频',
       owner: '作者',
       parts: [{ cid: '11', page: '1', title: '第一段', durationMs: 12_000 }],
     });
-    nativeModule.resolveAudio.mockResolvedValue(audioReply());
+    nativeModule.resolveAudio.mockImplementation((request: { requestId: string; bvid: string; cid: string }) => mediaReply(request));
     await expect(
       bilibiliClient.videoDetail('BV1xx411c7mD'),
     ).resolves.toMatchObject({
@@ -176,10 +132,15 @@ describe('strict Bilibili native adapter', () => {
     });
     await expect(
       bilibiliClient.resolveAudio({ bvid: 'BV1xx411c7mD', cid: '12' }),
-    ).resolves.toMatchObject({ cid: '12', page: '2' });
-    expect(nativeModule.resolveAudio).toHaveBeenCalledWith({
+    ).resolves.toMatchObject({
+      semanticTrackId: 'bitrack_v_BV1xx411c7mD-12',
+      playableUri: expect.stringMatching(/^content:\/\/com\.dazzlingwuming\.listen2\.media\/lease\/[a-f0-9]{48}$/),
+    });
+    expect(nativeModule.resolveAudio).toHaveBeenCalledWith(expect.objectContaining({
+      version: 1,
       bvid: 'BV1xx411c7mD',
       cid: '12',
-    });
+      requestId: expect.any(String),
+    }));
   });
 });

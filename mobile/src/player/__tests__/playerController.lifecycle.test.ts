@@ -10,7 +10,17 @@ const mockNative = {
   pause: jest.fn().mockResolvedValue(undefined),
   stop: jest.fn().mockResolvedValue(undefined),
 };
-const mockBootstrap = jest.fn();
+const mockResolveMedia = jest.fn();
+const SAFE_MEDIA_URI = 'content://com.dazzlingwuming.listen2.media/lease/' + 'a'.repeat(48);
+const nativeMediaFixture = (value: unknown) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const result = { ...(value as Record<string, unknown>) };
+  const playableUri =
+    typeof result.playableUri === 'string' ? result.playableUri : SAFE_MEDIA_URI;
+  delete result.url;
+  delete result.headers;
+  return { ...result, playableUri };
+};
 
 jest.mock('react-native', () => ({
   Platform: { OS: 'ios', Version: 0 },
@@ -46,7 +56,7 @@ jest.mock('react-native-track-player', () => ({
 }));
 jest.mock('../../api/client', () => ({
   providerClient: {
-    bootstrapTrack: (...args: unknown[]) => mockBootstrap(...args),
+    resolveMedia: (...args: unknown[]) => Promise.resolve(mockResolveMedia(...args)).then(nativeMediaFixture),
   },
 }));
 jest.mock('../../offline/offlineAudio', () => ({
@@ -85,8 +95,8 @@ describe('PlayerController lifecycle recovery', () => {
       if ('mockResolvedValue' in mock)
         (mock as jest.Mock).mockResolvedValue(undefined);
     });
-    mockBootstrap.mockResolvedValue({
-      url: 'https://music.example/lifecycle.mp3',
+    mockResolveMedia.mockResolvedValue({
+      url: SAFE_MEDIA_URI,
     });
     state = reducer(undefined, { type: 'init' });
     configurePlayerController({ dispatch, getPlayerState: () => state });

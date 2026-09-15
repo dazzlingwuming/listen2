@@ -1,5 +1,4 @@
 import type {
-  BootstrapTrack,
   DiscoverPage,
   DiscoverSection,
   Lyric,
@@ -17,7 +16,6 @@ import { isCanonicalPositiveSafeIntegerText } from './ids';
 import {
   requestFixedText,
   requestJson,
-  requestMediaAvailability,
 } from './http';
 
 const PAGE_SIZE = 20;
@@ -520,23 +518,6 @@ const netease: ProviderAdapter = {
   },
 };
 
-/**
- * These NetEase GET routes are fixed, public HTTPS contracts. They do not
- * require generated cookies, caller headers, account tokens, or weapi/eapi.
- */
-export async function bootstrapNetEaseTrack(
-  track: Track,
-  signal?: AbortSignal,
-): Promise<BootstrapTrack> {
-  const providerId =
-    track.source === 'netease' ? neteaseProviderId(track.id) : null;
-  if (!providerId)
-    throw new ProviderClientError('UNKNOWN_TRACK', 'netease', 'bootstrap');
-  const url = `https://music.163.com/song/media/outer/url?id=${providerId}.mp3`;
-  await requestMediaAvailability(url, 'netease', 'bootstrap', { signal });
-  return { trackId: track.id, source: 'netease', url };
-}
-
 export async function getNetEaseLyric(
   trackId: string,
   options?: ProviderRequestOptions,
@@ -776,60 +757,6 @@ export async function getKugouChart(
         : 'partial',
     declaredTrackCount: first.total,
   };
-}
-
-function safeKugouMediaUrl(value: unknown): string | null {
-  const candidate = text(value, 2048);
-  if (!candidate) return null;
-  try {
-    const url = new URL(candidate);
-    return url.protocol === 'https:' &&
-      url.hostname === 'sharefs.kugou.com' &&
-      url.port === '' &&
-      url.username === '' &&
-      url.password === '' &&
-      !url.hash
-      ? url.toString()
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Kugou returns an HTTPS media URL only for the exact requested hash. The
- * response URL is still constrained to Kugou-owned HTTPS hosts before it can
- * cross into the native player.
- */
-export async function bootstrapKugouTrack(
-  track: Track,
-  options?: ProviderRequestOptions,
-): Promise<BootstrapTrack> {
-  const providerId =
-    track.source === 'kugou' ? kugouProviderId(track.id) : null;
-  if (!providerId)
-    throw new ProviderClientError('UNKNOWN_TRACK', 'kugou', 'bootstrap');
-  const params = new URLSearchParams({ cmd: 'playInfo', hash: providerId });
-  const root = asObject(
-    await requestJson(
-      { url: `https://m.kugou.com/app/i/getSongInfo.php?${params}` },
-      'kugou',
-      'bootstrap',
-      options,
-    ),
-  );
-  const url = safeKugouMediaUrl(root?.url);
-  if (!url) {
-    if (positive(root?.pay_type) || positive(root?.privilege)) {
-      throw new ProviderClientError(
-        'MEMBERSHIP_REQUIRED',
-        'kugou',
-        'bootstrap',
-      );
-    }
-    throw unavailable('kugou', 'bootstrap', 'PLAYBACK_UNAVAILABLE');
-  }
-  return { trackId: track.id, source: 'kugou', url };
 }
 
 /**

@@ -8,6 +8,11 @@ import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.ReadableType
 import com.facebook.react.module.annotations.ReactModule
+import com.listen2mobile.media.MediaIdentity
+import com.listen2mobile.media.MediaLeaseRegistry
+import com.listen2mobile.media.MediaRendition
+import com.listen2mobile.media.NativeTransport
+import com.listen2mobile.media.toWritableMap
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 
@@ -16,11 +21,13 @@ import java.util.concurrent.RejectedExecutionException
 internal class QqPlaybackModule(
     context: ReactApplicationContext,
     private val gateway: QqPlaybackGateway = QqPlaybackGateway(),
+    private val mediaLeases: MediaLeaseRegistry,
 ) : ReactContextBaseJavaModule(context) {
     companion object {
         const val NAME = "Listen2QqPlayback"
         const val PROVIDER = QqPlaybackPolicy.PROVIDER
         const val CONTRACT_VERSION = QqPlaybackPolicy.CONTRACT_VERSION
+        const val MEDIA_AUTHORITY = "com.dazzlingwuming.listen2.media"
         val POLICY_READY: Boolean get() = QqPlaybackPolicy.policyReady()
         val APPROVED_HOSTS: List<String> get() = if (POLICY_READY) listOf("isure.stream.qqmusic.qq.com") else emptyList()
     }
@@ -36,6 +43,7 @@ internal class QqPlaybackModule(
         "version" to CONTRACT_VERSION,
         "policyReady" to POLICY_READY,
         "approvedHosts" to APPROVED_HOSTS,
+        "mediaAuthority" to MEDIA_AUTHORITY,
     )
 
     @ReactMethod
@@ -111,9 +119,15 @@ internal class QqPlaybackModule(
         require(map.hasKey(key) && map.getType(key) == ReadableType.String)
         return map.getString(key)?.takeIf { it.length <= 136 && it.none { character -> character.code <= 31 } } ?: throw IllegalArgumentException()
     }
-    private fun descriptor(value: QqPlaybackPolicy.Descriptor) = Arguments.createMap().apply {
-        putInt("version", value.version); putString("requestId", value.requestId); putString("trackId", value.trackId); putString("source", value.source)
-        putString("url", value.url); putString("mimeType", value.mimeType); putDouble("sizeBytes", value.sizeBytes.toDouble()); putDouble("expiresAt", value.expiresAt.toDouble())
+    /** The gateway DTO deliberately remains native-only; RN receives no URL or headers. */
+    private fun descriptor(value: QqPlaybackPolicy.Descriptor): com.facebook.react.bridge.WritableMap {
+        val descriptor = mediaLeases.register(
+            value.requestId, MediaIdentity(value.source, value.trackId, null, 0L),
+            MediaRendition("default", "authorized", value.mimeType, if (value.mimeType == "audio/mpeg") "mp3" else "mp4", if (value.mimeType == "audio/mpeg") "mp3" else "aac", 1L, value.sizeBytes),
+            NativeTransport(value.url, QqPlaybackPolicy.fixedProbeHeaders(), source = "qq"), 0L,
+        )
+        return safeDescriptor(descriptor)
     }
+    private fun safeDescriptor(value: com.listen2mobile.media.MediaDescriptor) = value.toWritableMap()
     private fun error(code: QqPlaybackPolicy.ErrorCode) = Arguments.createMap().apply { putString("errorCode", code.name) }
 }

@@ -1,5 +1,5 @@
 import type {
-  BootstrapTrack,
+  MediaDescriptor,
   DiscoverPage,
   DiscoverSource,
   Lyric,
@@ -14,15 +14,12 @@ import type {
 } from '../types';
 import { isSourceId } from '../types';
 import { ProviderClientError, unavailable } from './errors';
-import { BilibiliClientError, bilibiliClient } from '../bilibili/client';
 import {
   parseExactBilibiliTrackId,
   sourceForPlaylistId,
   sourceForTrackId,
 } from './ids';
 import {
-  bootstrapKugouTrack,
-  bootstrapNetEaseTrack,
   getNetEaseLyric,
   getNetEaseDiscover,
   getQqLyric,
@@ -34,7 +31,7 @@ import {
   providerFor,
 } from './providers';
 import { resolveBilibiliLyric } from '../bilibili/lyrics';
-import { bootstrapNativeTrack, isNativePlaybackReady } from './nativePlayback';
+import { isNativePlaybackReady, resolveNativeMedia } from './nativePlayback';
 
 const available = { status: 'available' } as const;
 const unavailableRoute = {
@@ -105,10 +102,10 @@ export const PROVIDER_CAPABILITIES: Readonly<
       search: available,
       discover: available,
       detail: available,
-      playback: available,
+      ...(isNativePlaybackReady('netease') ? { playback: available } : {}),
       lyrics: available,
       playlist: available,
-      bootstrap: available,
+      ...(isNativePlaybackReady('netease') ? { bootstrap: available } : {}),
       lyric: available,
       download: available,
     }),
@@ -118,8 +115,8 @@ export const PROVIDER_CAPABILITIES: Readonly<
       search: available,
       discover: available,
       detail: available,
-      playback: available,
-      bootstrap: available,
+      ...(isNativePlaybackReady('kugou') ? { playback: available } : {}),
+      ...(isNativePlaybackReady('kugou') ? { bootstrap: available } : {}),
       download: available,
     }),
   },
@@ -138,7 +135,7 @@ export const PROVIDER_CAPABILITIES: Readonly<
     ...capabilityProjection({
       search: available,
       detail: available,
-      playback: available,
+      ...(isNativePlaybackReady('bilibili') ? { playback: available } : {}),
       lyrics: available,
       'manual-lyrics': available,
       // This is an app-local, bounded timeline correction for the exact
@@ -146,7 +143,7 @@ export const PROVIDER_CAPABILITIES: Readonly<
       offset: available,
       login: available,
       mv: available,
-      bootstrap: available,
+      ...(isNativePlaybackReady('bilibili') ? { bootstrap: available } : {}),
       lyric: available,
     }),
   },
@@ -189,10 +186,10 @@ export const providerClient = {
     throw unavailable(source, 'playlist', 'ROUTE_UNAVAILABLE');
   },
 
-  async bootstrapTrack(
+  async resolveMedia(
     track: Track,
-    _signal?: AbortSignal,
-  ): Promise<BootstrapTrack> {
+    signal?: AbortSignal,
+  ): Promise<MediaDescriptor> {
     const source = sourceForTrackId(track.id);
     if (!source || source !== track.source) {
       throw new ProviderClientError(
@@ -201,51 +198,9 @@ export const providerClient = {
         'bootstrap',
       );
     }
-    if (source === 'bilibili') {
-      const identity = parseExactBilibiliTrackId(track.id);
-      if (!identity)
-        throw new ProviderClientError('UNKNOWN_TRACK', source, 'bootstrap');
-      try {
-        const media = await bilibiliClient.resolveAudio({
-          bvid: identity.bvid,
-          cid: identity.cid,
-        });
-        return {
-          trackId: track.id,
-          source,
-          url: media.url,
-          headers: media.headers,
-        };
-      } catch (error) {
-        const code =
-          error instanceof BilibiliClientError ? error.code : 'PROVIDER_ERROR';
-        const allowed = new Set([
-          'INVALID_REQUEST',
-          'REQUEST_TIMEOUT',
-          'CANCELLED',
-          'LOGIN_REQUIRED',
-          'MEMBERSHIP_REQUIRED',
-          'DRM_RESTRICTED',
-          'REGION_RESTRICTED',
-          'NETWORK_ERROR',
-          'PROVIDER_ERROR',
-          'INVALID_RESPONSE',
-          'VIDEO_UNAVAILABLE',
-          'UNSUPPORTED_VIDEO_CODEC',
-        ]);
-        throw new ProviderClientError(
-          allowed.has(code) ? (code as any) : 'PROVIDER_ERROR',
-          source,
-          'bootstrap',
-        );
-      }
-    }
-    if (source === 'kugou')
-      return bootstrapKugouTrack(track, { signal: _signal });
-    if (source === 'netease') return bootstrapNetEaseTrack(track, _signal);
-    if ((source === 'qq' || source === 'kuwo') && isNativePlaybackReady(source))
-      return bootstrapNativeTrack(track, _signal);
-    throw unavailable(source, 'bootstrap', 'PLAYBACK_UNAVAILABLE');
+    if (!parseExactBilibiliTrackId(track.id) && source === 'bilibili')
+      throw new ProviderClientError('UNKNOWN_TRACK', source, 'bootstrap');
+    return resolveNativeMedia(track, signal);
   },
 
   async getLyric(

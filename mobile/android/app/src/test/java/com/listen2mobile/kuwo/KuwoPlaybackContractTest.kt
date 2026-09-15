@@ -42,7 +42,6 @@ class KuwoPlaybackContractTest {
         assertEquals("452fda90010b117cb165a7af6d0012d687", transport.play.headers["Secret"])
         assertEquals("Hm_Iuvt_cdb524f42f23cer9b268564v7y735ewrq2324=fixture-token", transport.play.headers["Cookie"])
         assertEquals("bytes=0-0", transport.probe.headers["Range"])
-        assertEquals("https://er-sycdn.kuwo.cn/fixture.mp3", descriptor.url)
         assertEquals("audio/mpeg", descriptor.mimeType)
         assertEquals(4096L, descriptor.sizeBytes)
         assertEquals(NOW + 60_000L, descriptor.expiresAt)

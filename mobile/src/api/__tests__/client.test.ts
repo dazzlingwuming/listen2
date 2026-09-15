@@ -4,20 +4,6 @@ import {
   ProviderClientError,
 } from '../client';
 
-const mockBilibiliResolveAudio = jest.fn();
-jest.mock('../../bilibili/client', () => ({
-  BilibiliClientError: class BilibiliClientError extends Error {
-    code: string;
-    constructor(mockCode: string) {
-      super(mockCode);
-      this.code = mockCode;
-    }
-  },
-  bilibiliClient: {
-    resolveAudio: (...args: unknown[]) => mockBilibiliResolveAudio(...args),
-  },
-}));
-
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -383,105 +369,16 @@ describe('providerClient', () => {
     );
   });
 
-  it('resolves an exact Bilibili part only through the semantic native adapter', async () => {
+  it.each([
+    ['bilibili', 'bitrack_v_BV1xx411c7mD-456'],
+    ['netease', 'netrack_42'],
+    ['kugou', 'kgtrack_48C685F679FFC7CF08B8A8341CA9DB44'],
+  ] as const)('keeps %s playback closed until its native descriptor contract is ready', async (source, id) => {
     globalThis.fetch = jest.fn();
-    mockBilibiliResolveAudio.mockResolvedValue({
-      bvid: 'BV1xx411c7mD',
-      cid: '456',
-      page: '1',
-      url: 'https://upos-sz-mirror.example.bilivideo.com/audio.m4s',
-      deadline: Date.now() + 60_000,
-      headers: { Referer: 'https://www.bilibili.com/' },
-    });
     await expect(
-      providerClient.bootstrapTrack({
-        id: 'bitrack_v_BV1xx411c7mD-456',
-        source: 'bilibili',
-        title: 'Song',
-        artist: 'Uploader',
-      }),
-    ).resolves.toEqual({
-      trackId: 'bitrack_v_BV1xx411c7mD-456',
-      source: 'bilibili',
-      url: 'https://upos-sz-mirror.example.bilivideo.com/audio.m4s',
-      headers: {
-        Referer: 'https://www.bilibili.com/',
-      },
-    });
-    expect(mockBilibiliResolveAudio).toHaveBeenCalledWith({
-      bvid: 'BV1xx411c7mD',
-      cid: '456',
-    });
+      providerClient.resolveMedia({ id, source, title: 'Song', artist: 'Artist' }),
+    ).rejects.toMatchObject({ code: 'PLAYBACK_UNAVAILABLE', source });
     expect(globalThis.fetch).not.toHaveBeenCalled();
-  });
-
-  it('bootstraps a NetEase track through its fixed public media route', async () => {
-    globalThis.fetch = jest
-      .fn()
-      .mockResolvedValue(new Response(null, { status: 200 }));
-    await expect(
-      providerClient.bootstrapTrack({
-        id: 'netrack_42',
-        source: 'netease',
-        title: 'Song',
-        artist: 'Artist',
-      }),
-    ).resolves.toEqual({
-      trackId: 'netrack_42',
-      source: 'netease',
-      url: 'https://music.163.com/song/media/outer/url?id=42.mp3',
-    });
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      'https://music.163.com/song/media/outer/url?id=42.mp3',
-      expect.objectContaining({ method: 'HEAD' }),
-    );
-  });
-
-  it('bootstraps a Kugou track only from its fixed hash route and HTTPS host', async () => {
-    globalThis.fetch = jest.fn().mockResolvedValue(
-      jsonResponse({
-        status: 1,
-        url: 'https://sharefs.kugou.com/path/to/audio.mp3?token=provider-minted',
-      }),
-    );
-    await expect(
-      providerClient.bootstrapTrack({
-        id: 'kgtrack_48C685F679FFC7CF08B8A8341CA9DB44',
-        source: 'kugou',
-        title: 'Song',
-        artist: 'Artist',
-      }),
-    ).resolves.toEqual({
-      trackId: 'kgtrack_48C685F679FFC7CF08B8A8341CA9DB44',
-      source: 'kugou',
-      url: 'https://sharefs.kugou.com/path/to/audio.mp3?token=provider-minted',
-    });
-    expect((globalThis.fetch as jest.Mock).mock.calls[0][0]).toBe(
-      'https://m.kugou.com/app/i/getSongInfo.php?cmd=playInfo&hash=48C685F679FFC7CF08B8A8341CA9DB44',
-    );
-  });
-
-  it('rejects non-Kugou or paid Kugou playback responses with typed errors', async () => {
-    globalThis.fetch = jest
-      .fn()
-      .mockResolvedValueOnce(
-        jsonResponse({ url: 'https://media.example/audio.mp3' }),
-      )
-      .mockResolvedValueOnce(jsonResponse({ url: '', pay_type: 1 }));
-    const track = {
-      id: 'kgtrack_48C685F679FFC7CF08B8A8341CA9DB44',
-      source: 'kugou' as const,
-      title: 'Song',
-      artist: 'Artist',
-    };
-    await expect(providerClient.bootstrapTrack(track)).rejects.toMatchObject({
-      code: 'PLAYBACK_UNAVAILABLE',
-      source: 'kugou',
-    });
-    await expect(providerClient.bootstrapTrack(track)).rejects.toMatchObject({
-      code: 'MEMBERSHIP_REQUIRED',
-      source: 'kugou',
-    });
   });
 
   it('maps NetEase primary and translated lyrics from the fixed public route', async () => {
@@ -589,7 +486,7 @@ describe('providerClient', () => {
       });
     }
     await expect(
-      providerClient.bootstrapTrack({
+      providerClient.resolveMedia({
         id: 'qqtrack_001',
         source: 'qq',
         title: 'Song',
@@ -809,6 +706,7 @@ describe('providerClient', () => {
       provider: 'qq',
       version: 1,
       policyReady: true,
+      mediaAuthority: 'com.dazzlingwuming.listen2.media',
       approvedHosts: ['isure.stream.qqmusic.qq.com'],
       resolveAudio: jest.fn(
         () =>
@@ -822,6 +720,7 @@ describe('providerClient', () => {
       provider: 'kuwo',
       version: 1,
       policyReady: true,
+      mediaAuthority: 'com.dazzlingwuming.listen2.media',
       approvedHosts: ['er-sycdn.kuwo.cn'],
       resolveAudio: jest.fn().mockResolvedValue({
         version: 1,
@@ -842,7 +741,7 @@ describe('providerClient', () => {
     expect(fresh.PROVIDER_CAPABILITIES.qq.playback).toBe(true);
     expect(fresh.PROVIDER_CAPABILITIES.kuwo.playback).toBe(true);
     const aborter = new AbortController();
-    const pending = fresh.providerClient.bootstrapTrack(
+    const pending = fresh.providerClient.resolveMedia(
       { id: 'qqtrack_001', source: 'qq', title: 'Song', artist: 'Artist' },
       aborter.signal,
     );
@@ -906,12 +805,18 @@ describe('providerClient', () => {
             provider: 'qq',
             version: 1,
             policyReady: true,
+            mediaAuthority: 'com.dazzlingwuming.listen2.media',
+            resolveAudio: jest.fn(),
+            cancel: jest.fn(),
             approvedHosts: qqHosts,
           },
           Listen2KuwoPlayback: {
             provider: 'kuwo',
             version: 1,
             policyReady: true,
+            mediaAuthority: 'com.dazzlingwuming.listen2.media',
+            resolveAudio: jest.fn(),
+            cancel: jest.fn(),
             approvedHosts: kuwoHosts,
           },
         },

@@ -35,12 +35,6 @@ export type BilibiliVideoDetail = {
 };
 
 export type BilibiliAudioRequest = { bvid: string; cid: string };
-export type BilibiliAudioHandoff = BilibiliAudioRequest & {
-  page: string;
-  url: string;
-  deadline: number;
-  headers: Readonly<{ Referer: 'https://www.bilibili.com/' }>;
-};
 
 export type BilibiliMvQualityId =
   | 'auto'

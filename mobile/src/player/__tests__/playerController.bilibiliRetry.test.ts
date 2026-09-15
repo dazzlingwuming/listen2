@@ -9,7 +9,17 @@ const mockNative = {
   play: jest.fn().mockResolvedValue(undefined),
   pause: jest.fn().mockResolvedValue(undefined),
 };
-const mockBootstrap = jest.fn();
+const mockResolveMedia = jest.fn();
+const SAFE_MEDIA_URI = 'content://com.dazzlingwuming.listen2.media/lease/' + 'a'.repeat(48);
+const nativeMediaFixture = (value: unknown) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const result = { ...(value as Record<string, unknown>) };
+  const playableUri =
+    typeof result.playableUri === 'string' ? result.playableUri : SAFE_MEDIA_URI;
+  delete result.url;
+  delete result.headers;
+  return { ...result, playableUri };
+};
 jest.mock('react-native', () => ({
   Platform: { OS: 'ios', Version: 0 },
   PermissionsAndroid: {
@@ -43,7 +53,7 @@ jest.mock('react-native-track-player', () => ({
 }));
 jest.mock('../../api/client', () => ({
   providerClient: {
-    bootstrapTrack: (...args: unknown[]) => mockBootstrap(...args),
+    resolveMedia: (...args: unknown[]) => Promise.resolve(mockResolveMedia(...args)).then(nativeMediaFixture),
   },
 }));
 jest.mock('../../offline/offlineAudio', () => ({
@@ -70,10 +80,9 @@ describe('Bilibili bounded native retry', () => {
     );
     state = reducer(undefined, { type: 'init' });
     configurePlayerController({ dispatch, getPlayerState: () => state });
-    const deadline = Math.floor(Date.now() / 1000) + 60;
-    mockBootstrap.mockResolvedValue({
-      url: `https://upos-sz-mirrorcos.bilivideo.com/audio.m4s?deadline=${deadline}`,
-      headers: { Referer: 'https://www.bilibili.com/' },
+    mockResolveMedia.mockResolvedValue({
+      url: SAFE_MEDIA_URI,
+      headers: { Referer: SAFE_MEDIA_URI },
     });
   });
   it('re-resolves a transient Bilibili item once without adding a video item', async () => {
@@ -88,7 +97,7 @@ describe('Bilibili bounded native retry', () => {
         artist: '作者',
       }),
     ).resolves.toBe(true);
-    expect(mockBootstrap).toHaveBeenCalledTimes(2);
+    expect(mockResolveMedia).toHaveBeenCalledTimes(2);
     expect(mockNative.add).toHaveBeenCalledTimes(2);
     expect(JSON.stringify(mockNative.add.mock.calls)).not.toContain(
       'video/mp4',

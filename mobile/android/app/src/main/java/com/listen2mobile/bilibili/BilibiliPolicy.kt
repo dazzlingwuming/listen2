@@ -22,6 +22,9 @@ internal object BilibiliPolicy {
     data class SemanticTrack(val bvid: String, val cid: Long, val page: Long)
     data class AudioHandoff(val bvid: String, val cid: Long, val page: Long, val url: String, val deadline: Long)
     data class MediaCandidate(val id: Long, val url: String, val mimeType: String, val codecs: String, val hasAlternateUrl: Boolean)
+    /** Public identifiers are semantic; URL/candidate material stays in the gateway. */
+    data class AuthorizedPart(val cid: Long, val page: Long)
+    data class AuthorizedRendition(val id: String, val label: String, val mimeType: String, val codec: String)
 
     private val bvid = Regex("BV[0-9A-Za-z]{6,32}")
     private val positive = Regex("[1-9][0-9]{0,17}")
@@ -105,6 +108,18 @@ internal object BilibiliPolicy {
         }
         return candidates.sortedByDescending { it.id }.first()
     }
+
+    fun authorizePart(parts: List<AuthorizedPart>, cid: Long, page: Long): AuthorizedPart? =
+        parts.takeIf { it.size in 1..50 && it.map { part -> part.cid }.distinct().size == it.size }
+            ?.singleOrNull { it.cid == cid && it.page == page && cid > 0L && page > 0L }
+
+    /** Never infer membership from a caller's quality label. The provider's response owns it. */
+    fun authorizeRendition(renditions: List<AuthorizedRendition>, requestedId: String?): AuthorizedRendition? =
+        renditions.takeIf { it.size in 1..4 && it.map { rendition -> rendition.id }.distinct().size == it.size }
+            ?.singleOrNull { rendition ->
+                rendition.id == requestedId && rendition.id.matches(Regex("[A-Za-z0-9_.-]{1,80}")) &&
+                    safeText(rendition.label, 80) != null && rendition.mimeType == "audio/mp4" && rendition.codec.startsWith("mp4a.")
+            }
 
     fun safeText(value: String?, limit: Int = MAX_TEXT): String? {
         val trimmed = value?.trim() ?: return null

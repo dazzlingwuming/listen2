@@ -6,7 +6,11 @@ import TrackPlayer, {
 import { NativeModules, PermissionsAndroid, Platform } from 'react-native';
 import { providerClient } from '../api/client';
 import { ProviderClientError } from '../api/errors';
-import { isLocalTrack, type PlayableTrack } from '../types/music';
+import {
+  isLocalTrack,
+  type MediaDescriptor,
+  type PlayableTrack,
+} from '../types/music';
 import { history } from '../history/history';
 import {
   isOfflineDownloadEligible,
@@ -45,6 +49,26 @@ type NativeCallbackIdentity = {
   generation?: number;
   nativeTrackIndex?: number;
 };
+
+/**
+ * The player accepts only app-owned content URIs.  Native descriptors carry
+ * this value as `playableUri`; the RNTP `url` field is populated only at the
+ * final native-player boundary below.
+ */
+type NativePlayableMedia = Readonly<{
+  playableUri: string;
+  durationMs?: number;
+  mimeType?: string;
+}>;
+
+const APP_MEDIA_AUTHORITY = 'com.dazzlingwuming.listen2';
+const OWNED_PLAYBACK_URI = new RegExp(
+  `^content://(?:${APP_MEDIA_AUTHORITY}\\.media/lease/[a-f0-9]{48}|${APP_MEDIA_AUTHORITY}\\.offline-cache/[a-f0-9]{64}|${APP_MEDIA_AUTHORITY}\\.local-media/play/[A-Za-z0-9_-]{32,128})$`,
+);
+
+function safeOwnedPlaybackUri(value: unknown): value is string {
+  return typeof value === 'string' && OWNED_PLAYBACK_URI.test(value);
+}
 
 function assertNativeOperationCurrent(context?: NativeOperationContext) {
   if (context && (!context.isCurrent() || !context.isTargetAvailable()))
@@ -87,6 +111,9 @@ const SAFE_TYPED_PLAYER_ERRORS = new Set([
   'DRM_RESTRICTED',
   'REQUEST_TIMEOUT',
   'INVALID_RESPONSE',
+  'DOWNLOAD_FIRST',
+  'API_LEVEL_UNSUPPORTED',
+  'EXPIRED',
   'VIDEO_UNAVAILABLE',
   'UNSUPPORTED_VIDEO_CODEC',
   'local-media-unavailable',
@@ -136,7 +163,10 @@ function shuffledIndexes(length: number): number[] {
   return indexes;
 }
 
-async function resolveTrackUrl(track: PlayableTrack, signal?: AbortSignal) {
+async function resolveTrackMedia(
+  track: PlayableTrack,
+  signal?: AbortSignal,
+): Promise<NativePlayableMedia> {
   if (isLocalTrack(track)) {
     if (signal?.aborted) throw Object.assign(new Error('cancelled'), { code: 'CANCELLED' });
     const playbackRequestId = `local_play_${Date.now().toString(36)}`;
@@ -146,33 +176,37 @@ async function resolveTrackUrl(track: PlayableTrack, signal?: AbortSignal) {
     if (signal?.aborted || !value || typeof value !== 'object' || Array.isArray(value)) throw Object.assign(new Error('local-unavailable'), { code: signal?.aborted ? 'CANCELLED' : 'local-media-unavailable' });
     const receipt = value as Record<string, unknown>;
     const privateUri = receipt.privatePlaybackUri;
-    if (Object.keys(receipt).length !== 5 || Object.keys(receipt).some(key => !['recordId', 'playbackRequestId', 'status', 'privatePlaybackUri', 'seekable'].includes(key)) || receipt.recordId !== track.id || receipt.playbackRequestId !== playbackRequestId || receipt.status !== 'success' || typeof privateUri !== 'string' || !/^content:\/\/[A-Za-z0-9._-]+\.local-media\/play\/[A-Za-z0-9_-]{32,128}$/.test(privateUri) || typeof receipt.seekable !== 'boolean') throw Object.assign(new Error('local-unavailable'), { code: 'local-media-unavailable' });
-    return { url: privateUri };
+    if (Object.keys(receipt).length !== 5 || Object.keys(receipt).some(key => !['recordId', 'playbackRequestId', 'status', 'privatePlaybackUri', 'seekable'].includes(key)) || receipt.recordId !== track.id || receipt.playbackRequestId !== playbackRequestId || receipt.status !== 'success' || typeof privateUri !== 'string' || !new RegExp(`^content://${APP_MEDIA_AUTHORITY}\\.local-media/play/[A-Za-z0-9_-]{32,128}$`).test(privateUri) || typeof receipt.seekable !== 'boolean') throw Object.assign(new Error('local-unavailable'), { code: 'local-media-unavailable' });
+    return { playableUri: privateUri, durationMs: track.durationMs };
   }
   if (isOfflineDownloadEligible(track)) {
     const cached = await offlineAudio.resolveVerified(track.source, track.id);
-    if (cached.status === 'hit') return { url: cached.uri };
+    if (cached.status === 'hit' && safeOwnedPlaybackUri(cached.uri))
+      return {
+        playableUri: cached.uri,
+        durationMs: track.durationMs,
+        mimeType: cached.mimeType,
+      };
   }
-  let candidate: Awaited<ReturnType<typeof providerClient.bootstrapTrack>>;
+  let candidate: MediaDescriptor;
   try {
-    candidate = await bootstrapWithSignal(track, signal);
+    candidate = await resolveMediaWithSignal(track, signal);
   } catch (error) {
     // Bilibili media URLs are intentionally transient. A single fresh native
     // resolution is allowed for transport failure; entitlement/DRM/cancel
     // failures are terminal and never alter the RNTP queue.
     if (!isRetryableBilibiliResolution(track, error)) throw error;
-    candidate = await bootstrapWithSignal(track, signal);
+    candidate = await resolveMediaWithSignal(track, signal);
   }
-  const { url } = candidate;
-  if (!url || typeof url !== 'string') throw new Error('provider-unavailable');
-  if (track.source === 'bilibili' && !isExactBilibiliMedia(track.id, candidate))
-    throw new Error('provider-unavailable');
   return candidate;
 }
 
-async function bootstrapWithSignal(track: PlayableTrack, signal?: AbortSignal) {
+async function resolveMediaWithSignal(
+  track: PlayableTrack,
+  signal?: AbortSignal,
+) {
   const remote = track as Exclude<PlayableTrack, { source: 'local' }>;
-  if (!signal) return providerClient.bootstrapTrack(remote);
+  if (!signal) return providerClient.resolveMedia(remote);
   if (signal.aborted) throw new ProviderClientError('CANCELLED', remote.source, 'bootstrap');
   let rejectAbort: ((reason: unknown) => void) | undefined;
   const aborted = new Promise<never>((_resolve, reject) => {
@@ -183,7 +217,7 @@ async function bootstrapWithSignal(track: PlayableTrack, signal?: AbortSignal) {
   signal.addEventListener('abort', abort, { once: true });
   try {
     return await Promise.race([
-      providerClient.bootstrapTrack(remote, signal),
+      providerClient.resolveMedia(remote, signal),
       aborted,
     ]);
   } finally {
@@ -197,43 +231,16 @@ function isRetryableBilibiliResolution(track: PlayableTrack, error: unknown) {
     error && typeof error === 'object' && 'code' in error
       ? (error as { code?: unknown }).code
       : undefined;
-  // Native player expiry callbacks have no provider code, and a native
-  // NETWORK_ERROR can use one fresh signed handoff. Every typed provider
-  // result, including REQUEST_TIMEOUT, is already a stable user-facing
-  // outcome and must reach the reducer unchanged.
-  return code === undefined || code === 'NETWORK_ERROR';
-}
-
-function isExactBilibiliMedia(
-  id: string,
-  candidate: { url: string; headers?: Readonly<Record<string, string>> },
-): boolean {
-  if (!/^bitrack_v_BV[0-9A-Za-z]{6,32}-[1-9][0-9]{0,17}$/.test(id))
-    return false;
-  if (
-    !candidate.headers ||
-    Object.keys(candidate.headers).length !== 1 ||
-    candidate.headers.Referer !== 'https://www.bilibili.com/'
-  )
-    return false;
-  try {
-    const url = new URL(candidate.url);
-    return (
-      url.protocol === 'https:' &&
-      (url.hostname === 'bilivideo.com' ||
-        url.hostname.endsWith('.bilivideo.com')) &&
-      url.username === '' &&
-      url.password === '' &&
-      url.hash === ''
-    );
-  } catch {
-    return false;
-  }
+  // Native player expiry callbacks have no provider code. A fresh native
+  // resolution is also allowed for a typed lease-expiry/network outcome.
+  return (
+    code === undefined || code === 'NETWORK_ERROR' || code === 'EXPIRED'
+  );
 }
 
 function asNativeTrack(
   track: PlayableTrack,
-  media: { url: string; headers?: Readonly<Record<string, string>> },
+  media: NativePlayableMedia,
 ) {
   return {
     ...track,
@@ -242,8 +249,12 @@ function asNativeTrack(
     id: `listen2:${trackId(track)}:${Date.now()}:${Math.random()
       .toString(36)
       .slice(2)}`,
-    url: media.url,
-    headers: media.headers,
+    // `url` is an RNTP naming requirement; its value is still the validated,
+    // app-owned content URI from the descriptor/lease boundary.
+    url: media.playableUri,
+    ...(media.durationMs === undefined
+      ? {}
+      : { duration: media.durationMs / 1000 }),
     title: trackText(track, ['title', 'name']) || '未知歌曲',
     artist: trackText(track, ['artist', 'artists']) || '未知艺人',
     album: trackText(track, ['album']),
@@ -253,50 +264,31 @@ function asNativeTrack(
 
 type NativeRollbackSnapshot = {
   track: PlayableTrack;
-  media: { url: string; headers?: Readonly<Record<string, string>> };
+  media: NativePlayableMedia;
   position: number;
   repeatMode: RepeatMode;
   volume: number;
   playing: boolean;
 };
 
-function hasControlCharacter(value: string): boolean {
-  return Array.from(value).some(character => character.charCodeAt(0) <= 0x1f);
-}
-
-function boundedNativeMedia(value: unknown): {
-  url: string;
-  headers?: Readonly<Record<string, string>>;
-} | null {
+function boundedNativeMedia(value: unknown): NativePlayableMedia | null {
   if (!value || typeof value !== 'object') return null;
-  const candidate = value as { url?: unknown; headers?: unknown };
-  if (
-    typeof candidate.url !== 'string' ||
-    !candidate.url ||
-    candidate.url.length > 4096 ||
-    hasControlCharacter(candidate.url)
-  ) {
-    return null;
-  }
-  if (candidate.headers === undefined) return { url: candidate.url };
-  if (!candidate.headers || typeof candidate.headers !== 'object') return null;
-  const entries = Object.entries(candidate.headers as Record<string, unknown>);
-  if (entries.length > 8) return null;
-  const headers: Record<string, string> = {};
-  for (const [key, headerValue] of entries) {
-    if (
-      !key ||
-      key.length > 64 ||
-      hasControlCharacter(key) ||
-      typeof headerValue !== 'string' ||
-      headerValue.length > 1024 ||
-      hasControlCharacter(headerValue)
-    ) {
-      return null;
-    }
-    headers[key] = headerValue;
-  }
-  return { url: candidate.url, headers };
+  const candidate = value as { url?: unknown; duration?: unknown };
+  if (!safeOwnedPlaybackUri(candidate.url)) return null;
+  const durationMs =
+    candidate.duration === undefined
+      ? undefined
+      : typeof candidate.duration === 'number' &&
+        Number.isFinite(candidate.duration) &&
+        candidate.duration > 0 &&
+        candidate.duration <= 86_400
+      ? Math.round(candidate.duration * 1000)
+      : null;
+  if (durationMs === null) return null;
+  return {
+    playableUri: candidate.url,
+    ...(durationMs === undefined ? {} : { durationMs }),
+  };
 }
 
 async function captureRollbackSnapshot(
@@ -349,7 +341,7 @@ async function restoreRollbackSnapshot(
 
 async function replaceNativeTrack(
   track: PlayableTrack,
-  media: { url: string; headers?: Readonly<Record<string, string>> },
+  media: NativePlayableMedia,
   state: PlayerState,
   context?: NativeOperationContext,
 ) {
@@ -439,14 +431,15 @@ async function loadAndPlay(
   dispatch: Dispatch | undefined,
   track: PlayableTrack,
   position: number,
-  resolvedMedia?: { url: string; headers?: Readonly<Record<string, string>> },
+  resolvedMedia?: NativePlayableMedia,
   context?: NativeOperationContext,
 ): Promise<boolean> {
   try {
     assertNativeOperationCurrent(context);
     await ensurePlayer();
     assertNativeOperationCurrent(context);
-    const media = resolvedMedia ?? (await resolveTrackUrl(track, context?.signal));
+    const media =
+      resolvedMedia ?? (await resolveTrackMedia(track, context?.signal));
     assertNativeOperationCurrent(context);
     const state = playerState();
     const nativeTrack = asNativeTrack(track, media);
@@ -469,7 +462,7 @@ async function loadAndPlay(
     if (!isNativeOperationCurrent(context)) return false;
     if (
       !isLocalTrack(track) &&
-      resolvedMedia?.url.startsWith('content://') &&
+      resolvedMedia?.playableUri.startsWith('content://') &&
       isOfflineDownloadEligible(track)
     ) {
       await offlineAudio.invalidate(track.source, track.id);
@@ -478,7 +471,7 @@ async function loadAndPlay(
           dispatch,
           track,
           position,
-          await bootstrapWithSignal(track, context?.signal),
+          await resolveMediaWithSignal(track, context?.signal),
           context,
         );
       } catch {
@@ -488,7 +481,7 @@ async function loadAndPlay(
     if (resolvedMedia && isRetryableBilibiliResolution(track, error)) {
       try {
         assertNativeOperationCurrent(context);
-        const replacement = await resolveTrackUrl(track, context?.signal);
+        const replacement = await resolveTrackMedia(track, context?.signal);
         assertNativeOperationCurrent(context);
         const nativeTrack = asNativeTrack(track, replacement);
         context?.markMutation();
@@ -520,7 +513,7 @@ async function loadAndPlay(
         error,
         isLocalTrack(track)
           ? 'local-media-unavailable'
-          : resolvedMedia?.url.startsWith('content://')
+          : resolvedMedia?.playableUri.startsWith('content://')
           ? 'offline-media-unavailable'
           : 'playback-unavailable',
       ),
@@ -560,9 +553,9 @@ async function transition(
     }
   }
   if (!isNativeOperationCurrent(context)) return false;
-  let media: { url: string; headers?: Readonly<Record<string, string>> };
+  let media: NativePlayableMedia;
   try {
-    media = await resolveTrackUrl(payload.track, context?.signal);
+    media = await resolveTrackMedia(payload.track, context?.signal);
   } catch (error) {
     if (!isNativeOperationCurrent(context)) return false;
     emit(
@@ -919,9 +912,9 @@ class PlayerController {
   ): Promise<boolean> {
     const target = tracks[startIndex];
     if (!target) return false;
-    let media: { url: string; headers?: Readonly<Record<string, string>> };
+    let media: NativePlayableMedia;
     try {
-      media = await resolveTrackUrl(target, context.signal);
+      media = await resolveTrackMedia(target, context.signal);
       assertNativeOperationCurrent(context);
     } catch (error) {
       if (!isNativeOperationCurrent(context)) return false;
@@ -1011,13 +1004,10 @@ class PlayerController {
     context: NativeOperationContext,
   ): Promise<boolean> {
     const target = tracks[0];
-    let media: {
-      url: string;
-      headers?: Readonly<Record<string, string>>;
-    } | null = null;
+    let media: NativePlayableMedia | null = null;
     if (target) {
       try {
-        media = await resolveTrackUrl(target, context.signal);
+        media = await resolveTrackMedia(target, context.signal);
         assertNativeOperationCurrent(context);
       } catch {
         if (!isNativeOperationCurrent(context)) return false;
@@ -1201,9 +1191,9 @@ class PlayerController {
       this.hasHistoryEntry(entry),
     );
     const remaining = state.history.slice(0, -1);
-    let media: { url: string; headers?: Readonly<Record<string, string>> };
+    let media: NativePlayableMedia;
     try {
-      media = await resolveTrackUrl(entry.track, context.signal);
+      media = await resolveTrackMedia(entry.track, context.signal);
       assertNativeOperationCurrent(context);
     } catch (error) {
       if (!isNativeOperationCurrent(context)) return false;

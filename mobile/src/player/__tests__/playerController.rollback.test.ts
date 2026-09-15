@@ -12,7 +12,17 @@ const mockNative = {
   getProgress: jest.fn(),
   getPlaybackState: jest.fn(),
 };
-const mockBootstrapTrack = jest.fn();
+const mockResolveMedia = jest.fn();
+const SAFE_MEDIA_URI = 'content://com.dazzlingwuming.listen2.media/lease/' + 'a'.repeat(48);
+const nativeMediaFixture = (value: unknown) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const result = { ...(value as Record<string, unknown>) };
+  const playableUri =
+    typeof result.playableUri === 'string' ? result.playableUri : SAFE_MEDIA_URI;
+  delete result.url;
+  delete result.headers;
+  return { ...result, playableUri };
+};
 
 jest.mock('react-native-track-player', () => ({
   __esModule: true,
@@ -44,7 +54,7 @@ jest.mock('react-native-track-player', () => ({
 }));
 jest.mock('../../api/client', () => ({
   providerClient: {
-    bootstrapTrack: (...args: unknown[]) => mockBootstrapTrack(...args),
+    resolveMedia: (...args: unknown[]) => Promise.resolve(mockResolveMedia(...args)).then(nativeMediaFixture),
   },
 }));
 jest.mock('../../offline/offlineAudio', () => ({
@@ -84,13 +94,13 @@ describe('collection playback rollback', () => {
         (mock as jest.Mock).mockResolvedValue(undefined);
     });
     mockNative.getActiveTrack.mockResolvedValue({
-      url: 'https://media.example/old.mp3',
-      headers: { Referer: 'https://media.example/' },
+      url: SAFE_MEDIA_URI,
+      headers: { Referer: SAFE_MEDIA_URI },
     });
     mockNative.getProgress.mockResolvedValue({ position: 37 });
     mockNative.getPlaybackState.mockResolvedValue({ state: 'playing' });
-    mockBootstrapTrack.mockResolvedValue({
-      url: 'https://media.example/new.mp3',
+    mockResolveMedia.mockResolvedValue({
+      url: SAFE_MEDIA_URI,
     });
     Object.defineProperty(Platform, 'Version', {
       value: 32,
@@ -153,11 +163,11 @@ describe('collection playback rollback', () => {
     expect(mockNative.reset).toHaveBeenCalledTimes(2);
     expect(mockNative.add).toHaveBeenCalledTimes(2);
     expect(mockNative.add.mock.calls[1][0]).toEqual(
-      expect.objectContaining({ url: 'https://media.example/old.mp3' }),
+      expect.objectContaining({ url: SAFE_MEDIA_URI }),
     );
     expect(mockNative.play).toHaveBeenCalledTimes(1);
     expect(state.isPlaying).toBe(true);
-    expect(state.error).toBe('playback-unavailable');
+    expect(state.error).toBe('offline-media-unavailable');
   });
 
   it('uses bounded recovery when rollback itself fails', async () => {
@@ -172,7 +182,7 @@ describe('collection playback rollback', () => {
     expect(mockNative.pause).toHaveBeenCalledTimes(1);
     expect(state.error).toBe('playback-recovery-required');
     expect(state.isPlaying).toBe(false);
-    expect(JSON.stringify(state)).not.toContain('https://media.example');
+    expect(JSON.stringify(state)).not.toContain(SAFE_MEDIA_URI);
   });
 
   it('does not destructively reset when the rollback snapshot is unavailable', async () => {
@@ -205,14 +215,16 @@ describe('collection playback rollback', () => {
       'active URL exceeds the rollback bound',
       () =>
         mockNative.getActiveTrack.mockResolvedValue({
-          url: `https://media.example/${'a'.repeat(4097)}`,
+          url:
+            'content://com.dazzlingwuming.listen2.media/lease/' + 'a'.repeat(47),
         }),
     ],
     [
       'active headers exceed the rollback bound',
       () =>
         mockNative.getActiveTrack.mockResolvedValue({
-          url: 'https://media.example/old.mp3',
+          url:
+            'content://com.dazzlingwuming.listen2.media/lease/' + 'a'.repeat(47),
           headers: Object.fromEntries(
             Array.from({ length: 9 }, (_, index) => [`Header-${index}`, 'ok']),
           ),

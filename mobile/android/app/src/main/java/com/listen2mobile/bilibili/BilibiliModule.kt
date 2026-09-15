@@ -12,6 +12,12 @@ import com.facebook.react.bridge.WritableMap
 import com.facebook.react.module.annotations.ReactModule
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.listen2mobile.MainActivity
+import com.listen2mobile.media.BridgeMediaPart
+import com.listen2mobile.media.MediaIdentity
+import com.listen2mobile.media.MediaLeaseRegistry
+import com.listen2mobile.media.MediaRendition
+import com.listen2mobile.media.NativeTransport
+import com.listen2mobile.media.toWritableMap
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 
@@ -23,13 +29,28 @@ internal class BilibiliModule(
     private val session: BilibiliSession,
     private val mvController: BilibiliMvController,
     private val mvViewManager: BilibiliMvViewManager,
+    private val mediaLeases: MediaLeaseRegistry,
 ) : ReactContextBaseJavaModule(context), LifecycleEventListener {
-    companion object { const val NAME = "Listen2Bilibili" }
+    companion object {
+        const val NAME = "Listen2Bilibili"
+        const val VERSION = 1
+        const val MEDIA_AUTHORITY = "com.dazzlingwuming.listen2.media"
+        val APPROVED_HOSTS = listOf("bilivideo.com")
+    }
     private val worker = Executors.newSingleThreadExecutor()
     @Volatile private var invalidated = false
+    private var accountGeneration = 0L
+    private var authenticated = false
 
     init { context.addLifecycleEventListener(this) }
     override fun getName() = NAME
+    override fun getConstants(): MutableMap<String, Any> = mutableMapOf(
+        "provider" to "bilibili",
+        "version" to VERSION,
+        "policyReady" to true,
+        "mediaAuthority" to MEDIA_AUTHORITY,
+        "approvedHosts" to APPROVED_HOSTS,
+    )
 
     @ReactMethod fun status(promise: Promise) = complete(promise) { state(session.restore()) }
     @ReactMethod fun qrBegin(promise: Promise) {
@@ -50,23 +71,46 @@ internal class BilibiliModule(
     }
     @ReactMethod fun logout(promise: Promise) {
         session.cancelActiveRequest()
+        revokeAccountAuthority()
         complete(promise) { state(session.logout()) }
     }
     @ReactMethod fun videoDetail(request: ReadableMap, promise: Promise) = complete(promise) {
         requireKeys(request, setOf("bvid")); detail(gateway.videoDetail(requireBvid(request, "bvid")))
     }
     @ReactMethod fun resolveAudio(request: ReadableMap, promise: Promise) = complete(promise) {
-        requireKeys(request, setOf("bvid", "cid"))
+        requireKeys(request, setOf("version", "requestId", "bvid", "cid"))
+        require(request.getType("version") == ReadableType.Number && request.getDouble("version") == VERSION.toDouble())
+        synchronizeAccountAuthority(session.snapshot())
+        val requestId = requireText(request, "requestId", 96)
         val bvid = requireBvid(request, "bvid")
         val cid = requirePositive(request, "cid")
-        val part = gateway.videoDetail(bvid).parts.singleOrNull { it.cid == cid }
+        val detail = gateway.videoDetail(bvid)
+        val part = detail.parts.singleOrNull { it.cid == cid }
             ?: throw BilibiliHttpsGateway.ProviderException(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
         val handoff = gateway.resolveAudio(BilibiliPolicy.SemanticTrack(bvid, cid, part.page))
         if (!BilibiliPolicy.isSafeAudioHandoff(handoff.url, mapOf("Referer" to BilibiliPolicy.FIXED_REFERER), handoff.deadline, System.currentTimeMillis())) throw BilibiliHttpsGateway.ProviderException(BilibiliPolicy.ErrorCode.INVALID_RESPONSE)
-        Arguments.createMap().apply {
-            putString("bvid", handoff.bvid); putString("cid", handoff.cid.toString()); putString("page", handoff.page.toString())
-            putString("url", handoff.url); putDouble("deadline", handoff.deadline.toDouble())
-            putMap("headers", Arguments.createMap().apply { putString("Referer", BilibiliPolicy.FIXED_REFERER) })
+        val descriptor = mediaLeases.register(
+            requestId,
+            MediaIdentity("bilibili", "bitrack_v_${handoff.bvid}-${handoff.cid}", handoff.cid.toString(), accountGeneration),
+            MediaRendition("audio", "authorized", "audio/mp4", "mp4", "mp4a.40.2", part.durationMs ?: 1L, null),
+            NativeTransport(handoff.url, mapOf("Referer" to BilibiliPolicy.FIXED_REFERER)),
+            accountGeneration,
+        )
+        descriptor.toWritableMap(
+            detail.parts.map {
+                BridgeMediaPart(it.cid.toString(), it.page.toString(), it.title, it.durationMs)
+            },
+        )
+    }
+
+    @ReactMethod fun cancelAudio(request: ReadableMap, promise: Promise) {
+        try {
+            requireKeys(request, setOf("version", "requestId"))
+            require(request.getType("version") == ReadableType.Number && request.getDouble("version") == VERSION.toDouble())
+            mediaLeases.cancel(requireText(request, "requestId", 96))
+            promise.resolve(Arguments.createMap().apply { putBoolean("ok", true) })
+        } catch (_: Exception) {
+            promise.resolve(error(BilibiliPolicy.ErrorCode.INVALID_REQUEST))
         }
     }
 
@@ -74,7 +118,7 @@ internal class BilibiliModule(
         requireKeys(request, setOf("bvid", "cid", "qualityId", "preferredCodecs", "forceRefresh"))
         (reactApplicationContext.currentActivity as? MainActivity)?.apply { bindMvController(mvController); discardPendingMvSnapshot() }
         mvViewManager.releaseHandle(mvController.currentHandle())
-        mvState(mvController.open(requireMvRequest(request)))
+        mvState(mvController.open(requireMvRequest(request, accountGeneration)))
     }
     @ReactMethod fun mvRestore(request: ReadableMap, promise: Promise) = complete(promise) {
         requireKeys(request, setOf("bvid", "cid"))
@@ -186,6 +230,7 @@ internal class BilibiliModule(
     }
 
     private fun state(value: BilibiliSession.PublicState): WritableMap = Arguments.createMap().apply {
+        synchronizeAccountAuthority(value)
         putString("status", value.status.name.lowercase()); putString("attemptId", value.attemptId); putDouble("expiresAt", value.expiresAt.toDouble())
         putString("qrPngDataUri", value.qrPngDataUri); value.displayName?.let { putString("displayName", it) }; value.avatarUrl?.let { putString("avatarUrl", it) }
         putBoolean("retryable", value.retryable); putString("nextAction", value.nextAction); value.errorCode?.let { putString("errorCode", it.name) }
@@ -227,7 +272,7 @@ internal class BilibiliModule(
     private fun requirePositiveOrZero(map: ReadableMap, key: String): Long { if (!map.hasKey(key) || map.getType(key) != ReadableType.Number) throw IllegalArgumentException(); return map.getDouble(key).toLong().takeIf { it >= 0L && it <= 24L * 60L * 60L * 1000L } ?: throw IllegalArgumentException() }
     private fun requireHandle(map: ReadableMap): String = requireText(map, "handle", 96).takeIf(BilibiliMvPolicy::isOpaqueHandle) ?: throw IllegalArgumentException()
     private fun requireQuality(map: ReadableMap, key: String): String = requireText(map, key, 8)
-    private fun requireMvRequest(map: ReadableMap): BilibiliMvPolicy.MvRequest {
+    private fun requireMvRequest(map: ReadableMap, generation: Long): BilibiliMvPolicy.MvRequest {
         val codecs = if (!map.hasKey("preferredCodecs") || map.isNull("preferredCodecs")) emptyList() else {
             if (map.getType("preferredCodecs") != ReadableType.Array) throw IllegalArgumentException()
             val values = map.getArray("preferredCodecs") ?: throw IllegalArgumentException()
@@ -238,6 +283,19 @@ internal class BilibiliModule(
             if (map.getType("forceRefresh") != ReadableType.Boolean) throw IllegalArgumentException(); map.getBoolean("forceRefresh")
         }
         val quality = if (!map.hasKey("qualityId") || map.isNull("qualityId")) "auto" else requireQuality(map, "qualityId")
-        return BilibiliMvPolicy.request(requireBvid(map, "bvid"), requirePositive(map, "cid"), quality, codecs, forceRefresh) ?: throw IllegalArgumentException()
+        return BilibiliMvPolicy.request(requireBvid(map, "bvid"), requirePositive(map, "cid"), quality, codecs, forceRefresh, generation) ?: throw IllegalArgumentException()
+    }
+
+    private fun synchronizeAccountAuthority(value: BilibiliSession.PublicState) {
+        val nextAuthenticated = value.status == BilibiliSession.PublicStatus.AUTHENTICATED
+        if (nextAuthenticated != authenticated) {
+            authenticated = nextAuthenticated
+            revokeAccountAuthority()
+        }
+    }
+    private fun revokeAccountAuthority() {
+        accountGeneration += 1L
+        mediaLeases.invalidateAccount(accountGeneration)
+        mvController.setAccountGeneration(accountGeneration)
     }
 }

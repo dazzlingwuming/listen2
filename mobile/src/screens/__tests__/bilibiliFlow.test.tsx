@@ -12,7 +12,17 @@ const mockNavigate = jest.fn();
 const mockDetail = jest.fn();
 const mockDispatch = jest.fn();
 const mockSearch = jest.fn();
-const mockBootstrapTrack = jest.fn();
+const mockResolveMedia = jest.fn();
+const SAFE_MEDIA_URI = 'content://com.dazzlingwuming.listen2.media/lease/' + 'a'.repeat(48);
+const nativeMediaFixture = (value: unknown) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const result = { ...(value as Record<string, unknown>) };
+  const playableUri =
+    typeof result.playableUri === 'string' ? result.playableUri : SAFE_MEDIA_URI;
+  delete result.url;
+  delete result.headers;
+  return { ...result, playableUri };
+};
 const mockResolveVerified = jest.fn();
 const mockNativePlayer = {
   setupPlayer: jest.fn(),
@@ -80,7 +90,7 @@ jest.mock('../../api/client', () => ({
   },
   providerClient: {
     search: (...args: unknown[]) => mockSearch(...args),
-    bootstrapTrack: (...args: unknown[]) => mockBootstrapTrack(...args),
+    resolveMedia: (...args: unknown[]) => Promise.resolve(mockResolveMedia(...args)).then(nativeMediaFixture),
   },
 }));
 jest.mock('../../offline/offlineAudio', () => ({
@@ -127,7 +137,7 @@ describe('Bilibili exact part flow', () => {
     mockNativePlayer.play.mockResolvedValue(undefined);
     mockNativePlayer.pause.mockResolvedValue(undefined);
     mockResolveVerified.mockResolvedValue({ status: 'miss' });
-    mockBootstrapTrack.mockReset();
+    mockResolveMedia.mockReset();
     mockDispatch.mockImplementation((action: unknown) =>
       integrationDispatch(action),
     );
@@ -172,11 +182,11 @@ describe('Bilibili exact part flow', () => {
         { cid: '13', page: '2', title: '第二段' },
       ],
     });
-    mockBootstrapTrack.mockResolvedValueOnce({
+    mockResolveMedia.mockResolvedValueOnce({
       trackId: 'bitrack_v_BV1xx411c7mD-13',
       source: 'bilibili',
-      url: 'https://upos-sz-mirror.example.bilivideo.com/audio.m4s',
-      headers: { Referer: 'https://www.bilibili.com/' },
+      url: SAFE_MEDIA_URI,
+      headers: { Referer: SAFE_MEDIA_URI },
     });
     let tree!: renderer.ReactTestRenderer;
     await act(async () => {
@@ -188,7 +198,7 @@ describe('Bilibili exact part flow', () => {
         .props.onPress();
     });
     expect(mockDispatch).toHaveBeenCalledWith(expect.any(Function));
-    expect(mockBootstrapTrack).toHaveBeenCalledWith(
+    expect(mockResolveMedia).toHaveBeenCalledWith(
       expect.objectContaining({
         id: 'bitrack_v_BV1xx411c7mD-13',
         source: 'bilibili',
@@ -197,10 +207,9 @@ describe('Bilibili exact part flow', () => {
     );
     expect(mockNativePlayer.add).toHaveBeenCalledWith(
       expect.objectContaining({
-        url: 'https://upos-sz-mirror.example.bilivideo.com/audio.m4s',
+        url: SAFE_MEDIA_URI,
         title: '视频 · 第二段',
         artist: '作者',
-        headers: { Referer: 'https://www.bilibili.com/' },
       }),
     );
     expect(mockNativePlayer.play).toHaveBeenCalledTimes(1);
@@ -220,7 +229,7 @@ describe('Bilibili exact part flow', () => {
         { cid: '13', page: '2', title: '第二段' },
       ],
     });
-    mockBootstrapTrack
+    mockResolveMedia
       .mockImplementationOnce(
         (_track: unknown, signal?: AbortSignal) =>
           new Promise<never>((_resolve, reject) => {
@@ -234,8 +243,8 @@ describe('Bilibili exact part flow', () => {
       .mockResolvedValueOnce({
         trackId: 'bitrack_v_BV1xx411c7mD-13',
         source: 'bilibili',
-        url: 'https://upos-sz-mirror.example.bilivideo.com/part-13.m4s',
-        headers: { Referer: 'https://www.bilibili.com/' },
+        url: SAFE_MEDIA_URI,
+        headers: { Referer: SAFE_MEDIA_URI },
       });
     let tree!: renderer.ReactTestRenderer;
     await act(async () => {
@@ -247,11 +256,11 @@ describe('Bilibili exact part flow', () => {
       .props.onPress();
     for (
       let turn = 0;
-      turn < 10 && mockBootstrapTrack.mock.calls.length === 0;
+      turn < 10 && mockResolveMedia.mock.calls.length === 0;
       turn += 1
     )
       await Promise.resolve();
-    const firstSignal = mockBootstrapTrack.mock.calls[0][1] as AbortSignal;
+    const firstSignal = mockResolveMedia.mock.calls[0][1] as AbortSignal;
     const second = tree.root
       .findByProps({ accessibilityLabel: '播放第二段' })
       .props.onPress();
@@ -282,7 +291,7 @@ describe('Bilibili exact part flow', () => {
         { cid: '13', page: '2', title: '第二段' },
       ],
     });
-    mockBootstrapTrack.mockRejectedValueOnce({ code: 'LOGIN_REQUIRED' });
+    mockResolveMedia.mockRejectedValueOnce({ code: 'LOGIN_REQUIRED' });
     let tree!: renderer.ReactTestRenderer;
     await act(async () => {
       tree = renderer.create(<BilibiliDetailScreen />);
@@ -292,7 +301,7 @@ describe('Bilibili exact part flow', () => {
         .findByProps({ accessibilityLabel: '播放第二段' })
         .props.onPress();
     });
-    expect(mockBootstrapTrack).toHaveBeenCalledWith(
+    expect(mockResolveMedia).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'bitrack_v_BV1xx411c7mD-13' }),
       expect.any(AbortSignal),
     );
@@ -343,6 +352,6 @@ describe('Bilibili exact part flow', () => {
         kind: 'track',
       }),
     });
-    expect(mockBootstrapTrack).not.toHaveBeenCalled();
+    expect(mockResolveMedia).not.toHaveBeenCalled();
   });
 });

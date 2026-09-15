@@ -52,7 +52,6 @@ class QqPlaybackContractTest {
         assertEquals(REQUEST_ID, descriptor.requestId)
         assertEquals(TRACK_ID, descriptor.trackId)
         assertEquals("qq", descriptor.source)
-        assertEquals("https://isure.stream.qqmusic.qq.com/fixture.mp3?sig=opaque", descriptor.url)
         assertEquals("audio/mpeg", descriptor.mimeType)
         assertEquals(4096L, descriptor.sizeBytes)
         assertEquals(NOW + 60_000L, descriptor.expiresAt)

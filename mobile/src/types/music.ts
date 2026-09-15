@@ -1,6 +1,9 @@
 // Stable screen-facing import path. Keep the domain model transport-free.
 export type {
-  BootstrapTrack,
+  MediaDescriptor,
+  MediaEntitlementStatus,
+  MediaPart,
+  MediaRendition,
   Lyric,
   PlaylistDetail,
   PlaylistSummary,

@@ -18,6 +18,9 @@
       <provider android:name=".local.LocalMediaProvider"
         android:authorities="${applicationId}.local-media"
         android:exported="false" android:grantUriPermissions="false" />
+      <provider android:name=".media.MediaStreamProvider"
+        android:authorities="${applicationId}.media"
+        android:exported="false" android:grantUriPermissions="false" />
       <activity
         android:name=".deepseek.DeepSeekKeyActivity"
         android:exported="false"

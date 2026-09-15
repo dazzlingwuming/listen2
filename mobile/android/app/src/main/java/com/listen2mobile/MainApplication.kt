@@ -14,6 +14,8 @@ import com.listen2mobile.kuwo.KuwoPlaybackPackage
 import com.listen2mobile.library.LibraryPackage
 import com.listen2mobile.local.LocalAudioPackage
 import com.listen2mobile.history.HistoryPackage
+import com.listen2mobile.netease.NeteasePlaybackPackage
+import com.listen2mobile.kugou.KugouPlaybackPackage
 
 class MainApplication : Application(), ReactApplication {
 
@@ -27,6 +29,8 @@ class MainApplication : Application(), ReactApplication {
           add(DeepSeekPackage())
           add(QqPlaybackPackage())
           add(KuwoPlaybackPackage())
+          add(NeteasePlaybackPackage())
+          add(KugouPlaybackPackage())
           add(LibraryPackage())
           add(LocalAudioPackage())
           add(HistoryPackage())
