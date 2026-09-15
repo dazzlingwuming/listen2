@@ -306,22 +306,22 @@ The implementation must mirror the existing module style: reject unknown request
 | A4 | Local completion date/year should be captured at ledger commit to make recap grouping stable after travel/time-zone changes. | History | Product must choose its preferred time-zone semantics. |
 | A5 | Two-start readback before legacy key deletion is an adequate migration rollback threshold. | Migration | Recovery window may need a longer retention policy. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Time-zone definition for annual recap**
    - What we know: HIST-002 requires midnight/year consistency. [VERIFIED: `.planning/REQUIREMENTS.md:88-90`]
    - What's unclear: whether a play belongs to the device time zone at completion or the user's current time zone when viewing a recap.
-   - Recommendation: lock "completion-time local date/year" before coding; A4 is the recommended default.
+   - RESOLVED: `06-CONTEXT.md` locks the conservative default: capture the device-local completion date/year once at valid-listen commit and persist it; later time-zone changes never regroup committed records.
 
 2. **Existing user-data migration retention**
    - What we know: player/library currently persist in two AsyncStorage keys. [VERIFIED: `mobile/src/store/index.ts:21-38`]
    - What's unclear: acceptable duration and UI for retaining the rollback source after successful Room migration.
-   - Recommendation: keep until one verified subsequent startup and expose recovery diagnostics without values; require product confirmation if a longer retention window is needed.
+   - RESOLVED: `06-CONTEXT.md` locks retention through one later verified Room readback; the implementation only marks cleanup eligibility and does not delete the legacy source in this phase.
 
 3. **Account matrix ownership**
    - What we know: Bilibili has an actual native state machine, while provider operation capabilities distinguish unavailable/unverified. [VERIFIED: `mobile/src/bilibili/client.ts:15-24`, `mobile/src/types/provider.ts:31-41`]
    - What's unclear: which non-Bilibili providers will receive controlled login fixtures in this phase.
-   - Recommendation: render every provider honestly now, and add no login control without an approved native fixture/route.
+   - RESOLVED: `06-CONTEXT.md` locks the seven-provider matrix with a login CTA only for the existing Bilibili QR route; every other provider is a truthful unavailable/unverified terminal state.
 
 ## Environment Availability
 
