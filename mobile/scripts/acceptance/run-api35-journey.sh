@@ -8,6 +8,12 @@ instrumentation_result_ok() {
   grep -Eq '^INSTRUMENTATION_CODE: (-1|0)[[:space:]]*$' "$output"
 }
 
+js_ready_phone_shell() {
+  local xml="$1"
+  [[ "$xml" == *"我的"* && "$xml" == *"设置"* ]] || return 1
+  [[ "$xml" == *"搜索歌曲、歌手或歌单"* || "$xml" == *"搜索音乐"* ]]
+}
+
 if [[ "${1:-}" == "--self-test" ]]; then
   self_test_dir="$(mktemp -d "${TMPDIR:-/tmp}/listen2-instrumentation-result.XXXXXX")"
   trap 'rm -rf "$self_test_dir"' EXIT
@@ -17,6 +23,8 @@ if [[ "${1:-}" == "--self-test" ]]; then
   instrumentation_result_ok "$self_test_dir/success.txt" || { echo 'instrumentation success fixture rejected' >&2; exit 1; }
   ! instrumentation_result_ok "$self_test_dir/assertion.txt" || { echo 'AssertionError fixture accepted' >&2; exit 1; }
   ! instrumentation_result_ok "$self_test_dir/failed.txt" || { echo 'INSTRUMENTATION_FAILED fixture accepted' >&2; exit 1; }
+  js_ready_phone_shell '<node text="我的"/><node text="设置"/><node text="搜索音乐"/>' || { echo 'phone shell fixture rejected' >&2; exit 1; }
+  ! js_ready_phone_shell '<node text="我的"/><node text="设置"/>' || { echo 'incomplete shell fixture accepted' >&2; exit 1; }
   grep -Fq 'RELEASE_BYTES="$(wc -c < "$RELEASE_APK" | tr -d '\'' '\'')"' "$0" || { echo 'journey record must derive product bytes from the sealed APK' >&2; exit 1; }
   grep -Fq 'bytes: Number(releaseBytes)' "$0" || { echo 'journey record must preserve the derived product byte count' >&2; exit 1; }
   grep -Fq "assets/index.android.bundle" "$0" || { echo 'runner must reject an unbundled debug seed before reset' >&2; exit 1; }
@@ -162,7 +170,7 @@ smoke_ui() {
     "$ADB" -s "$SERIAL" shell dumpsys window | grep -q "$PACKAGE/com.listen2mobile.MainActivity" || { sleep 1; continue; }
     "$ADB" -s "$SERIAL" shell uiautomator dump /sdcard/listen2-phase8-smoke.xml >/dev/null
     xml="$($ADB -s "$SERIAL" shell cat /sdcard/listen2-phase8-smoke.xml)"
-    [[ "$xml" == *"搜索歌曲、歌手或歌单"* ]] && return 0
+    js_ready_phone_shell "$xml" && return 0
     sleep 1
   done
   return 1
