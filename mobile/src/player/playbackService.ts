@@ -9,8 +9,8 @@ import { playerController } from './playerController';
 export default async function playbackService() {
   // RNTP progress/terminal callbacks do not all carry a track object.  The
   // active-track event is the only authoritative identity hand-off.  In
-  // particular, state/error events have no track identifier, so they are
-  // deliberately quarantined instead of being forged as the newest track.
+  // particular, state/error events have no track identifier, so they stay
+  // quarantined until RNTP can verify the observed active identity.
   let activeIdentity: ReturnType<
     typeof playerController.onNativeActiveTrackChanged
   > = null;
@@ -24,6 +24,47 @@ export default async function playbackService() {
       return undefined;
     }
     return activeIdentity;
+  };
+  const sameIdentity = (
+    first: typeof activeIdentity,
+    second: typeof activeIdentity,
+  ) =>
+    first === second ||
+    Boolean(
+      first &&
+        second &&
+        first.nativeTrackId === second.nativeTrackId &&
+        first.generation === second.generation &&
+        first.nativeTrackIndex === second.nativeTrackIndex,
+    );
+  const verifiedTerminalIdentity = async (
+    expectedState: State,
+  ): Promise<typeof activeIdentity> => {
+    // RNTP omits the originating track from state/error events. Capture the
+    // last native active-track hand-off, then confirm it is still active and
+    // that RNTP's current state still has the event's meaning. This prevents
+    // a late A callback from being attributed to B after a queue transition.
+    const observedIdentity = activeIdentity;
+    if (!observedIdentity) return null;
+    try {
+      const [nativeTrack, playbackState] = await Promise.all([
+        TrackPlayer.getActiveTrack(),
+        TrackPlayer.getPlaybackState(),
+      ]);
+      if (
+        !sameIdentity(observedIdentity, activeIdentity) ||
+        !nativeTrack ||
+        nativeTrack.id !== observedIdentity.nativeTrackId ||
+        playbackState.state !== expectedState
+      ) {
+        return null;
+      }
+      return observedIdentity;
+    } catch {
+      // A reset or service teardown can reject these reads. No verified
+      // identity means no terminal reducer mutation.
+      return null;
+    }
   };
   const settle = async (operation: () => Promise<unknown>) => {
     try {
@@ -63,12 +104,19 @@ export default async function playbackService() {
       callbackIdentity(event.track),
     );
   });
-  TrackPlayer.addEventListener(Event.PlaybackState, event => {
-    playerController.onPlaybackState(event.state as State, undefined);
-  });
-  TrackPlayer.addEventListener(Event.PlaybackError, () => {
-    playerController.onPlaybackError(undefined);
-  });
+  TrackPlayer.addEventListener(Event.PlaybackState, event =>
+    settle(async () => {
+      const state = event.state as State;
+      const identity = await verifiedTerminalIdentity(state);
+      if (identity) playerController.onPlaybackState(state, identity);
+    }),
+  );
+  TrackPlayer.addEventListener(Event.PlaybackError, () =>
+    settle(async () => {
+      const identity = await verifiedTerminalIdentity(State.Error);
+      if (identity) playerController.onPlaybackError(identity);
+    }),
+  );
   TrackPlayer.addEventListener(Event.PlaybackQueueEnded, event =>
     playerController.onPlaybackQueueEnded(callbackIdentity(event.track)),
   );

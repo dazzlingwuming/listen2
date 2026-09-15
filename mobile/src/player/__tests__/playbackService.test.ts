@@ -8,6 +8,8 @@ const mockNative = {
       return { remove: jest.fn() };
     },
   ),
+  getActiveTrack: jest.fn(),
+  getPlaybackState: jest.fn(),
 };
 const mockController = {
   play: jest.fn().mockResolvedValue(true),
@@ -28,6 +30,9 @@ jest.mock('react-native-track-player', () => ({
   default: {
     addEventListener: (...args: unknown[]) =>
       (mockNative.addEventListener as jest.Mock)(...args),
+    getActiveTrack: (...args: unknown[]) => mockNative.getActiveTrack(...args),
+    getPlaybackState: (...args: unknown[]) =>
+      mockNative.getPlaybackState(...args),
   },
   Event: {
     RemotePlay: 'remote-play',
@@ -43,7 +48,7 @@ jest.mock('react-native-track-player', () => ({
     PlaybackQueueEnded: 'playback-queue-ended',
     PlaybackActiveTrackChanged: 'playback-active-track-changed',
   },
-  State: { Playing: 'playing' },
+  State: { Playing: 'playing', Paused: 'paused', Error: 'error' },
 }));
 
 jest.mock('../playerController', () => ({
@@ -72,6 +77,8 @@ describe('playbackService delegation', () => {
   beforeEach(() => {
     mockListeners.clear();
     jest.clearAllMocks();
+    mockNative.getActiveTrack.mockResolvedValue(undefined);
+    mockNative.getPlaybackState.mockResolvedValue({ state: State.Playing });
   });
 
   it('uses the controller stop/reset boundary for RemoteStop', async () => {
@@ -96,7 +103,7 @@ describe('playbackService delegation', () => {
     ).resolves.toBeUndefined();
   });
 
-  it('binds generated active-track identity to progress and terminal callbacks', async () => {
+  it('binds generated active-track identity to progress and verified terminal callbacks', async () => {
     const identity = {
       nativeTrackId: 'listen2:netrack_2:generated',
       generation: 7,
@@ -115,8 +122,11 @@ describe('playbackService delegation', () => {
       buffered: 24,
       track: 0,
     });
-    mockListeners.get(Event.PlaybackState)?.({ state: State.Playing });
-    mockListeners.get(Event.PlaybackError)?.({});
+    mockNative.getActiveTrack.mockResolvedValue({ id: identity.nativeTrackId });
+    mockNative.getPlaybackState.mockResolvedValue({ state: State.Playing });
+    await mockListeners.get(Event.PlaybackState)?.({ state: State.Playing });
+    mockNative.getPlaybackState.mockResolvedValue({ state: State.Error });
+    await mockListeners.get(Event.PlaybackError)?.({});
     await mockListeners.get(Event.PlaybackQueueEnded)?.({ track: 0 });
 
     expect(mockController.onNativeActiveTrackChanged).toHaveBeenCalledWith(
@@ -131,13 +141,13 @@ describe('playbackService delegation', () => {
     );
     expect(mockController.onPlaybackState).toHaveBeenCalledWith(
       State.Playing,
-      undefined,
+      identity,
     );
-    expect(mockController.onPlaybackError).toHaveBeenCalledWith(undefined);
+    expect(mockController.onPlaybackError).toHaveBeenCalledWith(identity);
     expect(mockController.onPlaybackQueueEnded).toHaveBeenCalledWith(identity);
   });
 
-  it('quarantines identifier-less terminal callbacks after active ownership changes from A to B', async () => {
+  it('rejects late A terminal events after B is active, while accepting B pause and error', async () => {
     const firstIdentity = {
       nativeTrackId: 'listen2:netrack_a:generated',
       generation: 7,
@@ -161,15 +171,79 @@ describe('playbackService delegation', () => {
       index: 0,
       track: { id: secondIdentity.nativeTrackId },
     });
-    // RNTP omits a track ID here, so this may be a delayed A callback.  The
-    // service deliberately refuses to turn it into a synthetic B identity.
-    mockListeners.get(Event.PlaybackState)?.({ state: State.Playing });
-    mockListeners.get(Event.PlaybackError)?.({});
+
+    // A delayed A callback cannot be assigned to B merely because RNTP now
+    // reports B as active: its reported event state must match live native
+    // state, and an error must have reached RNTP's Error state.
+    mockNative.getActiveTrack.mockResolvedValue({
+      id: secondIdentity.nativeTrackId,
+    });
+    mockNative.getPlaybackState.mockResolvedValue({ state: State.Playing });
+    await mockListeners.get(Event.PlaybackState)?.({ state: State.Paused });
+    await mockListeners.get(Event.PlaybackError)?.({});
+
+    expect(mockController.onPlaybackState).not.toHaveBeenCalled();
+    expect(mockController.onPlaybackError).not.toHaveBeenCalled();
+
+    mockNative.getPlaybackState.mockResolvedValue({ state: State.Paused });
+    await mockListeners.get(Event.PlaybackState)?.({ state: State.Paused });
+    mockNative.getPlaybackState.mockResolvedValue({ state: State.Error });
+    await mockListeners.get(Event.PlaybackError)?.({});
 
     expect(mockController.onPlaybackState).toHaveBeenLastCalledWith(
-      State.Playing,
-      undefined,
+      State.Paused,
+      secondIdentity,
     );
-    expect(mockController.onPlaybackError).toHaveBeenLastCalledWith(undefined);
+    expect(mockController.onPlaybackError).toHaveBeenLastCalledWith(
+      secondIdentity,
+    );
+  });
+
+  it('drops an identifier-less terminal callback when active generation changes during its native query', async () => {
+    const firstIdentity = {
+      nativeTrackId: 'listen2:netrack_a:generated',
+      generation: 7,
+      nativeTrackIndex: 0,
+    };
+    const secondIdentity = {
+      nativeTrackId: 'listen2:netrack_b:generated',
+      generation: 8,
+      nativeTrackIndex: 0,
+    };
+    let resolveActiveTrack: ((value: { id: string }) => void) | undefined;
+    let resolvePlaybackState: ((value: { state: string }) => void) | undefined;
+    mockController.onNativeActiveTrackChanged
+      .mockReturnValueOnce(firstIdentity)
+      .mockReturnValueOnce(secondIdentity);
+    mockNative.getActiveTrack.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          resolveActiveTrack = resolve;
+        }),
+    );
+    mockNative.getPlaybackState.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          resolvePlaybackState = resolve;
+        }),
+    );
+    await playbackService();
+
+    mockListeners.get(Event.PlaybackActiveTrackChanged)?.({
+      index: 0,
+      track: { id: firstIdentity.nativeTrackId },
+    });
+    const pendingState = mockListeners.get(Event.PlaybackState)?.({
+      state: State.Paused,
+    });
+    mockListeners.get(Event.PlaybackActiveTrackChanged)?.({
+      index: 0,
+      track: { id: secondIdentity.nativeTrackId },
+    });
+    resolveActiveTrack?.({ id: secondIdentity.nativeTrackId });
+    resolvePlaybackState?.({ state: State.Paused });
+    await pendingState;
+
+    expect(mockController.onPlaybackState).not.toHaveBeenCalled();
   });
 });

@@ -960,5 +960,9 @@ describe('PlayerController queue transitions', () => {
       secondIdentity ?? undefined,
     );
     expect(state.isPlaying).toBe(false);
+
+    playerController.onPlaybackError(secondIdentity ?? undefined);
+    expect(state.isPlaying).toBe(false);
+    expect(state.error).toBe('native-playback-error');
   });
 });
