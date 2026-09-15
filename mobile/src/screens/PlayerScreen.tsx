@@ -38,7 +38,8 @@ import type {
   BilibiliLyricCandidateResult,
 } from '../bilibili/types';
 import { BilibiliLyricPicker } from '../components/BilibiliLyricPicker';
-import { toggleFavorite } from '../store/librarySlice';
+import { mutationPending, mutationReceived } from '../store/librarySlice';
+import { libraryClient } from '../library/libraryClient';
 import { isLocalTrack } from '../types/music';
 import type { Lyric, SourceId, Track } from '../types/provider';
 import {
@@ -150,6 +151,7 @@ export function PlayerScreen() {
     typeof state.error === 'string' ? state.error : null,
   );
   const favorites = useSelector((root: RootState) => root.library.favorites);
+  const libraryRevision = useSelector((root: RootState) => root.library.revision || 0);
   const [showQueue, setShowQueue] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
   const [lyrics, setLyrics] = useState<Lyric | null>(null);
@@ -898,7 +900,15 @@ export function PlayerScreen() {
             </Pressable>
             <Pressable
               accessibilityLabel={favorite ? '取消收藏' : '收藏当前歌曲'}
-              onPress={() => dispatch(toggleFavorite(current))}
+              onPress={() => {
+                if (!current || isLocalTrack(current)) return;
+                const requestId = `favorite_${Date.now()}`;
+                dispatch(mutationPending({ requestId }));
+                const mutation = favorite
+                  ? { requestId, revision: libraryRevision, kind: 'unfavorite' as const, payload: { playlistId: 'favorites' as const, source: current.source, trackId: current.id } }
+                  : { requestId, revision: libraryRevision, kind: 'favorite' as const, payload: { playlistId: 'favorites' as const, source: current.source, trackId: current.id, title: trackTitle(current), artist: trackArtist(current) } };
+                void libraryClient.applyMutation(mutation).then(receipt => dispatch(mutationReceived(receipt))).catch(() => dispatch(mutationReceived({ requestId, status: 'rejected', revision: libraryRevision, errorCode: 'NATIVE_UNAVAILABLE' })));
+              }}
               style={styles.action}
             >
               <Text style={styles.actionText}>

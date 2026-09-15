@@ -61,15 +61,15 @@ Android 保留共享前端，但 native 只提供窄的、版本化、可取消�
 
 ### 歌单/库（LIB）
 
-- [ ] **LIB-001** [P][E] 我的歌单、收藏歌单、provider 远端歌单和本地音乐在库中显示不同来源与同步状态；无网络时我仍能浏览/播放有效本地内容，远端失败不删除本地内容。
-- [ ] **LIB-002** [T][P][E] 我可以创建、改名、编辑、删除歌单，添加/移除/重排曲目和收藏/取消收藏；重复曲目规则与桌面一致，破坏性删除需要确认并在失败时保留原数据。
+- [x] **LIB-001** [P][E] 我的歌单、收藏歌单、provider 远端歌单和本地音乐在库中显示不同来源与同步状态；无网络时我仍能浏览/播放有效本地内容，远端失败不删除本地内容。
+- [x] **LIB-002** [T][P][E] 我可以创建、改名、编辑、删除歌单，添加/移除/重排曲目和收藏/取消收藏；重复曲目规则与桌面一致，破坏性删除需要确认并在失败时保留原数据。
 - [x] **LIB-003** [T][E] 快速连续编辑、旋转、重启和进程回收后，歌单排序、收藏和曲目标识保持事务一致；播放、下一首、歌词、下载和删除操作仅在对应 capability 可用时出现。
 
 ### 登录/会话（AUTH）
 
-- [ ] **AUTH-001** [P][E] 账户页按 provider 区分未登录、登录中、已登录、过期、网络故障和权限不足；登录入口与 QQ、Kugou、Kuwo、Migu、Taihe、Bilibili、NetEase 的 matrix 状态一致。
-- [ ] **AUTH-002** [P][E] 我能完成 Bilibili QR 的生成、等待、成功、过期、取消、重试和会话刷新；对 matrix 声明支持的其他 provider，登录 route 也必须有受控 fixture/错误恢复，未验证者不显示假登录按钮。
-- [ ] **AUTH-003** [T][S] token、cookie、refresh token 和 API key 只在 Keystore 或等价 native 安全存储中存在；过期/登出会清理可识别 session、通知和受保护缓存引用，但保留用户歌单、历史和本地音乐，重新登录不复用旧 session。
+- [x] **AUTH-001** [P][E] 账户页按 provider 区分未登录、登录中、已登录、过期、网络故障和权限不足；登录入口与 QQ、Kugou、Kuwo、Migu、Taihe、Bilibili、NetEase 的 matrix 状态一致。
+- [x] **AUTH-002** [P][E] 我能完成 Bilibili QR 的生成、等待、成功、过期、取消、重试和会话刷新；对 matrix 声明支持的其他 provider，登录 route 也必须有受控 fixture/错误恢复，未验证者不显示假登录按钮。
+- [x] **AUTH-003** [T][S] token、cookie、refresh token 和 API key 只在 Keystore 或等价 native 安全存储中存在；过期/登出会清理可识别 session、通知和受保护缓存引用，但保留用户歌单、历史和本地音乐，重新登录不复用旧 session。
 
 ### 本地文件（LOCAL）
 
@@ -80,8 +80,8 @@ Android 保留共享前端，但 native 只提供窄的、版本化、可取消�
 ### 备份数据（DATA）
 
 - [x] **DATA-001** [T][E] Room migration 能持久化歌单、收藏、队列 checkpoint、歌词元数据、历史、cache catalog 和 SAF records；DataStore（或等价设置存储）只保存小型非敏感设置，不存大列表或 secret。
-- [ ] **DATA-002** [P][S] Android 版本化备份只含我的歌单和收藏歌单及必要非敏感元数据，明确排除 token、cookie、refresh token、API key、本地路径/URI grant、主题、歌词设置、媒体文件和缓存。
-- [ ] **DATA-003** [P][E] 我默认导入备份时保留当前歌单，完全相同跳过、同名独立、ID 冲突生成新 ID，并能预览摘要；覆盖只能二次确认，损坏、过大、旧版本或中断导入在有界时间内失败且可恢复。
+- [x] **DATA-002** [P][S] Android 版本化备份只含我的歌单和收藏歌单及必要非敏感元数据，明确排除 token、cookie、refresh token、API key、本地路径/URI grant、主题、歌词设置、媒体文件和缓存。
+- [x] **DATA-003** [P][E] 我默认导入备份时保留当前歌单，完全相同跳过、同名独立、ID 冲突生成新 ID，并能预览摘要；覆盖只能二次确认，损坏、过大、旧版本或中断导入在有界时间内失败且可恢复。
 
 ### 历史回响（HIST）
 
@@ -194,18 +194,18 @@ Android 保留共享前端，但 native 只提供窄的、版本化、可取消�
 | LYR-001 | Phase 5 | Complete | five-source lyric capability fixtures |
 | LYR-002 | Phase 5 | Complete | manual/offset persistence |
 | LYR-003 | Phase 5 | Complete | stale/error/TalkBack test |
-| LIB-001 | Phase 6 | Pending | source/offline library E2E |
-| LIB-002 | Phase 6 | Pending | playlist CRUD/favorite test |
+| LIB-001 | Phase 6 | Complete | source/offline library E2E |
+| LIB-002 | Phase 6 | Complete | playlist CRUD/favorite test |
 | LIB-003 | Phase 6 | Complete | transactional/capability test |
-| AUTH-001 | Phase 6 | Pending | session-state matrix UI |
-| AUTH-002 | Phase 6 | Pending | QR/login provider fixture |
-| AUTH-003 | Phase 6 | Pending | Keystore/refresh/logout test |
+| AUTH-001 | Phase 6 | Complete | session-state matrix UI |
+| AUTH-002 | Phase 6 | Complete | QR/login provider fixture |
+| AUTH-003 | Phase 6 | Complete | Keystore/refresh/logout test |
 | LOCAL-001 | Phase 6 | Pending | SAF import instrumentation |
 | LOCAL-002 | Phase 6 | Pending | tag/LRC/local playback |
 | LOCAL-003 | Phase 6 | Pending | revoke/path-boundary test |
 | DATA-001 | Phase 6 | Complete | Room/DataStore migration |
-| DATA-002 | Phase 6 | Pending | backup allow-list scan |
-| DATA-003 | Phase 6 | Pending | merge/conflict/rollback |
+| DATA-002 | Phase 6 | Complete | backup allow-list scan |
+| DATA-003 | Phase 6 | Complete | merge/conflict/rollback |
 | HIST-001 | Phase 6 | Pending | threshold/dedup fixture |
 | HIST-002 | Phase 6 | Pending | lifecycle/annual aggregation |
 | HIST-003 | Phase 6 | Pending | opt-out/export/clear |
