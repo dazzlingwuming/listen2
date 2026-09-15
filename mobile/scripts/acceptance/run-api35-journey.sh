@@ -34,6 +34,7 @@ js_ready_phone_shell() {
 if [[ "${1:-}" == "--self-test" ]]; then
   self_test_dir="$(mktemp -d "${TMPDIR:-/tmp}/listen2-instrumentation-result.XXXXXX")"
   trap 'rm -rf "$self_test_dir"' EXIT
+  bash "$(dirname "$0")/avd-manager.sh" --self-test
   printf '%s\n' 'INSTRUMENTATION_STATUS_CODE: 0' 'INSTRUMENTATION_CODE: -1' > "$self_test_dir/success.txt"
   printf '%s\n' 'FAILURES!!! Tests run: 1,  Failures: 1' 'java.lang.AssertionError' 'INSTRUMENTATION_CODE: 0' > "$self_test_dir/assertion.txt"
   printf '%s\n' 'INSTRUMENTATION_FAILED: com.listen2mobile.MainActivity' 'shortMsg=Process crashed.' > "$self_test_dir/failed.txt"
