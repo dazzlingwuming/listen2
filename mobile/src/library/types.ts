@@ -23,6 +23,23 @@ export type LibrarySnapshot = {
   favorites: LibraryTrackRecord[];
   localRecords: LibraryLocalRecord[];
   remoteCollections?: LibraryRemoteCollection[];
+  queueCheckpoint?: LibraryQueueCheckpoint[];
+  lyricMetadata?: LibraryLyricMetadata[];
+};
+
+/** Semantic playback continuity only; native never persists a media URL or handle. */
+export type LibraryQueueCheckpoint = {
+  occurrenceId: string;
+  position: number;
+  source: LibraryTrackRecord['source'];
+  trackId: string;
+};
+
+export type LibraryLyricMetadata = {
+  source: LibraryTrackRecord['source'];
+  trackId: string;
+  selectedVariantId: string | null;
+  offsetMillis: number;
 };
 
 export type LibraryRemoteCollection = {
@@ -83,7 +100,10 @@ export type LegacyMigrationRequest = {
   schemaVersion: typeof LIBRARY_SCHEMA_VERSION;
   attemptId: string;
   checksum: string;
-  playlists: Array<{ title: string }>;
+  playlists: Array<{ playlistId: string; title: string; position: number; tracks: LibraryTrackRecord[] }>;
+  favorites: LibraryTrackRecord[];
+  queueCheckpoint: LibraryQueueCheckpoint[];
+  lyricMetadata: LibraryLyricMetadata[];
   localEntries: Array<{ title: string; artist: string }>;
 };
 

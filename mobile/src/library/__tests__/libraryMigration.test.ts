@@ -25,12 +25,16 @@ describe('legacy library migration', () => {
 
   it('exports only bounded display metadata and an URL-free paused checkpoint', () => {
     const exported = exportLegacyMigration(JSON.stringify({
-      playlists: JSON.stringify([{ title: 'Road trip', tracks: [{ url: 'https://private' }] }]),
+      playlists: JSON.stringify([{ id: 'road', title: 'Road trip', tracks: [{ source: 'netease', id: '42', title: 'Song', artist: 'Artist', url: 'https://private' }] }]),
+      favorites: JSON.stringify([{ source: 'netease', id: '42', title: 'Song', artist: 'Artist', url: 'https://private' }]),
+      queueCheckpoint: JSON.stringify([{ occurrenceId: 'q1', source: 'netease', id: '42', title: 'Song', artist: 'Artist' }]),
+      lyricMetadata: JSON.stringify([{ source: 'netease', id: '42', offsetMillis: 120, selectedVariantId: 'main' }]),
       localTracks: JSON.stringify([{ title: 'Private', artist: 'Me', contentUri: 'content://private' }]),
       player: JSON.stringify({ playlist: [{ id: 'local', source: 'local', title: 'Private', artist: 'Me', contentUri: 'content://private', fileName: 'p.mp3' }], isPlaying: true }),
     }), 'attempt_1');
     expect(exported).toMatchObject({
-      attemptId: 'attempt_1', playlists: [{ title: 'Road trip' }], localEntries: [{ title: 'Private', artist: 'Me' }],
+      attemptId: 'attempt_1', playlists: [{ playlistId: 'road', title: 'Road trip', position: 0, tracks: [{ source: 'netease', trackId: '42', title: 'Song', artist: 'Artist' }] }],
+      favorites: [{ source: 'netease', trackId: '42', title: 'Song', artist: 'Artist' }], queueCheckpoint: [{ occurrenceId: 'q1', position: 0, source: 'netease', trackId: '42' }], lyricMetadata: [{ source: 'netease', trackId: '42', offsetMillis: 120, selectedVariantId: 'main' }], localEntries: [{ title: 'Private', artist: 'Me' }],
     });
     expect(exported?.pausedPlayer).toMatchObject({ playlist: [], isPlaying: false });
     expect(JSON.stringify(exported)).not.toContain('content://');
@@ -43,7 +47,7 @@ describe('legacy library migration', () => {
 
     const stored = JSON.stringify({ playlists: JSON.stringify([{ title: 'Retry' }]), localTracks: '[]' });
     mockGetItem.mockResolvedValue(stored);
-    mockBeginLegacyMigration.mockResolvedValue({ backend: 'Room', phase: 'failed', sourceRetained: true, laterStartValidated: false, attemptId: 'attempt_3', checksum: 'fnv1a-14cc059f' });
+    mockBeginLegacyMigration.mockResolvedValue({ backend: 'Room', phase: 'failed', sourceRetained: true, laterStartValidated: false, attemptId: 'attempt_3', checksum: exportLegacyMigration(stored, 'attempt_3')?.checksum });
     await expect(migrateKnownLegacyLibrary('attempt_3')).resolves.toMatchObject({ status: 'retryable' });
     await expect(migrateKnownLegacyLibrary('attempt_4')).resolves.toMatchObject({ status: 'unconfirmed' });
     expect(mockGetItem).toHaveBeenCalledTimes(3);

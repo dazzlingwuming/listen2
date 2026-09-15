@@ -32,24 +32,45 @@ internal object LibraryBridgeContract {
     }
 
     fun parseLegacyMigration(value: Map<String, Any?>): Pair<LegacyLibraryInput, Pair<String, String>>? {
-        if (value.keys != setOf("schemaVersion", "attemptId", "checksum", "playlists", "localEntries") || hasPrivateTree(value)) return null
+        if (value.keys != setOf("schemaVersion", "attemptId", "checksum", "playlists", "favorites", "queueCheckpoint", "lyricMetadata", "localEntries") || hasPrivateTree(value)) return null
         val schemaVersion = (value["schemaVersion"] as? Number)?.let(::exactInt) ?: return null
         val attemptId = value["attemptId"] as? String ?: return null
         val checksum = value["checksum"] as? String ?: return null
         val playlists = value["playlists"] as? List<*> ?: return null
+        val favorites = value["favorites"] as? List<*> ?: return null
+        val queue = value["queueCheckpoint"] as? List<*> ?: return null
+        val lyrics = value["lyricMetadata"] as? List<*> ?: return null
         val localEntries = value["localEntries"] as? List<*> ?: return null
         if (schemaVersion != SCHEMA_VERSION || attemptId.length !in 1..64 || !attemptId.matches(Regex("^[A-Za-z0-9_-]+$")) || !checksum.matches(Regex("^fnv1a-[0-9a-f]{8}$")) || playlists.size > LibraryLimits.MAX_PLAYLISTS || localEntries.size > LibraryLimits.MAX_PLAYLISTS) return null
         val safePlaylists = playlists.map { item ->
             val entry = item as? Map<*, *> ?: return null
-            if (entry.keys != setOf("title")) return null
-            LegacyPlaylist(entry["title"] as? String ?: return null)
+            if (entry.keys != setOf("playlistId", "title", "position", "tracks")) return null
+            val tracks = (entry["tracks"] as? List<*>)?.map { parseLegacyTrack(it) ?: return null } ?: return null
+            LegacyPlaylist(entry["playlistId"] as? String ?: return null, entry["title"] as? String ?: return null, (entry["position"] as? Number)?.let(::exactInt) ?: return null, tracks)
+        }
+        val safeFavorites = favorites.map { parseLegacyTrack(it) ?: return null }
+        val safeQueue = queue.map { item ->
+            val entry = item as? Map<*, *> ?: return null
+            if (entry.keys != setOf("occurrenceId", "position", "source", "trackId")) return null
+            LegacyQueueCheckpoint(entry["occurrenceId"] as? String ?: return null, (entry["position"] as? Number)?.let(::exactInt) ?: return null, entry["source"] as? String ?: return null, entry["trackId"] as? String ?: return null)
+        }
+        val safeLyrics = lyrics.map { item ->
+            val entry = item as? Map<*, *> ?: return null
+            if (entry.keys != setOf("source", "trackId", "selectedVariantId", "offsetMillis")) return null
+            LegacyLyricMetadata(entry["source"] as? String ?: return null, entry["trackId"] as? String ?: return null, entry["selectedVariantId"] as? String, (entry["offsetMillis"] as? Number)?.let(::exactLong) ?: return null)
         }
         val safeLocalEntries = localEntries.map { item ->
             val entry = item as? Map<*, *> ?: return null
             if (entry.keys != setOf("title", "artist")) return null
             LegacyLocalEntry(entry["title"] as? String ?: return null, entry["artist"] as? String ?: return null)
         }
-        return LegacyLibraryInput(schemaVersion, safePlaylists, safeLocalEntries) to (attemptId to checksum)
+        return LegacyLibraryInput(schemaVersion, safePlaylists, safeFavorites, safeQueue, safeLyrics, safeLocalEntries) to (attemptId to checksum)
+    }
+
+    private fun parseLegacyTrack(raw: Any?): LegacyTrack? {
+        val entry = raw as? Map<*, *> ?: return null
+        if (entry.keys != setOf("source", "trackId", "title", "artist")) return null
+        return LegacyTrack(entry["source"] as? String ?: return null, entry["trackId"] as? String ?: return null, entry["title"] as? String ?: return null, entry["artist"] as? String ?: return null)
     }
 
     fun parseBackup(value: Map<String, Any?>): BackupInput? {
@@ -67,6 +88,30 @@ internal object LibraryBridgeContract {
             BackupPlaylistInput(id, title, tracks)
         } ?: return null
         return BackupInput(revision, mode, favorites, playlists)
+    }
+
+    fun parseRemoteRefresh(value: Map<String, Any?>): List<SafeRemoteCollection>? {
+        if (value.keys != setOf("schemaVersion", "collections") || hasPrivateTree(value) || (value["schemaVersion"] as? Number)?.let(::exactInt) != SCHEMA_VERSION) return null
+        return (value["collections"] as? List<*>)?.map { raw ->
+            val item = raw as? Map<*, *> ?: return null
+            if (item.keys != setOf("collectionId", "source", "title", "syncState")) return null
+            SafeRemoteCollection(item["collectionId"] as? String ?: return null, item["source"] as? String ?: return null, item["title"] as? String ?: return null, item["syncState"] as? String ?: return null)
+        }
+    }
+
+    fun parseContinuity(value: Map<String, Any?>): Pair<List<SafeQueueCheckpoint>, List<SafeLyricMetadata>>? {
+        if (value.keys != setOf("schemaVersion", "queueCheckpoint", "lyricMetadata") || hasPrivateTree(value) || (value["schemaVersion"] as? Number)?.let(::exactInt) != SCHEMA_VERSION) return null
+        val queue = (value["queueCheckpoint"] as? List<*>)?.map { raw ->
+            val item = raw as? Map<*, *> ?: return null
+            if (item.keys != setOf("occurrenceId", "position", "source", "trackId")) return null
+            SafeQueueCheckpoint(item["occurrenceId"] as? String ?: return null, (item["position"] as? Number)?.let(::exactInt) ?: return null, item["source"] as? String ?: return null, item["trackId"] as? String ?: return null)
+        } ?: return null
+        val lyrics = (value["lyricMetadata"] as? List<*>)?.map { raw ->
+            val item = raw as? Map<*, *> ?: return null
+            if (item.keys != setOf("source", "trackId", "selectedVariantId", "offsetMillis")) return null
+            SafeLyricMetadata(item["source"] as? String ?: return null, item["trackId"] as? String ?: return null, item["selectedVariantId"] as? String, (item["offsetMillis"] as? Number)?.let(::exactLong) ?: return null)
+        } ?: return null
+        return queue to lyrics
     }
 
     private fun parseTrack(raw: Any?): SafeTrack? {
@@ -88,7 +133,9 @@ internal object LibraryBridgeContract {
 
     /** Defensive recursion rejects a future caller that tries to smuggle a private native handle. */
     private fun hasPrivateTree(value: Any?, depth: Int = 0): Boolean {
-        if (depth > 4) return true
+        // A migrated playlist legitimately nests list → playlist → tracks → track fields.
+        // Keep recursion bounded while allowing that fixed semantic DTO shape.
+        if (depth > 6) return true
         return when (value) {
             is Map<*, *> -> value.any { (key, child) -> key !is String || privateKey.containsMatchIn(key) || hasPrivateTree(child, depth + 1) }
             // Backup preview is bounded separately (2,000 playlists / 50,000
@@ -161,6 +208,17 @@ class LibraryBridge internal constructor(
             is MigrationResult.Activated -> migrationStatus(result.status)
             is MigrationResult.Rejected -> migrationFailure(result.errorCode, correlation.first, correlation.second)
         }
+    }
+
+    /** A provider refresh submits only a bounded semantic collection projection. Invalid refreshes retain prior rows. */
+    @ReactMethod fun replaceRemoteCollections(request: ReadableMap, promise: Promise) = execute(promise) {
+        val parsed = LibraryBridgeContract.parseRemoteRefresh(readMap(request)) ?: return@execute error("INVALID_REMOTE_COLLECTIONS")
+        repository.replaceRemoteCollections(parsed)?.let(::snapshot) ?: error("INVALID_REMOTE_COLLECTIONS")
+    }
+
+    @ReactMethod fun replaceContinuityMetadata(request: ReadableMap, promise: Promise) = execute(promise) {
+        val parsed = LibraryBridgeContract.parseContinuity(readMap(request)) ?: return@execute error("INVALID_CONTINUITY_METADATA")
+        repository.replaceContinuityMetadata(parsed.first, parsed.second)?.let(::snapshot) ?: error("INVALID_CONTINUITY_METADATA")
     }
 
     /** This remains native-owned; callers cannot provide a legacy payload or storage endpoint. */
@@ -255,6 +313,12 @@ class LibraryBridge internal constructor(
                 putString("title", collection.title)
                 putString("syncState", collection.syncState)
             }
+        }))
+        putArray("queueCheckpoint", Arguments.fromList(value.queueCheckpoint.map { checkpoint ->
+            Arguments.createMap().apply { putString("occurrenceId", checkpoint.occurrenceId); putInt("position", checkpoint.position); putString("source", checkpoint.source); putString("trackId", checkpoint.trackId) }
+        }))
+        putArray("lyricMetadata", Arguments.fromList(value.lyricMetadata.map { metadata ->
+            Arguments.createMap().apply { putString("source", metadata.source); putString("trackId", metadata.trackId); putString("selectedVariantId", metadata.selectedVariantId); putDouble("offsetMillis", metadata.offsetMillis.toDouble()) }
         }))
         putArray("localRecords", Arguments.fromList(value.localRecords.map { record ->
             Arguments.createMap().apply {

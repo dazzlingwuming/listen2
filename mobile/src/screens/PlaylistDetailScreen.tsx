@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
@@ -65,6 +67,8 @@ export function PlaylistDetailScreen() {
   ) as PresentableTrack[];
   const [addTarget, setAddTarget] = useState<PlayableTrack | null>(null);
   const [startingPlayback, setStartingPlayback] = useState(false);
+  const [renameVisible, setRenameVisible] = useState(false);
+  const [renameDraft, setRenameDraft] = useState('');
   const remoteRequest = useRef<AbortController | null>(null);
   const remoteGeneration = useRef(0);
   const commitLibrary = async (kind: any, payload: any) => {
@@ -138,7 +142,8 @@ export function PlaylistDetailScreen() {
     if (index >= 0) play(playableTracks[index], index).catch(() => undefined);
   };
   const hasPlayableTrack = playableTracks.some(canPlayTrack);
-  const detailTitle = remoteDetail?.title || title || '音乐详情';
+  const libraryTitle = libraryPlaylistId ? playlists.find(item => item.id === libraryPlaylistId)?.title : undefined;
+  const detailTitle = remoteDetail?.title || libraryTitle || title || '音乐详情';
   const displaySource = remoteDetail?.source || sourceId;
   return (
     <ScreenLayout
@@ -200,6 +205,14 @@ export function PlaylistDetailScreen() {
         </View>
       ) : null}
       {libraryPlaylistId ? (
+        <View style={styles.libraryActions}>
+        <Pressable
+          accessibilityLabel="重命名当前歌单"
+          onPress={() => { setRenameDraft(detailTitle); setRenameVisible(true); }}
+          style={sectionStyles.button}
+        ><Text style={sectionStyles.buttonText}>重命名</Text></Pressable>
+        <Pressable accessibilityLabel="歌单上移" onPress={() => { void commitLibrary('movePlaylist', { playlistId: libraryPlaylistId, direction: 'up' }); }} style={sectionStyles.button}><Text style={sectionStyles.buttonText}>上移</Text></Pressable>
+        <Pressable accessibilityLabel="歌单下移" onPress={() => { void commitLibrary('movePlaylist', { playlistId: libraryPlaylistId, direction: 'down' }); }} style={sectionStyles.button}><Text style={sectionStyles.buttonText}>下移</Text></Pressable>
         <Pressable
           accessibilityLabel="删除当前歌单"
           onPress={() =>
@@ -218,7 +231,15 @@ export function PlaylistDetailScreen() {
         >
           <Text style={styles.deleteText}>删除歌单</Text>
         </Pressable>
+        </View>
       ) : null}
+      <Modal visible={renameVisible} transparent animationType="fade" onRequestClose={() => setRenameVisible(false)}>
+        <View style={styles.modalBackdrop}><View style={styles.renameDialog}>
+          <Text style={text.heading}>重命名歌单</Text>
+          <TextInput accessibilityLabel="歌单名称" value={renameDraft} onChangeText={setRenameDraft} maxLength={160} style={styles.renameInput} />
+          <View style={styles.libraryActions}><Pressable onPress={() => setRenameVisible(false)} style={sectionStyles.button}><Text style={sectionStyles.buttonText}>取消</Text></Pressable><Pressable accessibilityLabel="确认重命名歌单" onPress={() => { const titleValue = renameDraft.trim(); if (!libraryPlaylistId || !titleValue) return; void commitLibrary('renamePlaylist', { playlistId: libraryPlaylistId, title: titleValue }).then(receipt => { if (receipt.status === 'accepted') setRenameVisible(false); }); }} style={sectionStyles.button}><Text style={sectionStyles.buttonText}>保存</Text></Pressable></View>
+        </View></View>
+      </Modal>
       {playableTracks.length ? (
         <View>
           {hasPlayableTrack ? (
@@ -423,6 +444,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   deleteText: { ...text.meta, color: '#ff9aa9' },
+  libraryActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, justifyContent: 'flex-end', marginBottom: spacing.sm },
+  modalBackdrop: { flex: 1, justifyContent: 'center', padding: spacing.lg, backgroundColor: 'rgba(0,0,0,0.55)' },
+  renameDialog: { gap: spacing.md, padding: spacing.lg, borderRadius: 16, backgroundColor: colors.surface },
+  renameInput: { minHeight: 48, paddingHorizontal: spacing.sm, color: colors.text, borderWidth: 1, borderColor: colors.border, borderRadius: 8 },
   trackActions: { flexDirection: 'row', justifyContent: 'flex-end' },
   sheet: { padding: spacing.md },
   playlistChoice: {

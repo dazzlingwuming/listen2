@@ -62,7 +62,9 @@ internal object LibraryMutationValidator {
 internal data class SafeTrack(val source: String, val trackId: String, val title: String, val artist: String)
 internal data class SafePlaylist(val playlistId: String, val title: String, val position: Int, val tracks: List<SafeTrack>)
 internal data class SafeRemoteCollection(val collectionId: String, val source: String, val title: String, val syncState: String)
-internal data class LibrarySnapshot(val schemaVersion: Int, val revision: Long, val personalPlaylists: List<SafePlaylist>, val favorites: List<SafeTrack>, val localRecords: List<SafeLocalRecord>, val remoteCollections: List<SafeRemoteCollection> = emptyList())
+internal data class SafeQueueCheckpoint(val occurrenceId: String, val position: Int, val source: String, val trackId: String)
+internal data class SafeLyricMetadata(val source: String, val trackId: String, val selectedVariantId: String?, val offsetMillis: Long)
+internal data class LibrarySnapshot(val schemaVersion: Int, val revision: Long, val personalPlaylists: List<SafePlaylist>, val favorites: List<SafeTrack>, val localRecords: List<SafeLocalRecord>, val remoteCollections: List<SafeRemoteCollection> = emptyList(), val queueCheckpoint: List<SafeQueueCheckpoint> = emptyList(), val lyricMetadata: List<SafeLyricMetadata> = emptyList())
 internal data class LibraryReceipt(val requestId: String, val status: String, val revision: Long, val errorCode: String? = null, val snapshot: LibrarySnapshot? = null)
 internal data class SafeLocalRecord(
     val recordId: String,
@@ -110,6 +112,22 @@ internal class LibraryRepository internal constructor(private val database: List
 
     internal fun localRecord(recordId: String): SafeLocalRecord? = database.libraryDao().localRecord(recordId)?.let { record ->
         SafeLocalRecord(record.localRecordId, record.title, record.artist, record.accessState, record.album, record.durationMs, record.hasArtwork, record.lyricState)
+    }
+
+    /** Provider refresh is all-or-nothing: malformed/unavailable data never erases the last local projection. */
+    internal fun replaceRemoteCollections(collections: List<SafeRemoteCollection>): LibrarySnapshot? = database.runInTransaction<LibrarySnapshot?> {
+        if (collections.size > LibraryLimits.MAX_PLAYLISTS || collections.map { it.collectionId }.distinct().size != collections.size || collections.any { it.collectionId.matches(Regex("^[A-Za-z0-9._:-]{1,128}$")).not() || it.source !in setOf("netease", "kugou", "kuwo", "qq", "bilibili") || it.title.isBlank() || it.title.length > LibraryLimits.MAX_TITLE || it.syncState !in setOf("ready", "refreshing", "error", "unavailable") }) return@runInTransaction null
+        val dao = database.libraryDao(); val current = dao.meta() ?: LibraryMetaEntity(revision = 0L).also(dao::insertMeta)
+        dao.deleteAllRemoteCollections(); collections.forEach { dao.putRemoteCollection(RemoteCollectionEntity(it.collectionId, it.source, it.title, it.syncState)) }
+        dao.updateMeta(LibraryMetaEntity(revision = current.revision + 1)); snapshotLocked()
+    }
+
+    /** Queue and lyric selection are semantic continuity data, owned transactionally with the library. */
+    internal fun replaceContinuityMetadata(queue: List<SafeQueueCheckpoint>, lyrics: List<SafeLyricMetadata>): LibrarySnapshot? = database.runInTransaction<LibrarySnapshot?> {
+        if (queue.size > 50_000 || lyrics.size > 50_000 || queue.map { it.occurrenceId }.distinct().size != queue.size || queue.any { it.occurrenceId.matches(Regex("^[A-Za-z0-9._:-]{1,128}$")).not() || it.position < 0 || it.source !in setOf("netease", "kugou", "kuwo", "qq", "bilibili", "local") || !it.trackId.matches(Regex("^[A-Za-z0-9._:-]{1,128}$")) } || lyrics.any { it.source !in setOf("netease", "kugou", "kuwo", "qq", "bilibili", "local") || !it.trackId.matches(Regex("^[A-Za-z0-9._:-]{1,128}$")) || kotlin.math.abs(it.offsetMillis) > 86_400_000 }) return@runInTransaction null
+        val dao = database.libraryDao(); val current = dao.meta() ?: LibraryMetaEntity(revision = 0L).also(dao::insertMeta)
+        dao.deleteAllQueue(); dao.deleteAllLyricMetadata(); queue.forEach { dao.putQueue(QueueCheckpointEntity(it.occurrenceId, it.position, it.source, it.trackId)) }; lyrics.forEach { dao.putLyricMetadata(LyricMetadataEntity(it.source, it.trackId, it.selectedVariantId, it.offsetMillis)) }
+        dao.updateMeta(LibraryMetaEntity(revision = current.revision + 1)); snapshotLocked()
     }
 
     internal fun repairLocalRecord(recordId: String, replacement: SafeLocalRecord): Boolean = database.runInTransaction<Boolean> {
@@ -294,24 +312,42 @@ internal class LibraryRepository internal constructor(private val database: List
             SafeLocalRecord(record.localRecordId, record.title, record.artist, record.accessState, record.album, record.durationMs, record.hasArtwork, record.lyricState)
         }
         val remote = dao.remoteCollections().map { SafeRemoteCollection(it.collectionId, it.source, it.title, it.syncState) }
-        return LibrarySnapshot(1, meta.revision, playlists, dao.favorites().map { SafeTrack(it.source, it.semanticTrackId, it.title, it.artist) }, locals, remote)
+        val queue = dao.queueCheckpoint().map { SafeQueueCheckpoint(it.occurrenceId, it.position, it.source, it.semanticTrackId) }
+        val lyrics = dao.lyricMetadata().map { SafeLyricMetadata(it.source, it.semanticTrackId, it.selectedVariantId, it.offsetMillis) }
+        return LibrarySnapshot(1, meta.revision, playlists, dao.favorites().map { SafeTrack(it.source, it.semanticTrackId, it.title, it.artist) }, locals, remote, queue, lyrics)
     }
 
     /** Internal migration entry point. It is deliberately not a React Native bridge capability. */
-    internal fun stageLegacyCopy(attemptId: String, playlists: List<SafeLegacyPlaylist>, localRecords: List<SafeLegacyLocalRecord>, checksum: String): MigrationJournalEntity =
+    internal fun stageLegacyCopy(attemptId: String, input: SafeLegacyInput, checksum: String): MigrationJournalEntity =
         database.runInTransaction<MigrationJournalEntity> {
             val dao = database.libraryDao()
             val prefix = "migration-$attemptId-"
-            dao.deleteStagedPlaylists(prefix)
-            dao.deleteStagedLocalRecords(prefix)
-            playlists.forEachIndexed { index, item ->
-                dao.insertPlaylist(PersonalPlaylistEntity("$prefix$index", item.title, index))
+            // A staged write is one Room transaction. A collision is rejected before activation,
+            // so a retry retains legacy input instead of silently changing playlist identities.
+            if (input.playlists.any { dao.playlist(it.playlistId) != null } || input.queueCheckpoint.any { dao.queue(it.occurrenceId) != null }) throw IllegalStateException("legacy identity collision")
+            input.playlists.forEachIndexed { index, item ->
+                dao.insertPlaylist(PersonalPlaylistEntity(item.playlistId, item.title, index))
+                item.tracks.forEachIndexed { trackPosition, track -> dao.insertMembership(PlaylistMembershipEntity(item.playlistId, track.source, track.trackId, trackPosition, track.title, track.artist)) }
             }
-            localRecords.forEachIndexed { index, item ->
+            input.localRecords.forEachIndexed { index, item ->
                 dao.putLocalRecord(LocalRecordEntity("$prefix$index", item.title, item.artist, "needs-repair"))
             }
+            input.favorites.forEach { dao.putFavorite(FavoriteEntity(it.source, it.trackId, it.title, it.artist)) }
+            input.queueCheckpoint.forEach { dao.putQueue(QueueCheckpointEntity(it.occurrenceId, it.position, it.source, it.trackId)) }
+            input.lyricMetadata.forEach { dao.putLyricMetadata(LyricMetadataEntity(it.source, it.trackId, it.selectedVariantId, it.offsetMillis)) }
+            val current = dao.meta() ?: LibraryMetaEntity(revision = 0L).also(dao::insertMeta)
+            dao.updateMeta(LibraryMetaEntity(revision = current.revision + 1))
             MigrationJournalEntity(attemptId, "validated", checksum, sourceRetained = true).also(dao::putMigrationJournal)
         }
+
+    /** Rebuild the canonical migration checksum from durable rows before source cleanup becomes eligible. */
+    internal fun migrationReadbackChecksum(attemptId: String): String? = database.runInTransaction<String?> {
+        val prefix = "migration-$attemptId-"; val dao = database.libraryDao()
+        if (dao.migrationJournal(attemptId) == null) return@runInTransaction null
+        val playlists = dao.playlists(LibraryLimits.MAX_PLAYLISTS).filter { !it.playlistId.startsWith(prefix) }.map { playlist -> SafeLegacyPlaylist(playlist.playlistId, playlist.title, playlist.position, dao.memberships(playlist.playlistId).map { SafeTrack(it.source, it.semanticTrackId, it.title, it.artist) }) }
+        val locals = dao.localRecordsByPrefix(prefix).map { SafeLegacyLocalRecord(it.title, it.artist) }
+        LegacyLibraryMigration.checksum(SafeLegacyInput(playlists, dao.favorites().map { SafeTrack(it.source, it.semanticTrackId, it.title, it.artist) }, dao.queueCheckpoint().map { SafeQueueCheckpoint(it.occurrenceId, it.position, it.source, it.semanticTrackId) }, dao.lyricMetadata().map { SafeLyricMetadata(it.source, it.semanticTrackId, it.selectedVariantId, it.offsetMillis) }, locals))
+    }
 
     internal fun migrationJournal(attemptId: String): MigrationJournalEntity? = database.libraryDao().migrationJournal(attemptId)
     /** Native-only composition hook; no Room entity is exposed through the React bridge. */

@@ -9,6 +9,8 @@ export type LibraryProjection = {
   playlists: Array<{ id: string; title: string; tracks: PlayableTrack[] }>;
   localTracks: LocalTrack[];
   remoteCollections: NonNullable<LibrarySnapshot['remoteCollections']>;
+  queueCheckpoint: NonNullable<LibrarySnapshot['queueCheckpoint']>;
+  lyricMetadata: NonNullable<LibrarySnapshot['lyricMetadata']>;
 };
 
 /**
@@ -58,6 +60,8 @@ export function projectLibrarySnapshot(snapshot: LibrarySnapshot): LibraryProjec
       seekable: Boolean(record.durationMs && record.durationMs > 0),
     })),
     remoteCollections: snapshot.remoteCollections || [],
+    queueCheckpoint: snapshot.queueCheckpoint || [],
+    lyricMetadata: snapshot.lyricMetadata || [],
   };
 }
 

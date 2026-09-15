@@ -5,11 +5,13 @@ import {
   MAX_LIBRARY_TITLE_LENGTH,
   type LibraryMigrationStatus,
   type LibraryLocalRecord,
+  type LibraryRemoteCollection,
+  type LibraryQueueCheckpoint,
+  type LibraryLyricMetadata,
   type LegacyMigrationRequest,
   type LibraryMutation,
   type LibraryMutationReceipt,
   type LibraryPlaylistRecord,
-  type LibraryRemoteCollection,
   type LibrarySnapshot,
 } from './types';
 import type { BackupDocument, ImportMode } from '../backup/backupCodec';
@@ -34,6 +36,8 @@ type NativeLibraryModule = {
   beginLegacyMigration?(request: LegacyMigrationRequest): Promise<unknown>;
   previewBackup?(request: unknown): Promise<unknown>;
   applyBackup?(token: string, checksum: string, expectedRevision: number): Promise<unknown>;
+  replaceRemoteCollections?(request: { schemaVersion: number; collections: LibraryRemoteCollection[] }): Promise<unknown>;
+  replaceContinuityMetadata?(request: { schemaVersion: number; queueCheckpoint: LibraryQueueCheckpoint[]; lyricMetadata: LibraryLyricMetadata[] }): Promise<unknown>;
 };
 
 export type LibraryBackupPreview = {
@@ -116,7 +120,7 @@ export function parseLibrarySnapshot(value: unknown): LibrarySnapshot {
   const candidate = object(value);
   if (
     !candidate ||
-    !exactKeys(candidate, ['schemaVersion', 'revision', 'personalPlaylists', 'favorites', 'localRecords', 'remoteCollections']) ||
+    !exactKeys(candidate, ['schemaVersion', 'revision', 'personalPlaylists', 'favorites', 'localRecords', 'remoteCollections', 'queueCheckpoint', 'lyricMetadata']) ||
     candidate.schemaVersion !== LIBRARY_SCHEMA_VERSION ||
     revision(candidate.revision) === null ||
     !Array.isArray(candidate.personalPlaylists) || !Array.isArray(candidate.favorites) || !Array.isArray(candidate.localRecords) ||
@@ -143,13 +147,25 @@ export function parseLibrarySnapshot(value: unknown): LibrarySnapshot {
   if (personalPlaylists.some((playlist, index) => playlist.position !== index))
     throw new LibraryClientError('INVALID_RESPONSE');
   const remoteCollections = candidate.remoteCollections === undefined ? [] : candidate.remoteCollections;
-  if (!Array.isArray(remoteCollections)) throw new LibraryClientError('INVALID_RESPONSE');
+  const queueCheckpoint = candidate.queueCheckpoint === undefined ? [] : candidate.queueCheckpoint;
+  const lyricMetadata = candidate.lyricMetadata === undefined ? [] : candidate.lyricMetadata;
+  if (!Array.isArray(remoteCollections) || !Array.isArray(queueCheckpoint) || !Array.isArray(lyricMetadata)) throw new LibraryClientError('INVALID_RESPONSE');
   const parsedRemote: LibraryRemoteCollection[] = remoteCollections.map(item => {
     const collection = object(item);
     const collectionId = collection && boundedString(collection.collectionId, MAX_ID_LENGTH, SAFE_ID);
     const title = collection && boundedString(collection.title, MAX_LIBRARY_TITLE_LENGTH);
     if (!collection || !exactKeys(collection, ['collectionId', 'source', 'title', 'syncState']) || !collectionId || !title || !['netease', 'kugou', 'kuwo', 'qq', 'bilibili'].includes(String(collection.source)) || !['ready', 'refreshing', 'error', 'unavailable'].includes(String(collection.syncState))) throw new LibraryClientError('INVALID_RESPONSE');
     return { collectionId, title, source: collection.source as LibraryRemoteCollection['source'], syncState: collection.syncState as LibraryRemoteCollection['syncState'] };
+  });
+  const parsedQueue = queueCheckpoint.map(item => {
+    const checkpoint = object(item);
+    if (!checkpoint || !exactKeys(checkpoint, ['occurrenceId', 'position', 'source', 'trackId']) || !boundedString(checkpoint.occurrenceId, MAX_ID_LENGTH, SAFE_ID) || revision(checkpoint.position) === null || !['netease', 'kugou', 'kuwo', 'qq', 'bilibili', 'local'].includes(String(checkpoint.source)) || !boundedString(checkpoint.trackId, MAX_ID_LENGTH, SAFE_ID)) throw new LibraryClientError('INVALID_RESPONSE');
+    return { occurrenceId: checkpoint.occurrenceId as string, position: checkpoint.position as number, source: checkpoint.source as NonNullable<LibrarySnapshot['queueCheckpoint']>[number]['source'], trackId: checkpoint.trackId as string };
+  });
+  const parsedLyrics = lyricMetadata.map(item => {
+    const metadata = object(item);
+    if (!metadata || !exactKeys(metadata, ['source', 'trackId', 'selectedVariantId', 'offsetMillis']) || !['netease', 'kugou', 'kuwo', 'qq', 'bilibili', 'local'].includes(String(metadata.source)) || !boundedString(metadata.trackId, MAX_ID_LENGTH, SAFE_ID) || !(metadata.selectedVariantId === null || boundedString(metadata.selectedVariantId, MAX_ID_LENGTH, SAFE_ID)) || !Number.isSafeInteger(metadata.offsetMillis) || Math.abs(metadata.offsetMillis as number) > 86_400_000) throw new LibraryClientError('INVALID_RESPONSE');
+    return { source: metadata.source as NonNullable<LibrarySnapshot['lyricMetadata']>[number]['source'], trackId: metadata.trackId as string, selectedVariantId: metadata.selectedVariantId as string | null, offsetMillis: metadata.offsetMillis as number };
   });
   return {
     schemaVersion: LIBRARY_SCHEMA_VERSION,
@@ -158,6 +174,8 @@ export function parseLibrarySnapshot(value: unknown): LibrarySnapshot {
     favorites: candidate.favorites.map(parseTrack),
     localRecords: candidate.localRecords.map(parseLocalRecord),
     remoteCollections: parsedRemote,
+    queueCheckpoint: parsedQueue,
+    lyricMetadata: parsedLyrics,
   };
 }
 
@@ -340,7 +358,11 @@ export const libraryClient = {
       request.schemaVersion !== LIBRARY_SCHEMA_VERSION ||
       request.playlists.length > MAX_LIBRARY_PLAYLISTS ||
       request.localEntries.length > MAX_LIBRARY_PLAYLISTS ||
-      request.playlists.some(item => !object(item) || !exactKeys(item, ['title']) || !boundedString(item.title, MAX_LIBRARY_TITLE_LENGTH)) ||
+      request.favorites.length > 50_000 || request.queueCheckpoint.length > 50_000 || request.lyricMetadata.length > 50_000 ||
+      request.playlists.some(item => !object(item) || !exactKeys(item, ['playlistId', 'title', 'position', 'tracks']) || !boundedString(item.playlistId, MAX_ID_LENGTH, SAFE_ID) || !boundedString(item.title, MAX_LIBRARY_TITLE_LENGTH) || revision(item.position) === null || !Array.isArray(item.tracks) || item.tracks.some(track => !parseTrackSafe(track))) ||
+      request.favorites.some(track => !parseTrackSafe(track, false)) ||
+      request.queueCheckpoint.some(item => !object(item) || !exactKeys(item, ['occurrenceId', 'position', 'source', 'trackId']) || !boundedString(item.occurrenceId, MAX_ID_LENGTH, SAFE_ID) || revision(item.position) === null || !['netease', 'kugou', 'kuwo', 'qq', 'bilibili', 'local'].includes(item.source) || !boundedString(item.trackId, MAX_ID_LENGTH, SAFE_ID)) ||
+      request.lyricMetadata.some(item => !object(item) || !exactKeys(item, ['source', 'trackId', 'selectedVariantId', 'offsetMillis']) || !['netease', 'kugou', 'kuwo', 'qq', 'bilibili', 'local'].includes(item.source) || !boundedString(item.trackId, MAX_ID_LENGTH, SAFE_ID) || !(item.selectedVariantId === null || boundedString(item.selectedVariantId, MAX_ID_LENGTH, SAFE_ID)) || !Number.isSafeInteger(item.offsetMillis) || Math.abs(item.offsetMillis) > 86_400_000) ||
       request.localEntries.some(item => !object(item) || !exactKeys(item, ['title', 'artist']) || !boundedString(item.title, MAX_LIBRARY_TITLE_LENGTH) || !boundedString(item.artist, MAX_LIBRARY_TITLE_LENGTH))
     )
       throw new LibraryClientError('INVALID_REQUEST');
@@ -357,4 +379,19 @@ export const libraryClient = {
     if (typeof module.applyBackup !== 'function') throw new LibraryClientError('NATIVE_UNAVAILABLE');
     return parseReceipt(await withTimeout(module.applyBackup(preview.token, preview.checksum, preview.baseRevision)));
   },
+  async replaceRemoteCollections(collections: LibraryRemoteCollection[]): Promise<LibrarySnapshot> {
+    const module = nativeModule();
+    if (typeof module.replaceRemoteCollections !== 'function') throw new LibraryClientError('NATIVE_UNAVAILABLE');
+    return parseLibrarySnapshot(await withTimeout(module.replaceRemoteCollections({ schemaVersion: LIBRARY_SCHEMA_VERSION, collections })));
+  },
+  async replaceContinuityMetadata(queueCheckpoint: LibraryQueueCheckpoint[], lyricMetadata: LibraryLyricMetadata[]): Promise<LibrarySnapshot> {
+    const module = nativeModule();
+    if (typeof module.replaceContinuityMetadata !== 'function') throw new LibraryClientError('NATIVE_UNAVAILABLE');
+    return parseLibrarySnapshot(await withTimeout(module.replaceContinuityMetadata({ schemaVersion: LIBRARY_SCHEMA_VERSION, queueCheckpoint, lyricMetadata })));
+  },
 };
+
+function parseTrackSafe(value: unknown, localAllowed = true) {
+  const parsed = (() => { try { return parseTrack(value); } catch { return null; } })();
+  return parsed && (localAllowed || parsed.source !== 'local');
+}

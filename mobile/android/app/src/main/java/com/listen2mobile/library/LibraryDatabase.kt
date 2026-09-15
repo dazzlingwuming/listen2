@@ -167,6 +167,10 @@ interface LibraryDao {
     @Query("DELETE FROM personal_playlists WHERE playlistId = :playlistId") fun deletePlaylist(playlistId: String)
     @Query("DELETE FROM personal_playlists") fun deleteAllPlaylists()
     @Insert(onConflict = OnConflictStrategy.ABORT) fun insertQueue(value: QueueCheckpointEntity)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) fun putQueue(value: QueueCheckpointEntity)
+    @Query("SELECT * FROM queue_checkpoint WHERE occurrenceId = :occurrenceId") fun queue(occurrenceId: String): QueueCheckpointEntity?
+    @Query("SELECT * FROM queue_checkpoint ORDER BY position ASC, occurrenceId ASC") fun queueCheckpoint(): List<QueueCheckpointEntity>
+    @Query("DELETE FROM queue_checkpoint") fun deleteAllQueue()
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putFavorite(value: FavoriteEntity)
     @Query("SELECT * FROM favorites ORDER BY source ASC, semanticTrackId ASC") fun favorites(): List<FavoriteEntity>
     @Query("SELECT * FROM favorites WHERE source = :source AND semanticTrackId = :trackId") fun favorite(source: String, trackId: String): FavoriteEntity?
@@ -174,6 +178,7 @@ interface LibraryDao {
     @Query("DELETE FROM favorites") fun deleteAllFavorites()
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putRemoteCollection(value: RemoteCollectionEntity)
     @Query("SELECT * FROM remote_collections ORDER BY source ASC, title ASC, collectionId ASC") fun remoteCollections(): List<RemoteCollectionEntity>
+    @Query("DELETE FROM remote_collections") fun deleteAllRemoteCollections()
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putLocalRecord(value: LocalRecordEntity)
     @Query("SELECT * FROM local_records WHERE localRecordId = :recordId") fun localRecord(recordId: String): LocalRecordEntity?
     @Query("DELETE FROM local_records WHERE localRecordId = :recordId") fun deleteLocalRecord(recordId: String)
@@ -183,10 +188,13 @@ interface LibraryDao {
     @Query("DELETE FROM lyric_metadata WHERE source = 'local' AND semanticTrackId = :recordId") fun deleteLocalLyricMetadata(recordId: String)
     @Query("SELECT * FROM local_records ORDER BY localRecordId ASC") fun localRecords(): List<LocalRecordEntity>
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putLyricMetadata(value: LyricMetadataEntity)
+    @Query("SELECT * FROM lyric_metadata ORDER BY source ASC, semanticTrackId ASC") fun lyricMetadata(): List<LyricMetadataEntity>
+    @Query("DELETE FROM lyric_metadata") fun deleteAllLyricMetadata()
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putMigrationJournal(value: MigrationJournalEntity)
     @Query("SELECT * FROM migration_journal WHERE attemptId = :attemptId") fun migrationJournal(attemptId: String): MigrationJournalEntity?
     @Query("DELETE FROM personal_playlists WHERE playlistId LIKE :prefix || '%'") fun deleteStagedPlaylists(prefix: String)
     @Query("DELETE FROM local_records WHERE localRecordId LIKE :prefix || '%'") fun deleteStagedLocalRecords(prefix: String)
+    @Query("SELECT * FROM local_records WHERE localRecordId LIKE :prefix || '%' ORDER BY localRecordId ASC") fun localRecordsByPrefix(prefix: String): List<LocalRecordEntity>
     @Query("SELECT * FROM history_state WHERE id = 1") fun historyState(): HistoryStateEntity?
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putHistoryState(value: HistoryStateEntity)
     @Query("SELECT * FROM history_sessions WHERE playbackInstanceId = :instanceId AND clearGeneration = :generation") fun historySession(instanceId: String, generation: Long): HistorySessionEntity?
