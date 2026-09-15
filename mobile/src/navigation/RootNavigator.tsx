@@ -49,7 +49,7 @@ function MainTabs() {
   return (
     <Tabs.Navigator
       screenOptions={{ headerShown: false }}
-      tabBar={MobileTabBar}
+      tabBar={props => <MobileTabBar {...props} />}
     >
       <Tabs.Screen component={MyMusicScreen} name="My" />
       <Tabs.Screen component={DiscoverScreen} name="Discover" />
