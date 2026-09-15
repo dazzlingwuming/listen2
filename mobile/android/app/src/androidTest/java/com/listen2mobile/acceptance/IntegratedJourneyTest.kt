@@ -20,5 +20,6 @@ class IntegratedJourneyTest {
         driver.tapLabel("Bilibili")
         driver.assertSearchTerminal("Bilibili")
         driver.exerciseVisibleSafeDomains()
+        driver.captureForegroundEvidence()
     }
 }

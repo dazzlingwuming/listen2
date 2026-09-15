@@ -83,6 +83,12 @@ class AccessibilityDriver(private val instrumentation: Instrumentation) {
         record("library-settings-navigation")
     }
 
+    /** Captured while the target Activity is foreground, before test teardown. */
+    fun captureForegroundEvidence() {
+        shell("uiautomator dump /sdcard/listen2-phase8-integrated.xml >/dev/null")
+        shell("screencap -p /sdcard/listen2-phase8-integrated.png")
+    }
+
     fun record(event: String) = Log.i("Listen2Acceptance", "acceptance-event=$event")
 
     private fun nodeFor(label: String): String? {

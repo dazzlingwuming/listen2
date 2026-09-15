@@ -46,6 +46,10 @@ for (const kind of ['debug-apk', 'release-like-apk', 'release-like-android-test-
 NODE
 )
 [[ "${#BUILD_FIELDS[@]}" == 3 ]] || { echo "build evidence is malformed" >&2; exit 3; }
+BUILD_HEAD="$(node --input-type=module - "$BUILD_RECORD" <<'NODE'
+import { readFileSync } from 'node:fs'; console.log(JSON.parse(readFileSync(process.argv[2], 'utf8')).git.sha);
+NODE
+)"
 DEBUG_APK="${BUILD_FIELDS[0]%%|*}"; DEBUG_SHA="${BUILD_FIELDS[0]##*|}"
 RELEASE_APK="${BUILD_FIELDS[1]%%|*}"; RELEASE_SHA="${BUILD_FIELDS[1]##*|}"
 TEST_APK="$JOURNEY_TEST_APK"; TEST_SHA="$(shasum -a 256 "$TEST_APK" | awk '{print $1}')"
@@ -54,14 +58,17 @@ sha_file() { shasum -a 256 "$1" | awk '{print $1}'; }
 APKANALYZER="$SDK/cmdline-tools/latest/bin/apkanalyzer"; [[ -x "$APKANALYZER" ]] || APKANALYZER="$(command -v apkanalyzer)"
 "$APKANALYZER" dex packages "$TEST_APK" | grep -Fq 'com.listen2mobile.acceptance.UpgradeSeedTest' || { echo "BLOCKED: sealed test payload lacks UpgradeSeedTest" >&2; exit 3; }
 "$APKANALYZER" dex packages "$TEST_APK" | grep -Fq 'com.listen2mobile.acceptance.IntegratedJourneyTest' || { echo "BLOCKED: sealed test payload lacks IntegratedJourneyTest" >&2; exit 3; }
+APKSIGNER="$SDK/build-tools/37.0.0/apksigner"
+TEST_SIGNER="$($APKSIGNER verify --verbose --print-certs "$TEST_APK" | awk -F': ' '/Signer #1 certificate SHA-256 digest/ { print $2; exit }')"
+[[ "$TEST_SIGNER" =~ ^[a-f0-9]{64}$ ]] || { echo "BLOCKED: AndroidTest signer was not verified" >&2; exit 3; }
 
 STATE="$RUN_DIR/device-state-before.sh"; EVENTS="$RUN_DIR/journey-events.txt"; SCREENSHOT="$RUN_DIR/journey-phone.png"
 FIXTURE_DIR="$RUN_DIR/fixtures"; mkdir -p "$FIXTURE_DIR"; umask 077
 cp "$TEST_APK" "$RUN_DIR/artifacts/releaseLikeAndroidTest-journey.apk"
-node --input-type=module - "$RUN_DIR" "$TEST_SHA" <<'NODE' > "$RUN_DIR/journey-test-payload.json"
+node --input-type=module - "$RUN_DIR" "$TEST_SHA" "$TEST_SIGNER" "$BUILD_HEAD" <<'NODE' > "$RUN_DIR/journey-test-payload.json"
 import { createHash } from 'node:crypto'; import { readFileSync } from 'node:fs';
-const [run, sha] = process.argv.slice(2);
-console.log(JSON.stringify({ kind: 'AndroidTest-only', sha256: sha, targetPackage: 'com.dazzlingwuming.listen2', testPackage: 'com.dazzlingwuming.listen2.test', runner: 'androidx.test.runner.AndroidJUnitRunner', contains: ['UpgradeSeedTest', 'IntegratedJourneyTest'], reason: '08-build AndroidTest payload predates Plan 08-02 test sources; releaseLike product hash is unchanged.' }, null, 2));
+const [run, sha, signerSha256, buildHead] = process.argv.slice(2);
+console.log(JSON.stringify({ kind: 'AndroidTest-only', sha256: sha, signerSha256, buildHead, targetPackage: 'com.dazzlingwuming.listen2', targetVersionCode: 1000001, testPackage: 'com.dazzlingwuming.listen2.test', runner: 'androidx.test.runner.AndroidJUnitRunner', contains: ['UpgradeSeedTest', 'IntegratedJourneyTest'], reason: 'AndroidTest-only payload is separately sealed; releaseLike product hash is unchanged.' }, null, 2));
 NODE
 node mobile/scripts/acceptance/generate-fixtures.mjs --out "$FIXTURE_DIR" > "$RUN_DIR/fixture.json"
 FIXTURE_SHA="$(node --input-type=module - "$RUN_DIR/fixture.json" <<'NODE'
@@ -79,15 +86,15 @@ record_failure() {
   write_record "FAIL" "$code" || true
 }
 write_record() {
-  local OUTCOME="$1"; local DETAIL="$2"; local ENDED_AT="$(date -Iseconds)"; trap - EXIT; cleanup
-  node --input-type=module - "$RUN_DIR" "$RELEASE_SHA" "$FIXTURE_SHA" "$OUTCOME" "$DETAIL" "$STARTED_AT" "$ENDED_AT" "$SERIAL" "$CLEANUP_STATUS" <<'NODE' > "$RUN_DIR/.journey-input.json"
+  local OUTCOME="$1"; local DETAIL="$2"; local BUILD_HEAD_VALUE="${3:-$BUILD_HEAD}"; local ENDED_AT="$(date -Iseconds)"; trap - EXIT; cleanup
+  node --input-type=module - "$RUN_DIR" "$RELEASE_SHA" "$FIXTURE_SHA" "$OUTCOME" "$DETAIL" "$STARTED_AT" "$ENDED_AT" "$SERIAL" "$CLEANUP_STATUS" "$BUILD_HEAD_VALUE" <<'NODE' > "$RUN_DIR/.journey-input.json"
 import { createHash } from 'node:crypto'; import { readFileSync, statSync } from 'node:fs'; import { basename } from 'node:path';
-const [run, sha, fixtureSha, outcome, detail, started, ended, serial, cleanup] = process.argv.slice(2);
+const [run, sha, fixtureSha, outcome, detail, started, ended, serial, cleanup, buildHead] = process.argv.slice(2);
 const hash = file => createHash('sha256').update(readFileSync(`${run}/${file}`)).digest('hex');
-const listed = ['journey-events.txt', 'journey-phone.png', 'fixture.json', 'fixtures/synthetic-phase08.wav', 'fixtures/synthetic-phase08.lrc', 'device-state-before.sh', 'journey-test-payload.json', 'artifacts/releaseLikeAndroidTest-journey.apk'].filter(file => { try { return statSync(`${run}/${file}`).isFile(); } catch { return false; } });
+const listed = ['journey-events.txt', 'smoke-phone.png', 'smoke-window.xml', 'integrated-phone.png', 'integrated-window.xml', 'postrun-phone.png', 'postrun-window.xml', 'fixture.json', 'fixtures/synthetic-phase08.wav', 'fixtures/synthetic-phase08.lrc', 'device-state-before.sh', 'journey-test-payload.json', 'artifacts/releaseLikeAndroidTest-journey.apk'].filter(file => { try { return statSync(`${run}/${file}`).isFile(); } catch { return false; } });
 const artifacts = listed.map(file => ({ kind: basename(file).replace(/[^a-z0-9]+/gi, '-').toLowerCase(), relativePath: file, sha256: hash(file), bytes: statSync(`${run}/${file}`).size, sanitized: true }));
 console.log(JSON.stringify({ schemaVersion: 1, runId: basename(run), recordId: 'phase8-api35-journey', recordedAt: ended,
-  git: { branch: 'acceptance-clean-worktree', sha: '7b163a4717210412443828c1ebf1607bf5dc36ff', trackedClean: true, allowedUntracked: [] },
+  git: { branch: 'acceptance-clean-worktree', sha: buildHead, trackedClean: true, allowedUntracked: [] },
   toolchain: { os: 'host-recorded', arch: 'host-recorded', node: 'host-recorded', npm: 'recorded-by-build', java: 'recorded-by-build', gradle: 'recorded-by-build', agp: 'repository-pinned', kotlin: '2.2.0', androidHomeHash: 'recorded-by-build', buildTools: '37.0.0', compileSdk: 37, targetSdk: 36, minSdk: 24, ndk: '27.1.12297006' },
   build: { variant: 'releaseLike', applicationId: 'com.dazzlingwuming.listen2', versionCode: 1000001, versionName: '2.34.0-android', apkRelativePath: 'artifacts/releaseLike.apk', bytes: 67106878, sha256: sha, signerSha256: 'development-debug', zipAligned16KiB: true, minified: true, debuggable: false },
   device: { serialHash: createHash('sha256').update(serial).digest('hex'), avdName: 'recorded-api35', image: 'google_apis', apiLevel: 35, abi: 'host-matched', ramMiB: 0, cores: 0, resolution: 'recorded-by-device', density: 0, locale: 'recorded-by-device', fontScale: 0, navigationMode: 'recorded-by-device' },
@@ -110,9 +117,28 @@ NODE
 "$ADB" -s "$SERIAL" shell am instrument -w -r -e class "$SEED_CLASS" "$TEST_PACKAGE/androidx.test.runner.AndroidJUnitRunner" >/dev/null || { record_failure upgrade-seed; exit 1; }
 "$ADB" -s "$SERIAL" install -r "$RELEASE_APK" >/dev/null || { record_failure release-install; exit 1; }
 "$ADB" -s "$SERIAL" shell pm path "$TEST_PACKAGE" | grep -q . || { record_failure missing-test-package; exit 1; }
+smoke_ui() {
+  "$ADB" -s "$SERIAL" shell am start -W -n "$PACKAGE/com.listen2mobile.MainActivity" >/dev/null
+  local deadline=$((SECONDS + 20)) xml=""
+  while (( SECONDS < deadline )); do
+    "$ADB" -s "$SERIAL" shell dumpsys window | grep -q "$PACKAGE/com.listen2mobile.MainActivity" || { sleep 1; continue; }
+    "$ADB" -s "$SERIAL" shell uiautomator dump /sdcard/listen2-phase8-smoke.xml >/dev/null
+    xml="$($ADB -s "$SERIAL" shell cat /sdcard/listen2-phase8-smoke.xml)"
+    [[ "$xml" == *"搜索歌曲、歌手或歌单"* ]] && return 0
+    sleep 1
+  done
+  return 1
+}
+smoke_ui || { record_failure release-ui-smoke; exit 1; }
+"$ADB" -s "$SERIAL" pull /sdcard/listen2-phase8-smoke.xml "$RUN_DIR/smoke-window.xml" >/dev/null
+"$ADB" -s "$SERIAL" exec-out screencap -p > "$RUN_DIR/smoke-phone.png"
 "$ADB" -s "$SERIAL" shell am instrument -w -r -e class "$JOURNEY_CLASS" "$TEST_PACKAGE/androidx.test.runner.AndroidJUnitRunner" >/dev/null || { record_failure integrated-journey; exit 1; }
-"$ADB" -s "$SERIAL" exec-out screencap -p > "$SCREENSHOT"
+"$ADB" -s "$SERIAL" pull /sdcard/listen2-phase8-integrated.xml "$RUN_DIR/integrated-window.xml" >/dev/null || { record_failure missing-integrated-window; exit 1; }
+"$ADB" -s "$SERIAL" pull /sdcard/listen2-phase8-integrated.png "$RUN_DIR/integrated-phone.png" >/dev/null || { record_failure missing-integrated-screen; exit 1; }
+smoke_ui || { record_failure postrun-ui-smoke; exit 1; }
+"$ADB" -s "$SERIAL" pull /sdcard/listen2-phase8-smoke.xml "$RUN_DIR/postrun-window.xml" >/dev/null
+"$ADB" -s "$SERIAL" exec-out screencap -p > "$RUN_DIR/postrun-phone.png"
 printf '%s\n' 'reset=success' 'upgrade-seed=success' 'integrated-journey=success' > "$EVENTS"
 # No account credentials were supplied through the permitted UI-only lane.
-write_record "NOT_VERIFIED" "Credential-controlled Bilibili login and DeepSeek translation were intentionally not exercised."
+write_record "NOT_VERIFIED" "Credential-controlled Bilibili login and DeepSeek translation were intentionally not exercised." "$BUILD_HEAD"
 trap - EXIT
