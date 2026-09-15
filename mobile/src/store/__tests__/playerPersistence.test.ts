@@ -138,4 +138,57 @@ describe('player persistence migration', () => {
     expect(result.muted).toBe(false);
     expect(result.transitionToken).toBe(0);
   });
+
+  it('preserves play-next history identity even after its FIFO occurrence was consumed', () => {
+    const queued = track('ne_queued');
+    const result = sanitizePlayerState({
+      playlist: [track('ne_1')],
+      history: [
+        {
+          track: queued,
+          playlistIndex: -1,
+          source: 'play-next',
+          occurrenceId: 'play-next-consumed',
+          position: 18,
+        },
+      ],
+      playNextQueue: [],
+      currentTrack: queued,
+      currentIndex: 0,
+      currentSource: 'play-next',
+      currentOccurrenceId: 'play-next-consumed',
+      position: 18,
+      shuffleOrder: [0],
+      shuffleCursor: 0,
+    });
+
+    expect(result.history).toEqual([
+      {
+        track: queued,
+        playlistIndex: -1,
+        source: 'play-next',
+        occurrenceId: 'play-next-consumed',
+        position: 18,
+      },
+    ]);
+    expect(result.currentOccurrenceId).toBe('play-next-consumed');
+  });
+
+  it('keeps only finite bounded progress and a cursor that belongs to the restored order', () => {
+    const result = sanitizePlayerState({
+      playlist: [track('ne_1'), track('ne_2')],
+      currentTrack: track('ne_1'),
+      nowPlaying: track('ne_1'),
+      currentIndex: 0,
+      currentSource: 'playlist',
+      position: Number.POSITIVE_INFINITY,
+      shuffleOrder: [1, 0],
+      shuffleCursor: 1,
+    });
+
+    expect(result.position).toBe(0);
+    expect(Number.isFinite(result.position)).toBe(true);
+    expect(result.shuffleOrder).toEqual([1, 0]);
+    expect(result.shuffleCursor).toBe(1);
+  });
 });

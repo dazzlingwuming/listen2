@@ -634,6 +634,7 @@ export function PlayerScreen() {
             duration={
               state.duration ?? current.duration ?? current.durationMs ?? 0
             }
+            onSeek={position => invoke(dispatch, ['seekTo'], position)}
           />
           <View style={styles.actions}>
             <Pressable
@@ -949,9 +950,11 @@ export function cancelPlayerTranslation(operationId: string | null): void {
 function Progress({
   position,
   duration,
+  onSeek,
 }: {
   position: number;
   duration: number;
+  onSeek: (position: number) => void;
 }) {
   const safeDuration = duration > 1000 ? duration / 1000 : duration;
   const safePosition = position > 1000 ? position / 1000 : position;
@@ -960,14 +963,29 @@ function Progress({
     : 0;
   return (
     <View style={styles.progressBlock}>
-      <View
+      <Pressable
         accessibilityLabel={`播放进度 ${formatDuration(
-          safePosition,
-        )} / ${formatDuration(safeDuration)}`}
+          safePosition * 1000,
+        )} / ${formatDuration(safeDuration * 1000)}`}
+        accessibilityRole="adjustable"
+        accessibilityValue={{
+          min: 0,
+          max: safeDuration,
+          now: safePosition,
+          text: `${formatDuration(safePosition * 1000)} / ${formatDuration(
+            safeDuration * 1000,
+          )}`,
+        }}
+        accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
+        onAccessibilityAction={event => {
+          if (!safeDuration) return;
+          const delta = event.nativeEvent.actionName === 'increment' ? 15 : -15;
+          onSeek(Math.min(safeDuration, Math.max(0, safePosition + delta)));
+        }}
         style={styles.track}
       >
         <View style={[styles.progress, { width: `${fraction * 100}%` }]} />
-      </View>
+      </Pressable>
       <View style={styles.times}>
         <Text style={text.meta}>{formatDuration(safePosition)}</Text>
         <Text style={text.meta}>{formatDuration(safeDuration)}</Text>

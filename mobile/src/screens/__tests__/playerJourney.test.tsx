@@ -43,13 +43,20 @@ jest.mock('../../store/playerSlice', () => ({
     type: 'player/removeQueuedNext',
     payload: occurrenceId,
   }),
+  seekTo: (position: number) => ({
+    type: 'player/seekTo',
+    payload: position,
+  }),
   togglePlayback: () => ({ type: 'player/togglePlayback' }),
 }));
 jest.mock('../../store/librarySlice', () => ({ toggleFavorite: jest.fn() }));
 jest.mock('../../types/music', () => ({ isLocalTrack: () => false }));
 jest.mock('../../components/TrackRow', () => ({
   artwork: () => undefined,
-  formatDuration: () => '0:00',
+  formatDuration: (value: number) => {
+    const seconds = value > 1000 ? Math.floor(value / 1000) : Math.floor(value);
+    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+  },
   trackArtist: (track: any) => track.artist,
   trackSource: (track: any) => track.source,
   trackTitle: (track: any) => track.title,
@@ -82,6 +89,7 @@ describe('PlayerScreen play-next queue', () => {
       currentTrack: track,
       isPlaying: false,
       position: 0,
+      duration: 120,
       playNextQueue: [
         { ...track, occurrenceId: 'play-next-a', track },
         { ...track, occurrenceId: 'play-next-b', track },
@@ -132,5 +140,45 @@ describe('PlayerScreen play-next queue', () => {
         type: 'player/clearPlayNextQueue',
       }),
     );
+  });
+
+  it('exposes a controlled adjustable seek surface with confirmed value and actions', async () => {
+    mockPlayerState = {
+      ...mockPlayerState,
+      position: 30,
+      duration: 120,
+      playNextQueue: [],
+    };
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<PlayerScreen />);
+    });
+
+    const slider = tree.root.findByProps({
+      accessibilityRole: 'adjustable',
+    });
+    expect(slider.props.accessibilityValue).toEqual({
+      min: 0,
+      max: 120,
+      now: 30,
+      text: '0:30 / 2:00',
+    });
+    expect(slider.props.accessibilityActions).toEqual(
+      expect.arrayContaining([
+        { name: 'increment' },
+        { name: 'decrement' },
+      ]),
+    );
+
+    await act(async () => {
+      slider.props.onAccessibilityAction({
+        nativeEvent: { actionName: 'increment' },
+      });
+    });
+
+    expect(mockDispatch).toHaveBeenCalledWith({
+      type: 'player/seekTo',
+      payload: 45,
+    });
   });
 });

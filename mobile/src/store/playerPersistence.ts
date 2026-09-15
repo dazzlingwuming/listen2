@@ -148,21 +148,27 @@ function sanitizeHistory(
     const candidate = record(item);
     const track = sanitizeTrack(candidate?.track);
     const playlistIndex = candidate?.playlistIndex;
-    if (
-      !track ||
-      typeof playlistIndex !== 'number' ||
-      !Number.isInteger(playlistIndex) ||
-      playlistIndex < 0 ||
-      playlistIndex >= playlist.length ||
-      (candidate?.source !== 'playlist' && candidate?.source !== 'play-next')
-    )
+    const source = candidate?.source;
+    const validPlaylistIndex =
+      source === 'playlist' &&
+      typeof playlistIndex === 'number' &&
+      Number.isInteger(playlistIndex) &&
+      playlistIndex >= 0 &&
+      playlistIndex < playlist.length;
+    const validPlayNextIndex =
+      source === 'play-next' &&
+      typeof playlistIndex === 'number' &&
+      Number.isInteger(playlistIndex) &&
+      playlistIndex >= -1 &&
+      playlistIndex < playlist.length;
+    if (!track || (!validPlaylistIndex && !validPlayNextIndex))
       continue;
     result.push({
       track,
-      playlistIndex,
-      source: candidate.source,
-      position: number(candidate.position),
-      occurrenceId: string(candidate.occurrenceId, 128),
+      playlistIndex: playlistIndex as number,
+      source,
+      position: number(candidate?.position),
+      occurrenceId: string(candidate?.occurrenceId, 128),
     });
   }
   return result;

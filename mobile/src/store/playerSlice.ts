@@ -63,6 +63,8 @@ export type PlayerState = {
   acceptedTransitionToken: number;
 };
 
+const MAX_PLAYER_POSITION = 86_400;
+
 const initialState: PlayerState = {
   playlist: [],
   tracks: [],
@@ -118,6 +120,36 @@ function clampVolume(value: number): number {
   return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 1));
 }
 
+function finitePosition(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.max(0, Math.min(MAX_PLAYER_POSITION, value))
+    : fallback;
+}
+
+function isValidPlayMode(value: unknown): value is PlayMode {
+  return (
+    value === PLAY_MODE.LOOP ||
+    value === PLAY_MODE.SHUFFLE ||
+    value === PLAY_MODE.REPEAT_ONE
+  );
+}
+
+function isPermutation(value: unknown, length: number): value is number[] {
+  return (
+    Array.isArray(value) &&
+    value.length === length &&
+    value.every(
+      index => Number.isInteger(index) && index >= 0 && index < length,
+    ) &&
+    new Set(value).size === length
+  );
+}
+
+function invalidateTransition(state: PlayerState) {
+  const next = Math.max(state.transitionToken, state.acceptedTransitionToken) + 1;
+  state.transitionToken = next;
+}
+
 function activate(
   state: PlayerState,
   payload: {
@@ -166,6 +198,9 @@ const playerSlice = createSlice({
       state,
       action: PayloadAction<{ tracks: Track[]; startIndex?: number }>,
     ) {
+      // A replacement is a destructive semantic boundary. Any asynchronous
+      // queue transition resolving against the old playlist must be rejected.
+      invalidateTransition(state);
       state.playlist = action.payload.tracks.slice();
       state.tracks = state.playlist;
       state.queue = state.playlist;
@@ -185,14 +220,36 @@ const playerSlice = createSlice({
         state.nowPlaying = null;
         state.currentTrack = null;
         state.currentIndex = -1;
+        state.currentSource = 'playlist';
+        state.currentOccurrenceId = null;
+        state.isPlaying = false;
+        state.position = 0;
+        state.duration = 0;
+        state.bufferedPosition = 0;
       }
     },
     appendPlaylistTrack(state, action: PayloadAction<Track>) {
+      const previousLength = state.playlist.length;
+      const previousOrder = state.shuffleOrder.slice();
+      const previousCursor = state.shuffleCursor;
       state.playlist.push(action.payload);
       state.tracks = state.playlist;
       state.queue = state.playlist;
-      state.shuffleOrder = shuffleIndexes(state.playlist.length);
-      state.shuffleCursor = state.shuffleOrder.indexOf(state.currentIndex);
+      if (isPermutation(previousOrder, previousLength)) {
+        // Keep the active shuffle round intact. The appended occurrence joins
+        // the unvisited tail instead of silently reshuffling already visited
+        // items or changing the current cursor.
+        state.shuffleOrder = [...previousOrder, previousLength];
+        state.shuffleCursor = previousCursor;
+        if (
+          state.currentIndex >= 0 &&
+          state.shuffleOrder[state.shuffleCursor] !== state.currentIndex
+        )
+          state.shuffleCursor = state.shuffleOrder.indexOf(state.currentIndex);
+      } else {
+        state.shuffleOrder = shuffleIndexes(state.playlist.length);
+        state.shuffleCursor = state.shuffleOrder.indexOf(state.currentIndex);
+      }
     },
     enqueueNext(state, action: PayloadAction<Track>) {
       // Do not de-duplicate: two taps mean two requested plays.
@@ -241,6 +298,8 @@ const playerSlice = createSlice({
         state.nowPlaying = null;
         state.currentTrack = null;
         state.currentIndex = -1;
+        state.currentSource = 'playlist';
+        state.currentOccurrenceId = null;
         state.isPlaying = false;
         state.position = 0;
         state.duration = 0;
@@ -253,10 +312,11 @@ const playerSlice = createSlice({
       state.shuffleCursor = state.shuffleOrder.indexOf(state.currentIndex);
     },
     clearPlayNextQueue(state) {
+      invalidateTransition(state);
       state.playNextQueue = [];
     },
     beginTransition(state, action: PayloadAction<number>) {
-      if (action.payload > state.transitionToken)
+      if (Number.isInteger(action.payload) && action.payload > state.transitionToken)
         state.transitionToken = action.payload;
     },
     consumeQueuedNext(
@@ -307,7 +367,7 @@ const playerSlice = createSlice({
       });
     },
     setPlaying(state, action: PayloadAction<boolean>) {
-      state.isPlaying = action.payload;
+      if (typeof action.payload === 'boolean') state.isPlaying = action.payload;
     },
     setProgress(
       state,
@@ -317,11 +377,14 @@ const playerSlice = createSlice({
         bufferedPosition?: number;
       }>,
     ) {
-      state.position = Math.max(0, action.payload.position);
+      state.position = finitePosition(action.payload.position, state.position);
       if (action.payload.duration !== undefined)
-        state.duration = Math.max(0, action.payload.duration);
+        state.duration = finitePosition(action.payload.duration, state.duration);
       if (action.payload.bufferedPosition !== undefined) {
-        state.bufferedPosition = Math.max(0, action.payload.bufferedPosition);
+        state.bufferedPosition = finitePosition(
+          action.payload.bufferedPosition,
+          state.bufferedPosition,
+        );
       }
     },
     setVolumeSnapshot(state, action: PayloadAction<number>) {
@@ -331,6 +394,7 @@ const playerSlice = createSlice({
       state.muted = action.payload;
     },
     setPlayModeSnapshot(state, action: PayloadAction<PlayMode>) {
+      if (!isValidPlayMode(action.payload)) return;
       state.playMode = action.payload;
       if (
         action.payload === PLAY_MODE.SHUFFLE &&
@@ -348,9 +412,12 @@ const playerSlice = createSlice({
       }
     },
     setError(state, action: PayloadAction<string | null>) {
-      state.error = action.payload;
+      state.error = typeof action.payload === 'string' || action.payload === null
+        ? action.payload
+        : state.error;
     },
     clearPlayer(state) {
+      invalidateTransition(state);
       Object.assign(state, initialState);
     },
   },

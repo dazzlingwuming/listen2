@@ -87,7 +87,7 @@ describe('Bilibili bounded native retry', () => {
         title: '测试',
         artist: '作者',
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toBe(true);
     expect(mockBootstrap).toHaveBeenCalledTimes(2);
     expect(mockNative.add).toHaveBeenCalledTimes(2);
     expect(JSON.stringify(mockNative.add.mock.calls)).not.toContain(

@@ -7,22 +7,31 @@ import { playerController } from './playerController';
  * and Redux only receives a snapshot of that native state.
  */
 export default async function playbackService() {
-  TrackPlayer.addEventListener(Event.RemotePlay, () => playerController.play());
+  const settle = async (operation: () => Promise<unknown>) => {
+    try {
+      await operation();
+    } catch {
+      // Event callbacks have no caller to receive a rejection. Controller
+      // methods already emit safe state; never leak an unhandled promise.
+    }
+  };
+  TrackPlayer.addEventListener(Event.RemotePlay, () => settle(() => playerController.play()));
   TrackPlayer.addEventListener(Event.RemotePause, () =>
-    playerController.pause(),
+    settle(() => playerController.pause()),
   );
   TrackPlayer.addEventListener(Event.RemoteStop, () =>
-    playerController.pause(),
+    settle(() => playerController.stop()),
   );
-  TrackPlayer.addEventListener(Event.RemoteNext, () => playerController.next());
+  TrackPlayer.addEventListener(Event.RemoteNext, () => settle(() => playerController.next()));
   TrackPlayer.addEventListener(Event.RemotePrevious, () =>
-    playerController.previous(),
+    settle(() => playerController.previous()),
   );
   TrackPlayer.addEventListener(Event.RemoteSeek, event =>
-    playerController.seek(undefined, event.position),
+    settle(() => playerController.seek(undefined, event.position)),
   );
   TrackPlayer.addEventListener(Event.RemoteDuck, event => {
-    if (event.paused || event.permanent) return playerController.pause();
+    if (event.paused || event.permanent)
+      return settle(() => playerController.pause());
   });
   TrackPlayer.addEventListener(Event.PlaybackProgressUpdated, event => {
     playerController.onProgress(event.position, event.duration, event.buffered);

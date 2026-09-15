@@ -106,4 +106,43 @@ describe('playerSlice', () => {
     expect(PLAY_MODE).toEqual({ LOOP: 0, SHUFFLE: 1, REPEAT_ONE: 2 });
     expect(shuffleIndexes(5, () => 0)).toEqual([1, 2, 3, 4, 0]);
   });
+
+  it('invalidates an in-flight transition when the play-next queue is cleared', () => {
+    let state = reducer(undefined, playerActions.beginTransition(7));
+    state = reducer(state, playerActions.enqueueNext(track('ne_1')));
+    state = reducer(state, playerActions.clearPlayNextQueue());
+
+    expect(state.playNextQueue).toEqual([]);
+    expect(state.transitionToken).toBeGreaterThan(7);
+  });
+
+  it('invalidates an in-flight transition when the playlist is replaced', () => {
+    let state = reducer(undefined, playerActions.beginTransition(4));
+    state = reducer(
+      state,
+      playerActions.replacePlaylist({ tracks: [track('ne_new')] }),
+    );
+
+    expect(state.currentTrack?.id).toBe('ne_new');
+    expect(state.transitionToken).toBeGreaterThan(4);
+  });
+
+  it('keeps the shuffle round and cursor valid when a playlist item is appended', () => {
+    let state = reducer(
+      undefined,
+      playerActions.replacePlaylist({
+        tracks: [track('ne_1'), track('ne_2'), track('ne_3')],
+        startIndex: 1,
+      }),
+    );
+    state = reducer(state, playerActions.setPlayModeSnapshot(PLAY_MODE.SHUFFLE));
+    const priorOrder = state.shuffleOrder;
+    const priorCursor = state.shuffleCursor;
+    state = reducer(state, playerActions.appendPlaylistTrack(track('ne_4')));
+
+    expect(state.shuffleOrder.slice(0, priorOrder.length)).toEqual(priorOrder);
+    expect(state.shuffleOrder).toContain(3);
+    expect(state.shuffleCursor).toBe(priorCursor);
+    expect(state.shuffleOrder[state.shuffleCursor]).toBe(state.currentIndex);
+  });
 });
