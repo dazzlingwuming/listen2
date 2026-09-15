@@ -44,6 +44,8 @@ class OfflineAudioModule(private val app: ReactApplicationContext) : ReactContex
         promise.resolve(snapshot(service().setQuota(exact)))
     }
     @ReactMethod fun cacheAction(action: String, operationId: String, promise: Promise) {
+        if (action == "cancel") service().snapshot().entries.firstOrNull { it.operationId == operationId }
+            ?.let { OfflineDurableWork.cancel(app, it.source, it.trackId) }
         promise.resolve(snapshot(service().action(action, operationId)))
     }
 
@@ -95,6 +97,12 @@ class OfflineAudioModule(private val app: ReactApplicationContext) : ReactContex
     /** Only a just-created native provider descriptor may authorize a retained blob. */
     @ReactMethod fun authorizeResolvedCache(source: String, trackId: String, requestId: String, promise: Promise) {
         val allowed = source.length <= 32 && trackId.length <= 160 && requestId.matches(Regex("[A-Za-z0-9_-]{8,96}")) && service().authorize(source, trackId, requestId)
+        promise.resolve(Arguments.createMap().apply { putBoolean("allowed", allowed) })
+    }
+
+    /** No network resolution: this admits only a retained current native session grant. */
+    @ReactMethod fun authorizeLocalCache(source: String, trackId: String, promise: Promise) {
+        val allowed = source.length <= 32 && trackId.length <= 160 && service().authorizeLocal(source, trackId)
         promise.resolve(Arguments.createMap().apply { putBoolean("allowed", allowed) })
     }
 

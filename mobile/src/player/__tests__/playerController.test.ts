@@ -32,6 +32,7 @@ const nativeMediaFixture = (value: unknown) => {
 const mockResolveReady = jest.fn().mockResolvedValue({ status: 'miss' });
 const mockInvalidate = jest.fn().mockResolvedValue({});
 const mockAuthorizeResolvedCache = jest.fn().mockResolvedValue(true);
+const mockAuthorizeLocalCache = jest.fn().mockResolvedValue(false);
 const mockMarkPlayed = jest.fn().mockResolvedValue({});
 const mockNormalizationGain = jest.fn().mockResolvedValue(1);
 const mockPrepareLocalPlayback = jest.fn();
@@ -83,6 +84,8 @@ jest.mock('../../offline/offlineAudio', () => ({
     invalidate: (...args: unknown[]) => mockInvalidate(...args),
     authorizeResolvedCache: (...args: unknown[]) =>
       mockAuthorizeResolvedCache(...args),
+    authorizeLocalCache: (...args: unknown[]) =>
+      mockAuthorizeLocalCache(...args),
     markPlayed: (...args: unknown[]) => mockMarkPlayed(...args),
     normalizationGain: (...args: unknown[]) => mockNormalizationGain(...args),
   },
@@ -160,6 +163,7 @@ describe('PlayerController queue transitions', () => {
       .mockResolvedValue({ state: 'playing' });
     mockResolveReady.mockResolvedValue({ status: 'miss' });
     mockAuthorizeResolvedCache.mockResolvedValue(true);
+    mockAuthorizeLocalCache.mockResolvedValue(false);
     mockMarkPlayed.mockResolvedValue({});
     mockNormalizationGain.mockResolvedValue(1);
     mockPrepareLocalPlayback.mockReset();
@@ -342,6 +346,23 @@ describe('PlayerController queue transitions', () => {
       queued,
       expect.any(AbortSignal),
     );
+    expect(mockNativePlayer.add).toHaveBeenCalledWith(
+      expect.objectContaining({ url: SAFE_CACHE_URI }),
+    );
+  });
+
+  it('starts a locally authorized retained blob without resolving the network provider', async () => {
+    const cached = track('netrack_offline');
+    mockAuthorizeLocalCache.mockResolvedValueOnce(true);
+    mockResolveReady.mockResolvedValueOnce({
+      status: 'hit',
+      uri: SAFE_CACHE_URI,
+      mimeType: 'audio/mpeg',
+    });
+
+    await expect(playerController.playTrack(dispatch, cached)).resolves.toBe(true);
+
+    expect(mockResolveMedia).not.toHaveBeenCalled();
     expect(mockNativePlayer.add).toHaveBeenCalledWith(
       expect.objectContaining({ url: SAFE_CACHE_URI }),
     );

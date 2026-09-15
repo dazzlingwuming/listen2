@@ -239,6 +239,18 @@ async function resolveTrackMedia(
     if (Object.keys(receipt).length !== 5 || Object.keys(receipt).some(key => !['recordId', 'playbackRequestId', 'status', 'privatePlaybackUri', 'seekable'].includes(key)) || receipt.recordId !== track.id || receipt.playbackRequestId !== playbackRequestId || receipt.status !== 'success' || typeof privateUri !== 'string' || !new RegExp(`^content://${APP_MEDIA_AUTHORITY}\\.local-media/play/[A-Za-z0-9_-]{32,128}$`).test(privateUri) || typeof receipt.seekable !== 'boolean') throw Object.assign(new Error('local-unavailable'), { code: 'local-media-unavailable' });
     return { playableUri: privateUri, durationMs: track.durationMs };
   }
+  // A retained file can start with no network only when the native session
+  // still holds a current provider/account entitlement for this exact track.
+  // Cache miss/expiry intentionally falls through to online resolution.
+  if (isOfflineDownloadEligible(track) && (await offlineAudio.authorizeLocalCache(track.source, track.id))) {
+    const cached = await offlineAudio.resolveReady(track.source, track.id);
+    if (cached.status === 'hit' && safeOwnedPlaybackUri(cached.uri))
+      return {
+        playableUri: cached.uri,
+        durationMs: track.durationMs,
+        mimeType: cached.mimeType,
+      };
+  }
   let candidate: MediaDescriptor;
   try {
     candidate = await resolveMediaWithSignal(track, signal);

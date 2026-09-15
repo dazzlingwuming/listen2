@@ -196,6 +196,19 @@ export const offlineAudio = {
       return false;
     }
   },
+  async authorizeLocalCache(source: string, trackId: string) {
+    if (!safeId(source) || !safeId(trackId) || !native?.authorizeLocalCache)
+      return false;
+    try {
+      const raw = (await (native.authorizeLocalCache as Function)(
+        source,
+        trackId,
+      )) as Record<string, unknown>;
+      return raw.allowed === true;
+    } catch {
+      return false;
+    }
+  },
   async normalizationGain(source: string, trackId: string) {
     if (!safeId(source) || !safeId(trackId) || !native?.normalizationGain)
       return 1;

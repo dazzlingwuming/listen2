@@ -35,7 +35,13 @@ internal data class OfflineCatalogResult(val status: String, val blobKey: String
  * owner root, so the provider cannot accidentally turn an interrupted transfer into media.
  */
 internal class OfflineCatalogRepository(private val database: Listen2Database, private val root: File, private val now: () -> Long = { System.currentTimeMillis() }) {
-    init { listOf("blobs", "attempts", "owners/temporary", "owners/playlist", "owners/explicit").forEach { File(root, it).mkdirs() } }
+    init {
+        listOf("blobs", "attempts").forEach { File(root, it).mkdirs() }
+        // Older builds copied full media once per owner. Owner rows now index
+        // one canonical blob, so remove only files inside this private legacy
+        // alias root; no caller path or external storage is ever traversed.
+        purgeLegacyOwnerCopies()
+    }
 
     fun ready(identity: OfflineCatalogIdentity, expectedHash: String, expectedLength: Long, mimeType: String, codec: String, staged: File, owner: OfflineOwnerKind, playlistId: String? = null): OfflineCatalogResult {
         if (expectedHash.length != 64 || expectedLength <= 0 || !staged.isFile || staged.length() != expectedLength || hash(staged) != expectedHash || !mediaSignature(staged)) return OfflineCatalogResult("VERIFY_FAILED")
@@ -51,9 +57,10 @@ internal class OfflineCatalogRepository(private val database: Listen2Database, p
             val row = when (owner) { OfflineOwnerKind.TEMPORARY -> CacheOwnerEntity.temporary(blob.blobKey, now()); OfflineOwnerKind.EXPLICIT -> CacheOwnerEntity.explicit(blob.blobKey, now()); OfflineOwnerKind.PLAYLIST -> CacheOwnerEntity.playlist(blob.blobKey, playlistId ?: return@runInTransaction, now()) }
             dao.putCacheOwner(row)
         }
-        val ownerRow = database.libraryDao().cacheOwners(blob.blobKey).firstOrNull { it.kind == owner && (owner != OfflineOwnerKind.PLAYLIST || it.ownerKey == "playlist:$playlistId") } ?: return OfflineCatalogResult("OWNER_FAILED")
-        val alias = File(root, ownerRow.aliasRelativeKey); alias.parentFile?.mkdirs(); if (!alias.exists()) destination.copyTo(alias)
-        return OfflineCatalogResult("READY", blob.blobKey)
+        val ownerRow = database.libraryDao().cacheOwners(blob.blobKey).firstOrNull { it.kind == owner && (owner != OfflineOwnerKind.PLAYLIST || it.ownerKey == "playlist:$playlistId") }
+            ?: return OfflineCatalogResult("OWNER_FAILED")
+        // ownerRow is a Room reference only. Never duplicate media bytes.
+        return OfflineCatalogResult("READY", ownerRow.blobKey)
     }
 
     fun addOwner(blobKey: String, owner: OfflineOwnerKind, playlistId: String? = null): OfflineCatalogResult {
@@ -61,14 +68,12 @@ internal class OfflineCatalogRepository(private val database: Listen2Database, p
         if (blob.state != "ready" || !canRead(File(root, blob.privateRelativeKey))) return OfflineCatalogResult("REPAIR_REQUIRED")
         val row = when (owner) { OfflineOwnerKind.TEMPORARY -> CacheOwnerEntity.temporary(blobKey, now()); OfflineOwnerKind.EXPLICIT -> CacheOwnerEntity.explicit(blobKey, now()); OfflineOwnerKind.PLAYLIST -> CacheOwnerEntity.playlist(blobKey, playlistId ?: return OfflineCatalogResult("INVALID_REQUEST"), now()) }
         database.libraryDao().putCacheOwner(row)
-        val alias = File(root, row.aliasRelativeKey); alias.parentFile?.mkdirs(); File(root, blob.privateRelativeKey).copyTo(alias, overwrite = true)
         return OfflineCatalogResult("READY", blobKey)
     }
 
     fun removeOwner(blobKey: String, ownerKey: String): OfflineCatalogResult {
         val dao = database.libraryDao(); val owner = dao.cacheOwners(blobKey).firstOrNull { it.ownerKey == ownerKey } ?: return OfflineCatalogResult("NOT_FOUND")
         database.runInTransaction { dao.deleteCacheOwner(blobKey, ownerKey) }
-        File(root, owner.aliasRelativeKey).delete()
         return OfflineCatalogResult("REMOVED", blobKey)
     }
 
@@ -78,6 +83,13 @@ internal class OfflineCatalogRepository(private val database: Listen2Database, p
         if (blob.state != "ready" || database.libraryDao().cacheOwners(blobKey).isEmpty()) return null
         val file = File(root, blob.privateRelativeKey)
         return file.takeIf { canRead(it) && it.length() == blob.byteLength && hash(it) == blob.contentHash }
+    }
+
+    private fun purgeLegacyOwnerCopies() {
+        val aliases = File(root, "owners")
+        if (!aliases.isDirectory) return
+        aliases.walkTopDown().filter { it.isFile }.forEach { it.delete() }
+        aliases.walkBottomUp().filter { it.isDirectory && it != aliases }.forEach { it.delete() }
     }
 
     /** A metric may cross the cache boundary only when every content identity component matches. */

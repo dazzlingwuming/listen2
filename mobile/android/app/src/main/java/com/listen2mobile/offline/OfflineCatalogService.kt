@@ -79,6 +79,26 @@ internal class OfflineCatalogService private constructor(context: Context) {
         return true
     }
 
+    /** Used by both the cache UI and WorkManager's notification cancel intent. */
+    fun cancel(source: String, trackId: String) {
+        val active = transfer.snapshot().firstOrNull { it.source == source && it.trackId == trackId }
+        if (active != null) transfer.cancel(active.operationId)
+        publish()
+    }
+
+    /** Worker-facing bounded wait keeps the foreground notification truthful. */
+    fun awaitTerminal(source: String, trackId: String, deadlineMillis: Long): String {
+        while (System.currentTimeMillis() < deadlineMillis) {
+            if (readyBlob(source, trackId) != null) return "ready"
+            val entry = transfer.snapshot().firstOrNull { it.source == source && it.trackId == trackId }
+            if (entry == null) return "not-found"
+            if (entry.status == OfflineStatus.FAILED) return "failed"
+            if (entry.status == OfflineStatus.CANCELLED) return "cancelled"
+            try { Thread.sleep(250) } catch (_: InterruptedException) { return "cancelled" }
+        }
+        return "timed-out"
+    }
+
     fun promote(source: String, trackId: String): CatalogCacheSnapshot {
         readyBlob(source, trackId)?.let { repository.addOwner(it.blobKey, OfflineOwnerKind.EXPLICIT) }
         return snapshot()
@@ -137,6 +157,14 @@ internal class OfflineCatalogService private constructor(context: Context) {
     fun authorize(source: String, trackId: String, requestId: String): Boolean {
         val blob = readyBlob(source, trackId) ?: return false
         val grant = MediaLeaseRegistryHolder.current()?.cacheAuthorization(requestId, source, trackId) ?: return false
+        synchronized(cacheAuthorizations) { cacheAuthorizations[blob.blobKey] = grant }
+        return true
+    }
+
+    /** Offline-first path: only a current locally-held native entitlement may admit a blob. */
+    fun authorizeLocal(source: String, trackId: String): Boolean {
+        val blob = readyBlob(source, trackId) ?: return false
+        val grant = MediaLeaseRegistryHolder.current()?.localCacheAuthorization(source, trackId) ?: return false
         synchronized(cacheAuthorizations) { cacheAuthorizations[blob.blobKey] = grant }
         return true
     }
@@ -270,7 +298,6 @@ internal class OfflineCatalogService private constructor(context: Context) {
             dao.deleteCacheBlob(blob.blobKey)
             dao.deleteCacheCatalog(blob.cacheId)
         }
-        owners.forEach { File(root, it.aliasRelativeKey).delete() }
         File(root, blob.privateRelativeKey).delete()
         synchronized(cacheAuthorizations) { cacheAuthorizations.remove(blob.blobKey) }
     }

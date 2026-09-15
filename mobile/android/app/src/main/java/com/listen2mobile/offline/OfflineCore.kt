@@ -1,12 +1,17 @@
 package com.listen2mobile.offline
 
 import android.content.Context
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.os.Build
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
+import androidx.work.ForegroundInfo
 import androidx.work.Worker
 import androidx.work.WorkerParameters
 import java.io.BufferedInputStream
@@ -475,16 +480,54 @@ internal object OfflineDurableWork {
 
 /** Worker never publishes a byte itself; the native coordinator revalidates before any ready move. */
 internal class OfflineAcquireWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
+    override fun onStopped() {
+        inputData.getString("source")?.let { source ->
+            inputData.getString("trackId")?.let { trackId ->
+                OfflineCatalogService.get(applicationContext).cancel(source, trackId)
+            }
+        }
+        super.onStopped()
+    }
+
     override fun doWork(): Result {
         val identity = inputData.getString("identity") ?: return Result.failure()
         val source = inputData.getString("source") ?: return Result.failure()
         val trackId = inputData.getString("trackId") ?: return Result.failure()
         val generation = inputData.getLong("accountGeneration", -1L)
         if (!OfflinePolicy.validKey(identity) || identity != OfflinePolicy.key(source, trackId) || generation < 0 || isStopped) return Result.failure()
+        setForegroundAsync(foregroundInfo()).get()
+        if (isStopped) return Result.failure()
         // Work input contains semantic identity only.  A completed requeue is terminal from
         // WorkManager's perspective; the bounded transfer engine persists its own terminal row
         // and will never spin this work indefinitely on a missing URL/credential.
-        OfflineCatalogService.get(applicationContext).resume(source, trackId)
-        return Result.success()
+        val service = OfflineCatalogService.get(applicationContext)
+        if (!service.resume(source, trackId))
+            return Result.success(androidx.work.workDataOf("terminal" to "not-needed"))
+        val terminal = service.awaitTerminal(source, trackId, System.currentTimeMillis() + MAX_FOREGROUND_MILLIS)
+        return if (terminal == "ready" || terminal == "not-found")
+            Result.success(androidx.work.workDataOf("terminal" to terminal))
+        else Result.failure(androidx.work.workDataOf("terminal" to terminal))
+    }
+
+    private fun foregroundInfo(): ForegroundInfo {
+        val manager = applicationContext.getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            manager.createNotificationChannel(NotificationChannel(CHANNEL, "离线下载", NotificationManager.IMPORTANCE_LOW))
+        }
+        val cancel = WorkManager.getInstance(applicationContext).createCancelPendingIntent(id)
+        val notification = Notification.Builder(applicationContext, CHANNEL)
+            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setContentTitle("正在准备离线下载")
+            .setContentText("可随时取消，已下载内容会安全清理")
+            .setOngoing(true)
+            .addAction(Notification.Action.Builder(android.R.drawable.ic_menu_close_clear_cancel, "取消", cancel).build())
+            .build()
+        return ForegroundInfo(NOTIFICATION_ID, notification)
+    }
+
+    private companion object {
+        const val CHANNEL = "listen2-offline-downloads"
+        const val NOTIFICATION_ID = 20701
+        const val MAX_FOREGROUND_MILLIS = 14L * 60 * 1000
     }
 }

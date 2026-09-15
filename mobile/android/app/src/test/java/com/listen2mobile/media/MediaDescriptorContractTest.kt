@@ -94,6 +94,21 @@ class MediaDescriptorContractTest {
         assertNull(registry.transportForProvider(requireNotNull(descriptor.leaseId)))
     }
 
+    @Test fun `local offline cache grant uses current session proof and fails after account change`() {
+        val registry = MediaLeaseRegistry("com.dazzlingwuming.listen2.media", clock = { now })
+        val identity = MediaIdentity("netease", "netrack_9", null, 3L)
+        registry.register(
+            "request-local-cache-12345678", identity,
+            MediaRendition("default", "authorized", "audio/mpeg", "mp3", "mp3", 1L, null),
+            NativeTransport("https://music.163.com/song/media/outer/url?id=9.mp3", emptyMap(), source = "netease"), 3L,
+        )
+        val grant = requireNotNull(registry.localCacheAuthorization("netease", "netrack_9"))
+        assertTrue(registry.isCurrentCacheAuthorization(grant))
+        registry.invalidateAccount(4L)
+        assertNull(registry.localCacheAuthorization("netease", "netrack_9"))
+        assertFalse(registry.isCurrentCacheAuthorization(grant))
+    }
+
     @Test fun `api 24 only permits complete verified local playback`() {
         val remote = MediaDescriptor.downloadFirst(MediaIdentity("bilibili", "track", null, 1L))
         assertEquals(EntitlementStatus.DOWNLOAD_FIRST, remote.entitlement)

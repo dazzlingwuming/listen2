@@ -255,6 +255,22 @@ internal class MediaLeaseRegistry(
         return CacheAuthorization(leaseId, requestId, lease.identity, lease.accountGeneration)
     }
 
+    /**
+     * Offline cache admission is local-only: it reuses an already accepted
+     * provider lease from this signed-in native session and performs no URL
+     * resolution. Account invalidation, entitlement cancellation, expiry and
+     * read limits still go through the same validator used by the provider.
+     */
+    fun localCacheAuthorization(source: String, trackId: String): CacheAuthorization? {
+        val match = leases.entries.firstOrNull { (leaseId, lease) ->
+            lease.identity.source == source &&
+                lease.identity.trackId == trackId &&
+                validate(leaseId, lease.identity, lease.accountGeneration) == LeaseStatus.ACTIVE
+        } ?: return null
+        val lease = match.value
+        return CacheAuthorization(match.key, lease.requestId, lease.identity, lease.accountGeneration)
+    }
+
     fun isCurrentCacheAuthorization(value: CacheAuthorization): Boolean =
         validate(value.leaseId, value.identity, value.accountGeneration) == LeaseStatus.ACTIVE
 
