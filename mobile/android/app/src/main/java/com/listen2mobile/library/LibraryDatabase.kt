@@ -173,6 +173,7 @@ interface LibraryDao {
     @Query("DELETE FROM favorites WHERE source = :source AND semanticTrackId = :trackId") fun deleteFavorite(source: String, trackId: String)
     @Query("DELETE FROM favorites") fun deleteAllFavorites()
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putRemoteCollection(value: RemoteCollectionEntity)
+    @Query("SELECT * FROM remote_collections ORDER BY source ASC, title ASC, collectionId ASC") fun remoteCollections(): List<RemoteCollectionEntity>
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putLocalRecord(value: LocalRecordEntity)
     @Query("SELECT * FROM local_records WHERE localRecordId = :recordId") fun localRecord(recordId: String): LocalRecordEntity?
     @Query("DELETE FROM local_records WHERE localRecordId = :recordId") fun deleteLocalRecord(recordId: String)

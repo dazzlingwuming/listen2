@@ -61,7 +61,8 @@ internal object LibraryMutationValidator {
 
 internal data class SafeTrack(val source: String, val trackId: String, val title: String, val artist: String)
 internal data class SafePlaylist(val playlistId: String, val title: String, val position: Int, val tracks: List<SafeTrack>)
-internal data class LibrarySnapshot(val schemaVersion: Int, val revision: Long, val personalPlaylists: List<SafePlaylist>, val favorites: List<SafeTrack>, val localRecords: List<SafeLocalRecord>)
+internal data class SafeRemoteCollection(val collectionId: String, val source: String, val title: String, val syncState: String)
+internal data class LibrarySnapshot(val schemaVersion: Int, val revision: Long, val personalPlaylists: List<SafePlaylist>, val favorites: List<SafeTrack>, val localRecords: List<SafeLocalRecord>, val remoteCollections: List<SafeRemoteCollection> = emptyList())
 internal data class LibraryReceipt(val requestId: String, val status: String, val revision: Long, val errorCode: String? = null, val snapshot: LibrarySnapshot? = null)
 internal data class SafeLocalRecord(
     val recordId: String,
@@ -292,7 +293,8 @@ internal class LibraryRepository internal constructor(private val database: List
         val locals = dao.localRecords().map { record ->
             SafeLocalRecord(record.localRecordId, record.title, record.artist, record.accessState, record.album, record.durationMs, record.hasArtwork, record.lyricState)
         }
-        return LibrarySnapshot(1, meta.revision, playlists, dao.favorites().map { SafeTrack(it.source, it.semanticTrackId, it.title, it.artist) }, locals)
+        val remote = dao.remoteCollections().map { SafeRemoteCollection(it.collectionId, it.source, it.title, it.syncState) }
+        return LibrarySnapshot(1, meta.revision, playlists, dao.favorites().map { SafeTrack(it.source, it.semanticTrackId, it.title, it.artist) }, locals, remote)
     }
 
     /** Internal migration entry point. It is deliberately not a React Native bridge capability. */

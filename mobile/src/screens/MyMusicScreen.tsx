@@ -38,6 +38,7 @@ export function MyMusicScreen() {
   const localTracks = useSelector(
     (state: RootState) => state.library.localTracks,
   );
+  const remoteCollections = useSelector((state: RootState) => state.library.remoteCollections || []);
   const library = useSelector((state: RootState) => state.library);
   const importAudio = async () => {
     if (importingLocalAudio) return;
@@ -288,6 +289,13 @@ export function MyMusicScreen() {
           </View>
         )}
       </View>
+      {remoteCollections.length ? <View style={sectionStyles.section}>
+        <Text style={text.heading}>来源歌单</Text>
+        {remoteCollections.map(collection => <View key={collection.collectionId} style={sectionStyles.card}>
+          <Text style={text.body}>{collection.title}</Text>
+          <Text accessibilityRole={collection.syncState === 'error' ? 'alert' : undefined} style={text.meta}>{collection.source} · {collection.syncState === 'ready' ? '已同步' : collection.syncState === 'refreshing' ? '同步中' : collection.syncState === 'error' ? '同步失败，保留上次内容' : '当前不可用'}</Text>
+        </View>)}
+      </View> : null}
       <Modal
         animationType="fade"
         onRequestClose={() => setCreating(false)}

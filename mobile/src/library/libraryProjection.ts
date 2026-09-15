@@ -8,6 +8,7 @@ export type LibraryProjection = {
   recentTracks: PlayableTrack[];
   playlists: Array<{ id: string; title: string; tracks: PlayableTrack[] }>;
   localTracks: LocalTrack[];
+  remoteCollections: NonNullable<LibrarySnapshot['remoteCollections']>;
 };
 
 /**
@@ -56,6 +57,7 @@ export function projectLibrarySnapshot(snapshot: LibrarySnapshot): LibraryProjec
       capabilities: record.capabilities,
       seekable: Boolean(record.durationMs && record.durationMs > 0),
     })),
+    remoteCollections: snapshot.remoteCollections || [],
   };
 }
 

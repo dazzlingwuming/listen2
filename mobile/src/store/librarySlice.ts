@@ -16,6 +16,7 @@ export type LibraryState = {
   recentTracks: PlayableTrack[];
   playlists: LibraryPlaylist[];
   localTracks: LocalTrack[];
+  remoteCollections?: NonNullable<LibrarySnapshot['remoteCollections']>;
 };
 
 const initialState: LibraryState = {
@@ -28,6 +29,7 @@ const initialState: LibraryState = {
   recentTracks: [],
   playlists: [],
   localTracks: [],
+  remoteCollections: [],
 };
 
 function applySnapshot(state: LibraryState, snapshot: LibrarySnapshot) {
@@ -39,6 +41,7 @@ function applySnapshot(state: LibraryState, snapshot: LibrarySnapshot) {
   state.recentTracks = projection.recentTracks;
   state.playlists = projection.playlists;
   state.localTracks = projection.localTracks;
+  state.remoteCollections = projection.remoteCollections;
 }
 
 const librarySlice = createSlice({

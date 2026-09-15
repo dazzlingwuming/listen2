@@ -32,6 +32,7 @@ describe('library repository client', () => {
       ],
       favorites: [],
       localRecords: [],
+      remoteCollections: [],
     });
 
     await expect(libraryClient.getSnapshot()).resolves.toEqual({
@@ -43,6 +44,7 @@ describe('library repository client', () => {
       ],
       favorites: [],
       localRecords: [],
+      remoteCollections: [],
     });
     expect(projectLibrarySnapshot(await libraryClient.getSnapshot()).playlists).toEqual([
       { id: 'p-1', title: 'First', tracks: [] },

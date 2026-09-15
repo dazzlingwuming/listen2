@@ -248,6 +248,14 @@ class LibraryBridge internal constructor(
             }
         }))
         putArray("favorites", Arguments.fromList(value.favorites.map(::track)))
+        putArray("remoteCollections", Arguments.fromList(value.remoteCollections.map { collection ->
+            Arguments.createMap().apply {
+                putString("collectionId", collection.collectionId)
+                putString("source", collection.source)
+                putString("title", collection.title)
+                putString("syncState", collection.syncState)
+            }
+        }))
         putArray("localRecords", Arguments.fromList(value.localRecords.map { record ->
             Arguments.createMap().apply {
                 putString("recordId", record.recordId)

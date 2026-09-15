@@ -22,6 +22,14 @@ export type LibrarySnapshot = {
   personalPlaylists: LibraryPlaylistRecord[];
   favorites: LibraryTrackRecord[];
   localRecords: LibraryLocalRecord[];
+  remoteCollections?: LibraryRemoteCollection[];
+};
+
+export type LibraryRemoteCollection = {
+  collectionId: string;
+  source: 'netease' | 'kugou' | 'kuwo' | 'qq' | 'bilibili';
+  title: string;
+  syncState: 'ready' | 'refreshing' | 'error' | 'unavailable';
 };
 
 /** Safe projection only; the document URI and persisted permission stay native-private. */

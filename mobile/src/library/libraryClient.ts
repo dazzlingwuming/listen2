@@ -9,6 +9,7 @@ import {
   type LibraryMutation,
   type LibraryMutationReceipt,
   type LibraryPlaylistRecord,
+  type LibraryRemoteCollection,
   type LibrarySnapshot,
 } from './types';
 import type { BackupDocument, ImportMode } from '../backup/backupCodec';
@@ -115,7 +116,7 @@ export function parseLibrarySnapshot(value: unknown): LibrarySnapshot {
   const candidate = object(value);
   if (
     !candidate ||
-    !exactKeys(candidate, ['schemaVersion', 'revision', 'personalPlaylists', 'favorites', 'localRecords']) ||
+    !exactKeys(candidate, ['schemaVersion', 'revision', 'personalPlaylists', 'favorites', 'localRecords', 'remoteCollections']) ||
     candidate.schemaVersion !== LIBRARY_SCHEMA_VERSION ||
     revision(candidate.revision) === null ||
     !Array.isArray(candidate.personalPlaylists) || !Array.isArray(candidate.favorites) || !Array.isArray(candidate.localRecords) ||
@@ -141,12 +142,22 @@ export function parseLibrarySnapshot(value: unknown): LibrarySnapshot {
   personalPlaylists.sort((left, right) => left.position - right.position);
   if (personalPlaylists.some((playlist, index) => playlist.position !== index))
     throw new LibraryClientError('INVALID_RESPONSE');
+  const remoteCollections = candidate.remoteCollections === undefined ? [] : candidate.remoteCollections;
+  if (!Array.isArray(remoteCollections)) throw new LibraryClientError('INVALID_RESPONSE');
+  const parsedRemote: LibraryRemoteCollection[] = remoteCollections.map(item => {
+    const collection = object(item);
+    const collectionId = collection && boundedString(collection.collectionId, MAX_ID_LENGTH, SAFE_ID);
+    const title = collection && boundedString(collection.title, MAX_LIBRARY_TITLE_LENGTH);
+    if (!collection || !exactKeys(collection, ['collectionId', 'source', 'title', 'syncState']) || !collectionId || !title || !['netease', 'kugou', 'kuwo', 'qq', 'bilibili'].includes(String(collection.source)) || !['ready', 'refreshing', 'error', 'unavailable'].includes(String(collection.syncState))) throw new LibraryClientError('INVALID_RESPONSE');
+    return { collectionId, title, source: collection.source as LibraryRemoteCollection['source'], syncState: collection.syncState as LibraryRemoteCollection['syncState'] };
+  });
   return {
     schemaVersion: LIBRARY_SCHEMA_VERSION,
     revision: revision(candidate.revision) as number,
     personalPlaylists,
     favorites: candidate.favorites.map(parseTrack),
     localRecords: candidate.localRecords.map(parseLocalRecord),
+    remoteCollections: parsedRemote,
   };
 }
 
