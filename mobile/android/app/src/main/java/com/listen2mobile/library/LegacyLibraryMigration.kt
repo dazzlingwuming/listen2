@@ -28,9 +28,11 @@ internal class LegacyLibraryMigration(private val repository: LibraryRepository,
         if (expectedChecksum != null && checksum != expectedChecksum) return MigrationResult.Rejected("MIGRATION_CHECKSUM_MISMATCH")
         preferences.markStaging(attemptId)
         val journal = try { repository.stageLegacyCopy(attemptId, normalized, checksum) } catch (_: Exception) {
+            preferences.markFailed(attemptId)
             return MigrationResult.Rejected("MIGRATION_WRITE_FAILED")
         }
         if (journal.phase != "validated" || journal.checksum != checksum || !journal.sourceRetained) {
+            preferences.markFailed(attemptId)
             return MigrationResult.Rejected("MIGRATION_VALIDATION_FAILED")
         }
         preferences.activate(attemptId, checksum)
@@ -76,19 +78,15 @@ internal class LegacyLibraryMigration(private val repository: LibraryRepository,
 
     companion object {
     internal fun checksum(input: SafeLegacyInput): String {
+        fun field(value: Any?) = "${value?.toString()?.length ?: 0}:${value ?: ""}"
         val canonical = buildString {
-            input.playlists.forEach { playlist -> append("p:").append(playlist.playlistId).append('|').append(playlist.title).append('|').append(playlist.position).append('\n'); playlist.tracks.forEach { append("t:").append(it.source).append('|').append(it.trackId).append('|').append(it.title).append('|').append(it.artist).append('\n') } }
-            input.favorites.forEach { append("f:").append(it.source).append('|').append(it.trackId).append('|').append(it.title).append('|').append(it.artist).append('\n') }
-            input.queueCheckpoint.forEach { append("q:").append(it.occurrenceId).append('|').append(it.position).append('|').append(it.source).append('|').append(it.trackId).append('\n') }
-            input.lyricMetadata.forEach { append("y:").append(it.source).append('|').append(it.trackId).append('|').append(it.selectedVariantId ?: "").append('|').append(it.offsetMillis).append('\n') }
-            input.localRecords.forEach { append("l:").append(it.title).append('|').append(it.artist).append('\n') }
+            input.playlists.forEach { playlist -> append('p').append(field(playlist.playlistId)).append(field(playlist.title)).append(field(playlist.position)).append('\n'); playlist.tracks.forEach { append('t').append(field(it.source)).append(field(it.trackId)).append(field(it.title)).append(field(it.artist)).append('\n') } }
+            input.favorites.forEach { append('f').append(field(it.source)).append(field(it.trackId)).append(field(it.title)).append(field(it.artist)).append('\n') }
+            input.queueCheckpoint.forEach { append('q').append(field(it.occurrenceId)).append(field(it.position)).append(field(it.source)).append(field(it.trackId)).append('\n') }
+            input.lyricMetadata.forEach { append('y').append(field(it.source)).append(field(it.trackId)).append(field(it.selectedVariantId)).append(field(it.offsetMillis)).append('\n') }
+            input.localRecords.forEach { append('l').append(field(it.title)).append(field(it.artist)).append('\n') }
         }
-        var hash = 0x811c9dc5.toInt()
-        canonical.forEach { character ->
-            hash = hash xor character.code
-            hash *= 0x01000193
-        }
-        return "fnv1a-%08x".format(hash)
+        return MessageDigest.getInstance("SHA-256").digest(canonical.toByteArray(StandardCharsets.UTF_8)).joinToString("") { "%02x".format(it) }
     }
     }
 }

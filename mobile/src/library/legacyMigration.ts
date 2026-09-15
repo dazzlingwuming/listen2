@@ -1,9 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { sanitizePlayerState } from '../store/playerPersistence';
+import { sha256 } from '../deepseek/client';
 import { libraryClient } from './libraryClient';
 import type { LegacyMigrationRequest } from './types';
 
-export const LEGACY_LIBRARY_KEY = 'listen2-mobile-library';
+export const LEGACY_LIBRARY_KEY = 'persist:listen2-mobile';
 const MAX_ENTRIES = 2_000;
 const MAX_TEXT = 128;
 
@@ -36,22 +37,18 @@ function decodeField(root: UnknownRecord, name: string) {
 }
 
 function checksum(exported: Pick<LegacyMigrationRequest, 'playlists' | 'favorites' | 'queueCheckpoint' | 'lyricMetadata' | 'localEntries'>) {
-  let hash = 0x811c9dc5;
+  const field = (value: string | number | null) => `${String(value ?? '').length}:${String(value ?? '')}`;
   const canonical = [
     ...exported.playlists.map(item => [
-      `p:${item.playlistId}|${item.title}|${item.position}\n`,
-      ...item.tracks.map(track => `t:${track.source}|${track.trackId}|${track.title}|${track.artist}\n`),
+      `p${field(item.playlistId)}${field(item.title)}${field(item.position)}\n`,
+      ...item.tracks.map(track => `t${field(track.source)}${field(track.trackId)}${field(track.title)}${field(track.artist)}\n`),
     ].join('')),
-    ...exported.favorites.map(track => `f:${track.source}|${track.trackId}|${track.title}|${track.artist}\n`),
-    ...exported.queueCheckpoint.map(item => `q:${item.occurrenceId}|${item.position}|${item.source}|${item.trackId}\n`),
-    ...exported.lyricMetadata.map(item => `y:${item.source}|${item.trackId}|${item.selectedVariantId ?? ''}|${item.offsetMillis}\n`),
-    ...exported.localEntries.map(item => `l:${item.title}|${item.artist}\n`),
+    ...exported.favorites.map(track => `f${field(track.source)}${field(track.trackId)}${field(track.title)}${field(track.artist)}\n`),
+    ...exported.queueCheckpoint.map(item => `q${field(item.occurrenceId)}${field(item.position)}${field(item.source)}${field(item.trackId)}\n`),
+    ...exported.lyricMetadata.map(item => `y${field(item.source)}${field(item.trackId)}${field(item.selectedVariantId)}${field(item.offsetMillis)}\n`),
+    ...exported.localEntries.map(item => `l${field(item.title)}${field(item.artist)}\n`),
   ].join('');
-  for (let index = 0; index < canonical.length; index += 1) {
-    hash ^= canonical.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `fnv1a-${(hash >>> 0).toString(16).padStart(8, '0')}`;
+  return sha256(canonical);
 }
 
 const SOURCES = ['netease', 'kugou', 'kuwo', 'qq', 'bilibili', 'local'] as const;

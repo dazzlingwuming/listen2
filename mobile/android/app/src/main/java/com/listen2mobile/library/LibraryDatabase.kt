@@ -156,6 +156,7 @@ interface LibraryDao {
     @Insert(onConflict = OnConflictStrategy.ABORT) fun insertReceipt(value: MutationReceiptEntity)
     @Query("SELECT * FROM personal_playlists WHERE playlistId = :playlistId") fun playlist(playlistId: String): PersonalPlaylistEntity?
     @Insert(onConflict = OnConflictStrategy.ABORT) fun insertPlaylist(value: PersonalPlaylistEntity)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) fun putPlaylist(value: PersonalPlaylistEntity)
     @Query("SELECT * FROM personal_playlists ORDER BY position ASC, playlistId ASC LIMIT :limit") fun playlists(limit: Int): List<PersonalPlaylistEntity>
     @Insert(onConflict = OnConflictStrategy.ABORT) fun insertMembership(value: PlaylistMembershipEntity)
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putMembership(value: PlaylistMembershipEntity)

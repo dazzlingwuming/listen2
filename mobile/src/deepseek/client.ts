@@ -286,7 +286,7 @@ function byteLength(value: string): number {
 }
 
 /* eslint-disable no-bitwise -- SHA-256 intentionally operates on 32-bit words. */
-function sha256(value: string): string {
+export function sha256(value: string): string {
   const bytes = utf8Bytes(value);
   const bitLength = bytes.length * 8;
   bytes.push(0x80);

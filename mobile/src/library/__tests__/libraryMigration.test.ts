@@ -6,6 +6,7 @@ jest.mock('react-native-track-player', () => ({
 }));
 
 let exportLegacyMigration: typeof import('../legacyMigration').exportLegacyMigration;
+let LEGACY_LIBRARY_KEY: typeof import('../legacyMigration').LEGACY_LIBRARY_KEY;
 let migrateKnownLegacyLibrary: typeof import('../legacyMigration').migrateKnownLegacyLibrary;
 
 describe('legacy library migration', () => {
@@ -19,11 +20,12 @@ describe('legacy library migration', () => {
         },
       },
     }));
-    ({ exportLegacyMigration, migrateKnownLegacyLibrary } = require('../legacyMigration'));
+    ({ exportLegacyMigration, migrateKnownLegacyLibrary, LEGACY_LIBRARY_KEY } = require('../legacyMigration'));
     jest.clearAllMocks();
   });
 
   it('exports only bounded display metadata and an URL-free paused checkpoint', () => {
+    expect(LEGACY_LIBRARY_KEY).toBe('persist:listen2-mobile');
     const exported = exportLegacyMigration(JSON.stringify({
       playlists: JSON.stringify([{ id: 'road', title: 'Road trip', tracks: [{ source: 'netease', id: '42', title: 'Song', artist: 'Artist', url: 'https://private' }] }]),
       favorites: JSON.stringify([{ source: 'netease', id: '42', title: 'Song', artist: 'Artist', url: 'https://private' }]),

@@ -176,12 +176,13 @@ internal class LibraryRepository internal constructor(private val database: List
             }
             "renamePlaylist" -> {
                 val existing = dao.playlist(playlistId) ?: return@runInTransaction rejected("NOT_FOUND")
-                dao.insertPlaylist(existing.copy(title = payload["title"]!!))
+                dao.putPlaylist(existing.copy(title = payload["title"]!!))
             }
             "deletePlaylist" -> {
                 if (dao.playlist(playlistId) == null) return@runInTransaction rejected("NOT_FOUND")
                 dao.deleteMemberships(playlistId)
                 dao.deletePlaylist(playlistId)
+                dao.playlists(LibraryLimits.MAX_PLAYLISTS).forEachIndexed { position, playlist -> dao.putPlaylist(playlist.copy(position = position)) }
             }
             "movePlaylist" -> {
                 val ordered = dao.playlists(LibraryLimits.MAX_PLAYLISTS).toMutableList()
@@ -190,7 +191,7 @@ internal class LibraryRepository internal constructor(private val database: List
                 if (index < 0) return@runInTransaction rejected("NOT_FOUND")
                 if (target !in ordered.indices) return@runInTransaction rejected("ORDER_BOUNDARY")
                 val moved = ordered.removeAt(index); ordered.add(target, moved)
-                ordered.forEachIndexed { position, item -> dao.insertPlaylist(item.copy(position = position)) }
+                ordered.forEachIndexed { position, item -> dao.putPlaylist(item.copy(position = position)) }
             }
             "addTrack" -> {
                 if (dao.playlist(playlistId) == null) return@runInTransaction rejected("NOT_FOUND")
@@ -260,7 +261,7 @@ internal class LibraryRepository internal constructor(private val database: List
             playlist.tracks.forEachIndexed { position, track -> dao.putMembership(PlaylistMembershipEntity(playlist.playlistId, track.source, track.trackId, position, track.title, track.artist)) }
             existingIds += playlist.playlistId
         }
-        dao.playlists(LibraryLimits.MAX_PLAYLISTS).forEachIndexed { position, playlist -> dao.insertPlaylist(playlist.copy(position = position)) }
+        dao.playlists(LibraryLimits.MAX_PLAYLISTS).forEachIndexed { position, playlist -> dao.putPlaylist(playlist.copy(position = position)) }
         val nextRevision = current.revision + 1
         dao.updateMeta(LibraryMetaEntity(revision = nextRevision))
         LibraryReceipt(token, "applied", nextRevision, snapshot = snapshotLocked())

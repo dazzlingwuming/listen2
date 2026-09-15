@@ -41,7 +41,7 @@ internal object LibraryBridgeContract {
         val queue = value["queueCheckpoint"] as? List<*> ?: return null
         val lyrics = value["lyricMetadata"] as? List<*> ?: return null
         val localEntries = value["localEntries"] as? List<*> ?: return null
-        if (schemaVersion != SCHEMA_VERSION || attemptId.length !in 1..64 || !attemptId.matches(Regex("^[A-Za-z0-9_-]+$")) || !checksum.matches(Regex("^fnv1a-[0-9a-f]{8}$")) || playlists.size > LibraryLimits.MAX_PLAYLISTS || localEntries.size > LibraryLimits.MAX_PLAYLISTS) return null
+        if (schemaVersion != SCHEMA_VERSION || attemptId.length !in 1..64 || !attemptId.matches(Regex("^[A-Za-z0-9_-]+$")) || !checksum.matches(Regex("^[0-9a-f]{64}$")) || playlists.size > LibraryLimits.MAX_PLAYLISTS || localEntries.size > LibraryLimits.MAX_PLAYLISTS) return null
         val safePlaylists = playlists.map { item ->
             val entry = item as? Map<*, *> ?: return null
             if (entry.keys != setOf("playlistId", "title", "position", "tracks")) return null

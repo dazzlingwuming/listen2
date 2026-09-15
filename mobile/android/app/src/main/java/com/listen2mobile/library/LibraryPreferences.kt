@@ -68,6 +68,19 @@ internal class LibraryPreferences(private val context: Context) {
         }
     }
 
+    /** Failed copy is explicit so boot never treats a half-cutover as a usable Room library. */
+    suspend fun markFailed(attemptId: String) {
+        context.libraryPreferencesStore.edit { values ->
+            values[BACKEND] = "legacy"
+            values[PHASE] = "failed"
+            values[ATTEMPT] = attemptId
+            values[SOURCE_RETAINED] = true
+            values[LATER_VALIDATED] = false
+            values[CLEANUP_ELIGIBLE] = false
+            values.remove(CHECKSUM)
+        }
+    }
+
     /** A separate startup must verify Room first; this does not delete or alter the legacy source. */
     suspend fun markLaterStartupValidated() {
         val current = status()
