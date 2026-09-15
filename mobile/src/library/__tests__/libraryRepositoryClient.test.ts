@@ -60,7 +60,7 @@ describe('library repository client', () => {
       });
     mockApplyMutation.mockResolvedValue({
       requestId: 'request-1',
-      status: 'stale-revision',
+      status: 'stale',
       revision: 8,
       errorCode: 'STALE_REVISION',
     });

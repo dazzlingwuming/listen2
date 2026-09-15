@@ -139,6 +139,16 @@ describe('player persistence migration', () => {
     expect(result.transitionToken).toBe(0);
   });
 
+  it('drops local document grants and always restores paused', () => {
+    const result = sanitizePlayerState({
+      playlist: [{ id: 'local-1', source: 'local', title: 'Private', artist: 'Me', contentUri: 'content://private', fileName: 'private.mp3' }],
+      isPlaying: true,
+    });
+    expect(result.playlist).toEqual([]);
+    expect(result.isPlaying).toBe(false);
+    expect(JSON.stringify(result)).not.toContain('content://');
+  });
+
   it('preserves play-next history identity even after its FIFO occurrence was consumed', () => {
     const queued = track('ne_queued');
     const result = sanitizePlayerState({

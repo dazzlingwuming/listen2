@@ -4,6 +4,7 @@ import {
   MAX_LIBRARY_PLAYLISTS,
   MAX_LIBRARY_TITLE_LENGTH,
   type LibraryMigrationStatus,
+  type LegacyMigrationRequest,
   type LibraryMutation,
   type LibraryMutationReceipt,
   type LibraryPlaylistRecord,
@@ -19,8 +20,15 @@ const SAFE_ERROR_CODE = /^[A-Z][A-Z0-9_]*$/;
 type UnknownRecord = Record<string, unknown>;
 type NativeLibraryModule = {
   getSnapshot(schemaVersion: number): Promise<unknown>;
-  applyMutation(mutation: LibraryMutation): Promise<unknown>;
+  applyMutation(mutation: {
+    schemaVersion: number;
+    requestId: string;
+    expectedRevision: number;
+    operation: string;
+    payload: { playlistId: string; title: string };
+  }): Promise<unknown>;
   getMigrationStatus(): Promise<unknown>;
+  beginLegacyMigration?(request: LegacyMigrationRequest): Promise<unknown>;
 };
 
 export class LibraryClientError extends Error {
@@ -128,7 +136,7 @@ export function parseLibrarySnapshot(value: unknown): LibrarySnapshot {
 
 function parseReceipt(value: unknown): LibraryMutationReceipt {
   const candidate = object(value);
-  const status = candidate?.status;
+  const nativeStatus = candidate?.status;
   const requestId = candidate && boundedString(candidate.requestId, MAX_ID_LENGTH, SAFE_ID);
   const nextRevision = candidate && revision(candidate.revision);
   const errorCode = candidate?.errorCode;
@@ -137,7 +145,7 @@ function parseReceipt(value: unknown): LibraryMutationReceipt {
     !exactKeys(candidate, ['requestId', 'status', 'revision', 'errorCode', 'snapshot']) ||
     !requestId ||
     nextRevision === null ||
-    (status !== 'accepted' && status !== 'stale-revision' && status !== 'rejected') ||
+    (nativeStatus !== 'applied' && nativeStatus !== 'stale' && nativeStatus !== 'rejected') ||
     !(
       errorCode === null ||
       errorCode === undefined ||
@@ -150,7 +158,7 @@ function parseReceipt(value: unknown): LibraryMutationReceipt {
     : parseLibrarySnapshot(candidate.snapshot);
   return {
     requestId,
-    status,
+    status: nativeStatus === 'applied' ? 'accepted' : nativeStatus === 'stale' ? 'stale-revision' : 'rejected',
     revision: nextRevision,
     errorCode: typeof errorCode === 'string' ? errorCode : null,
     ...(snapshot ? { snapshot } : {}),
@@ -216,7 +224,13 @@ export const libraryClient = {
   },
   async applyMutation(mutation: LibraryMutation): Promise<LibraryMutationReceipt> {
     validateMutation(mutation);
-    const receipt = parseReceipt(await withTimeout(nativeModule().applyMutation(mutation)));
+    const receipt = parseReceipt(await withTimeout(nativeModule().applyMutation({
+      schemaVersion: LIBRARY_SCHEMA_VERSION,
+      requestId: mutation.requestId,
+      expectedRevision: mutation.revision,
+      operation: mutation.kind,
+      payload: mutation.payload,
+    })));
     if (receipt.requestId !== mutation.requestId)
       throw new LibraryClientError('INVALID_RESPONSE');
     if (receipt.status === 'stale-revision') {
@@ -227,5 +241,20 @@ export const libraryClient = {
   },
   getMigrationStatus(): Promise<LibraryMigrationStatus> {
     return withTimeout(nativeModule().getMigrationStatus()).then(parseMigrationStatus);
+  },
+  async beginLegacyMigration(request: LegacyMigrationRequest): Promise<LibraryMigrationStatus> {
+    const module = nativeModule();
+    if (typeof module.beginLegacyMigration !== 'function') throw new LibraryClientError('NATIVE_UNAVAILABLE');
+    if (
+      !boundedString(request.attemptId, MAX_ID_LENGTH, SAFE_ID) ||
+      !boundedString(request.checksum, MAX_ID_LENGTH, SAFE_ID) ||
+      request.schemaVersion !== LIBRARY_SCHEMA_VERSION ||
+      request.playlists.length > MAX_LIBRARY_PLAYLISTS ||
+      request.localEntries.length > MAX_LIBRARY_PLAYLISTS ||
+      request.playlists.some(item => !object(item) || !exactKeys(item, ['title']) || !boundedString(item.title, MAX_LIBRARY_TITLE_LENGTH)) ||
+      request.localEntries.some(item => !object(item) || !exactKeys(item, ['title', 'artist']) || !boundedString(item.title, MAX_LIBRARY_TITLE_LENGTH) || !boundedString(item.artist, MAX_LIBRARY_TITLE_LENGTH))
+    )
+      throw new LibraryClientError('INVALID_REQUEST');
+    return withTimeout(module.beginLegacyMigration(request)).then(parseMigrationStatus);
   },
 };

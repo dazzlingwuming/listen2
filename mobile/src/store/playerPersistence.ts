@@ -7,7 +7,7 @@ import {
   type PlayNextOccurrence,
 } from './playerSlice';
 import { isSourceId, type Track } from '../types/provider';
-import type { LocalTrack, PlayableTrack } from '../types/music';
+import type { PlayableTrack } from '../types/music';
 
 const MAX_PLAYLIST_ITEMS = 1000;
 const MAX_PLAY_NEXT_ITEMS = 200;
@@ -44,32 +44,9 @@ function sanitizeTrack(value: unknown): PlayableTrack | null {
   if (!id || !title || !artist) return null;
 
   if (candidate.source === 'local') {
-    const contentUri = string(candidate.contentUri, 4096);
-    const fileName = string(candidate.fileName, 512);
-    if (!contentUri?.startsWith('content://') || !fileName) return null;
-    const local: LocalTrack = {
-      id,
-      source: 'local',
-      title,
-      artist,
-      contentUri,
-      fileName,
-    };
-    const album = string(candidate.album, 512);
-    const artworkUrl = string(candidate.artworkUrl, 2048);
-    const mimeType = string(candidate.mimeType, 256);
-    const durationMs = number(candidate.durationMs, 0, 86_400_000);
-    if (album) local.album = album;
-    if (artworkUrl) local.artworkUrl = artworkUrl;
-    if (mimeType) local.mimeType = mimeType;
-    if (durationMs) local.durationMs = durationMs;
-    if (
-      candidate.accessStatus === 'available' ||
-      candidate.accessStatus === 'needs-repair' ||
-      candidate.accessStatus === 'revoked'
-    )
-      local.accessStatus = candidate.accessStatus;
-    return local;
+    // Player Redux persistence is portable semantic state. A document URI is
+    // a revocable native grant, so a later launch must explicitly reselect it.
+    return null;
   }
 
   if (!isSourceId(candidate.source)) return null;

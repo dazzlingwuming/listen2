@@ -31,6 +31,27 @@ internal object LibraryBridgeContract {
         return LibraryMutationValidator.validate(requestId, revision, operation, payload)
     }
 
+    fun parseLegacyMigration(value: Map<String, Any?>): Pair<LegacyLibraryInput, Pair<String, String>>? {
+        if (value.keys != setOf("schemaVersion", "attemptId", "checksum", "playlists", "localEntries") || hasPrivateTree(value)) return null
+        val schemaVersion = (value["schemaVersion"] as? Number)?.toInt() ?: return null
+        val attemptId = value["attemptId"] as? String ?: return null
+        val checksum = value["checksum"] as? String ?: return null
+        val playlists = value["playlists"] as? List<*> ?: return null
+        val localEntries = value["localEntries"] as? List<*> ?: return null
+        if (schemaVersion != SCHEMA_VERSION || attemptId.length !in 1..64 || !attemptId.matches(Regex("^[A-Za-z0-9_-]+$")) || !checksum.matches(Regex("^fnv1a-[0-9a-f]{8}$")) || playlists.size > LibraryLimits.MAX_PLAYLISTS || localEntries.size > LibraryLimits.MAX_PLAYLISTS) return null
+        val safePlaylists = playlists.map { item ->
+            val entry = item as? Map<*, *> ?: return null
+            if (entry.keys != setOf("title")) return null
+            LegacyPlaylist(entry["title"] as? String ?: return null)
+        }
+        val safeLocalEntries = localEntries.map { item ->
+            val entry = item as? Map<*, *> ?: return null
+            if (entry.keys != setOf("title", "artist")) return null
+            LegacyLocalEntry(entry["title"] as? String ?: return null, entry["artist"] as? String ?: return null)
+        }
+        return LegacyLibraryInput(schemaVersion, safePlaylists, safeLocalEntries) to (attemptId to checksum)
+    }
+
     /** Defensive recursion rejects a future caller that tries to smuggle a private native handle. */
     private fun hasPrivateTree(value: Any?, depth: Int = 0): Boolean {
         if (depth > 4) return true
@@ -73,11 +94,18 @@ class LibraryBridge internal constructor(
     @ReactMethod
     fun getMigrationStatus(promise: Promise) = execute(promise) {
         val status = runBlocking { preferences.status() }
-        Arguments.createMap().apply {
-            putString("backend", status.backend)
-            putString("phase", status.phase)
-            putBoolean("sourceRetained", status.sourceRetained)
-            putBoolean("laterStartValidated", status.laterStartValidated)
+        migrationStatus(status)
+    }
+
+    /** Explicit migration DTO only; this is not a generic import or storage bridge. */
+    @ReactMethod
+    fun beginLegacyMigration(request: ReadableMap, promise: Promise) = execute(promise) {
+        val parsed = LibraryBridgeContract.parseLegacyMigration(readMap(request))
+            ?: return@execute migrationFailure("INVALID_LEGACY_DATA", null, null)
+        val (input, correlation) = parsed
+        when (val result = runBlocking { migration.migrate(input, correlation.first, correlation.second) }) {
+            is MigrationResult.Activated -> migrationStatus(result.status)
+            is MigrationResult.Rejected -> migrationFailure(result.errorCode, correlation.first, correlation.second)
         }
     }
 
@@ -112,10 +140,46 @@ class LibraryBridge internal constructor(
                 ReadableType.Number -> value.getDouble(key)
                 ReadableType.Boolean -> value.getBoolean(key)
                 ReadableType.Map -> readMap(requireNotNull(value.getMap(key)))
+                ReadableType.Array -> readArray(requireNotNull(value.getArray(key)))
                 else -> null
             }
         }
         return result
+    }
+
+    private fun readArray(value: com.facebook.react.bridge.ReadableArray): List<Any?> =
+        (0 until value.size()).map { index ->
+            when (value.getType(index)) {
+                ReadableType.String -> value.getString(index)
+                ReadableType.Number -> value.getDouble(index)
+                ReadableType.Boolean -> value.getBoolean(index)
+                ReadableType.Map -> readMap(requireNotNull(value.getMap(index)))
+                ReadableType.Array -> readArray(requireNotNull(value.getArray(index)))
+                else -> null
+            }
+        }
+
+    private fun migrationStatus(status: MigrationStatus) = Arguments.createMap().apply {
+        putString("backend", "Room")
+        putString("phase", when (status.phase) {
+            "idle" -> "not-started"
+            "staging" -> "copying"
+            "active" -> "complete"
+            else -> "failed"
+        })
+        putBoolean("sourceRetained", status.sourceRetained)
+        putBoolean("laterStartValidated", status.laterStartValidated)
+        putString("attemptId", status.attemptId)
+        putString("checksum", status.checksum)
+    }
+
+    private fun migrationFailure(code: String, attemptId: String?, checksum: String?) = Arguments.createMap().apply {
+        putString("backend", "Room")
+        putString("phase", "failed")
+        putBoolean("sourceRetained", true)
+        putBoolean("laterStartValidated", false)
+        putString("attemptId", attemptId)
+        putString("checksum", checksum)
     }
 
     private fun snapshot(value: LibrarySnapshot) = Arguments.createMap().apply {

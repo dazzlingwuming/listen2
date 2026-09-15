@@ -40,6 +40,14 @@ export type LibraryMigrationStatus = {
   checksum: string | null;
 };
 
+export type LegacyMigrationRequest = {
+  schemaVersion: typeof LIBRARY_SCHEMA_VERSION;
+  attemptId: string;
+  checksum: string;
+  playlists: Array<{ title: string }>;
+  localEntries: Array<{ title: string; artist: string }>;
+};
+
 export type LibraryCapabilityFlags = {
   personalPlaylists: true;
   favorites: false;

@@ -18,10 +18,11 @@ internal sealed class MigrationResult {
  * on `legacy`; a retry replaces only this attempt's stage rows and cannot duplicate them.
  */
 internal class LegacyLibraryMigration(private val repository: LibraryRepository, private val preferences: LibraryPreferences) {
-    suspend fun migrate(input: LegacyLibraryInput, attemptId: String): MigrationResult {
+    suspend fun migrate(input: LegacyLibraryInput, attemptId: String, expectedChecksum: String? = null): MigrationResult {
         val normalized = normalize(input, attemptId) ?: return MigrationResult.Rejected("INVALID_LEGACY_DATA")
-        preferences.markStaging(attemptId)
         val checksum = checksum(normalized.first, normalized.second)
+        if (expectedChecksum != null && checksum != expectedChecksum) return MigrationResult.Rejected("MIGRATION_CHECKSUM_MISMATCH")
+        preferences.markStaging(attemptId)
         val journal = try { repository.stageLegacyCopy(attemptId, normalized.first, normalized.second, checksum) } catch (_: Exception) {
             return MigrationResult.Rejected("MIGRATION_WRITE_FAILED")
         }
@@ -56,6 +57,11 @@ internal class LegacyLibraryMigration(private val repository: LibraryRepository,
             playlists.forEach { append("p:").append(it.title).append('\n') }
             localRecords.forEach { append("l:").append(it.title).append('|').append(it.artist).append('\n') }
         }
-        return MessageDigest.getInstance("SHA-256").digest(canonical.toByteArray(StandardCharsets.UTF_8)).joinToString("") { "%02x".format(it) }
+        var hash = 0x811c9dc5.toInt()
+        canonical.forEach { character ->
+            hash = hash xor character.code
+            hash *= 0x01000193
+        }
+        return "fnv1a-%08x".format(hash)
     }
 }

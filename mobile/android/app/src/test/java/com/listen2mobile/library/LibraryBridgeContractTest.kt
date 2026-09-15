@@ -31,4 +31,25 @@ class LibraryBridgeContractTest {
             ) is LibraryValidation.Rejected,
         )
     }
+
+    @Test fun bridge_accepts_only_correlated_safe_legacy_migration_dto() {
+        val accepted = LibraryBridgeContract.parseLegacyMigration(
+            mapOf(
+                "schemaVersion" to 1,
+                "attemptId" to "attempt_1",
+                "checksum" to "fnv1a-14cc059f",
+                "playlists" to listOf(mapOf("title" to "旧歌单")),
+                "localEntries" to listOf(mapOf("title" to "本地音乐", "artist" to "歌手")),
+            ),
+        )
+        assertEquals("attempt_1", accepted?.second?.first)
+        assertTrue(
+            LibraryBridgeContract.parseLegacyMigration(
+                mapOf(
+                    "schemaVersion" to 1, "attemptId" to "attempt_2", "checksum" to "fnv1a-14cc059f",
+                    "playlists" to listOf(mapOf("title" to "x", "contentUri" to "content://private")), "localEntries" to emptyList<Map<String, String>>(),
+                ),
+            ) == null,
+        )
+    }
 }
