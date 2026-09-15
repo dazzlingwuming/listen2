@@ -30,7 +30,8 @@ class LibraryMigrationTest {
         database.close()
     }
 
-    @Test fun disk_backed_restart_recomputes_migration_readback_before_cleanup() = runBlocking {
+    @Test fun disk_backed_restart_recomputes_migration_readback_before_cleanup() {
+        runBlocking {
         val context = InstrumentationRegistry.getTargetContext()
         val name = "migration-restart-${System.nanoTime()}.db"
         val first = Room.databaseBuilder(context, Listen2Database::class.java, name).allowMainThreadQueries().build()
@@ -44,5 +45,6 @@ class LibraryMigrationTest {
         assertEquals("restart-road", LibraryRepository(reopened).snapshot().personalPlaylists.single().playlistId)
         reopened.close()
         context.deleteDatabase(name)
+        }
     }
 }
