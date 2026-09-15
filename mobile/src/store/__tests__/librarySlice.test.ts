@@ -14,6 +14,7 @@ const snapshot = (revision: number) => ({
     { playlistId: 'myplaylist_one', title: 'Road trip', position: 0, tracks: [] },
   ],
   favorites: [],
+  localRecords: [],
 });
 
 describe('librarySlice', () => {

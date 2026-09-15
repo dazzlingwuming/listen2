@@ -1,4 +1,3 @@
-import { releaseLongTermAccess } from '@react-native-documents/picker';
 import type { LocalTrack } from '../types/music';
 
 /**
@@ -6,12 +5,8 @@ import type { LocalTrack } from '../types/music';
  * never surface a cleanup failure as a failed deletion.
  */
 export async function releaseLocalAudioAccess(
-  track: LocalTrack,
+  _track: LocalTrack,
 ): Promise<void> {
-  try {
-    await releaseLongTermAccess([track.contentUri]);
-  } catch {
-    // Android providers may already have revoked an URI. The local library
-    // deletion remains complete either way, and URI values are never logged.
-  }
+  // The opaque record carries no URI or grant. A future native-only removal
+  // capability releases its private grant atomically with the record.
 }

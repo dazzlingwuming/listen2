@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+  Image,
   Modal,
   Pressable,
   StyleSheet,
@@ -13,8 +14,9 @@ import type { RootState } from '../store';
 import { ScreenLayout, sectionStyles } from './ScreenLayout';
 import { colors, spacing, text } from '../theme';
 import { hydrationSucceeded, mutationPending, mutationReceived } from '../store/librarySlice';
-import { pickLocalAudio } from '../localAudio/picker';
+import { attachExplicitLrc, loadLocalArtwork, pickLocalAudio } from '../localAudio/picker';
 import { libraryClient } from '../library/libraryClient';
+import * as playerActions from '../store/playerSlice';
 
 export function MyMusicScreen() {
   const navigation = useNavigation<any>();
@@ -50,11 +52,18 @@ export function MyMusicScreen() {
       setLocalImportStatus('未导入音频：请选择可长期访问的真实音频文件。');
       return;
     }
+    try { dispatch(hydrationSucceeded(await libraryClient.getSnapshot())); } catch { setLocalImportStatus('已导入音频，但无法刷新本地列表；请返回后重试。'); return; }
     setLocalImportStatus(
       result.rejected
         ? `已导入 ${result.imported} 首，跳过 ${result.rejected} 个不可用或重复文件。`
         : `已导入 ${result.imported} 首本地音频。`,
     );
+  };
+  const chooseLyric = async (recordId: string) => {
+    const status = await attachExplicitLrc(recordId);
+    if (status === 'success') {
+      try { dispatch(hydrationSucceeded(await libraryClient.getSnapshot())); setLocalImportStatus('歌词已附加到这首本地音频。'); } catch { setLocalImportStatus('歌词已附加；列表将在下次打开时刷新。'); }
+    } else if (status !== 'cancelled') setLocalImportStatus('无法附加歌词，请选择 UTF-8 LRC 文件后重试。');
   };
   const submitPlaylist = async () => {
     const title = playlistTitle.trim();
@@ -167,6 +176,25 @@ export function MyMusicScreen() {
               {localImportStatus}
             </Text>
           ) : null}
+          {localTracks.length ? (
+            <View style={styles.localList}>
+              {localTracks.map(track => (
+                <View key={track.id} style={styles.localRow}>
+                  {track.hasArtwork ? <LocalArtworkPreview recordId={track.id} /> : <View style={styles.artworkFallback}><Text style={styles.artworkNote}>♫</Text></View>}
+                  <View style={styles.localCopy}>
+                    <Text numberOfLines={1} style={text.body}>{track.title}</Text>
+                    <Text numberOfLines={1} style={text.meta}>{track.artist}{track.album ? ` · ${track.album}` : ''}{track.lyricState === 'attached' ? ' · 已有歌词' : ''}</Text>
+                  </View>
+                  <Pressable accessibilityLabel={`为${track.title}选择歌词`} onPress={() => { void chooseLyric(track.id); }} style={styles.localAction}>
+                    <Text style={styles.localActionText}>歌词</Text>
+                  </Pressable>
+                  <Pressable accessibilityLabel={`下一首播放${track.title}`} onPress={() => dispatch(playerActions.addNextTrack(track))} style={styles.localAction}>
+                    <Text style={styles.localActionText}>下一首</Text>
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+          ) : null}
         </View>
       </View>
       <View style={sectionStyles.section}>
@@ -252,6 +280,16 @@ export function MyMusicScreen() {
   );
 }
 
+function LocalArtworkPreview({ recordId }: { recordId: string }) {
+  const [uri, setUri] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    void loadLocalArtwork(recordId).then(result => { if (active && result.status === 'success') setUri(result.data || null); });
+    return () => { active = false; };
+  }, [recordId]);
+  return uri ? <Image accessibilityLabel="本地音频封面" source={{ uri }} style={styles.artwork} /> : <View style={styles.artworkFallback}><Text style={styles.artworkNote}>♫</Text></View>;
+}
+
 const styles = StyleSheet.create({
   hero: { gap: spacing.md },
   grid: { gap: spacing.md },
@@ -284,6 +322,14 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: colors.surface,
   },
+  localList: { marginTop: spacing.md, gap: spacing.xs },
+  localRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  localCopy: { flex: 1, minWidth: 0 },
+  artwork: { width: 40, height: 40, borderRadius: 6 },
+  artworkFallback: { width: 40, height: 40, borderRadius: 6, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.border },
+  artworkNote: { color: colors.muted },
+  localAction: { minHeight: 48, justifyContent: 'center', paddingHorizontal: spacing.sm },
+  localActionText: { color: colors.accent, fontWeight: '600' },
   arrow: { color: colors.muted, fontSize: 28 },
   modalBackdrop: {
     flex: 1,

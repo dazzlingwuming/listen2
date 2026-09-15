@@ -4,6 +4,7 @@ import {
   MAX_LIBRARY_PLAYLISTS,
   MAX_LIBRARY_TITLE_LENGTH,
   type LibraryMigrationStatus,
+  type LibraryLocalRecord,
   type LegacyMigrationRequest,
   type LibraryMutation,
   type LibraryMutationReceipt,
@@ -114,10 +115,10 @@ export function parseLibrarySnapshot(value: unknown): LibrarySnapshot {
   const candidate = object(value);
   if (
     !candidate ||
-    !exactKeys(candidate, ['schemaVersion', 'revision', 'personalPlaylists', 'favorites']) ||
+    !exactKeys(candidate, ['schemaVersion', 'revision', 'personalPlaylists', 'favorites', 'localRecords']) ||
     candidate.schemaVersion !== LIBRARY_SCHEMA_VERSION ||
     revision(candidate.revision) === null ||
-    !Array.isArray(candidate.personalPlaylists) || !Array.isArray(candidate.favorites) ||
+    !Array.isArray(candidate.personalPlaylists) || !Array.isArray(candidate.favorites) || !Array.isArray(candidate.localRecords) ||
     candidate.personalPlaylists.length > MAX_LIBRARY_PLAYLISTS
   )
     throw new LibraryClientError('INVALID_RESPONSE');
@@ -145,7 +146,34 @@ export function parseLibrarySnapshot(value: unknown): LibrarySnapshot {
     revision: revision(candidate.revision) as number,
     personalPlaylists,
     favorites: candidate.favorites.map(parseTrack),
+    localRecords: candidate.localRecords.map(parseLocalRecord),
   };
+}
+
+function parseLocalRecord(value: unknown): LibraryLocalRecord {
+  const candidate = object(value);
+  const recordId = candidate && boundedString(candidate.recordId, MAX_ID_LENGTH, /^[A-Za-z0-9-]+$/);
+  const title = candidate && boundedString(candidate.title, MAX_LIBRARY_TITLE_LENGTH);
+  const artist = candidate && boundedString(candidate.artist, MAX_LIBRARY_TITLE_LENGTH);
+  const album = candidate?.album;
+  const durationMs = candidate?.durationMs;
+  const lyricState = candidate?.lyricState;
+  const availability = candidate?.availability;
+  const capabilities = candidate?.capabilities;
+  if (
+    !candidate ||
+    !exactKeys(candidate, ['recordId', 'title', 'artist', 'album', 'durationMs', 'hasArtwork', 'lyricState', 'availability', 'capabilities']) ||
+    !recordId || !title || !artist ||
+    !(album === null || boundedString(album, MAX_LIBRARY_TITLE_LENGTH)) ||
+    !(durationMs === null || (typeof durationMs === 'number' && Number.isSafeInteger(durationMs) && durationMs >= 0 && durationMs <= 86_400_000)) ||
+    typeof candidate.hasArtwork !== 'boolean' ||
+    !['none', 'attached'].includes(String(lyricState)) ||
+    !['available', 'needs-repair', 'revoked'].includes(String(availability)) ||
+    !Array.isArray(capabilities) || capabilities.length > 3 ||
+    capabilities.some(item => !['playlist', 'queue', 'lyrics'].includes(String(item))) ||
+    new Set(capabilities).size !== capabilities.length
+  ) throw new LibraryClientError('INVALID_RESPONSE');
+  return { recordId, title, artist, album: album as string | null, durationMs: durationMs as number | null, hasArtwork: candidate.hasArtwork, lyricState: lyricState as 'none' | 'attached', availability: availability as 'available' | 'needs-repair' | 'revoked', capabilities: capabilities as Array<'playlist' | 'queue' | 'lyrics'> };
 }
 
 function parseTrack(value: unknown) {
@@ -154,9 +182,9 @@ function parseTrack(value: unknown) {
   const trackId = candidate && boundedString(candidate.trackId, MAX_ID_LENGTH, SAFE_ID);
   const title = candidate && boundedString(candidate.title, MAX_LIBRARY_TITLE_LENGTH);
   const artist = candidate && boundedString(candidate.artist, MAX_LIBRARY_TITLE_LENGTH);
-  if (!candidate || !exactKeys(candidate, ['source', 'trackId', 'title', 'artist']) || !['netease', 'kugou', 'kuwo', 'qq', 'bilibili'].includes(String(source)) || !trackId || !title || !artist)
+  if (!candidate || !exactKeys(candidate, ['source', 'trackId', 'title', 'artist']) || !['netease', 'kugou', 'kuwo', 'qq', 'bilibili', 'local'].includes(String(source)) || !trackId || !title || !artist)
     throw new LibraryClientError('INVALID_RESPONSE');
-  return { source: source as 'netease' | 'kugou' | 'kuwo' | 'qq' | 'bilibili', trackId, title, artist };
+  return { source: source as 'netease' | 'kugou' | 'kuwo' | 'qq' | 'bilibili' | 'local', trackId, title, artist };
 }
 
 function parseReceipt(value: unknown): LibraryMutationReceipt {

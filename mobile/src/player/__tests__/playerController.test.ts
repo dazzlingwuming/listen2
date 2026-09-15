@@ -84,12 +84,11 @@ const track = (id: string): Track => ({
   artist: 'Listen2',
 });
 const localTrack = (id: string): LocalTrack => ({
-  id,
+  id: '11111111-1111-4111-8111-111111111111',
   source: 'local',
   title: id,
   artist: '本地音频',
-  contentUri: `content://documents/${id}`,
-  fileName: `${id}.mp3`,
+  accessStatus: 'available',
 });
 const bilibiliTrack = (id = 'bitrack_v_BV1xx411c7mD-456'): Track => ({
   id,
@@ -266,7 +265,7 @@ describe('PlayerController queue transitions', () => {
     expect(state.isPlaying).toBe(true);
   });
 
-  it('plays a local content URI without calling the provider bootstrap', async () => {
+  it('does not expose an opaque local record as a content URI', async () => {
     const local = localTrack('local_1');
     state = reducer(
       state,
@@ -277,11 +276,9 @@ describe('PlayerController queue transitions', () => {
     await playerController.next(dispatch);
 
     expect(mockBootstrapTrack).not.toHaveBeenCalled();
-    expect(state.currentTrack?.id).toBe(local.id);
-    expect(state.playNextQueue).toEqual([]);
-    expect(mockNativePlayer.add).toHaveBeenCalledWith(
-      expect.objectContaining({ url: local.contentUri }),
-    );
+    expect(state.currentTrack?.id).toBe('netrack_1');
+    expect(state.playNextQueue.map(item => item.track.id)).toEqual([local.id]);
+    expect(mockNativePlayer.add).not.toHaveBeenCalled();
   });
 
   it('uses a verified cache hit before provider bootstrap', async () => {

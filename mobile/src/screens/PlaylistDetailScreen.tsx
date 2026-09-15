@@ -127,7 +127,7 @@ export function PlaylistDetailScreen() {
     }
   };
   const canPlayTrack = (track: PresentableTrack) =>
-    isLocalTrack(track) ||
+    !isLocalTrack(track) &&
     PROVIDER_CAPABILITIES[track.source as keyof typeof PROVIDER_CAPABILITIES]
       ?.playback === true;
   const partialRemoteDetail = remoteDetail?.completeness === 'partial';
@@ -261,6 +261,11 @@ export function PlaylistDetailScreen() {
                       : undefined
                   }
                   track={track}
+                  onAddNext={
+                    isLocalTrack(track) && track.accessStatus === 'available'
+                      ? () => dispatch(playerActions.addNextTrack(track))
+                      : undefined
+                  }
                 />
                 {isLocalTrack(track) && track.accessStatus !== 'available' ? (
                   <Text accessibilityRole="alert" style={styles.accessWarning}>
@@ -288,7 +293,7 @@ export function PlaylistDetailScreen() {
                     <Pressable
                       accessibilityLabel={`从歌单移除${track.title}`}
                       onPress={() => {
-                        if (track.source !== 'local') void commitLibrary('removeTrack', { playlistId: libraryPlaylistId, source: track.source, trackId: track.id });
+                        void commitLibrary('removeTrack', { playlistId: libraryPlaylistId, source: track.source, trackId: track.id });
                       }}
                       style={styles.favorite}
                     >

@@ -26,11 +26,10 @@ export type LocalTrack = {
   artist: string;
   album?: string;
   durationMs?: number;
-  artworkUrl?: string;
-  contentUri: string;
-  fileName: string;
-  mimeType?: string;
-  bookmark?: string;
+  /** Opaque native record ID; no content URI, path, grant or filename crosses JS. */
+  hasArtwork?: boolean;
+  lyricState?: 'none' | 'attached';
+  capabilities?: Array<'playlist' | 'queue' | 'lyrics'>;
   accessStatus?: 'available' | 'needs-repair' | 'revoked';
 };
 
@@ -41,10 +40,10 @@ export function isLocalTrack(value: unknown): value is LocalTrack {
   const track = value as Partial<LocalTrack>;
   return (
     track.source === 'local' &&
-    typeof track.contentUri === 'string' &&
-    track.contentUri.startsWith('content://') &&
-    track.contentUri.length <= 4096 &&
-    !track.contentUri.includes('\r') &&
-    !track.contentUri.includes('\n')
+    typeof track.id === 'string' &&
+    /^[A-Za-z0-9-]{16,64}$/.test(track.id) &&
+    typeof track.title === 'string' && track.title.length > 0 && track.title.length <= 256 &&
+    typeof track.artist === 'string' && track.artist.length > 0 && track.artist.length <= 256 &&
+    ['available', 'needs-repair', 'revoked', undefined].includes(track.accessStatus)
   );
 }

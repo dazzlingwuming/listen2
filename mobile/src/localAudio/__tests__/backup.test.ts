@@ -10,13 +10,11 @@ const remote: Track = {
   artist: 'Listen2',
 };
 const local: LocalTrack = {
-  id: 'local_1',
+  id: '11111111-1111-4111-8111-111111111111',
   source: 'local',
   title: 'Private',
   artist: '本地音频',
-  contentUri: 'content://documents/private-audio',
-  fileName: 'Private.mp3',
-  mimeType: 'audio/mpeg',
+  accessStatus: 'available',
 };
 
 it('filters local audio from every portable backup collection', () => {

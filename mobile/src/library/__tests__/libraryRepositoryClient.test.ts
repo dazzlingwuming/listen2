@@ -31,6 +31,7 @@ describe('library repository client', () => {
         { playlistId: 'p-1', title: 'First', position: 0, tracks: [] },
       ],
       favorites: [],
+      localRecords: [],
     });
 
     await expect(libraryClient.getSnapshot()).resolves.toEqual({
@@ -41,6 +42,7 @@ describe('library repository client', () => {
         { playlistId: 'p-2', title: 'Later', position: 1, tracks: [] },
       ],
       favorites: [],
+      localRecords: [],
     });
     expect(projectLibrarySnapshot(await libraryClient.getSnapshot()).playlists).toEqual([
       { id: 'p-1', title: 'First', tracks: [] },
@@ -53,12 +55,12 @@ describe('library repository client', () => {
       .mockResolvedValueOnce({
         schemaVersion: 1,
         revision: 7,
-        personalPlaylists: [], favorites: [],
+        personalPlaylists: [], favorites: [], localRecords: [],
       })
       .mockResolvedValueOnce({
         schemaVersion: 1,
         revision: 8,
-        personalPlaylists: [], favorites: [],
+        personalPlaylists: [], favorites: [], localRecords: [],
       });
     mockApplyMutation.mockResolvedValue({
       requestId: 'request-1',

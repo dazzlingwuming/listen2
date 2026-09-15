@@ -88,6 +88,7 @@ const SAFE_TYPED_PLAYER_ERRORS = new Set([
   'INVALID_RESPONSE',
   'VIDEO_UNAVAILABLE',
   'UNSUPPORTED_VIDEO_CODEC',
+  'local-media-unavailable',
   'CANCELLED',
 ]);
 
@@ -136,7 +137,10 @@ function shuffledIndexes(length: number): number[] {
 
 async function resolveTrackUrl(track: PlayableTrack, signal?: AbortSignal) {
   if (isLocalTrack(track)) {
-    return { url: track.contentUri };
+    // SAF document grants remain native-private. Native local playback is
+    // deliberately introduced through a dedicated native player contract,
+    // never by leaking a content URI into the JS/RNTP queue.
+    throw Object.assign(new Error('local-playback-unavailable'), { code: 'local-media-unavailable' });
   }
   if (isOfflineDownloadEligible(track)) {
     const cached = await offlineAudio.resolveVerified(track.source, track.id);

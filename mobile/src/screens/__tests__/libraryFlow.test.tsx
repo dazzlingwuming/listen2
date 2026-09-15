@@ -5,6 +5,7 @@ const snapshot = (revision: number) => ({
   revision,
   personalPlaylists: [{ playlistId: 'p-one', title: 'Road trip', position: 0, tracks: [{ source: 'netease' as const, trackId: 'track-one', title: 'Song', artist: 'Artist' }] }],
   favorites: [{ source: 'netease' as const, trackId: 'track-one', title: 'Song', artist: 'Artist' }],
+  localRecords: [],
 });
 
 describe('receipt-backed library flow', () => {

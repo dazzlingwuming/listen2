@@ -2,6 +2,8 @@ package com.listen2mobile.local
 
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class LocalAudioPolicyTest {
@@ -9,5 +11,10 @@ class LocalAudioPolicyTest {
         assertTrue(LocalAudioPolicy.supportedHeader("ID3x".toByteArray()))
         assertTrue(LocalAudioPolicy.supportedHeader("fLaC".toByteArray()))
         assertFalse(LocalAudioPolicy.supportedHeader("text".toByteArray()))
+    }
+
+    @Test fun normalizes_only_bounded_explicit_lrc() {
+        assertEquals("[00:01] text\n[00:02] next", LocalAudioPolicy.normalizeLrc("\uFEFF[00:01] text\r\n[00:02] next".toByteArray()))
+        assertNull(LocalAudioPolicy.normalizeLrc(ByteArray(LocalAudioPolicy.MAX_LRC_BYTES + 1)))
     }
 }

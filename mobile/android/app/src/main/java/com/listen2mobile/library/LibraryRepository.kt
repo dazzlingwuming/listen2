@@ -48,7 +48,7 @@ internal object LibraryMutationValidator {
             "createPlaylist", "renamePlaylist" -> payload.keys == setOf("playlistId", "title") && playlistId != null && idPattern.matches(playlistId) && !title.isNullOrEmpty() && title.length <= LibraryLimits.MAX_TITLE
             "deletePlaylist" -> payload.keys == setOf("playlistId") && playlistId != null && idPattern.matches(playlistId)
             "movePlaylist" -> payload.keys == setOf("playlistId", "direction") && playlistId != null && idPattern.matches(playlistId) && payload["direction"] in setOf("up", "down")
-            "addTrack", "removeTrack", "favorite", "unfavorite" -> playlistId?.let(idPattern::matches) != null && source in setOf("netease", "kugou", "kuwo", "qq", "bilibili") && trackId?.let(idPattern::matches) != null && when (operation) {
+            "addTrack", "removeTrack", "favorite", "unfavorite" -> playlistId?.let(idPattern::matches) != null && source in (if (operation in setOf("addTrack", "removeTrack")) setOf("netease", "kugou", "kuwo", "qq", "bilibili", "local") else setOf("netease", "kugou", "kuwo", "qq", "bilibili")) && trackId?.let(idPattern::matches) != null && when (operation) {
                 "addTrack", "favorite" -> payload.keys == setOf("playlistId", "source", "trackId", "title", "artist") && !title.isNullOrEmpty() && !artist.isNullOrEmpty() && title.length <= LibraryLimits.MAX_TITLE && artist.length <= LibraryLimits.MAX_TITLE
                 else -> payload.keys == setOf("playlistId", "source", "trackId")
             }
@@ -61,9 +61,18 @@ internal object LibraryMutationValidator {
 
 internal data class SafeTrack(val source: String, val trackId: String, val title: String, val artist: String)
 internal data class SafePlaylist(val playlistId: String, val title: String, val position: Int, val tracks: List<SafeTrack>)
-internal data class LibrarySnapshot(val schemaVersion: Int, val revision: Long, val personalPlaylists: List<SafePlaylist>, val favorites: List<SafeTrack>)
+internal data class LibrarySnapshot(val schemaVersion: Int, val revision: Long, val personalPlaylists: List<SafePlaylist>, val favorites: List<SafeTrack>, val localRecords: List<SafeLocalRecord>)
 internal data class LibraryReceipt(val requestId: String, val status: String, val revision: Long, val errorCode: String? = null, val snapshot: LibrarySnapshot? = null)
-internal data class SafeLocalRecord(val recordId: String, val title: String, val artist: String, val availability: String)
+internal data class SafeLocalRecord(
+    val recordId: String,
+    val title: String,
+    val artist: String,
+    val availability: String,
+    val album: String? = null,
+    val durationMs: Long? = null,
+    val hasArtwork: Boolean = false,
+    val lyricState: String = "none",
+)
 internal data class BackupPlaylistInput(val playlistId: String, val title: String, val tracks: List<SafeTrack>)
 internal data class BackupInput(val expectedRevision: Long, val mode: String, val favorites: List<SafeTrack>, val playlists: List<BackupPlaylistInput>)
 internal data class BackupPreview(val status: String, val token: String?, val checksum: String?, val baseRevision: Long, val addedFavorites: Int, val addedPlaylists: Int, val skippedPlaylists: Int, val conflictedPlaylists: Int, val errorCode: String? = null)
@@ -80,10 +89,22 @@ internal class LibraryRepository internal constructor(private val database: List
         val dao = database.libraryDao()
         val current = dao.meta() ?: LibraryMetaEntity(revision = 0L).also(dao::insertMeta)
         val known = dao.localRecords().map { it.localRecordId }.toSet()
-        records.filter { it.recordId !in known }.forEach { dao.putLocalRecord(LocalRecordEntity(it.recordId, it.title, it.artist, it.availability)) }
+        records.filter { it.recordId !in known }.forEach { record ->
+            dao.putLocalRecord(LocalRecordEntity(record.recordId, record.title, record.artist, record.availability, record.album, record.durationMs, record.hasArtwork, record.lyricState))
+        }
         val added = records.count { it.recordId !in known }
         if (added > 0) dao.updateMeta(LibraryMetaEntity(revision = current.revision + 1))
         added to (if (added > 0) current.revision + 1 else current.revision)
+    }
+
+    /** LRC bytes live in native-private storage; Room retains only the safe attachment state. */
+    internal fun attachExplicitLyric(recordId: String): Boolean = database.runInTransaction<Boolean> {
+        val dao = database.libraryDao()
+        val record = dao.localRecord(recordId) ?: return@runInTransaction false
+        val current = dao.meta() ?: LibraryMetaEntity(revision = 0L).also(dao::insertMeta)
+        dao.putLocalRecord(record.copy(lyricState = "attached"))
+        dao.updateMeta(LibraryMetaEntity(revision = current.revision + 1))
+        true
     }
 
     fun apply(mutation: LibraryMutation): LibraryReceipt = database.runInTransaction<LibraryReceipt> {
@@ -235,7 +256,10 @@ internal class LibraryRepository internal constructor(private val database: List
         val playlists = dao.playlists(LibraryLimits.MAX_PLAYLISTS).map { playlist ->
             SafePlaylist(playlist.playlistId, playlist.title, playlist.position, dao.memberships(playlist.playlistId).map { SafeTrack(it.source, it.semanticTrackId, it.title, it.artist) })
         }
-        return LibrarySnapshot(1, meta.revision, playlists, dao.favorites().map { SafeTrack(it.source, it.semanticTrackId, it.title, it.artist) })
+        val locals = dao.localRecords().map { record ->
+            SafeLocalRecord(record.localRecordId, record.title, record.artist, record.accessState, record.album, record.durationMs, record.hasArtwork, record.lyricState)
+        }
+        return LibrarySnapshot(1, meta.revision, playlists, dao.favorites().map { SafeTrack(it.source, it.semanticTrackId, it.title, it.artist) }, locals)
     }
 
     /** Internal migration entry point. It is deliberately not a React Native bridge capability. */
@@ -258,7 +282,7 @@ internal class LibraryRepository internal constructor(private val database: List
 
     companion object {
         fun open(context: Context): LibraryRepository = LibraryRepository(
-            Room.databaseBuilder(context.applicationContext, Listen2Database::class.java, "listen2-library-01.db").build(),
+            Room.databaseBuilder(context.applicationContext, Listen2Database::class.java, "listen2-library-01.db").addMigrations(LIBRARY_MIGRATION_1_2).build(),
         )
     }
 }

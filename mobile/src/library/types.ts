@@ -10,7 +10,7 @@ export type LibraryPlaylistRecord = {
 };
 
 export type LibraryTrackRecord = {
-  source: 'netease' | 'kugou' | 'kuwo' | 'qq' | 'bilibili';
+  source: 'netease' | 'kugou' | 'kuwo' | 'qq' | 'bilibili' | 'local';
   trackId: string;
   title: string;
   artist: string;
@@ -21,6 +21,20 @@ export type LibrarySnapshot = {
   revision: number;
   personalPlaylists: LibraryPlaylistRecord[];
   favorites: LibraryTrackRecord[];
+  localRecords: LibraryLocalRecord[];
+};
+
+/** Safe projection only; the document URI and persisted permission stay native-private. */
+export type LibraryLocalRecord = {
+  recordId: string;
+  title: string;
+  artist: string;
+  album: string | null;
+  durationMs: number | null;
+  hasArtwork: boolean;
+  lyricState: 'none' | 'attached';
+  availability: 'available' | 'needs-repair' | 'revoked';
+  capabilities: Array<'playlist' | 'queue' | 'lyrics'>;
 };
 
 export type CreatePlaylistMutation = {

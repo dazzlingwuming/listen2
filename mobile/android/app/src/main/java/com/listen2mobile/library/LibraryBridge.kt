@@ -230,6 +230,19 @@ class LibraryBridge internal constructor(
             }
         }))
         putArray("favorites", Arguments.fromList(value.favorites.map(::track)))
+        putArray("localRecords", Arguments.fromList(value.localRecords.map { record ->
+            Arguments.createMap().apply {
+                putString("recordId", record.recordId)
+                putString("title", record.title)
+                putString("artist", record.artist)
+                putString("album", record.album)
+                record.durationMs?.let { putDouble("durationMs", it.toDouble()) } ?: putNull("durationMs")
+                putBoolean("hasArtwork", record.hasArtwork)
+                putString("lyricState", record.lyricState)
+                putString("availability", record.availability)
+                putArray("capabilities", Arguments.fromList(listOf("playlist", "queue", "lyrics")))
+            }
+        }))
     }
 
     private fun track(value: SafeTrack) = Arguments.createMap().apply {

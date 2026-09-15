@@ -1,4 +1,4 @@
-import type { PlayableTrack } from '../types/music';
+import type { LocalTrack, PlayableTrack } from '../types/music';
 import type { LibrarySnapshot } from './types';
 
 export type LibraryProjection = {
@@ -7,7 +7,7 @@ export type LibraryProjection = {
   favorites: PlayableTrack[];
   recentTracks: PlayableTrack[];
   playlists: Array<{ id: string; title: string; tracks: PlayableTrack[] }>;
-  localTracks: [];
+  localTracks: LocalTrack[];
 };
 
 /**
@@ -15,17 +15,45 @@ export type LibraryProjection = {
  * client ownership. Unsupported library categories deliberately remain empty.
  */
 export function projectLibrarySnapshot(snapshot: LibrarySnapshot): LibraryProjection {
+  const localById = new Map(snapshot.localRecords.map(record => [record.recordId, record]));
+  const projectTrack = (track: LibrarySnapshot['favorites'][number]): PlayableTrack => {
+    if (track.source !== 'local') return { id: track.trackId, source: track.source, title: track.title, artist: track.artist };
+    const record = localById.get(track.trackId);
+    return {
+      id: track.trackId,
+      source: 'local',
+      title: record?.title || track.title,
+      artist: record?.artist || track.artist,
+      ...(record?.album ? { album: record.album } : {}),
+      ...(record?.durationMs ? { durationMs: record.durationMs } : {}),
+      accessStatus: record?.availability || 'needs-repair',
+      lyricState: record?.lyricState || 'none',
+      hasArtwork: record?.hasArtwork || false,
+      capabilities: record?.capabilities || [],
+    };
+  };
   return {
     revision: snapshot.revision,
     hydrated: true,
-    favorites: snapshot.favorites.map(track => ({ id: track.trackId, source: track.source, title: track.title, artist: track.artist })),
+    favorites: snapshot.favorites.map(projectTrack),
     recentTracks: [],
     playlists: snapshot.personalPlaylists.map(playlist => ({
       id: playlist.playlistId,
       title: playlist.title,
-      tracks: playlist.tracks.map(track => ({ id: track.trackId, source: track.source, title: track.title, artist: track.artist })),
+      tracks: playlist.tracks.map(projectTrack),
     })),
-    localTracks: [],
+    localTracks: snapshot.localRecords.map(record => ({
+      id: record.recordId,
+      source: 'local' as const,
+      title: record.title,
+      artist: record.artist,
+      ...(record.album ? { album: record.album } : {}),
+      ...(record.durationMs ? { durationMs: record.durationMs } : {}),
+      accessStatus: record.availability,
+      lyricState: record.lyricState,
+      hasArtwork: record.hasArtwork,
+      capabilities: record.capabilities,
+    })),
   };
 }
 

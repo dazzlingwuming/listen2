@@ -8,6 +8,8 @@ import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 /**
  * Version one is intentionally exported. New versions must add an explicit migration; this
@@ -29,7 +31,7 @@ import androidx.room.RoomDatabase
         MigrationJournalEntity::class,
         CacheCatalogEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 abstract class Listen2Database : RoomDatabase() {
@@ -71,7 +73,16 @@ data class LyricMetadataEntity(val source: String, val semanticTrackId: String, 
 
 /** Never stores a third-party content URI, path, grant, bookmark, or playable media URL. */
 @Entity(tableName = "local_records")
-data class LocalRecordEntity(@PrimaryKey val localRecordId: String, val title: String, val artist: String, val accessState: String)
+data class LocalRecordEntity(
+    @PrimaryKey val localRecordId: String,
+    val title: String,
+    val artist: String,
+    val accessState: String,
+    val album: String? = null,
+    val durationMs: Long? = null,
+    val hasArtwork: Boolean = false,
+    val lyricState: String = "none",
+)
 
 @Entity(tableName = "history_evidence")
 data class HistoryEvidenceEntity(@PrimaryKey val occurrenceId: String, val source: String, val semanticTrackId: String, val committedAtEpochDay: Long)
@@ -116,10 +127,20 @@ interface LibraryDao {
     @Query("DELETE FROM favorites") fun deleteAllFavorites()
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putRemoteCollection(value: RemoteCollectionEntity)
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putLocalRecord(value: LocalRecordEntity)
+    @Query("SELECT * FROM local_records WHERE localRecordId = :recordId") fun localRecord(recordId: String): LocalRecordEntity?
     @Query("SELECT * FROM local_records ORDER BY localRecordId ASC") fun localRecords(): List<LocalRecordEntity>
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putLyricMetadata(value: LyricMetadataEntity)
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putMigrationJournal(value: MigrationJournalEntity)
     @Query("SELECT * FROM migration_journal WHERE attemptId = :attemptId") fun migrationJournal(attemptId: String): MigrationJournalEntity?
     @Query("DELETE FROM personal_playlists WHERE playlistId LIKE :prefix || '%'") fun deleteStagedPlaylists(prefix: String)
     @Query("DELETE FROM local_records WHERE localRecordId LIKE :prefix || '%'") fun deleteStagedLocalRecords(prefix: String)
+}
+
+internal val LIBRARY_MIGRATION_1_2 = object : Migration(1, 2) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE local_records ADD COLUMN album TEXT")
+        database.execSQL("ALTER TABLE local_records ADD COLUMN durationMs INTEGER")
+        database.execSQL("ALTER TABLE local_records ADD COLUMN hasArtwork INTEGER NOT NULL DEFAULT 0")
+        database.execSQL("ALTER TABLE local_records ADD COLUMN lyricState TEXT NOT NULL DEFAULT 'none'")
+    }
 }
