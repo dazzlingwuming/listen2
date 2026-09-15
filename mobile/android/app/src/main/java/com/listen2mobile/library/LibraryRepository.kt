@@ -308,10 +308,12 @@ internal class LibraryRepository internal constructor(private val database: List
         }
 
     internal fun migrationJournal(attemptId: String): MigrationJournalEntity? = database.libraryDao().migrationJournal(attemptId)
+    /** Native-only composition hook; no Room entity is exposed through the React bridge. */
+    internal fun historyDatabase(): Listen2Database = database
 
     companion object {
         fun open(context: Context): LibraryRepository = LibraryRepository(
-            Room.databaseBuilder(context.applicationContext, Listen2Database::class.java, "listen2-library-01.db").addMigrations(LIBRARY_MIGRATION_1_2).build(),
+            Room.databaseBuilder(context.applicationContext, Listen2Database::class.java, "listen2-library-01.db").addMigrations(LIBRARY_MIGRATION_1_2, LIBRARY_MIGRATION_2_3).build(),
         )
     }
 }

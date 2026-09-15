@@ -1,0 +1,717 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 3,
+    "identityHash": "55777553c9c090eae08c4c7d7531e223",
+    "entities": [
+      {
+        "tableName": "library_meta",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `revision` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "personal_playlists",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`playlistId` TEXT NOT NULL, `title` TEXT NOT NULL, `position` INTEGER NOT NULL, PRIMARY KEY(`playlistId`))",
+        "fields": [
+          {
+            "fieldPath": "playlistId",
+            "columnName": "playlistId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "playlistId"
+          ]
+        }
+      },
+      {
+        "tableName": "playlist_memberships",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`playlistId` TEXT NOT NULL, `source` TEXT NOT NULL, `semanticTrackId` TEXT NOT NULL, `position` INTEGER NOT NULL, `title` TEXT NOT NULL, `artist` TEXT NOT NULL, PRIMARY KEY(`playlistId`, `source`, `semanticTrackId`))",
+        "fields": [
+          {
+            "fieldPath": "playlistId",
+            "columnName": "playlistId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "semanticTrackId",
+            "columnName": "semanticTrackId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "artist",
+            "columnName": "artist",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "playlistId",
+            "source",
+            "semanticTrackId"
+          ]
+        }
+      },
+      {
+        "tableName": "favorites",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`source` TEXT NOT NULL, `semanticTrackId` TEXT NOT NULL, `title` TEXT NOT NULL, `artist` TEXT NOT NULL, PRIMARY KEY(`source`, `semanticTrackId`))",
+        "fields": [
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "semanticTrackId",
+            "columnName": "semanticTrackId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "artist",
+            "columnName": "artist",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "source",
+            "semanticTrackId"
+          ]
+        }
+      },
+      {
+        "tableName": "remote_collections",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`collectionId` TEXT NOT NULL, `source` TEXT NOT NULL, `title` TEXT NOT NULL, `syncState` TEXT NOT NULL, PRIMARY KEY(`collectionId`))",
+        "fields": [
+          {
+            "fieldPath": "collectionId",
+            "columnName": "collectionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "syncState",
+            "columnName": "syncState",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "collectionId"
+          ]
+        }
+      },
+      {
+        "tableName": "queue_checkpoint",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`occurrenceId` TEXT NOT NULL, `position` INTEGER NOT NULL, `source` TEXT NOT NULL, `semanticTrackId` TEXT NOT NULL, PRIMARY KEY(`occurrenceId`))",
+        "fields": [
+          {
+            "fieldPath": "occurrenceId",
+            "columnName": "occurrenceId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "semanticTrackId",
+            "columnName": "semanticTrackId",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "occurrenceId"
+          ]
+        }
+      },
+      {
+        "tableName": "lyric_metadata",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`source` TEXT NOT NULL, `semanticTrackId` TEXT NOT NULL, `selectedVariantId` TEXT, `offsetMillis` INTEGER NOT NULL, PRIMARY KEY(`source`, `semanticTrackId`))",
+        "fields": [
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "semanticTrackId",
+            "columnName": "semanticTrackId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "selectedVariantId",
+            "columnName": "selectedVariantId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "offsetMillis",
+            "columnName": "offsetMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "source",
+            "semanticTrackId"
+          ]
+        }
+      },
+      {
+        "tableName": "local_records",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`localRecordId` TEXT NOT NULL, `title` TEXT NOT NULL, `artist` TEXT NOT NULL, `accessState` TEXT NOT NULL, `album` TEXT, `durationMs` INTEGER, `hasArtwork` INTEGER NOT NULL, `lyricState` TEXT NOT NULL, PRIMARY KEY(`localRecordId`))",
+        "fields": [
+          {
+            "fieldPath": "localRecordId",
+            "columnName": "localRecordId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "artist",
+            "columnName": "artist",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accessState",
+            "columnName": "accessState",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "album",
+            "columnName": "album",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "durationMs",
+            "columnName": "durationMs",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "hasArtwork",
+            "columnName": "hasArtwork",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lyricState",
+            "columnName": "lyricState",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "localRecordId"
+          ]
+        }
+      },
+      {
+        "tableName": "history_evidence",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`occurrenceId` TEXT NOT NULL, `source` TEXT NOT NULL, `semanticTrackId` TEXT NOT NULL, `committedAtEpochDay` INTEGER NOT NULL, PRIMARY KEY(`occurrenceId`))",
+        "fields": [
+          {
+            "fieldPath": "occurrenceId",
+            "columnName": "occurrenceId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "semanticTrackId",
+            "columnName": "semanticTrackId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "committedAtEpochDay",
+            "columnName": "committedAtEpochDay",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "occurrenceId"
+          ]
+        }
+      },
+      {
+        "tableName": "history_aggregates",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`year` INTEGER NOT NULL, `source` TEXT NOT NULL, `semanticTrackId` TEXT NOT NULL, `playCount` INTEGER NOT NULL, `title` TEXT NOT NULL, `artist` TEXT NOT NULL, PRIMARY KEY(`year`, `source`, `semanticTrackId`))",
+        "fields": [
+          {
+            "fieldPath": "year",
+            "columnName": "year",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "semanticTrackId",
+            "columnName": "semanticTrackId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "playCount",
+            "columnName": "playCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "artist",
+            "columnName": "artist",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "year",
+            "source",
+            "semanticTrackId"
+          ]
+        }
+      },
+      {
+        "tableName": "history_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `clearGeneration` INTEGER NOT NULL, `revision` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "clearGeneration",
+            "columnName": "clearGeneration",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "history_sessions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`playbackInstanceId` TEXT NOT NULL, `clearGeneration` INTEGER NOT NULL, `source` TEXT NOT NULL, `semanticTrackId` TEXT NOT NULL, `title` TEXT NOT NULL, `artist` TEXT NOT NULL, `durationMs` INTEGER NOT NULL, `startedElapsedMs` INTEGER NOT NULL, `lastSequence` INTEGER NOT NULL, `lastPositionMs` INTEGER NOT NULL, `lastElapsedMs` INTEGER NOT NULL, `listenedForwardMs` INTEGER NOT NULL, `tracking` INTEGER NOT NULL, PRIMARY KEY(`playbackInstanceId`, `clearGeneration`))",
+        "fields": [
+          {
+            "fieldPath": "playbackInstanceId",
+            "columnName": "playbackInstanceId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "clearGeneration",
+            "columnName": "clearGeneration",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "semanticTrackId",
+            "columnName": "semanticTrackId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "artist",
+            "columnName": "artist",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "durationMs",
+            "columnName": "durationMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startedElapsedMs",
+            "columnName": "startedElapsedMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastSequence",
+            "columnName": "lastSequence",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastPositionMs",
+            "columnName": "lastPositionMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastElapsedMs",
+            "columnName": "lastElapsedMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "listenedForwardMs",
+            "columnName": "listenedForwardMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tracking",
+            "columnName": "tracking",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "playbackInstanceId",
+            "clearGeneration"
+          ]
+        }
+      },
+      {
+        "tableName": "history_events",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`eventId` TEXT NOT NULL, `playbackInstanceId` TEXT NOT NULL, `clearGeneration` INTEGER NOT NULL, `source` TEXT NOT NULL, `semanticTrackId` TEXT NOT NULL, `title` TEXT NOT NULL, `artist` TEXT NOT NULL, `committedLocalDate` TEXT NOT NULL, `committedLocalYear` INTEGER NOT NULL, `committedLocalMonth` INTEGER NOT NULL, `listenedForwardMs` INTEGER NOT NULL, `thresholdMs` INTEGER NOT NULL, PRIMARY KEY(`eventId`))",
+        "fields": [
+          {
+            "fieldPath": "eventId",
+            "columnName": "eventId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "playbackInstanceId",
+            "columnName": "playbackInstanceId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "clearGeneration",
+            "columnName": "clearGeneration",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "semanticTrackId",
+            "columnName": "semanticTrackId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "artist",
+            "columnName": "artist",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "committedLocalDate",
+            "columnName": "committedLocalDate",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "committedLocalYear",
+            "columnName": "committedLocalYear",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "committedLocalMonth",
+            "columnName": "committedLocalMonth",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "listenedForwardMs",
+            "columnName": "listenedForwardMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "thresholdMs",
+            "columnName": "thresholdMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "eventId"
+          ]
+        }
+      },
+      {
+        "tableName": "mutation_receipts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`requestId` TEXT NOT NULL, `status` TEXT NOT NULL, `revision` INTEGER NOT NULL, `errorCode` TEXT, PRIMARY KEY(`requestId`))",
+        "fields": [
+          {
+            "fieldPath": "requestId",
+            "columnName": "requestId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "errorCode",
+            "columnName": "errorCode",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "requestId"
+          ]
+        }
+      },
+      {
+        "tableName": "migration_journal",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`attemptId` TEXT NOT NULL, `phase` TEXT NOT NULL, `checksum` TEXT, `sourceRetained` INTEGER NOT NULL, PRIMARY KEY(`attemptId`))",
+        "fields": [
+          {
+            "fieldPath": "attemptId",
+            "columnName": "attemptId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "phase",
+            "columnName": "phase",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "checksum",
+            "columnName": "checksum",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "sourceRetained",
+            "columnName": "sourceRetained",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "attemptId"
+          ]
+        }
+      },
+      {
+        "tableName": "cache_catalog",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`cacheId` TEXT NOT NULL, `source` TEXT NOT NULL, `semanticTrackId` TEXT NOT NULL, `state` TEXT NOT NULL, PRIMARY KEY(`cacheId`))",
+        "fields": [
+          {
+            "fieldPath": "cacheId",
+            "columnName": "cacheId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "semanticTrackId",
+            "columnName": "semanticTrackId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "cacheId"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '55777553c9c090eae08c4c7d7531e223')"
+    ]
+  }
+}

@@ -29,6 +29,7 @@ internal class LibraryPreferences(private val context: Context) {
         val SOURCE_RETAINED = booleanPreferencesKey("source_retained")
         val LATER_VALIDATED = booleanPreferencesKey("later_validated")
         val CLEANUP_ELIGIBLE = booleanPreferencesKey("cleanup_eligible")
+        val RECORDING_ENABLED = booleanPreferencesKey("history_recording_enabled")
     }
 
     suspend fun status(): MigrationStatus = context.libraryPreferencesStore.data.first().let { values ->
@@ -77,4 +78,8 @@ internal class LibraryPreferences(private val context: Context) {
             values[SOURCE_RETAINED] = true
         }
     }
+
+    /** History keeps only this privacy toggle in DataStore; evidence and aggregates stay in Room. */
+    suspend fun recordingEnabled(): Boolean = context.libraryPreferencesStore.data.first()[RECORDING_ENABLED] ?: true
+    suspend fun setRecordingEnabled(enabled: Boolean) { context.libraryPreferencesStore.edit { values -> values[RECORDING_ENABLED] = enabled } }
 }

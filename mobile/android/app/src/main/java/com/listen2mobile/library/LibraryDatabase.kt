@@ -27,11 +27,14 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         LocalRecordEntity::class,
         HistoryEvidenceEntity::class,
         HistoryAggregateEntity::class,
+        HistoryStateEntity::class,
+        HistorySessionEntity::class,
+        HistoryEventEntity::class,
         MutationReceiptEntity::class,
         MigrationJournalEntity::class,
         CacheCatalogEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class Listen2Database : RoomDatabase() {
@@ -88,7 +91,51 @@ data class LocalRecordEntity(
 data class HistoryEvidenceEntity(@PrimaryKey val occurrenceId: String, val source: String, val semanticTrackId: String, val committedAtEpochDay: Long)
 
 @Entity(tableName = "history_aggregates", primaryKeys = ["year", "source", "semanticTrackId"])
-data class HistoryAggregateEntity(val year: Int, val source: String, val semanticTrackId: String, val playCount: Int)
+data class HistoryAggregateEntity(
+    val year: Int,
+    val source: String,
+    val semanticTrackId: String,
+    val playCount: Int,
+    val title: String = "",
+    val artist: String = "",
+)
+
+/** These rows contain only semantic listening evidence, never URLs, handles, sessions, or media bytes. */
+@Entity(tableName = "history_state")
+data class HistoryStateEntity(@PrimaryKey val id: Int = 1, val clearGeneration: Long, val revision: Long)
+
+@Entity(tableName = "history_sessions", primaryKeys = ["playbackInstanceId", "clearGeneration"])
+data class HistorySessionEntity(
+    val playbackInstanceId: String,
+    val clearGeneration: Long,
+    val source: String,
+    val semanticTrackId: String,
+    val title: String,
+    val artist: String,
+    val durationMs: Long,
+    val startedElapsedMs: Long,
+    val lastSequence: Long,
+    val lastPositionMs: Long,
+    val lastElapsedMs: Long,
+    val listenedForwardMs: Long,
+    val tracking: Boolean,
+)
+
+@Entity(tableName = "history_events")
+data class HistoryEventEntity(
+    @PrimaryKey val eventId: String,
+    val playbackInstanceId: String,
+    val clearGeneration: Long,
+    val source: String,
+    val semanticTrackId: String,
+    val title: String,
+    val artist: String,
+    val committedLocalDate: String,
+    val committedLocalYear: Int,
+    val committedLocalMonth: Int,
+    val listenedForwardMs: Long,
+    val thresholdMs: Long,
+)
 
 @Entity(tableName = "mutation_receipts")
 data class MutationReceiptEntity(@PrimaryKey val requestId: String, val status: String, val revision: Long, val errorCode: String?)
@@ -139,6 +186,20 @@ interface LibraryDao {
     @Query("SELECT * FROM migration_journal WHERE attemptId = :attemptId") fun migrationJournal(attemptId: String): MigrationJournalEntity?
     @Query("DELETE FROM personal_playlists WHERE playlistId LIKE :prefix || '%'") fun deleteStagedPlaylists(prefix: String)
     @Query("DELETE FROM local_records WHERE localRecordId LIKE :prefix || '%'") fun deleteStagedLocalRecords(prefix: String)
+    @Query("SELECT * FROM history_state WHERE id = 1") fun historyState(): HistoryStateEntity?
+    @Insert(onConflict = OnConflictStrategy.REPLACE) fun putHistoryState(value: HistoryStateEntity)
+    @Query("SELECT * FROM history_sessions WHERE playbackInstanceId = :instanceId AND clearGeneration = :generation") fun historySession(instanceId: String, generation: Long): HistorySessionEntity?
+    @Insert(onConflict = OnConflictStrategy.REPLACE) fun putHistorySession(value: HistorySessionEntity)
+    @Query("DELETE FROM history_sessions WHERE playbackInstanceId = :instanceId AND clearGeneration = :generation") fun deleteHistorySession(instanceId: String, generation: Long)
+    @Query("SELECT * FROM history_events WHERE playbackInstanceId = :instanceId AND clearGeneration = :generation LIMIT 1") fun historyEventForSession(instanceId: String, generation: Long): HistoryEventEntity?
+    @Query("SELECT * FROM history_events WHERE committedLocalYear = :year ORDER BY committedLocalDate ASC, eventId ASC LIMIT :limit") fun historyEventsForYear(year: Int, limit: Int): List<HistoryEventEntity>
+    @Query("SELECT * FROM history_events ORDER BY committedLocalDate DESC, eventId DESC LIMIT :limit") fun historyEvents(limit: Int): List<HistoryEventEntity>
+    @Insert(onConflict = OnConflictStrategy.ABORT) fun insertHistoryEvent(value: HistoryEventEntity)
+    @Query("SELECT * FROM history_aggregates WHERE year = :year AND source = :source AND semanticTrackId = :trackId") fun historyAggregate(year: Int, source: String, trackId: String): HistoryAggregateEntity?
+    @Insert(onConflict = OnConflictStrategy.REPLACE) fun putHistoryAggregate(value: HistoryAggregateEntity)
+    @Query("DELETE FROM history_sessions") fun clearHistorySessions()
+    @Query("DELETE FROM history_events") fun clearHistoryEvents()
+    @Query("DELETE FROM history_aggregates") fun clearHistoryAggregates()
 }
 
 internal val LIBRARY_MIGRATION_1_2 = object : Migration(1, 2) {
@@ -147,5 +208,15 @@ internal val LIBRARY_MIGRATION_1_2 = object : Migration(1, 2) {
         database.execSQL("ALTER TABLE local_records ADD COLUMN durationMs INTEGER")
         database.execSQL("ALTER TABLE local_records ADD COLUMN hasArtwork INTEGER NOT NULL DEFAULT 0")
         database.execSQL("ALTER TABLE local_records ADD COLUMN lyricState TEXT NOT NULL DEFAULT 'none'")
+    }
+}
+
+internal val LIBRARY_MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE history_aggregates ADD COLUMN title TEXT NOT NULL DEFAULT ''")
+        database.execSQL("ALTER TABLE history_aggregates ADD COLUMN artist TEXT NOT NULL DEFAULT ''")
+        database.execSQL("CREATE TABLE IF NOT EXISTS history_state (id INTEGER NOT NULL, clearGeneration INTEGER NOT NULL, revision INTEGER NOT NULL, PRIMARY KEY(id))")
+        database.execSQL("CREATE TABLE IF NOT EXISTS history_sessions (playbackInstanceId TEXT NOT NULL, clearGeneration INTEGER NOT NULL, source TEXT NOT NULL, semanticTrackId TEXT NOT NULL, title TEXT NOT NULL, artist TEXT NOT NULL, durationMs INTEGER NOT NULL, startedElapsedMs INTEGER NOT NULL, lastSequence INTEGER NOT NULL, lastPositionMs INTEGER NOT NULL, lastElapsedMs INTEGER NOT NULL, listenedForwardMs INTEGER NOT NULL, tracking INTEGER NOT NULL, PRIMARY KEY(playbackInstanceId, clearGeneration))")
+        database.execSQL("CREATE TABLE IF NOT EXISTS history_events (eventId TEXT NOT NULL, playbackInstanceId TEXT NOT NULL, clearGeneration INTEGER NOT NULL, source TEXT NOT NULL, semanticTrackId TEXT NOT NULL, title TEXT NOT NULL, artist TEXT NOT NULL, committedLocalDate TEXT NOT NULL, committedLocalYear INTEGER NOT NULL, committedLocalMonth INTEGER NOT NULL, listenedForwardMs INTEGER NOT NULL, thresholdMs INTEGER NOT NULL, PRIMARY KEY(eventId))")
     }
 }

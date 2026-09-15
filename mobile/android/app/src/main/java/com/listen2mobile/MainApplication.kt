@@ -13,6 +13,7 @@ import com.listen2mobile.qq.QqPlaybackPackage
 import com.listen2mobile.kuwo.KuwoPlaybackPackage
 import com.listen2mobile.library.LibraryPackage
 import com.listen2mobile.local.LocalAudioPackage
+import com.listen2mobile.history.HistoryPackage
 
 class MainApplication : Application(), ReactApplication {
 
@@ -28,6 +29,7 @@ class MainApplication : Application(), ReactApplication {
           add(KuwoPlaybackPackage())
           add(LibraryPackage())
           add(LocalAudioPackage())
+          add(HistoryPackage())
           // Packages that cannot be autolinked yet can be added manually here, for example:
           // add(MyReactNativePackage())
         },
