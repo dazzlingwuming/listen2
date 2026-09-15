@@ -1,7 +1,7 @@
 import React from 'react';
 import renderer, { act } from 'react-test-renderer';
 import { ScrollView } from 'react-native';
-import type { SearchResult } from '../../types';
+import type { SearchResult, SourceId } from '../../types';
 import {
   createSearchJourneyState,
   createSearchJourneyRestoration,
@@ -60,14 +60,6 @@ jest.mock('../../api/client', () => ({
 jest.mock('../../store/playerSlice', () => ({
   playTrack: jest.fn(() => ({ type: 'player/playTrack' })),
   addNextTrack: jest.fn(() => ({ type: 'player/addNextTrack' })),
-}));
-jest.mock('../../components/SourceTabs', () => ({
-  SourceTabs: () => null,
-  providerLabels: {
-    netease: '网易云音乐',
-    kuwo: '酷我音乐',
-    bilibili: 'Bilibili',
-  },
 }));
 jest.mock('../ScreenLayout', () => ({
   ScreenLayout: ({ children }: { children: React.ReactNode }) => (
@@ -251,6 +243,95 @@ describe('search journey state', () => {
     });
     expect(JSON.stringify(timeout)).not.toMatch(/cookie|token|https?:\/\//i);
   });
+
+  it.each([
+    ['success', 'netease', false],
+    ['error', 'netease', true],
+    ['success', 'bilibili', false],
+    ['error', 'bilibili', true],
+  ] as const)(
+    'keeps the typed query visible across source selection and a %s %s terminal',
+    async (_terminal, source, shouldFail) => {
+      const query = '用户输入的关键词';
+      mockSearch.mockImplementation(
+        (
+          requestedSource: SourceId,
+          requestedQuery: string,
+          page: number,
+        ) => {
+          if (shouldFail) {
+            return Promise.reject(
+              new ProviderClientError('REQUEST_TIMEOUT', requestedSource, 'search'),
+            );
+          }
+          return Promise.resolve({
+            source: requestedSource,
+            query: requestedQuery,
+            page,
+            kind: 'track',
+            total: 1,
+            hasMore: false,
+            results: [
+              {
+                kind: 'track',
+                track: {
+                  id: `${requestedSource}_1`,
+                  source: requestedSource,
+                  title: `${requestedSource} 结果`,
+                  artist: '测试歌手',
+                },
+              },
+            ],
+          });
+        },
+      );
+
+      let tree!: renderer.ReactTestRenderer;
+      await act(async () => {
+        tree = renderer.create(<SearchScreen />);
+        await Promise.resolve();
+      });
+
+      const input = () =>
+        tree.root.findByProps({ accessibilityLabel: '搜索歌曲、歌手或歌单' });
+      await act(async () => {
+        input().props.onChangeText(query);
+      });
+
+      await act(async () => {
+        tree.root
+          .findByProps({
+            accessibilityHint: `切换到${
+              source === 'netease' ? '网易云音乐' : '哔哩哔哩'
+            }搜索结果`,
+          })
+          .props.onPress();
+      });
+      expect(input().props.value).toBe(query);
+
+      await act(async () => {
+        tree.root.findByProps({ accessibilityLabel: '搜索音乐' }).props.onPress();
+        await Promise.resolve();
+      });
+
+      expect(mockSearch).toHaveBeenLastCalledWith(
+        source,
+        query,
+        1,
+        expect.objectContaining({ kind: 'track', signal: expect.any(Object) }),
+      );
+      expect(input().props.value).toBe(query);
+      if (shouldFail) {
+        expect(
+          tree.root.findByProps({ accessibilityLabel: '重试搜索' }),
+        ).toBeTruthy();
+      } else {
+        expect(
+          tree.root.findByProps({ children: `${source} 结果` }),
+        ).toBeTruthy();
+      }
+    },
+  );
 
   it('keeps rows after a later-page error and records a retryable page', () => {
     const ready = reduceSearchJourney(
