@@ -30,4 +30,5 @@ export type RootStackParamList = {
     restore?: BilibiliMvRecovery;
   };
   AccountSources: undefined;
+  History: undefined;
 };

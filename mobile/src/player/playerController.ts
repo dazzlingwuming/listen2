@@ -7,6 +7,7 @@ import { NativeModules, PermissionsAndroid, Platform } from 'react-native';
 import { providerClient } from '../api/client';
 import { ProviderClientError } from '../api/errors';
 import { isLocalTrack, type PlayableTrack } from '../types/music';
+import { history } from '../history/history';
 import {
   isOfflineDownloadEligible,
   offlineAudio,
@@ -624,7 +625,6 @@ async function transition(
     emit(dispatch, 'player/activateTrack', payload);
     if (payload.consumePlayNext)
       emit(dispatch, 'player/consumeQueuedNext', payload.consumePlayNext);
-    emit(dispatch, 'library/recordRecent', payload.track);
   }
   return started;
 }
@@ -718,6 +718,8 @@ class PlayerController {
     if (nativeTrackId) this.activeNativeTrackId = nativeTrackId;
     this.activeNativeGeneration = this.nativeGeneration;
     this.restoredNeedsLoad = false;
+    const historyTrack = playerState().nowPlaying;
+    if (historyTrack) history.begin(historyTrack);
   }
 
   markNativeQueueCleared() {
@@ -806,7 +808,6 @@ class PlayerController {
         this.restoredNeedsLoad = false;
         this.markNativeTrackLoaded();
         emit(dispatch, 'player/setError', null);
-        emit(dispatch, 'library/recordRecent', state.nowPlaying);
       }
       return started;
     }
@@ -984,7 +985,6 @@ class PlayerController {
     this.restoredNeedsLoad = false;
     emit(dispatch, 'player/setPlaying', true);
     emit(dispatch, 'player/replacePlaylist', { tracks, startIndex });
-    emit(dispatch, 'library/recordRecent', target);
     return true;
   }
 
@@ -1240,6 +1240,7 @@ class PlayerController {
       emit(dispatch, 'player/setError', 'seek-unavailable');
       return false;
     }
+    history.observe(current || null, 'seek', Math.round(position * 1000));
     return this.runNativeMutation(() => this.seekInternal(dispatch, position));
   }
 
@@ -1407,11 +1408,13 @@ class PlayerController {
       duration,
       bufferedPosition,
     });
+    history.observe(playerState().nowPlaying, 'progress', Math.round(position * 1000));
   }
 
   onPlaybackState(nativeState: State, identity?: NativeCallbackIdentity) {
     if (!this.isNativeCallbackCurrent(identity)) return;
     emit(undefined, 'player/setPlaying', nativeState === State.Playing);
+    history.observe(playerState().nowPlaying, nativeState === State.Playing ? 'play' : 'pause');
   }
 
   onPlaybackError(identity?: NativeCallbackIdentity) {
@@ -1419,6 +1422,7 @@ class PlayerController {
     this.restoredNeedsLoad = true;
     emit(undefined, 'player/setPlaying', false);
     emit(undefined, 'player/setError', 'native-playback-error');
+    history.observe(playerState().nowPlaying, 'failure');
   }
 
   onPlaybackQueueEnded(identity?: NativeCallbackIdentity) {

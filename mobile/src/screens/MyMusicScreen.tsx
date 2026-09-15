@@ -137,6 +137,9 @@ export function MyMusicScreen() {
         </Pressable>
       </View>
       <View style={styles.grid}>
+        <Pressable accessibilityLabel="打开听歌历史与年度回响" onPress={() => navigation.navigate('History')} style={styles.tile}>
+          <Text style={styles.tileIcon}>◷</Text><Text style={styles.tileTitle}>听歌历史与年度回响</Text><Text style={text.meta}>查看有效播放与年度统计</Text>
+        </Pressable>
         <Pressable
           accessibilityLabel="打开本地音乐"
           onPress={() =>
