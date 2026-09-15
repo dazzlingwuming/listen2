@@ -16,7 +16,10 @@ if $STOP; then [[ -f "$PID_FILE" ]] && kill "$(cat "$PID_FILE")" 2>/dev/null || 
 CONFIG="$HOME/.android/avd/${NAME}.avd/config.ini"
 if [[ -d "${CONFIG%/config.ini}" ]]; then grep -Fqx "image.sysdir.1=system-images/android-${API}/google_apis/${ABI}/" "$CONFIG" || { echo "BLOCKED: existing AVD image/ABI mismatch" >&2; exit 3; }; else printf 'no\n' | "$AVDMANAGER" create avd -n "$NAME" -k "$IMAGE" --force >/dev/null; touch "$MARKER"; fi
 $START || exit 0
-"$EMULATOR" -avd "$NAME" -no-snapshot -no-boot-anim -no-audio -netdelay none -netspeed full >/dev/null 2>&1 & echo $! > "$PID_FILE"
+# The acceptance command returns the serial to a separate host runner. Detach
+# the emulator from this helper's shell so a normal non-interactive shell exit
+# cannot terminate the exact device before the serial-bound journey begins.
+nohup "$EMULATOR" -avd "$NAME" -no-snapshot -no-boot-anim -no-audio -netdelay none -netspeed full >/dev/null 2>&1 & echo $! > "$PID_FILE"
 deadline=$((SECONDS + 120)); SERIAL=""
 while (( SECONDS < deadline )); do SERIAL="$($ADB devices | awk 'NR>1 && $2=="device" {print $1; exit}')"; [[ -n "$SERIAL" ]] && [[ "$($ADB -s "$SERIAL" shell getprop sys.boot_completed | tr -d '\r')" == 1 ]] && break; sleep 2; done
 [[ -n "$SERIAL" ]] || { echo "BLOCKED: emulator did not boot" >&2; exit 3; }
