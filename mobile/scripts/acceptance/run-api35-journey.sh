@@ -1,6 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+instrumentation_result_ok() {
+  local output="$1"
+  [[ -s "$output" ]] || return 1
+  ! grep -Eqi 'FAILURES!!!|INSTRUMENTATION_FAILED|shortMsg=|AssertionError' "$output" || return 1
+  grep -Eq '^INSTRUMENTATION_CODE: 0[[:space:]]*$' "$output"
+}
+
+if [[ "${1:-}" == "--self-test" ]]; then
+  self_test_dir="$(mktemp -d "${TMPDIR:-/tmp}/listen2-instrumentation-result.XXXXXX")"
+  trap 'rm -rf "$self_test_dir"' EXIT
+  printf '%s\n' 'INSTRUMENTATION_STATUS_CODE: 0' 'INSTRUMENTATION_CODE: 0' > "$self_test_dir/success.txt"
+  printf '%s\n' 'FAILURES!!! Tests run: 1,  Failures: 1' 'java.lang.AssertionError' 'INSTRUMENTATION_CODE: 0' > "$self_test_dir/assertion.txt"
+  printf '%s\n' 'INSTRUMENTATION_FAILED: com.listen2mobile.MainActivity' 'shortMsg=Process crashed.' > "$self_test_dir/failed.txt"
+  instrumentation_result_ok "$self_test_dir/success.txt" || { echo 'instrumentation success fixture rejected' >&2; exit 1; }
+  ! instrumentation_result_ok "$self_test_dir/assertion.txt" || { echo 'AssertionError fixture accepted' >&2; exit 1; }
+  ! instrumentation_result_ok "$self_test_dir/failed.txt" || { echo 'INSTRUMENTATION_FAILED fixture accepted' >&2; exit 1; }
+  echo 'Instrumentation result self-test passed.'
+  exit 0
+fi
+
 PACKAGE="com.dazzlingwuming.listen2"
 TEST_PACKAGE="com.dazzlingwuming.listen2.test"
 PHASE_DIR=".planning/phases/08-integrated-api-35-acceptance-release-like-evidence"
@@ -87,13 +107,18 @@ record_failure() {
   "$ADB" -s "$SERIAL" exec-out screencap -p > "$SCREENSHOT" 2>/dev/null || true
   write_record "FAIL" "$code" || true
 }
+run_instrumentation() {
+  local test_class="$1" output="$2"
+  "$ADB" -s "$SERIAL" shell am instrument -w -r -e class "$test_class" "$TEST_PACKAGE/androidx.test.runner.AndroidJUnitRunner" > "$output" 2>&1 || return 1
+  instrumentation_result_ok "$output"
+}
 write_record() {
   local OUTCOME="$1"; local DETAIL="$2"; local BUILD_HEAD_VALUE="${3:-$BUILD_HEAD}"; local ENDED_AT="$(date -Iseconds)"; trap - EXIT; cleanup
   node --input-type=module - "$RUN_DIR" "$RELEASE_SHA" "$FIXTURE_SHA" "$OUTCOME" "$DETAIL" "$STARTED_AT" "$ENDED_AT" "$SERIAL" "$CLEANUP_STATUS" "$BUILD_HEAD_VALUE" <<'NODE' > "$RUN_DIR/.journey-input.json"
 import { createHash } from 'node:crypto'; import { readFileSync, statSync } from 'node:fs'; import { basename } from 'node:path';
 const [run, sha, fixtureSha, outcome, detail, started, ended, serial, cleanup, buildHead] = process.argv.slice(2);
 const hash = file => createHash('sha256').update(readFileSync(`${run}/${file}`)).digest('hex');
-const listed = ['journey-events.txt', 'smoke-phone.png', 'smoke-window.xml', 'integrated-phone.png', 'integrated-window.xml', 'postrun-phone.png', 'postrun-window.xml', 'fixture.json', 'fixtures/synthetic-phase08.wav', 'fixtures/synthetic-phase08.lrc', 'device-state-before.sh', 'journey-test-payload.json', 'artifacts/releaseLikeAndroidTest-journey.apk'].filter(file => { try { return statSync(`${run}/${file}`).isFile(); } catch { return false; } });
+const listed = ['journey-events.txt', 'upgrade-seed-instrumentation.txt', 'integrated-journey-instrumentation.txt', 'smoke-phone.png', 'smoke-window.xml', 'integrated-phone.png', 'integrated-window.xml', 'postrun-phone.png', 'postrun-window.xml', 'fixture.json', 'fixtures/synthetic-phase08.wav', 'fixtures/synthetic-phase08.lrc', 'device-state-before.sh', 'journey-test-payload.json', 'artifacts/releaseLikeAndroidTest-journey.apk'].filter(file => { try { return statSync(`${run}/${file}`).isFile(); } catch { return false; } });
 const artifacts = listed.map(file => ({ kind: basename(file).replace(/[^a-z0-9]+/gi, '-').toLowerCase(), relativePath: file, sha256: hash(file), bytes: statSync(`${run}/${file}`).size, sanitized: true }));
 console.log(JSON.stringify({ schemaVersion: 1, runId: basename(run), recordId: 'phase8-api35-journey', recordedAt: ended,
   git: { branch: 'acceptance-clean-worktree', sha: buildHead, trackedClean: true, allowedUntracked: [] },
@@ -116,7 +141,7 @@ NODE
 ((CLEAR_COUNT++)); "$ADB" -s "$SERIAL" shell pm clear "$PACKAGE" | tr -d '\r' > "$RUN_DIR/reset.txt" || { record_failure reset-failed; exit 1; }
 [[ "$CLEAR_COUNT" == 1 ]] || { record_failure second-reset; exit 1; }
 "$ADB" -s "$SERIAL" install -r "$TEST_APK" >/dev/null || { record_failure test-install; exit 1; }
-"$ADB" -s "$SERIAL" shell am instrument -w -r -e class "$SEED_CLASS" "$TEST_PACKAGE/androidx.test.runner.AndroidJUnitRunner" >/dev/null || { record_failure upgrade-seed; exit 1; }
+run_instrumentation "$SEED_CLASS" "$RUN_DIR/upgrade-seed-instrumentation.txt" || { record_failure upgrade-seed; exit 1; }
 "$ADB" -s "$SERIAL" install -r "$RELEASE_APK" >/dev/null || { record_failure release-install; exit 1; }
 "$ADB" -s "$SERIAL" shell pm path "$TEST_PACKAGE" | grep -q . || { record_failure missing-test-package; exit 1; }
 smoke_ui() {
@@ -134,7 +159,7 @@ smoke_ui() {
 smoke_ui || { record_failure release-ui-smoke; exit 1; }
 "$ADB" -s "$SERIAL" pull /sdcard/listen2-phase8-smoke.xml "$RUN_DIR/smoke-window.xml" >/dev/null
 "$ADB" -s "$SERIAL" exec-out screencap -p > "$RUN_DIR/smoke-phone.png"
-"$ADB" -s "$SERIAL" shell am instrument -w -r -e class "$JOURNEY_CLASS" "$TEST_PACKAGE/androidx.test.runner.AndroidJUnitRunner" >/dev/null || { record_failure integrated-journey; exit 1; }
+run_instrumentation "$JOURNEY_CLASS" "$RUN_DIR/integrated-journey-instrumentation.txt" || { record_failure integrated-journey; exit 1; }
 "$ADB" -s "$SERIAL" pull /sdcard/listen2-phase8-integrated.xml "$RUN_DIR/integrated-window.xml" >/dev/null || { record_failure missing-integrated-window; exit 1; }
 "$ADB" -s "$SERIAL" pull /sdcard/listen2-phase8-integrated.png "$RUN_DIR/integrated-phone.png" >/dev/null || { record_failure missing-integrated-screen; exit 1; }
 smoke_ui || { record_failure postrun-ui-smoke; exit 1; }
