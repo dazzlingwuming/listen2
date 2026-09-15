@@ -65,6 +65,10 @@ class KuwoPlaybackContractTest {
 
     @Test
     fun hostAndProbePolicyFailClosed() {
+        assertEquals("kuwo", KuwoPlaybackModule.PROVIDER)
+        assertEquals(1, KuwoPlaybackModule.CONTRACT_VERSION)
+        assertTrue(KuwoPlaybackModule.POLICY_READY)
+        assertEquals(listOf("er-sycdn.kuwo.cn"), KuwoPlaybackModule.APPROVED_HOSTS)
         assertFalse(KuwoPlaybackPolicy.isApprovedMediaUrl("http://er-sycdn.kuwo.cn/a.mp3"))
         assertFalse(KuwoPlaybackPolicy.isApprovedMediaUrl("https://wrong.kuwo.cn/a.mp3"))
         assertFalse(KuwoPlaybackPolicy.isApprovedMediaUrl("https://user@er-sycdn.kuwo.cn/a.mp3"))
@@ -73,6 +77,21 @@ class KuwoPlaybackContractTest {
         assertCode(KuwoPlaybackPolicy.ErrorCode.INVALID_RESPONSE) {
             KuwoPlaybackPolicy.validateProbe(302, emptyMap())
         }
+    }
+
+    @Test
+    fun ledgerRejectsDuplicateIdsAndCancellationMakesLateCompletionStale() {
+        val ledger = KuwoPlaybackPolicy.RequestLedger()
+        val first = requireNotNull(ledger.claim(REQUEST_ID))
+        assertEquals(null, ledger.claim(REQUEST_ID))
+        assertTrue(ledger.isCurrent(first))
+        assertEquals(first, ledger.cancel(REQUEST_ID))
+        assertFalse(ledger.isCurrent(first))
+        ledger.complete(first)
+        val second = requireNotNull(ledger.claim(REQUEST_ID))
+        assertTrue(ledger.isCurrent(second))
+        ledger.cancelAll()
+        assertFalse(ledger.isCurrent(second))
     }
 
     private fun assertCode(code: KuwoPlaybackPolicy.ErrorCode, block: () -> Unit) {
