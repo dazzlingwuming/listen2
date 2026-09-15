@@ -52,4 +52,25 @@ class LibraryBridgeContractTest {
             ) == null,
         )
     }
+
+    @Test fun bridge_rejects_fractional_and_non_finite_revision_numbers() {
+        fun mutation(schema: Number, revision: Number) = mapOf(
+            "schemaVersion" to schema,
+            "requestId" to "bridge-number",
+            "expectedRevision" to revision,
+            "operation" to "createPlaylist",
+            "payload" to mapOf("playlistId" to "p", "title" to "x"),
+        )
+        assertTrue(LibraryBridgeContract.parseMutation(mutation(1.5, 0)) is LibraryValidation.Rejected)
+        assertTrue(LibraryBridgeContract.parseMutation(mutation(1, 0.5)) is LibraryValidation.Rejected)
+        assertTrue(LibraryBridgeContract.parseMutation(mutation(Double.NaN, 0)) is LibraryValidation.Rejected)
+        assertTrue(LibraryBridgeContract.parseMutation(mutation(1, Double.POSITIVE_INFINITY)) is LibraryValidation.Rejected)
+        assertTrue(LibraryBridgeContract.parseBackup(mapOf(
+            "schemaVersion" to 1.5,
+            "expectedRevision" to 0,
+            "mode" to "merge",
+            "favorites" to emptyList<Any>(),
+            "playlists" to emptyList<Any>(),
+        )) == null)
+    }
 }

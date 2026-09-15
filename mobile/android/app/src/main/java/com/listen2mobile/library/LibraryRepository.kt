@@ -231,9 +231,13 @@ internal class LibraryRepository internal constructor(private val database: List
         }
         val existingIds = dao.playlists(LibraryLimits.MAX_PLAYLISTS).map { it.playlistId }.toMutableSet()
         pending.input.favorites.forEach { dao.putFavorite(FavoriteEntity(it.source, it.trackId, it.title, it.artist)) }
-        pending.input.playlists.forEachIndexed { index, playlist ->
-            if (playlist.playlistId in existingIds && pending.mode == "merge") return@forEachIndexed
-            dao.insertPlaylist(PersonalPlaylistEntity(playlist.playlistId, playlist.title, dao.playlists(LibraryLimits.MAX_PLAYLISTS).size + index))
+        pending.input.playlists.forEach { playlist ->
+            // Preview normally remints merge collisions. Keep apply defensive so a
+            // valid preview can never fail a transaction with a Room UNIQUE error.
+            if (playlist.playlistId in existingIds && pending.mode == "merge") return@forEach
+            if (playlist.playlistId in existingIds)
+                return@runInTransaction LibraryReceipt(token, "rejected", current.revision, "DUPLICATE_PLAYLIST", snapshotLocked())
+            dao.insertPlaylist(PersonalPlaylistEntity(playlist.playlistId, playlist.title, dao.playlists(LibraryLimits.MAX_PLAYLISTS).size))
             playlist.tracks.forEachIndexed { position, track -> dao.putMembership(PlaylistMembershipEntity(playlist.playlistId, track.source, track.trackId, position, track.title, track.artist)) }
             existingIds += playlist.playlistId
         }
@@ -243,7 +247,7 @@ internal class LibraryRepository internal constructor(private val database: List
         LibraryReceipt(token, "applied", nextRevision, snapshot = snapshotLocked())
     }
 
-    private fun validBackup(input: BackupInput): Boolean = input.expectedRevision >= 0 && input.mode in setOf("merge", "overwrite") && input.playlists.size <= LibraryLimits.MAX_PLAYLISTS && input.favorites.size <= 50_000 &&
+    private fun validBackup(input: BackupInput): Boolean = input.expectedRevision >= 0 && input.mode in setOf("merge", "overwrite") && input.playlists.size <= LibraryLimits.MAX_PLAYLISTS && input.playlists.map { it.playlistId }.distinct().size == input.playlists.size && input.favorites.size <= 50_000 &&
         (input.favorites + input.playlists.flatMap { it.tracks }).all { it.source in setOf("netease", "kugou", "kuwo", "qq", "bilibili") && it.trackId.matches(Regex("^[A-Za-z0-9._:-]{1,128}$")) && it.title.isNotBlank() && it.title.length <= LibraryLimits.MAX_TITLE && it.artist.isNotBlank() && it.artist.length <= LibraryLimits.MAX_TITLE } &&
         input.playlists.all { it.playlistId.matches(Regex("^[A-Za-z0-9_-]{1,64}$")) && it.title.isNotBlank() && it.title.length <= LibraryLimits.MAX_TITLE && it.tracks.size <= 5_000 && it.tracks.distinctBy { track -> "${track.source}:${track.trackId}" }.size == it.tracks.size }
 

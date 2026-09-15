@@ -21,19 +21,19 @@ internal object LibraryBridgeContract {
         if (value.keys != setOf("schemaVersion", "requestId", "expectedRevision", "operation", "payload") || hasPrivateTree(value)) return LibraryValidation.Rejected("INVALID_REQUEST")
         val schema = value["schemaVersion"] as? Number ?: return LibraryValidation.Rejected("UNSUPPORTED_SCHEMA")
         val requestId = value["requestId"] as? String ?: return LibraryValidation.Rejected("INVALID_REQUEST")
-        val revision = (value["expectedRevision"] as? Number)?.toLong() ?: return LibraryValidation.Rejected("INVALID_REQUEST")
+        val revision = (value["expectedRevision"] as? Number)?.let(::exactLong) ?: return LibraryValidation.Rejected("INVALID_REQUEST")
         val operation = value["operation"] as? String ?: return LibraryValidation.Rejected("INVALID_REQUEST")
         val rawPayload = value["payload"] as? Map<*, *> ?: return LibraryValidation.Rejected("INVALID_REQUEST")
         if (rawPayload.any { it.key !is String || it.value !is String }) return LibraryValidation.Rejected("INVALID_REQUEST")
         val payload = rawPayload.entries.associate { (key, item) -> key as String to item as String }
-        if (schema.toInt() != SCHEMA_VERSION || schema.toDouble() != SCHEMA_VERSION.toDouble()) return LibraryValidation.Rejected("UNSUPPORTED_SCHEMA")
+        if (exactInt(schema) != SCHEMA_VERSION) return LibraryValidation.Rejected("UNSUPPORTED_SCHEMA")
         if (payload.size > 5 || payload.any { it.key.length > 64 || it.value.length > LibraryLimits.MAX_TITLE }) return LibraryValidation.Rejected("INVALID_REQUEST")
         return LibraryMutationValidator.validate(requestId, revision, operation, payload)
     }
 
     fun parseLegacyMigration(value: Map<String, Any?>): Pair<LegacyLibraryInput, Pair<String, String>>? {
         if (value.keys != setOf("schemaVersion", "attemptId", "checksum", "playlists", "localEntries") || hasPrivateTree(value)) return null
-        val schemaVersion = (value["schemaVersion"] as? Number)?.toInt() ?: return null
+        val schemaVersion = (value["schemaVersion"] as? Number)?.let(::exactInt) ?: return null
         val attemptId = value["attemptId"] as? String ?: return null
         val checksum = value["checksum"] as? String ?: return null
         val playlists = value["playlists"] as? List<*> ?: return null
@@ -54,8 +54,8 @@ internal object LibraryBridgeContract {
 
     fun parseBackup(value: Map<String, Any?>): BackupInput? {
         if (value.keys != setOf("schemaVersion", "expectedRevision", "mode", "favorites", "playlists") || hasPrivateTree(value)) return null
-        if ((value["schemaVersion"] as? Number)?.toInt() != SCHEMA_VERSION) return null
-        val revision = (value["expectedRevision"] as? Number)?.toLong() ?: return null
+        if ((value["schemaVersion"] as? Number)?.let(::exactInt) != SCHEMA_VERSION) return null
+        val revision = (value["expectedRevision"] as? Number)?.let(::exactLong) ?: return null
         val mode = value["mode"] as? String ?: return null
         val favorites = (value["favorites"] as? List<*>)?.map { parseTrack(it) ?: return null } ?: return null
         val playlists = (value["playlists"] as? List<*>)?.map { raw ->
@@ -73,6 +73,17 @@ internal object LibraryBridgeContract {
         val item = raw as? Map<*, *> ?: return null
         if (item.keys != setOf("source", "trackId", "title", "artist")) return null
         return SafeTrack(item["source"] as? String ?: return null, item["trackId"] as? String ?: return null, item["title"] as? String ?: return null, item["artist"] as? String ?: return null)
+    }
+
+    /** React Native transports JS numbers as doubles, so every durable revision must be exact. */
+    private fun exactLong(value: Number): Long? {
+        val decimal = value.toDouble()
+        return if (decimal.isFinite() && decimal == decimal.toLong().toDouble()) decimal.toLong() else null
+    }
+
+    private fun exactInt(value: Number): Int? {
+        val decimal = value.toDouble()
+        return if (decimal.isFinite() && decimal == decimal.toInt().toDouble()) decimal.toInt() else null
     }
 
     /** Defensive recursion rejects a future caller that tries to smuggle a private native handle. */
@@ -122,7 +133,7 @@ class LibraryBridge internal constructor(
 
     @ReactMethod
     fun applyBackup(token: String, checksum: String, expectedRevision: Double, promise: Promise) = execute(promise) {
-        if (!token.matches(Regex("^[A-Za-z0-9]{16,64}$")) || !checksum.matches(Regex("^[a-f0-9]{64}$")) || expectedRevision < 0 || expectedRevision != expectedRevision.toLong().toDouble()) return@execute error("INVALID_BACKUP")
+        if (!token.matches(Regex("^[A-Za-z0-9]{16,64}$")) || !checksum.matches(Regex("^[a-f0-9]{64}$")) || !expectedRevision.isFinite() || expectedRevision < 0 || expectedRevision != expectedRevision.toLong().toDouble()) return@execute error("INVALID_BACKUP")
         receipt(repository.applyBackup(token, checksum, expectedRevision.toLong()))
     }
 
