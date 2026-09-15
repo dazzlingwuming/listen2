@@ -34,7 +34,8 @@ APKANALYZER="$SDK/cmdline-tools/latest/bin/apkanalyzer"; [[ -x "$APKANALYZER" ]]
 [[ "$("$ADB" -s "$SERIAL" get-state 2>/dev/null)" == device ]] || fail 'explicit serial is unavailable'
 [[ "$("$ADB" -s "$SERIAL" shell getprop ro.build.version.sdk | tr -d '\r')" =~ ^(26|35|36)$ ]] || fail 'device API is unsupported'
 
-readarray -t BUILD_INFO < <(node --input-type=module - "$BUILD_EVIDENCE" "$RUN_DIR" <<'NODE'
+BUILD_INFO=()
+while IFS= read -r line; do BUILD_INFO+=("$line"); done < <(node --input-type=module - "$BUILD_EVIDENCE" "$RUN_DIR" <<'NODE'
 import { readFileSync, realpathSync } from 'node:fs'; import { dirname, resolve, relative } from 'node:path';
 const [recordFile, run] = process.argv.slice(2); const record = JSON.parse(readFileSync(recordFile, 'utf8')); const root = realpathSync(run);
 for (const kind of ['release-like-apk']) { const item = record.artifacts.find(value => value.kind === kind); if (!item || !item.relativePath || item.relativePath.includes('..')) throw new Error('missing product candidate'); const path = realpathSync(resolve(dirname(recordFile), item.relativePath)); if (!path.startsWith(`${root}/`)) throw new Error('candidate escapes run'); console.log(`${path}|${item.sha256}`); }
