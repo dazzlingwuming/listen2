@@ -4,9 +4,9 @@
 
 Android v1.0 now takes the original author's `listen1/listen1_mobile` v0.8.2 as the **product reference**, not as an obsolete technology stack to copy: its phone-first information architecture, bottom navigation, focused player flow, and the one-contract four-source search model are the starting point. The Android product adds Bilibili as a fifth source and uses the current `main` desktop behavior as the complete capability baseline.
 
-The implementation remains the current Android API 35 architecture: shared browser UI inside the hardened WebView shell, a narrow typed native bridge, Media3 as the sole playback owner, and native Room/SAF/Keystore/cache ownership. It does **not** return to React Native 0.59, SDK 28, direct provider HTTP, caller-controlled headers, or arbitrary URL bridging.
+The canonical implementation is now the `mobile/` React Native application with focused Kotlin native modules, RN Track Player/Media3 system integration, and native Room/SAF/Keystore/cache ownership. Its checked-in Gradle contract is min SDK 24, compile SDK 37, and target SDK 36. The legacy top-level `android/` WebView sample and desktop/browser assets are historical references only and cannot enter the candidate. It does **not** return to React Native 0.59, SDK 28, direct provider HTTP, caller-controlled headers, or arbitrary URL bridging.
 
-The prior roadmap fragmented this outcome into infrastructure-heavy stages and repeatedly treated builds as acceptance. The new route completes five user journeys in sequence. Normal work validates cohesive source/UI contracts through JavaScript and JVM tests; it does not create an APK for every small change. Phase 8 is the single API 35 end-to-end, performance, and release-like acceptance gate for the integrated product.
+The prior roadmap fragmented this outcome into infrastructure-heavy stages and repeatedly treated builds as acceptance. The new route completes five user journeys in sequence. Normal work validates cohesive source/UI contracts through JavaScript and JVM tests; it does not create an APK for every small change. Phase 8 builds one target-API-36 React Native candidate, runs its complete integrated journey once on API 35, and uses API 26/35/36 only for the declared compatibility/performance evidence.
 
 ## Retained Foundation (not acceptance)
 
@@ -21,10 +21,10 @@ Those facts reduce implementation work, but none proves that a user can complete
 ## Phases
 
 - [x] **Phase 4: Official Mobile Shell & Unified Provider Registry** - Deliver the official-style phone shell and one declarative provider capability contract for NetEase, Kugou, Kuwo, QQ, and Bilibili. (completed 2026-09-10)
-- [ ] **Phase 5: Five-Source Listen Journey** - Make source-labelled search → detail → authorized playback → lyrics work coherently across the four official mobile sources plus Bilibili.
-- [ ] **Phase 6: Personal Library & Continuity** - Let users own playlists, accounts, local music, backups, and listening history on Android.
-- [ ] **Phase 7: Offline & Advanced Desktop-Equivalent Playback** - Complete cache/offline, MV/PiP/rendition, effects, loudness, and consented translation with truthful Android fallbacks.
-- [ ] **Phase 8: Integrated API 35 Acceptance & Release-Like Evidence** - Run the integrated device journey once, measure it, and make an honest parity-ready decision.
+- [x] **Phase 5: Five-Source Listen Journey** - Make source-labelled search → detail → authorized playback → lyrics work coherently across the four official mobile sources plus Bilibili. (deterministic verification complete; external/device acceptance remains Phase 8)
+- [x] **Phase 6: Personal Library & Continuity** - Let users own playlists, accounts, local music, backups, and listening history on Android. (verification passed; live/system acceptance remains Phase 8)
+- [x] **Phase 7: Offline & Advanced Desktop-Equivalent Playback** - Complete cache/offline, MV/PiP/rendition, effects, loudness, and consented translation with truthful Android fallbacks. (review clean; deterministic verification passed; device/live acceptance remains Phase 8)
+- [ ] **Phase 8: Integrated API 35 Acceptance & Release-Like Evidence** - Build one target-API-36 React Native candidate, run the integrated API 35 journey once, measure API 26/35/36 compatibility, and make an honest parity-ready decision.
 
 ## Phase Details
 
@@ -62,11 +62,13 @@ Those facts reduce implementation work, but none proves that a user can complete
   4. A user can use play-next, duplicate queue entries, reorder/removal, shuffle, repeat, and real previous history, then close, rotate, or temporarily lose the renderer without silently consuming or duplicating the queue.
   5. A user can view synchronized lyrics and available translations for the active source track, change lyric offset or choose a manual lyric source where available, and receive an explicit missing/mismatch/timeout/unsupported state instead of lyrics from a previous track or fabricated timestamps.
 
-**Plans:** 3/3 plans executed
+**Plans:** 5/5 plans executed
 
 - [x] 05-01-PLAN.md
 - [x] 05-02-PLAN.md
 - [x] 05-03-PLAN.md
+- [x] 05-04-PLAN.md
+- [x] 05-05-PLAN.md
 
 **UI hint:** yes
 
@@ -83,15 +85,15 @@ Those facts reduce implementation work, but none proves that a user can complete
   4. A user can export eligible playlists/favorites, preview an import, safely merge it by default, and explicitly confirm overwrite; malformed, oversized, old-version, or interrupted backups fail without deleting existing data.
   5. A user can trust listening history and annual recap to count only genuine listening, survive restart/midnight/year boundaries, and support disable, export, and irreversible clear without history writes delaying playback.
 
-**Plans:** 3/7 plans executed
+**Plans:** 7/7 plans executed
 
 - [x] 06-01-PLAN.md
 - [x] 06-02-PLAN.md
 - [x] 06-03-PLAN.md
-- [ ] 06-04-PLAN.md
-- [ ] 06-05-PLAN.md
-- [ ] 06-06-PLAN.md
-- [ ] 06-07-PLAN.md
+- [x] 06-04-PLAN.md
+- [x] 06-05-PLAN.md
+- [x] 06-06-PLAN.md
+- [x] 06-07-PLAN.md
 
 **UI hint:** yes
 
@@ -110,6 +112,8 @@ Those facts reduce implementation work, but none proves that a user can complete
 
 **Plans:** 5/5 plans executed
 
+**Verification status:** Review `clean` and deterministic verification `passed` at reachable product HEAD `17da1fe`; device/live acceptance remains Phase 8.
+
 Plans:
 
 - [x] 07-01-PLAN.md — Unify five-source native media descriptors, entitlement, Bilibili parts/renditions and MV fallback.
@@ -122,7 +126,7 @@ Plans:
 
 ### Phase 8: Integrated API 35 Acceptance & Release-Like Evidence
 
-**Goal:** An evaluator can install one integrated Android build, reproduce the complete user journeys, inspect measured performance and release-like gates, and make an evidence-backed parity decision.
+**Goal:** An evaluator can install one target-API-36 `mobile/` React Native build, reproduce its complete journey once on API 35, inspect API 26/35/36 performance and release-like gates, and make an evidence-backed parity decision.
 **Depends on:** Phase 4, Phase 5, Phase 6, Phase 7
 **Requirements:** PERF-001, PERF-002, PERF-003, TEST-002, TEST-003, TEST-004, REL-001, REL-002, REL-003
 **Success Criteria** (what must be TRUE):
@@ -132,7 +136,12 @@ Plans:
   3. The debug and minified release-like builds reproducibly resolve dependencies, package approved assets, pass required JavaScript/JVM/instrumentation suites, and pass Media3 service, notification, Room migration, manifest, network-security, version-upgrade, alignment, signature, artifact-hash, and secret-scan checks without using release credentials.
   4. Every result records date, build, API/device, network, fixture, command, outcome, uncovered items, and recovery path. Android v1.0 becomes `parity-ready` only when all 58 requirements have passing implementation and evidence; `foundation present`, `degraded`, and `not verified` remain incomplete.
 
-**Plans:** TBD
+**Plans:** 4 plans
+
+- [ ] 08-01-PLAN.md — Validate Phase 4–7 truth, locked inputs/toolchain, and reproducible debug/release-like app plus releaseLikeAndroidTest artifacts.
+- [ ] 08-02-PLAN.md — Seed debug state, upgrade the same package to the exact release-like candidate, and run one class-filtered API 35 integrated journey.
+- [ ] 08-03-PLAN.md — Seal API 35 timing/recovery/soak evidence and resume only for API 26/API 36 compatibility.
+- [ ] 08-04-PLAN.md — Resolve the 58-row current-HEAD evidence map and hand off the exact development-signed APK/hash/install/rollback contract.
 **UI hint:** yes
 
 ## Progress
@@ -142,7 +151,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 | --- | --- | --- | --- |
 | 4. Official Mobile Shell & Unified Provider Registry | 3/3 | Complete    | 2026-09-10 |
-| 5. Five-Source Listen Journey | 3/3 | In Progress|  |
-| 6. Personal Library & Continuity | 3/7 | In Progress|  |
-| 7. Offline & Advanced Desktop-Equivalent Playback | 5/5 | In Progress|  |
-| 8. Integrated API 35 Acceptance & Release-Like Evidence | 0/TBD | Not started | - |
+| 5. Five-Source Listen Journey | 5/5 | Deterministic complete; Phase 8 external acceptance pending | 2026-09-15 |
+| 6. Personal Library & Continuity | 7/7 | Verification passed; Phase 8 live/system acceptance pending | 2026-09-15 |
+| 7. Offline & Advanced Desktop-Equivalent Playback | 5/5 | Awaiting clean review and passed verification |  |
+| 8. Integrated API 35 Acceptance & Release-Like Evidence | 0/4 | Planned; conditionally blocked by Phase 7 final pass | - |
