@@ -77,7 +77,7 @@ import {
   audioEffectsClient,
   audioEffectsLabel,
   type AudioEffectsSnapshot,
-} from '../audioFx/audioEffectsClient';
+} from '../audioFx/client';
 
 export type LyricFailurePresentation = Readonly<{
   code:

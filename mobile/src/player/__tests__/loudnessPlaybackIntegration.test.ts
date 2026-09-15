@@ -12,12 +12,12 @@ jest.mock('../../offline/offlineAudio', () => ({
   isOfflineDownloadEligible: () => false,
   offlineAudio: { resolveVerified: jest.fn() },
 }));
-jest.mock('../../audiofx/audioEffectsClient', () => ({
+jest.mock('../../audioFx/client', () => ({
   audioEffectsClient: { setFixedNormalizationGain: jest.fn().mockResolvedValue(undefined) },
 }));
 
 import { scheduleFixedNormalizationGain } from '../playerController';
-import { audioEffectsClient } from '../../audiofx/audioEffectsClient';
+import { audioEffectsClient } from '../../audioFx/client';
 
 describe('loudness playback integration', () => {
   it('does not await analysis/effect work before transport and sends unity for missing metrics', () => {

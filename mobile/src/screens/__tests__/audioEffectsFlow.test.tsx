@@ -1,7 +1,7 @@
 import {
   audioEffectsLabel,
   parseAudioEffectsSnapshot,
-} from '../../audiofx/audioEffectsClient';
+} from '../../audioFx/client';
 
 describe('audio effects presentation', () => {
   it('labels an unavailable session honestly instead of inventing visualizer data', () => {
