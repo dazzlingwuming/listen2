@@ -1,14 +1,19 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  NativeScrollEvent,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
+  type NativeSyntheticEvent,
+  type ScrollViewInstance,
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import type {
   SearchKind,
   SearchPage,
@@ -16,19 +21,25 @@ import type {
   SourceId,
   Track,
 } from '../types/music';
+import { isSourceId } from '../types/music';
 import { PROVIDER_CAPABILITIES, providerClient } from '../api/client';
 import { presentProviderError } from '../api/errors';
 import * as playerActions from '../store/playerSlice';
 import { colors, spacing, text } from '../theme';
 import { SourceTabs, providerLabels } from '../components/SourceTabs';
 import { TrackRow, type PresentableTrack } from '../components/TrackRow';
-import { ScreenLayout, sectionStyles } from './ScreenLayout';
+import { sectionStyles } from './ScreenLayout';
 import { isOfflineDownloadEligible } from '../offline/offlineAudio';
 import { requestDownload } from '../store/downloadSlice';
 import type { RootState } from '../store';
 import {
+  createSearchJourneyRestoration,
   createSearchJourneyState,
   reduceSearchJourney,
+  restoreSearchJourneyState,
+  searchResultIdentity,
+  setSearchJourneyScrollAnchor,
+  setSearchJourneySelection,
 } from '../search/searchJourneyState';
 
 type SearchStatus =
@@ -47,28 +58,46 @@ export function SearchScreen() {
   const route = useRoute<any>();
   const dispatch = useDispatch<any>();
   const downloads = useSelector((state: RootState) => state.downloads.entries);
-  const [sourceId, setSourceId] = useState<SourceId>(
-    route.params?.sourceId || ('netease' as SourceId),
-  );
-  const [query, setQuery] = useState(route.params?.query || '');
-  const [searchKind, setSearchKind] = useState<SearchKind>('track');
-  const [journey, setJourney] = useState(() =>
+  const routeRestoration =
+    route.params?.restorationScope ?? route.params?.restoration;
+  const initialRestoredJourney = restoreSearchJourneyState(routeRestoration);
+  const initialSource: SourceId =
+    initialRestoredJourney?.scope.source ||
+    (isKnownSource(route.params?.sourceId) ? route.params.sourceId : 'netease');
+  const initialQuery =
+    initialRestoredJourney?.scope.query ?? String(route.params?.query ?? '');
+  const initialKind: SearchKind =
+    initialRestoredJourney?.scope.kind ||
+    (route.params?.kind === 'playlist' ? 'playlist' : 'track');
+  const initialJourney =
+    initialRestoredJourney ||
     createSearchJourneyState({
-      source: route.params?.sourceId || ('netease' as SourceId),
-      query: route.params?.query || '',
-      kind: 'track',
+      source: initialSource,
+      query: initialQuery,
+      kind: initialKind,
       requestId: 'initial',
       generation: 0,
-    }),
+    });
+  const [sourceId, setSourceId] = useState<SourceId>(initialSource);
+  const [query, setQuery] = useState(initialQuery);
+  const [searchKind, setSearchKind] = useState<SearchKind>(initialKind);
+  const [journey, setJourney] = useState(initialJourney);
+  const [status, setStatus] = useState<SearchStatus>(() =>
+    statusForJourney(initialJourney),
   );
-  const [status, setStatus] = useState<SearchStatus>('guide');
   const [errorCopy, setErrorCopy] = useState<ReturnType<
     typeof presentProviderError
   > | null>(null);
-  const requestEpoch = useRef(0);
+  const requestEpoch = useRef(initialJourney.scope.generation);
   const requestController = useRef<AbortController | null>(null);
-  const requestPage = useRef(1);
+  const requestPage = useRef(
+    initialJourney.retryPage ||
+      (initialJourney.page > 0 ? initialJourney.page + 1 : 1),
+  );
   const handledRouteRequest = useRef<string | null>(null);
+  const scrollRef = useRef<ScrollViewInstance | null>(null);
+  const scrollAnchorRef = useRef(initialJourney.scrollAnchor);
+  const pendingRestoreAnchor = useRef(initialJourney.scrollAnchor);
 
   const search = useCallback(
     async (
@@ -79,15 +108,28 @@ export function SearchScreen() {
     ) => {
       const trimmed = requestedQuery.trim();
       if (!trimmed) {
+        requestController.current?.abort();
+        requestController.current = null;
+        const epoch = ++requestEpoch.current;
         setStatus('guide');
-        setJourney(previous =>
+        setJourney(() =>
           createSearchJourneyState({
-            ...previous.scope,
+            source: requestedSource,
             query: '',
+            kind: requestedKind,
+            requestId: `search-${epoch}`,
+            generation: epoch,
             rows: [],
+            page: 0,
+            cursor: undefined,
+            hasMore: false,
+            retryPage: undefined,
+            selectedIdentity: undefined,
+            scrollAnchor: 0,
             terminal: 'guide',
           }),
         );
+        scrollAnchorRef.current = 0;
         return;
       }
       requestController.current?.abort();
@@ -107,8 +149,10 @@ export function SearchScreen() {
           page: nextPage === 1 ? 0 : previous.page,
           cursor: nextPage === 1 ? undefined : previous.cursor,
           hasMore: nextPage === 1 ? false : previous.hasMore,
-          selectedIdentity: previous.selectedIdentity,
-          scrollAnchor: previous.scrollAnchor,
+          retryPage: undefined,
+          selectedIdentity:
+            nextPage === 1 ? undefined : previous.selectedIdentity,
+          scrollAnchor: nextPage === 1 ? 0 : previous.scrollAnchor,
           terminal: nextPage === 1 ? 'loading' : 'loading-more',
         }),
       );
@@ -122,7 +166,9 @@ export function SearchScreen() {
           controller.signal,
           requestedKind,
         );
-        if (epoch !== requestEpoch.current) return;
+        if (epoch !== requestEpoch.current || controller.signal.aborted) return;
+        if (requestController.current === controller)
+          requestController.current = null;
         setJourney(previous => {
           const total = Number((response as any)?.total);
           const currentRows = nextPage === 1 ? 0 : previous.rows.length;
@@ -150,40 +196,78 @@ export function SearchScreen() {
           return next;
         });
       } catch (error) {
-        if (epoch === requestEpoch.current) {
-          if (controller.signal.aborted) {
-            setJourney(previous =>
-              reduceSearchJourney(previous, {
-                type: 'cancelled',
-                requestId,
-                generation: epoch,
-                page: nextPage,
-              }),
-            );
-          }
-          setErrorCopy(
-            controller.signal.aborted ? null : presentProviderError(error),
+        if (epoch !== requestEpoch.current || controller.signal.aborted) return;
+        if (requestController.current === controller)
+          requestController.current = null;
+        const presentation = presentProviderError(error);
+        if (
+          (error instanceof Error && error.name === 'AbortError') ||
+          presentation.terminal === 'cancelled'
+        ) {
+          setErrorCopy(null);
+          setJourney(previous =>
+            reduceSearchJourney(previous, {
+              type: 'cancelled',
+              requestId,
+              generation: epoch,
+              page: nextPage,
+            }),
           );
-          setStatus(
-            controller.signal.aborted
-              ? nextPage > 1
-                ? 'cancelledMore'
-                : 'cancelled'
-              : nextPage > 1
-              ? 'errorMore'
-              : 'error',
-          );
+          setStatus(nextPage > 1 ? 'cancelledMore' : 'cancelled');
+          return;
         }
+        setErrorCopy(presentation);
+        setJourney(previous =>
+          reduceSearchJourney(previous, {
+            type: 'failed',
+            requestId,
+            generation: epoch,
+            page: nextPage,
+          }),
+        );
+        setStatus(nextPage > 1 ? 'errorMore' : 'error');
       }
     },
     [query, searchKind, sourceId],
   );
 
   useEffect(() => {
+    const restored = restoreSearchJourneyState(
+      route.params?.restorationScope ?? route.params?.restoration,
+    );
+    if (restored) {
+      const signature = restorationSignature(restored);
+      if (handledRouteRequest.current === signature) return;
+      handledRouteRequest.current = signature;
+      const hadActiveRequest = requestController.current !== null;
+      requestController.current?.abort();
+      requestController.current = null;
+      if (hadActiveRequest) requestEpoch.current += 1;
+      else
+        requestEpoch.current = Math.max(
+          requestEpoch.current,
+          restored.scope.generation,
+        );
+      requestPage.current =
+        restored.retryPage || (restored.page > 0 ? restored.page + 1 : 1);
+      scrollAnchorRef.current = restored.scrollAnchor;
+      pendingRestoreAnchor.current = restored.scrollAnchor;
+      setSourceId(restored.scope.source);
+      setQuery(restored.scope.query);
+      setSearchKind(restored.scope.kind);
+      setJourney(restored);
+      setStatus(statusForJourney(restored));
+      setErrorCopy(null);
+      return;
+    }
     const requestedQuery = String(route.params?.query ?? '').trim();
     if (!requestedQuery) return;
-    const requestedSource = (route.params?.sourceId ?? 'netease') as SourceId;
-    const signature = `${requestedSource}:${requestedQuery}`;
+    const requestedSource = isKnownSource(route.params?.sourceId)
+      ? route.params.sourceId
+      : 'netease';
+    const requestedKind: SearchKind =
+      route.params?.kind === 'playlist' ? 'playlist' : 'track';
+    const signature = `${requestedSource}:${requestedQuery}:${requestedKind}`;
     if (handledRouteRequest.current === signature) return;
     handledRouteRequest.current = signature;
     setSourceId(requestedSource);
@@ -192,64 +276,101 @@ export function SearchScreen() {
       createSearchJourneyState({
         source: requestedSource,
         query: requestedQuery,
-        kind: 'track',
+        kind: requestedKind,
         requestId: 'route',
         generation: requestEpoch.current,
       }),
     );
-    search(1, requestedSource, requestedQuery);
-  }, [route.params?.query, route.params?.sourceId, search]);
+    search(1, requestedSource, requestedQuery, requestedKind);
+  }, [
+    route.params?.query,
+    route.params?.sourceId,
+    route.params?.kind,
+    route.params?.restorationScope,
+    route.params?.restoration,
+    search,
+  ]);
   const selectSource = (source: SourceId) => {
     requestController.current?.abort();
-    requestEpoch.current += 1;
+    requestController.current = null;
+    const epoch = ++requestEpoch.current;
     setSourceId(source);
     setJourney(
       createSearchJourneyState({
         source,
         query,
         kind: searchKind,
-        requestId: 'source-change',
-        generation: requestEpoch.current,
+        requestId: `source-${epoch}`,
+        generation: epoch,
       }),
     );
+    scrollAnchorRef.current = 0;
+    setErrorCopy(null);
     setStatus('guide');
   };
   const cancel = () => {
     requestController.current?.abort();
+    requestController.current = null;
+    const page = requestPage.current;
+    const epoch = ++requestEpoch.current;
     setJourney(previous => {
-      const more = requestPage.current > 1 && previous.rows.length > 0;
-      setStatus(more ? 'cancelledMore' : 'cancelled');
-      return reduceSearchJourney(previous, {
-        type: 'cancelled',
-        requestId: previous.scope.requestId,
-        generation: previous.scope.generation,
-        page: requestPage.current,
+      const next = createSearchJourneyState({
+        ...previous.scope,
+        requestId: `cancel-${epoch}`,
+        generation: epoch,
+        rows: previous.rows,
+        page: previous.page,
+        cursor: previous.cursor,
+        hasMore: previous.hasMore,
+        retryPage: page,
+        selectedIdentity: previous.selectedIdentity,
+        scrollAnchor: previous.scrollAnchor,
+        terminal:
+          page > 1 && previous.rows.length > 0 ? 'cancelled-more' : 'cancelled',
       });
+      setStatus(
+        page > 1 && previous.rows.length > 0 ? 'cancelledMore' : 'cancelled',
+      );
+      return next;
     });
+    setErrorCopy(null);
   };
   const selectSearchKind = (kind: SearchKind) => {
     requestController.current?.abort();
-    requestEpoch.current += 1;
+    requestController.current = null;
+    const epoch = ++requestEpoch.current;
     setSearchKind(kind);
     setJourney(
       createSearchJourneyState({
         source: sourceId,
         query,
         kind,
-        requestId: 'kind-change',
-        generation: requestEpoch.current,
+        requestId: `kind-${epoch}`,
+        generation: epoch,
       }),
     );
+    scrollAnchorRef.current = 0;
+    setErrorCopy(null);
     setStatus('guide');
   };
-  const play = (track: PresentableTrack) => {
+  const updateJourneyForNavigation = (selectedIdentity?: string) => {
+    const withScroll = setSearchJourneyScrollAnchor(
+      journey,
+      scrollAnchorRef.current,
+    );
+    const next = setSearchJourneySelection(withScroll, selectedIdentity);
+    setJourney(next);
+    return createSearchJourneyRestoration(next);
+  };
+  const play = (track: PresentableTrack, selectedIdentity?: string) => {
+    const restorationScope = updateJourneyForNavigation(selectedIdentity);
     if (track.source === 'bilibili') {
       const match = /^bitrack_v_(BV[0-9A-Za-z]{6,32})$/.exec(String(track.id));
       if (match) {
         navigation.navigate('BilibiliDetail', {
           bvid: match[1],
           title: track.title || 'Bilibili 视频',
-          restorationScope: journey.scope,
+          restorationScope,
         });
         return;
       }
@@ -260,141 +381,206 @@ export function SearchScreen() {
       (playerActions as any).selectTrack;
     if (creator) dispatch(creator(track as Track));
   };
+  const addNext = (track: PresentableTrack) => {
+    if (
+      !isKnownSource(track.source) ||
+      !isOperationAvailable(track.source, 'playback')
+    )
+      return;
+    const enqueue = (playerActions as any).addNextTrack;
+    if (enqueue) dispatch(enqueue(track as Track));
+  };
+  const retry = () => {
+    const page = journey.retryPage || (journey.page > 0 ? journey.page + 1 : 1);
+    search(page, journey.scope.source, journey.scope.query, journey.scope.kind);
+  };
+  const onScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const offset = event.nativeEvent.contentOffset?.y;
+    if (!Number.isFinite(offset) || offset < 0) return;
+    scrollAnchorRef.current = offset;
+    setJourney(previous => setSearchJourneyScrollAnchor(previous, offset));
+  };
+  useEffect(() => {
+    const anchor = pendingRestoreAnchor.current;
+    if (!anchor) return;
+    pendingRestoreAnchor.current = 0;
+    scrollRef.current?.scrollTo({ y: anchor, animated: false });
+  }, [journey.scope.requestId, journey.rows.length]);
+
+  useEffect(
+    () => () => {
+      requestController.current?.abort();
+      requestController.current = null;
+      // Invalidate a late provider reply after this screen leaves the tree.
+      requestEpoch.current += 1;
+    },
+    [],
+  );
 
   return (
-    <ScreenLayout subtitle="所有结果都会保留来源标签" title="搜索">
-      <View style={styles.inputWrap}>
-        <TextInput
-          accessibilityLabel="搜索歌曲、歌手或歌单"
-          autoCapitalize="none"
-          onChangeText={setQuery}
-          onSubmitEditing={() => search(1)}
-          placeholder="搜索歌曲、歌手或歌单"
-          placeholderTextColor={colors.muted}
-          returnKeyType="search"
-          style={styles.input}
-          value={query}
-        />
-        {query ? (
-          <Pressable
-            accessibilityLabel="清除关键词"
-            onPress={() => {
-              requestController.current?.abort();
-              requestEpoch.current += 1;
-              setQuery('');
-              setJourney(
-                createSearchJourneyState({
-                  source: sourceId,
-                  query: '',
-                  kind: searchKind,
-                  requestId: 'clear',
-                  generation: requestEpoch.current,
-                }),
-              );
-              setStatus('guide');
-            }}
-            style={styles.clear}
-          >
-            <Text style={styles.clearText}>×</Text>
-          </Pressable>
-        ) : null}
-        <Pressable
-          accessibilityLabel="搜索音乐"
-          onPress={() => search(1)}
-          style={styles.submit}
-        >
-          <Text style={styles.submitText}>搜索</Text>
-        </Pressable>
-      </View>
-      <SourceTabs onChange={selectSource} value={sourceId} />
-      <View accessibilityRole="tablist" style={styles.kindTabs}>
-        <Pressable
-          accessibilityLabel="搜索歌曲"
-          accessibilityRole="tab"
-          accessibilityState={{ selected: searchKind === 'track' }}
-          onPress={() => selectSearchKind('track')}
-          style={[
-            styles.kindTab,
-            searchKind === 'track' && styles.kindSelected,
-          ]}
-        >
-          <Text
-            style={[
-              styles.kindText,
-              searchKind === 'track' && styles.kindSelectedText,
-            ]}
-          >
-            歌曲
+    <SafeAreaView edges={['top']} style={styles.safe}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        onScroll={onScroll}
+        ref={scrollRef}
+        scrollEventThrottle={64}
+      >
+        <View style={styles.header}>
+          <Text accessibilityRole="header" style={text.display}>
+            搜索
           </Text>
-        </Pressable>
-        <Pressable
-          accessibilityLabel="搜索歌单"
-          accessibilityRole="tab"
-          accessibilityState={{ selected: searchKind === 'playlist' }}
-          onPress={() => selectSearchKind('playlist')}
-          style={[
-            styles.kindTab,
-            searchKind === 'playlist' && styles.kindSelected,
-          ]}
-        >
-          <Text
-            style={[
-              styles.kindText,
-              searchKind === 'playlist' && styles.kindSelectedText,
-            ]}
-          >
-            歌单
-          </Text>
-        </Pressable>
-      </View>
-      {status === 'loading' || status === 'loadingMore' ? (
-        <View style={styles.loadingLine}>
-          <ActivityIndicator color={colors.accent} />
-          <Text style={text.meta}>
-            {status === 'loading'
-              ? `正在搜索${providerLabels[sourceId]}…`
-              : '正在加载更多…'}
-          </Text>
-          {status === 'loading' || status === 'loadingMore' ? (
+          <Text style={styles.subtitle}>所有结果都会保留来源标签</Text>
+        </View>
+        <View style={styles.inputWrap}>
+          <TextInput
+            accessibilityLabel="搜索歌曲、歌手或歌单"
+            autoCapitalize="none"
+            onChangeText={setQuery}
+            onSubmitEditing={() => search(1)}
+            placeholder="搜索歌曲、歌手或歌单"
+            placeholderTextColor={colors.muted}
+            returnKeyType="search"
+            style={styles.input}
+            value={query}
+          />
+          {query ? (
             <Pressable
-              accessibilityLabel="取消搜索"
-              onPress={cancel}
-              style={styles.cancel}
+              accessibilityLabel="清除关键词"
+              onPress={() => {
+                requestController.current?.abort();
+                requestController.current = null;
+                const epoch = ++requestEpoch.current;
+                setQuery('');
+                setJourney(
+                  createSearchJourneyState({
+                    source: sourceId,
+                    query: '',
+                    kind: searchKind,
+                    requestId: `clear-${epoch}`,
+                    generation: epoch,
+                  }),
+                );
+                scrollAnchorRef.current = 0;
+                setErrorCopy(null);
+                setStatus('guide');
+              }}
+              style={styles.clear}
             >
-              <Text style={styles.cancelText}>取消搜索</Text>
+              <Text style={styles.clearText}>×</Text>
             </Pressable>
           ) : null}
+          <Pressable
+            accessibilityLabel="搜索音乐"
+            onPress={() => search(1)}
+            style={styles.submit}
+          >
+            <Text style={styles.submitText}>搜索</Text>
+          </Pressable>
         </View>
-      ) : null}
-      <SearchSurface
-        items={journey.rows}
-        onPlay={play}
-        downloads={downloads}
-        onDownload={track => dispatch(requestDownload(track as Track))}
-        onSelectPlaylist={playlist =>
-          isOperationAvailable(playlist.source, 'detail') &&
-          navigation.navigate('PlaylistDetail', {
-            sourceId: playlist.source,
-            title: playlist.title,
-            remotePlaylistId: playlist.id,
-            restorationScope: journey.scope,
-          })
-        }
-        searchKind={searchKind}
-        sourceId={sourceId}
-        status={status}
-        errorCopy={errorCopy}
-      />
-      {status === 'ready' && journey.hasMore ? (
-        <Pressable
-          accessibilityLabel="加载更多搜索结果"
-          onPress={() => search(journey.page + 1)}
-          style={sectionStyles.secondaryButton}
-        >
-          <Text style={sectionStyles.secondaryText}>加载更多</Text>
-        </Pressable>
-      ) : null}
-    </ScreenLayout>
+        <SourceTabs onChange={selectSource} value={sourceId} />
+        <View accessibilityRole="tablist" style={styles.kindTabs}>
+          <Pressable
+            accessibilityLabel="搜索歌曲"
+            accessibilityRole="tab"
+            accessibilityState={{ selected: searchKind === 'track' }}
+            onPress={() => selectSearchKind('track')}
+            style={[
+              styles.kindTab,
+              searchKind === 'track' && styles.kindSelected,
+            ]}
+          >
+            <Text
+              style={[
+                styles.kindText,
+                searchKind === 'track' && styles.kindSelectedText,
+              ]}
+            >
+              歌曲
+            </Text>
+          </Pressable>
+          <Pressable
+            accessibilityLabel="搜索歌单"
+            accessibilityRole="tab"
+            accessibilityState={{ selected: searchKind === 'playlist' }}
+            onPress={() => selectSearchKind('playlist')}
+            style={[
+              styles.kindTab,
+              searchKind === 'playlist' && styles.kindSelected,
+            ]}
+          >
+            <Text
+              style={[
+                styles.kindText,
+                searchKind === 'playlist' && styles.kindSelectedText,
+              ]}
+            >
+              歌单
+            </Text>
+          </Pressable>
+        </View>
+        {status === 'loading' || status === 'loadingMore' ? (
+          <View style={styles.loadingLine}>
+            <ActivityIndicator color={colors.accent} />
+            <Text style={text.meta}>
+              {status === 'loading'
+                ? `正在搜索${providerLabels[sourceId]}…`
+                : '正在加载更多…'}
+            </Text>
+            {status === 'loading' || status === 'loadingMore' ? (
+              <Pressable
+                accessibilityLabel="取消搜索"
+                onPress={cancel}
+                style={styles.cancel}
+              >
+                <Text style={styles.cancelText}>取消搜索</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
+        <SearchSurface
+          items={journey.rows}
+          onPlay={play}
+          onAddNext={addNext}
+          onRetry={retry}
+          downloads={downloads}
+          onDownload={track => dispatch(requestDownload(track as Track))}
+          onSelectPlaylist={playlist => {
+            if (!isOperationAvailable(playlist.source, 'detail')) return;
+            const restorationScope = updateJourneyForNavigation(
+              searchResultIdentity({ kind: 'playlist', playlist }),
+            );
+            navigation.navigate('PlaylistDetail', {
+              sourceId: playlist.source,
+              title: playlist.title,
+              remotePlaylistId: playlist.id,
+              restorationScope,
+            });
+          }}
+          searchKind={searchKind}
+          sourceId={sourceId}
+          status={status}
+          errorCopy={errorCopy}
+        />
+        {['ready', 'errorMore', 'cancelledMore'].includes(status) &&
+        journey.hasMore ? (
+          <Pressable
+            accessibilityLabel="加载更多搜索结果"
+            onPress={() =>
+              search(
+                journey.retryPage || journey.page + 1,
+                journey.scope.source,
+                journey.scope.query,
+                journey.scope.kind,
+              )
+            }
+            style={sectionStyles.secondaryButton}
+          >
+            <Text style={sectionStyles.secondaryText}>加载更多</Text>
+          </Pressable>
+        ) : null}
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -405,6 +591,8 @@ function SearchSurface({
   searchKind,
   onSelectPlaylist,
   onPlay,
+  onAddNext,
+  onRetry,
   downloads,
   onDownload,
   errorCopy,
@@ -416,7 +604,9 @@ function SearchSurface({
   onSelectPlaylist: (
     playlist: Extract<SearchResult, { kind: 'playlist' }>['playlist'],
   ) => void;
-  onPlay: (track: PresentableTrack) => void;
+  onPlay: (track: PresentableTrack, selectedIdentity?: string) => void;
+  onAddNext: (track: PresentableTrack) => void;
+  onRetry: () => void;
   downloads: RootState['downloads']['entries'];
   onDownload: (track: PresentableTrack) => void;
   errorCopy: ReturnType<typeof presentProviderError> | null;
@@ -463,6 +653,13 @@ function SearchSurface({
         <Text style={text.meta}>
           {errorCopy?.message || '请检查网络后重试，或选择其他来源。'}
         </Text>
+        <Pressable
+          accessibilityLabel="重试搜索"
+          onPress={onRetry}
+          style={sectionStyles.button}
+        >
+          <Text style={sectionStyles.buttonText}>重试</Text>
+        </Pressable>
       </View>
     );
   if (status === 'cancelled' && !items.length)
@@ -470,6 +667,13 @@ function SearchSurface({
       <View style={[sectionStyles.card, styles.state]}>
         <Text style={text.heading}>已取消本次搜索</Text>
         <Text style={text.meta}>关键词和来源已保留，可以重新搜索。</Text>
+        <Pressable
+          accessibilityLabel="重试搜索"
+          onPress={onRetry}
+          style={sectionStyles.button}
+        >
+          <Text style={sectionStyles.buttonText}>重试</Text>
+        </Pressable>
       </View>
     );
   return (
@@ -484,6 +688,13 @@ function SearchSurface({
               ? '已取消加载更多，已显示的结果仍可使用。'
               : errorCopy?.message || '加载更多失败，已显示的结果仍可使用。'}
           </Text>
+          <Pressable
+            accessibilityLabel="重试加载更多搜索结果"
+            onPress={onRetry}
+            style={sectionStyles.secondaryButton}
+          >
+            <Text style={sectionStyles.secondaryText}>重试加载更多</Text>
+          </Pressable>
         </View>
       ) : null}
       {items.map((item, index) =>
@@ -492,13 +703,23 @@ function SearchSurface({
             key={`${identity(item)}-${index}`}
             onPlay={
               isOperationAvailable(item.track.source, 'playback')
-                ? () => onPlay(item.track)
+                ? () => onPlay(item.track, identity(item))
                 : undefined
             }
             onPress={
               isOperationAvailable(item.track.source, 'playback')
-                ? () => onPlay(item.track)
+                ? () => onPlay(item.track, identity(item))
                 : undefined
+            }
+            onAddNext={
+              isOperationAvailable(item.track.source, 'playback')
+                ? () => onAddNext(item.track)
+                : undefined
+            }
+            nextUnavailableReason={
+              isOperationAvailable(item.track.source, 'playback')
+                ? undefined
+                : nextActionUnavailableReason(item.track.source)
             }
             track={item.track}
             onDownload={
@@ -568,6 +789,69 @@ function isOperationAvailable(
     ? capabilities?.playlist === true || capabilities?.playlistSearch === true
     : capabilities?.playback === true;
 }
+
+function isKnownSource(value: unknown): value is SourceId {
+  return isSourceId(value);
+}
+
+function statusForJourney(journey: {
+  rows: SearchResult[];
+  terminal: string;
+}): SearchStatus {
+  if (journey.terminal === 'ready') return 'ready';
+  if (journey.terminal === 'empty') return 'empty';
+  if (journey.terminal === 'error') return 'error';
+  if (journey.terminal === 'error-more') return 'errorMore';
+  if (journey.terminal === 'cancelled') return 'cancelled';
+  if (journey.terminal === 'cancelled-more') return 'cancelledMore';
+  if (journey.terminal === 'loading-more') return 'loadingMore';
+  if (journey.terminal === 'loading') return 'loading';
+  return journey.rows.length ? 'ready' : 'guide';
+}
+
+function restorationSignature(journey: {
+  scope: {
+    source: SourceId;
+    query: string;
+    kind: SearchKind;
+    requestId: string;
+    generation: number;
+  };
+  page: number;
+  cursor?: string;
+  hasMore: boolean;
+  retryPage?: number;
+  rows: SearchResult[];
+  selectedIdentity?: string;
+  scrollAnchor: number;
+  terminal: string;
+}) {
+  return JSON.stringify([
+    journey.scope.source,
+    journey.scope.query,
+    journey.scope.kind,
+    journey.scope.requestId,
+    journey.scope.generation,
+    journey.page,
+    journey.cursor || '',
+    journey.hasMore,
+    journey.retryPage || 0,
+    journey.rows,
+    journey.selectedIdentity || '',
+    journey.scrollAnchor,
+    journey.terminal,
+  ]);
+}
+
+function nextActionUnavailableReason(source: SourceId): string {
+  const capabilities = PROVIDER_CAPABILITIES[source] as any;
+  const playback = capabilities?.operations?.playback;
+  if (playback?.reason === 'login-required') return '请先登录该来源。';
+  if (playback?.reason === 'unverified-route')
+    return '该来源尚未验证播放路径。';
+  return '该来源暂不支持播放。';
+}
+
 function identity(item: SearchResult) {
   return item.kind === 'track'
     ? `track:${item.track.source}:${item.track.id}`
@@ -575,6 +859,10 @@ function identity(item: SearchResult) {
 }
 
 const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: colors.background },
+  scroll: { gap: spacing.lg, padding: spacing.md, paddingBottom: spacing.xxl },
+  header: { gap: spacing.xs },
+  subtitle: text.meta,
   inputWrap: {
     minHeight: 52,
     flexDirection: 'row',

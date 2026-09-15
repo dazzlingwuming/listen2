@@ -42,6 +42,8 @@ export function TrackRow({
   track,
   onPress,
   onPlay,
+  onAddNext,
+  nextUnavailableReason,
   onDownload,
   downloadStatus,
   action,
@@ -49,6 +51,10 @@ export function TrackRow({
   track: PresentableTrack;
   onPress?: () => void;
   onPlay?: () => void;
+  /** Adds one occurrence to the FIFO play-next queue when playback is proved. */
+  onAddNext?: () => void;
+  /** Fixed reason shown when this track cannot be enqueued for play-next. */
+  nextUnavailableReason?: string;
   onDownload?: () => void;
   downloadStatus?: string;
   action?: TrackRowAction;
@@ -115,6 +121,24 @@ export function TrackRow({
       ) : (
         <Text style={styles.unavailable}>暂不可播</Text>
       )}
+      {onAddNext ? (
+        <Pressable
+          accessibilityLabel={`下一首播放${trackTitle(track)}`}
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={event => {
+            event.stopPropagation?.();
+            onAddNext();
+          }}
+          style={styles.play}
+        >
+          <Text style={styles.playText}>下一首播放</Text>
+        </Pressable>
+      ) : nextUnavailableReason ? (
+        <Text accessibilityRole="text" style={styles.unavailable}>
+          {`下一首播放不可用：${nextUnavailableReason}`}
+        </Text>
+      ) : null}
       {onDownload ? (
         <Pressable
           accessibilityRole="button"
