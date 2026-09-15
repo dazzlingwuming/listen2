@@ -54,8 +54,9 @@ DEVICE_API="$("$ADB" -s "$SERIAL" shell getprop ro.build.version.sdk | tr -d '\r
 mkdir -p "$RUN_DIR/performance"; chmod 700 "$RUN_DIR/performance"
 cleanup() { "$ADB" -s "$SERIAL" shell svc wifi enable >/dev/null 2>&1 || true; "$ADB" -s "$SERIAL" shell input keyevent KEYCODE_WAKEUP >/dev/null 2>&1 || true; }
 trap cleanup EXIT INT TERM
-instrument() { local class="$1" out="$2"; "$ADB" -s "$SERIAL" shell am instrument -w -r -e class "$class" -e phase08Api "$DEVICE_API" -e phase08Attempts 20 ${3:-} "$TEST_PACKAGE/com.listen2mobile.acceptance.Phase08Instrumentation" > "$out" 2>&1; }
-sample_cold_start() { local id="$1"; local file="$RUN_DIR/performance/${DEVICE_API}-cold-${id}.txt"; "$ADB" -s "$SERIAL" shell am force-stop "$PACKAGE"; local started=$(( $(date +%s%3N) )); if "$ADB" -s "$SERIAL" shell am start -W -n "$PACKAGE/com.listen2mobile.MainActivity" > "$file" 2>&1; then local ended=$(( $(date +%s%3N) )); printf '%s|PASS|%s\n' "$id" "$((ended-started))"; else local ended=$(( $(date +%s%3N) )); printf '%s|FAIL|%s\n' "$id" "$((ended-started))"; fi; }
+now_ms() { node -p 'Date.now()'; }
+instrument() { local class="$1" out="$2"; "$ADB" -s "$SERIAL" shell am instrument -w -r -e class "$class" -e phase08Api "$DEVICE_API" -e phase08Attempts 20 ${3:-} "$TEST_PACKAGE/com.listen2mobile.acceptance.Phase08Instrumentation" > "$out" 2>&1; ! grep -Eq 'INSTRUMENTATION_STATUS_CODE: -1|failureType=|shortMsg=' "$out"; }
+sample_cold_start() { local id="$1"; local file="$RUN_DIR/performance/${DEVICE_API}-cold-${id}.txt"; "$ADB" -s "$SERIAL" shell am force-stop "$PACKAGE"; local started="$(now_ms)"; if "$ADB" -s "$SERIAL" shell am start -W -n "$PACKAGE/com.listen2mobile.MainActivity" > "$file" 2>&1; then local ended="$(now_ms)"; printf '%s|PASS|%s\n' "$id" "$((ended-started))"; else local ended="$(now_ms)"; printf '%s|FAIL|%s\n' "$id" "$((ended-started))"; fi; }
 
 if [[ "$MODE" == api35 ]]; then
   [[ "$DEVICE_API" == 35 && "$FILTER" == 'com.listen2mobile.acceptance.PerformanceRecoveryTest#api35Full' && "$RECOVERY_CYCLES" == 5 && "$SOAK_SECONDS" == 600 ]] || fail 'API35 full mode arguments are exact and mandatory'

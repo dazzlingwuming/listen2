@@ -27,7 +27,7 @@ public final class PerformanceRecoveryTest {
     }
 
     public static void compatibilityColdStart(Instrumentation instrumentation, ScenarioProgress progress, Bundle arguments) {
-        int api = arguments.getInt("phase08Api", -1);
+        int api = integerArgument(arguments, "phase08Api");
         if (api != 26 && api != 36) {
             throw new AssertionError("compatibility API must be 26 or 36");
         }
@@ -53,8 +53,23 @@ public final class PerformanceRecoveryTest {
     }
 
     private static void requireInteger(Bundle arguments, String key, int expected) {
-        if (arguments.getInt(key, Integer.MIN_VALUE) != expected) {
+        if (integerArgument(arguments, key) != expected) {
             throw new AssertionError("unexpected " + key);
         }
+    }
+
+    private static int integerArgument(Bundle arguments, String key) {
+        Object value = arguments.get(key);
+        if (value instanceof Integer) {
+            return (Integer) value;
+        }
+        if (value instanceof String) {
+            try {
+                return Integer.parseInt((String) value);
+            } catch (NumberFormatException ignored) {
+                // A malformed external runner argument remains a terminal assertion.
+            }
+        }
+        return Integer.MIN_VALUE;
     }
 }
