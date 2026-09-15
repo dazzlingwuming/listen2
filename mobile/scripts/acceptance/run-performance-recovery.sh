@@ -97,37 +97,54 @@ capture_startup_probe_environment() {
   chmod 600 "$file"
 }
 
-instrument_startup_probe() {
-  local id="$1" out="$2"
-  "$ADB" -s "$SERIAL" shell am instrument -w -r \
-    -e class 'com.listen2mobile.acceptance.PerformanceRecoveryTest#startupProbe' \
-    -e phase08Api "$DEVICE_API" \
-    -e phase08Attempts "$ATTEMPTS" \
-    -e phase08AttemptId "$id" \
-    "$TEST_PACKAGE/com.listen2mobile.acceptance.Phase08Instrumentation" > "$out" 2>&1
-  ! grep -Eq 'INSTRUMENTATION_STATUS_CODE: -1|failureType=|shortMsg=' "$out"
+device_elapsed_millis() {
+  "$ADB" -s "$SERIAL" shell 'awk '\''{ printf "%.0f", $1 * 1000 }'\'' /proc/uptime' 2>/dev/null | tr -d '\r'
+}
+
+wait_for_phone_shell() {
+  local launch_started_elapsed_ms="$1" deadline now window
+  deadline=$(( $(date +%s) + 25 ))
+  while [[ $(date +%s) -le $deadline ]]; do
+    window="$("$ADB" -s "$SERIAL" shell 'uiautomator dump /sdcard/phase08-startup-probe.xml >/dev/null && cat /sdcard/phase08-startup-probe.xml' 2>/dev/null || true)"
+    if [[ "$window" == *'我的'* && "$window" == *'搜索'* ]]; then
+      now="$(device_elapsed_millis)"
+      if [[ "$now" =~ ^[0-9]+$ && "$launch_started_elapsed_ms" =~ ^[0-9]+$ && "$now" -ge "$launch_started_elapsed_ms" ]]; then
+        printf '%s\n' "$((now-launch_started_elapsed_ms))"
+        return 0
+      fi
+      return 2
+    fi
+    sleep 0.25
+  done
+  return 1
 }
 
 sample_startup_probe() {
-  local id="$1" raw="$RUN_DIR/performance/api${DEVICE_API}-startup-probe-${id}.txt"
+  local id="$1"
+  local activity_raw="$RUN_DIR/performance/api${DEVICE_API}-startup-probe-${id}-am-start.txt"
   local pidAbsent=false status=FAIL reason='pid-not-gone' total='' wait='' a11y='' launchState='MISSING'
-  local started ended hostElapsed marker pattern
+  local started ended hostElapsed launch_started_elapsed_ms activity_total activity_wait shell_ready
   started="$(now_ms)"
   "$ADB" -s "$SERIAL" shell am force-stop "$PACKAGE" >/dev/null 2>&1 || true
   if wait_for_pid_absence; then
     pidAbsent=true
-    if instrument_startup_probe "$id" "$raw"; then
-      marker="$(sed -n 's/.*phase08StartupProbe=//p' "$raw" | tail -n 1 | tr -d '\r')"
-      pattern="^id=${id};status=PASS;totalTimeMs=([0-9]+);waitTimeMs=([0-9]+);a11yReadyMs=([0-9]+);launchState=COLD$"
-      if [[ "$marker" =~ $pattern ]]; then
-        status=PASS; reason='none'; total="${BASH_REMATCH[1]}"; wait="${BASH_REMATCH[2]}"; a11y="${BASH_REMATCH[3]}"; launchState=COLD
-      else
-        reason='missing-or-invalid-startup-marker'
-      fi
-    elif grep -Fq 'exceeded its 90-second bound' "$raw"; then
-      status=TIMEOUT; reason='instrumentation-timeout'
+    launch_started_elapsed_ms="$(device_elapsed_millis)"
+    if [[ ! "$launch_started_elapsed_ms" =~ ^[0-9]+$ ]]; then
+      reason='missing-device-monotonic-start'
+    elif ! "$ADB" -s "$SERIAL" shell am start -W -n "$PACKAGE/com.listen2mobile.MainActivity" > "$activity_raw" 2>&1; then
+      reason='activity-start-failed'
+    elif ! grep -Eq '^Status:[[:space:]]*ok[[:space:]]*$' "$activity_raw" || ! grep -Eq '^LaunchState:[[:space:]]*COLD[[:space:]]*$' "$activity_raw"; then
+      reason='activity-start-not-cold'
     else
-      reason='instrumentation-failed'
+      activity_total="$(sed -nE 's/^TotalTime:[[:space:]]*([0-9]+)[[:space:]]*$/\1/p' "$activity_raw" | tail -n 1)"
+      activity_wait="$(sed -nE 's/^WaitTime:[[:space:]]*([0-9]+)[[:space:]]*$/\1/p' "$activity_raw" | tail -n 1)"
+      if [[ ! "$activity_total" =~ ^[0-9]+$ || ! "$activity_wait" =~ ^[0-9]+$ ]]; then
+        reason='missing-device-activity-timing'
+      elif shell_ready="$(wait_for_phone_shell "$launch_started_elapsed_ms")"; then
+        status=PASS; reason='none'; total="$activity_total"; wait="$activity_wait"; a11y="$shell_ready"; launchState=COLD
+      else
+        reason='phone-shell-not-ready'
+      fi
     fi
   fi
   ended="$(now_ms)"; hostElapsed="$((ended-started))"
@@ -139,10 +156,15 @@ if [[ "$MODE" == startup-probe ]]; then
   LEDGER="$RUN_DIR/performance/api${DEVICE_API}-startup-probe.tsv"
   [[ ! -e "$LEDGER" ]] || fail 'startup probe ledger already exists; immutable attempts cannot be replaced'
   "$ADB" -s "$SERIAL" install -r "$RELEASE_APK" >/dev/null || fail 'releaseLike install failed'
-  "$ADB" -s "$SERIAL" install -r "$TEST_APK" >/dev/null || fail 'AndroidTest install failed'
+  # The separately verified test payload is not launched: Android instrumentation attaches to
+  # the target package and would change its process-cold state. UiAutomator is the external,
+  # visible-only readiness observer for this startup-specific path.
   capture_startup_probe_environment
   : > "$LEDGER"
-  for number in $(seq -w 1 "$ATTEMPTS"); do sample_startup_probe "$number" >> "$LEDGER"; done
+  for number in $(seq 1 "$ATTEMPTS"); do
+    printf -v attempt_id '%02d' "$number"
+    sample_startup_probe "$attempt_id" >> "$LEDGER"
+  done
   node mobile/scripts/acceptance/summarize-performance.mjs --startup-probe-ledger "$LEDGER" > "$RUN_DIR/performance/api${DEVICE_API}-startup-probe.summary.json"
   chmod a-w "$LEDGER" "$RUN_DIR/performance/api${DEVICE_API}-startup-probe.summary.json"
   exit 0
