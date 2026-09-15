@@ -802,7 +802,7 @@ describe('providerClient', () => {
     expect(JSON.stringify(page)).not.toContain('neplaylist_1');
   });
 
-  it('activates QQ and Kuwo bootstrap only for exact ready native contracts and cancels stale native work', async () => {
+  it('activates QQ and Kuwo bootstrap only for exact ready native contracts and preserves CANCELLED when cancel transport rejects', async () => {
     jest.resetModules();
     let resolveQq!: (value: unknown) => void;
     const qq = {
@@ -811,9 +811,12 @@ describe('providerClient', () => {
       policyReady: true,
       approvedHosts: ['isure.stream.qqmusic.qq.com'],
       resolveAudio: jest.fn(
-        () => new Promise<unknown>(resolve => { resolveQq = resolve; }),
+        () =>
+          new Promise<unknown>(resolve => {
+            resolveQq = resolve;
+          }),
       ),
-      cancel: jest.fn().mockResolvedValue({ ok: true }),
+      cancel: jest.fn().mockRejectedValue(new Error('bridge-teardown')),
     };
     const kuwo = {
       provider: 'kuwo',
@@ -844,14 +847,81 @@ describe('providerClient', () => {
       aborter.signal,
     );
     aborter.abort();
-    await expect(pending).rejects.toMatchObject({ code: 'CANCELLED', source: 'qq' });
+    await expect(pending).rejects.toMatchObject({
+      code: 'CANCELLED',
+      source: 'qq',
+    });
     expect(qq.cancel).toHaveBeenCalledWith(
       expect.objectContaining({ version: 1, requestId: expect.any(String) }),
     );
+    await Promise.resolve();
     resolveQq({ errorCode: 'PLAYBACK_UNAVAILABLE' });
     const currentRequest = (kuwo.resolveAudio as jest.Mock).mock.calls.length;
     expect(currentRequest).toBe(0);
   });
+
+  it.each([
+    [
+      'QQ extra host',
+      ['isure.stream.qqmusic.qq.com', 'extra.qqmusic.qq.com'],
+      ['er-sycdn.kuwo.cn'],
+      false,
+      true,
+    ],
+    [
+      'QQ duplicate host',
+      ['isure.stream.qqmusic.qq.com', 'isure.stream.qqmusic.qq.com'],
+      ['er-sycdn.kuwo.cn'],
+      false,
+      true,
+    ],
+    [
+      'swapped provider hosts',
+      ['er-sycdn.kuwo.cn'],
+      ['isure.stream.qqmusic.qq.com'],
+      false,
+      false,
+    ],
+    [
+      'Kuwo extra host',
+      ['isure.stream.qqmusic.qq.com'],
+      ['er-sycdn.kuwo.cn', 'extra.kuwo.cn'],
+      true,
+      false,
+    ],
+    [
+      'Kuwo duplicate host',
+      ['isure.stream.qqmusic.qq.com'],
+      ['er-sycdn.kuwo.cn', 'er-sycdn.kuwo.cn'],
+      true,
+      false,
+    ],
+  ])(
+    'fails closed for %s in the native readiness host contract',
+    (_case, qqHosts, kuwoHosts, qqReady, kuwoReady) => {
+      jest.resetModules();
+      jest.doMock('react-native', () => ({
+        NativeModules: {
+          Listen2QqPlayback: {
+            provider: 'qq',
+            version: 1,
+            policyReady: true,
+            approvedHosts: qqHosts,
+          },
+          Listen2KuwoPlayback: {
+            provider: 'kuwo',
+            version: 1,
+            policyReady: true,
+            approvedHosts: kuwoHosts,
+          },
+        },
+      }));
+      const fresh =
+        require('../nativePlayback') as typeof import('../nativePlayback');
+      expect(fresh.isNativePlaybackReady('qq')).toBe(qqReady);
+      expect(fresh.isNativePlaybackReady('kuwo')).toBe(kuwoReady);
+    },
+  );
 
   it('hydrates ordered NetEase track IDs through fixed 50-id detail batches', async () => {
     const trackIds = Array.from({ length: 51 }, (_, index) => ({
