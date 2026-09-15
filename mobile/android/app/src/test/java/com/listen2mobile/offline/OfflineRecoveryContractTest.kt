@@ -6,6 +6,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import com.listen2mobile.library.CacheCatalogEntity
 import com.listen2mobile.library.OfflineAuthorityEntity
+import com.listen2mobile.media.CacheAuthorization
+import com.listen2mobile.media.MediaIdentity
+import com.listen2mobile.media.OfflineEntitlementClass
 
 class OfflineRecoveryContractTest {
     @Test
@@ -66,4 +69,39 @@ class OfflineRecoveryContractTest {
         assertFalse(OfflineAuthorizationPolicy.permits(receipt, anonymous, "kuwo", "track_1", 100L))
         assertFalse(OfflineAuthorizationPolicy.permits(receipt.copy(entitlementStatus = "drm"), anonymous, "kuwo", "track_1", 50L))
     }
+
+    @Test
+    fun `fresh reauthorization binds to exact resumed operation and stale completion cannot consume it`() {
+        val book = TransferAuthorizationBook()
+        val previous = entry("old-attempt")
+        val resumed = entry("fresh-attempt")
+        assertTrue(book.install(resumed, grant()))
+        assertFalse(book.consume(previous) != null)
+        assertTrue(book.hasBinding("netease", "netrack_1"))
+        assertTrue(book.consume(resumed) != null)
+        assertFalse(book.hasBinding("netease", "netrack_1"))
+    }
+
+    @Test
+    fun `cancel race clears recovered authorization and process requeue needs a new binding`() {
+        val book = TransferAuthorizationBook()
+        val firstProcess = entry("first-process")
+        assertTrue(book.install(firstProcess, grant()))
+        book.clear("netease", "netrack_1")
+        assertFalse(book.consume(firstProcess) != null)
+        // A service recreation has an empty in-memory book; a fresh native grant
+        // installs a new attempt rather than reviving a stale operation id.
+        val requeued = entry("after-process-requeue")
+        assertTrue(book.install(requeued, grant()))
+        assertTrue(book.consume(requeued) != null)
+    }
+
+    private fun entry(operationId: String) = OfflineEntry(
+        operationId, "netease", "netrack_1", "歌", "艺人", OfflineStatus.QUEUED,
+    )
+
+    private fun grant() = CacheAuthorization(
+        "a".repeat(48), "request-recovery-12345678", MediaIdentity("netease", "netrack_1", null, 0L), 0L,
+        OfflineEntitlementClass.ANONYMOUS_FREE,
+    )
 }

@@ -116,6 +116,17 @@ class OfflineAudioContractTest {
         assertTrue(coordinator.snapshot().any { it.errorCode == "CAPACITY_EXCEEDED" })
     }
 
+    @Test fun `retry rotates operation before its replacement task can start`() {
+        val executor = ManualExecutor()
+        val coordinator = coordinator(Files.createTempDirectory("offline-contract").toFile(), FakeTransport(), executor)
+        val first = coordinator.enqueue("netease", "netrack_1", "t", "a")
+        val installed = mutableListOf<String>()
+        val retried = coordinator.retry("netease", "netrack_1") { entry -> installed += entry.operationId }
+        val replacement = requireNotNull(retried)
+        assertFalse(first.operationId == replacement.operationId)
+        assertEquals(listOf(replacement.operationId), installed)
+    }
+
     @Test fun understatedPositiveContentLengthCannotOverrunQuotaOrPublishReady() {
         val executor = ManualExecutor()
         val transport = FakeTransport().apply { neteaseMedia = audio(12); neteaseContentLength = 4 }

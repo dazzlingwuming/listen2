@@ -179,14 +179,17 @@ internal class OfflineCoordinator(
     }
     fun snapshot(): List<OfflineEntry> = synchronized(lock) { snapshotLocked() }
 
-    fun enqueue(source: String, trackId: String, title: String, artist: String): OfflineEntry {
+    /** [beforeStart] runs after a fresh operation id exists but before its task can be submitted. */
+    fun enqueue(source: String, trackId: String, title: String, artist: String, beforeStart: ((OfflineEntry) -> Unit)? = null): OfflineEntry {
         val key = if (OfflinePolicy.accepted(source, trackId)) OfflinePolicy.key(source, trackId) else return failed(source, trackId, title, artist, "INVALID_REQUEST")
         lateinit var work: ActiveWork; lateinit var result: OfflineEntry; var event: List<OfflineEntry>? = null
         synchronized(lock) {
             entries[key]?.let { return it.snapshot() }
             if (active.size >= 10) return failed(source, trackId, title, artist, "QUEUE_FULL")
             val entry = OfflineEntry(UUID.randomUUID().toString(), source, trackId, title.take(256), artist.take(256), OfflineStatus.QUEUED, updatedAt = clock())
-            work = ActiveWork(entry.operationId); entries[key] = entry; active[key] = work; persistLocked(); event = snapshotLocked(); result = entry.snapshot()
+            work = ActiveWork(entry.operationId); entries[key] = entry; active[key] = work
+            beforeStart?.invoke(entry.snapshot())
+            persistLocked(); event = snapshotLocked(); result = entry.snapshot()
         }
         publish(event)
         try { work.task = executor.submit { download(key, work) } } catch (_: RejectedExecutionException) { failIfActive(key, work, "QUEUE_FULL") }
@@ -221,9 +224,9 @@ internal class OfflineCoordinator(
         publish(result.second)
     }
 
-    fun retry(source: String, trackId: String): OfflineEntry? {
+    fun retry(source: String, trackId: String, beforeStart: ((OfflineEntry) -> Unit)? = null): OfflineEntry? {
         val prior = synchronized(lock) { entries[OfflinePolicy.key(source, trackId)]?.snapshot() } ?: return null
-        remove(prior.source, prior.trackId); return enqueue(prior.source, prior.trackId, prior.title, prior.artist)
+        remove(prior.source, prior.trackId); return enqueue(prior.source, prior.trackId, prior.title, prior.artist, beforeStart)
     }
 
     fun resolve(source: String, trackId: String): OfflineEntry? = readyLookup(source, trackId)?.first
@@ -501,8 +504,9 @@ internal class OfflineAcquireWorker(context: Context, params: WorkerParameters) 
         // WorkManager's perspective; the bounded transfer engine persists its own terminal row
         // and will never spin this work indefinitely on a missing URL/credential.
         val service = OfflineCatalogService.get(applicationContext)
-        if (!service.resume(source, trackId))
-            return Result.success(androidx.work.workDataOf("terminal" to "not-needed"))
+        val resumed = service.resumeOutcome(source, trackId)
+        if (resumed != "requeued")
+            return Result.success(androidx.work.workDataOf("terminal" to resumed))
         val terminal = service.awaitTerminal(source, trackId, System.currentTimeMillis() + MAX_FOREGROUND_MILLIS)
         return if (terminal == "ready" || terminal == "not-found")
             Result.success(androidx.work.workDataOf("terminal" to terminal))

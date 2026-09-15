@@ -31,7 +31,7 @@ internal class OfflineCatalogService private constructor(context: Context) {
     private val cacheAuthorizations = mutableMapOf<String, CacheAuthorization>()
     private val localReceiptGrants = mutableMapOf<String, Long>()
     /** A transfer may start only from a just-resolved native descriptor; it is never persisted. */
-    private val transferAuthorizations = mutableMapOf<String, CacheAuthorization>()
+    private val transferAuthorizations = TransferAuthorizationBook()
 
     init {
         // A process restart has no trustworthy account/session proof. Account-bound
@@ -78,32 +78,36 @@ internal class OfflineCatalogService private constructor(context: Context) {
 
     fun request(source: String, trackId: String, title: String, artist: String): CatalogCacheSnapshot {
         if (OfflinePolicy.accepted(source, trackId) && readyBlob(source, trackId) == null) {
-            val grant = MediaLeaseRegistryHolder.current()?.localCacheAuthorization(source, trackId)
-                ?: return snapshot()
-            if (grant.accountGeneration == 0L && grant.entitlementClass.wire != "anonymous-free") return snapshot()
-            synchronized(transferAuthorizations) { transferAuthorizations[OfflinePolicy.key(source, trackId)] = grant }
-            transfer.enqueue(source, trackId, title, artist)
+            val grant = freshTransferGrant(source, trackId) ?: return snapshot()
+            val active = transfer.snapshot().firstOrNull { it.source == source && it.trackId == trackId }
+            if (active == null) enqueueAuthorized(source, trackId, title, artist, grant)
+            else if (active.status in setOf(OfflineStatus.FAILED, OfflineStatus.CANCELLED)) retryAuthorized(active, grant)
+            else transferAuthorizations.install(active, grant)
         }
         return snapshot()
     }
 
     /** WorkManager restart path only replays semantic ids and has no URL/cookie input. */
-    fun resume(source: String, trackId: String): Boolean {
-        if (!OfflinePolicy.accepted(source, trackId) || readyBlob(source, trackId) != null) return false
+    fun resume(source: String, trackId: String): Boolean = resumeOutcome(source, trackId) == "requeued"
+
+    internal fun resumeOutcome(source: String, trackId: String): String {
+        if (!OfflinePolicy.accepted(source, trackId)) return "invalid"
+        if (readyBlob(source, trackId) != null) return "ready"
         // Process-death recovery has no transport or authority token. The worker
-        // terminates and UI must resolve a fresh native descriptor before requeueing.
-        if (MediaLeaseRegistryHolder.current()?.localCacheAuthorization(source, trackId) == null) return false
+        // must obtain a fresh native descriptor before requeueing.
+        val grant = freshTransferGrant(source, trackId) ?: return "needs-reauthorization"
         val active = transfer.snapshot().firstOrNull { it.source == source && it.trackId == trackId }
-        if (active == null) transfer.enqueue(source, trackId, "未知歌曲", "未知艺人")
-        else if (active.status in setOf(OfflineStatus.FAILED, OfflineStatus.CANCELLED)) transfer.retry(source, trackId)
-        return true
+        if (active == null) enqueueAuthorized(source, trackId, "未知歌曲", "未知艺人", grant)
+        else if (active.status in setOf(OfflineStatus.FAILED, OfflineStatus.CANCELLED)) retryAuthorized(active, grant)
+        else transferAuthorizations.install(active, grant)
+        return "requeued"
     }
 
     /** Used by both the cache UI and WorkManager's notification cancel intent. */
     fun cancel(source: String, trackId: String) {
         val active = transfer.snapshot().firstOrNull { it.source == source && it.trackId == trackId }
         if (active != null) transfer.cancel(active.operationId)
-        synchronized(transferAuthorizations) { transferAuthorizations.remove(OfflinePolicy.key(source, trackId)) }
+        transferAuthorizations.clear(source, trackId)
         publish()
     }
 
@@ -143,9 +147,9 @@ internal class OfflineCatalogService private constructor(context: Context) {
     fun action(action: String, operationId: String): CatalogCacheSnapshot {
         val active = transfer.snapshot().firstOrNull { it.operationId == operationId }
         when (action) {
-            "cancel" -> active?.let { transfer.cancel(it.operationId) }
-            "retry" -> active?.let { transfer.retry(it.source, it.trackId) }
-            "repair" -> if (active != null) transfer.retry(active.source, active.trackId) else repairReadyEntries()
+            "cancel" -> active?.let { transferAuthorizations.clear(it.source, it.trackId); transfer.cancel(it.operationId) }
+            "retry" -> active?.let { resume(it.source, it.trackId) }
+            "repair" -> if (active != null) resume(active.source, active.trackId) else repairReadyEntries()
             "remove" -> removeOperation(active, operationId)
             "clearEligible" -> clearEligible()
         }
@@ -153,6 +157,7 @@ internal class OfflineCatalogService private constructor(context: Context) {
     }
 
     fun invalidate(source: String, trackId: String): CatalogCacheSnapshot {
+        transferAuthorizations.clear(source, trackId)
         transfer.remove(source, trackId)
         readyBlob(source, trackId)?.let(::removeBlob)
         return snapshot()
@@ -229,13 +234,13 @@ internal class OfflineCatalogService private constructor(context: Context) {
 
     private fun commitCompletedTransfer(entry: OfflineEntry) {
         val key = OfflinePolicy.key(entry.source, entry.trackId)
-        val grant = synchronized(transferAuthorizations) { transferAuthorizations.remove(key) }
+        val grant = transferAuthorizations.consume(entry)
         if (grant == null || MediaLeaseRegistryHolder.current()?.isCurrentCacheAuthorization(grant) != true ||
             grant.identity.source != entry.source || grant.identity.trackId != entry.trackId
         ) {
             // Do not turn a transfer completed after logout/expiry into a durable
             // cache object. A fresh native descriptor must re-admit it.
-            transfer.remove(entry.source, entry.trackId)
+            if (!transferAuthorizations.hasBinding(entry.source, entry.trackId)) transfer.remove(entry.source, entry.trackId)
             return
         }
         val staged = transfer.file(key) ?: return
@@ -261,6 +266,21 @@ internal class OfflineCatalogService private constructor(context: Context) {
             scheduleAnalysis(digest)
             evictToQuota()
         }
+    }
+
+    /** Native grant admission is checked before a coordinator task can observe its operation id. */
+    private fun freshTransferGrant(source: String, trackId: String): CacheAuthorization? {
+        val grant = MediaLeaseRegistryHolder.current()?.localCacheAuthorization(source, trackId) ?: return null
+        if (grant.accountGeneration == 0L && grant.entitlementClass.wire != "anonymous-free") return null
+        return grant.takeIf { MediaLeaseRegistryHolder.current()?.isCurrentCacheAuthorization(it) == true }
+    }
+
+    private fun enqueueAuthorized(source: String, trackId: String, title: String, artist: String, grant: CacheAuthorization): OfflineEntry =
+        transfer.enqueue(source, trackId, title, artist) { created -> transferAuthorizations.install(created, grant) }
+
+    private fun retryAuthorized(prior: OfflineEntry, grant: CacheAuthorization): OfflineEntry? {
+        transferAuthorizations.clear(prior.source, prior.trackId)
+        return transfer.retry(prior.source, prior.trackId) { created -> transferAuthorizations.install(created, grant) }
     }
 
     private fun scheduleAnalysis(blobKey: String) {
@@ -297,6 +317,7 @@ internal class OfflineCatalogService private constructor(context: Context) {
 
     private fun removeOperation(active: OfflineEntry?, operationId: String) {
         if (active != null) {
+            transferAuthorizations.clear(active.source, active.trackId)
             transfer.remove(active.source, active.trackId)
             return
         }
@@ -388,6 +409,32 @@ internal data class CatalogCacheEntry(
     val errorCode: String?, val updatedAt: Long,
 )
 internal data class CatalogCacheSnapshot(val usedBytes: Long, val reservedBytes: Long, val quotaBytes: Long?, val entries: List<CatalogCacheEntry>)
+
+/**
+ * Process-local, operation-bound authorization book. A replacement attempt cannot consume a
+ * late completion's authority because [consume] removes only an identical operation id.
+ */
+internal class TransferAuthorizationBook {
+    private data class Binding(val operationId: String, val grant: CacheAuthorization)
+    private val bindings = mutableMapOf<String, Binding>()
+
+    @Synchronized fun install(entry: OfflineEntry, grant: CacheAuthorization): Boolean {
+        if (entry.source != grant.identity.source || entry.trackId != grant.identity.trackId) return false
+        bindings[OfflinePolicy.key(entry.source, entry.trackId)] = Binding(entry.operationId, grant)
+        return true
+    }
+
+    @Synchronized fun consume(entry: OfflineEntry): CacheAuthorization? {
+        val key = OfflinePolicy.key(entry.source, entry.trackId)
+        val binding = bindings[key] ?: return null
+        if (binding.operationId != entry.operationId) return null
+        bindings.remove(key)
+        return binding.grant
+    }
+
+    @Synchronized fun clear(source: String, trackId: String) { bindings.remove(OfflinePolicy.key(source, trackId)) }
+    @Synchronized fun hasBinding(source: String, trackId: String): Boolean = bindings.containsKey(OfflinePolicy.key(source, trackId))
+}
 
 /** Durable receipt policy is pure so reopen/TTL/account fixtures do not need a transport. */
 internal object OfflineAuthorizationPolicy {
