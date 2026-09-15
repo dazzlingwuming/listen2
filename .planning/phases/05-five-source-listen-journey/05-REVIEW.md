@@ -1,92 +1,83 @@
 ---
 phase: 05-five-source-listen-journey
-reviewed: 2026-09-15T04:37:44Z
+reviewed: 2026-09-15T06:03:34Z
 depth: deep
-files_reviewed: 36
+files_reviewed: 18
 files_reviewed_list:
+  - mobile/android/app/src/main/java/com/listen2mobile/MainApplication.kt
+  - mobile/android/app/src/main/java/com/listen2mobile/kuwo/KuwoPlaybackGateway.kt
+  - mobile/android/app/src/main/java/com/listen2mobile/kuwo/KuwoPlaybackModule.kt
+  - mobile/android/app/src/main/java/com/listen2mobile/kuwo/KuwoPlaybackPackage.kt
+  - mobile/android/app/src/main/java/com/listen2mobile/kuwo/KuwoPlaybackPolicy.kt
+  - mobile/android/app/src/main/java/com/listen2mobile/qq/QqPlaybackGateway.kt
+  - mobile/android/app/src/main/java/com/listen2mobile/qq/QqPlaybackModule.kt
+  - mobile/android/app/src/main/java/com/listen2mobile/qq/QqPlaybackPackage.kt
+  - mobile/android/app/src/main/java/com/listen2mobile/qq/QqPlaybackPolicy.kt
+  - mobile/android/app/src/test/java/com/listen2mobile/kuwo/KuwoPlaybackContractTest.kt
+  - mobile/android/app/src/test/java/com/listen2mobile/qq/QqPlaybackContractTest.kt
+  - mobile/src/api/__tests__/client.test.ts
   - mobile/src/api/client.ts
-  - mobile/src/api/errors.ts
-  - mobile/src/components/BilibiliLyricPicker.tsx
-  - mobile/src/components/TrackRow.tsx
-  - mobile/src/lyrics/__tests__/cache.test.ts
-  - mobile/src/lyrics/__tests__/selectionStore.test.ts
-  - mobile/src/lyrics/__tests__/session.test.ts
-  - mobile/src/lyrics/__tests__/timeline.test.ts
-  - mobile/src/lyrics/selectionStore.ts
-  - mobile/src/lyrics/session.ts
-  - mobile/src/lyrics/timeline.ts
-  - mobile/src/player/__tests__/playbackService.test.ts
-  - mobile/src/player/__tests__/playerController.bilibiliRetry.test.ts
-  - mobile/src/player/__tests__/playerController.lifecycle.test.ts
-  - mobile/src/player/__tests__/playerController.rollback.test.ts
+  - mobile/src/api/nativePlayback.ts
   - mobile/src/player/__tests__/playerController.test.ts
-  - mobile/src/player/playbackService.ts
   - mobile/src/player/playerController.ts
-  - mobile/src/screens/BilibiliDetailScreen.tsx
-  - mobile/src/screens/PlayerScreen.tsx
-  - mobile/src/screens/PlaylistDetailScreen.tsx
-  - mobile/src/screens/SearchScreen.tsx
-  - mobile/src/screens/SettingsScreen.tsx
+  - mobile/src/player/playbackService.ts
   - mobile/src/screens/__tests__/bilibiliFlow.test.tsx
-  - mobile/src/screens/__tests__/bilibiliLyricsFlow.test.tsx
-  - mobile/src/screens/__tests__/lyricAccessibility.test.tsx
-  - mobile/src/screens/__tests__/playerJourney.test.tsx
-  - mobile/src/screens/__tests__/playerTranslationBehavior.test.tsx
-  - mobile/src/screens/__tests__/searchJourney.test.tsx
-  - mobile/src/search/searchJourneyState.ts
-  - mobile/src/store/__tests__/playerPersistence.test.ts
-  - mobile/src/store/__tests__/playerSlice.test.ts
-  - mobile/src/store/index.ts
-  - mobile/src/store/playerPersistence.ts
-  - mobile/src/store/playerSlice.ts
-  - mobile/src/types/provider.ts
 findings:
-  critical: 2
+  critical: 0
   warning: 0
   info: 0
-  total: 2
-status: issues_found
+  total: 0
+status: clean
 ---
 
 # Phase 05: Code Review Final Re-review
 
-**Reviewed:** 2026-09-15T04:37:44Z
+**Reviewed:** 2026-09-15T06:03:34Z
 **Depth:** deep
-**Files Reviewed:** 36
-**Status:** issues_found
+**Files Reviewed:** 18
+**Status:** CLEAN
 
 ## Summary
 
-This fourth deep re-review covers `66f8e4d` and `5455585` against the complete Phase 05 mobile scope. Third-round CR-01 is closed: Bilibili detail now passes the exact part array to the real player thunk, and the expanded rendered integration test reaches bootstrap/RNTP. CR-02 is closed: overwrite snapshots the existing native item, restores it after post-reset failures, and marks reload-required if recovery also fails. CR-03 is closed: a successful FIFO reorder invalidates the deferred transition and the transition requires the same occurrence to remain queue head. CR-04's unsafe fabricated-current identity is removed.
+The targeted re-review of `326e545`, `76831a4`, and `c495c55` found that every finding from the preceding Phase-05 review is substantively closed. No new blocker, security defect, or correctness warning was found in the reviewed scope.
 
-However, the CR-04 replacement drops every identifier-less native state/error event, including the current track's real failure; playback UI/error recovery can remain stale indefinitely. The existing QQ/Kuwo authorized-playback gap (third-round CR-05) is unchanged. `npx tsc --noEmit` and four focused current suites passed (58 tests), but the new tests expressly assert that identifier-less terminal callbacks are ignored rather than proving user-visible native-error recovery.
+QQ remains cookie-free and Kuwo keeps cookie/Secret material native-only. Both use fixed semantic contracts, bounded/no-redirect probes, typed safe failures, and registered package composition. The JavaScript bridge accepts only exact source/version/readiness/host contracts, validates bounded descriptors, and suppresses abort-path native-cancel rejections. The RNTP service still corroborates identifier-less terminal events before reducer mutation.
+
+## Resolved Findings
+
+### CR-07: Superseded `playTracks` selection could reach RNTP first — resolved
+
+`PlayerController.playTracks` now calls `beginTransition` before adding work to the serialized native mutation queue (`mobile/src/player/playerController.ts:889-900`). The captured `AbortSignal` is passed into the queued internal operation, so a later selection invalidates an in-flight/deferred resolver before it can reset, add, or play RNTP. Deterministic controller coverage proves Bilibili part A is aborted and only B reaches RNTP (`mobile/src/player/__tests__/playerController.test.ts:327-364`); the rendered Bilibili detail flow exercises the actual two-button thunk path (`mobile/src/screens/__tests__/bilibiliFlow.test.tsx:213-273`).
+
+### WR-01: Fractional native contract versions were truncated — resolved
+
+QQ and Kuwo now use exact double equality through `isContractVersion`, consumed by both `resolveAudio` and `cancel` parsing (`mobile/android/app/src/main/java/com/listen2mobile/qq/QqPlaybackPolicy.kt:58-59`, `mobile/android/app/src/main/java/com/listen2mobile/kuwo/KuwoPlaybackPolicy.kt:45-46`; module call sites in each module). Contract tests reject `1.5`, `1.999`, and `NaN`.
+
+### WR-02: Rejected native cancel could be unhandled — resolved
+
+The abort path consumes a failed native `cancel` invocation while immediately preserving the local typed `CANCELLED` outcome (`mobile/src/api/nativePlayback.ts:170-178`). The client test uses a rejecting cancellation bridge and proves the user-facing result remains `CANCELLED`.
+
+### WR-03: Readiness accepted a broadened host set — resolved
+
+The JS adapter now requires a duplicate-free, exact expected host set for each provider before exposing native playback readiness (`mobile/src/api/nativePlayback.ts:19-22,46-61`). Tests reject extra, duplicate, and swapped QQ/Kuwo host lists.
+
+## Verification Evidence
+
+- `npm --prefix mobile test -- --runInBand src/api/__tests__/client.test.ts src/player/__tests__/playerController.test.ts src/player/__tests__/playbackService.test.ts src/screens/__tests__/bilibiliFlow.test.tsx` — 4 suites, 86 tests passed.
+- `npm run mobile:typecheck` — passed.
+- `JAVA_HOME=/opt/homebrew/opt/openjdk@17 ANDROID_HOME=/opt/homebrew/share/android-commandlinetools ANDROID_SDK_ROOT=/opt/homebrew/share/android-commandlinetools PATH=/opt/homebrew/opt/openjdk@17/bin:$PATH ./mobile/android/gradlew --offline --no-daemon -p mobile/android :app:testDebugUnitTest --tests 'com.listen2mobile.qq.QqPlaybackContractTest' --tests 'com.listen2mobile.kuwo.KuwoPlaybackContractTest'` — passed.
+- `git diff --check 636407b..c495c55 -- mobile` — passed.
+
+## Unverified Runtime Boundary
+
+This clean code verdict does not claim APK assembly/installation, API-35 emulator behavior, real QQ/Kuwo accounts or provider/CDN behavior, post-probe RNTP redirect behavior, audible playback, notification/background/audio-focus lifecycle, or real TalkBack/IME/rotation evidence. Those remain Phase-08 runtime acceptance work.
 
 ## Narrative Findings (AI reviewer)
 
-## Critical Issues
-
-### CR-05: QQ and Kuwo still cannot complete the phase's required authorized playback journey
-
-**Classification:** BLOCKER
-
-**File:** `/Users/fluenteng/个人相关/listen1/listen1_desktop/mobile/src/api/client.ts:125-133,241-245`
-
-**Issue:** The capability matrix exposes QQ and Kuwo search (and QQ lyrics), but neither has available playback/bootstrap. `bootstrapTrack` deliberately rejects both with `PLAYBACK_UNAVAILABLE`. Thus users can search those visible sources but cannot reach authorized playback, which fails the Phase 05 five-source search-to-detail-to-listen requirement.
-
-**Fix:** Implement bounded, source-specific authorized QQ and Kuwo media/bootstrap contracts with route/schema tests and only then enable their playback capabilities; alternatively obtain an explicit approved requirement change that narrows the five-source playback promise.
-
-### CR-06: The stale-event fix permanently suppresses real native error and state handling
-
-**Classification:** BLOCKER
-
-**File:** `/Users/fluenteng/个人相关/listen1/listen1_desktop/mobile/src/player/playbackService.ts:66-70`; `/Users/fluenteng/个人相关/listen1/listen1_desktop/mobile/src/player/playerController.ts:1360-1369,1403-1414`
-
-**Issue:** RNTP `PlaybackState` and `PlaybackError` events have no track identity. The service now unconditionally forwards `undefined`, and `isNativeCallbackCurrent()` unconditionally rejects an absent identity. These are the only production callers of `onPlaybackState`/`onPlaybackError`, so a current track's real native pause, stop, or playback error never sets `isPlaying: false`, `native-playback-error`, or `restoredNeedsLoad`. For example, after `loadAndPlay()` sets `isPlaying` true, an asynchronous RNTP media failure leaves the screen claiming it is playing and offers no recovery.
-
-**Fix:** Retain stale-event safety while restoring a trusted current-event path: introduce a controller-owned native epoch/settlement protocol that accepts identifier-less events only when no ownership transition is pending and their native state is corroborated, while quarantining them across reset/load transitions. Add an integration test that emits a current-track native failure after its active-track hand-off and asserts safe error/reload state, alongside the existing late-A-after-B test.
+No narrative findings. **CLEAN.**
 
 ---
 
-_Reviewed: 2026-09-15T04:37:44Z_
+_Reviewed: 2026-09-15T06:03:34Z_
 _Reviewer: the agent (gsd-code-reviewer)_
 _Depth: deep_
