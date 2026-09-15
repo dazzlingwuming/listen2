@@ -79,8 +79,8 @@ for class in "$RUNNER" com.listen2mobile.acceptance.AccessibilityDriver "$SCENAR
 done
 manifest="$($SDK/build-tools/37.0.0/aapt dump xmltree "$TEST_APK" AndroidManifest.xml)"
 grep -Fq "$RUNNER" <<< "$manifest" || fail 'AndroidTest manifest does not name self-contained runner'
-product_signer="$($APKSIGNER verify --verbose --print-certs "$PRODUCT_APK" | awk -F': ' '/(Signer #1|V[0-9.]+ Signer): certificate SHA-256 digest/ {print $NF; exit}')"
-test_signer="$($APKSIGNER verify --verbose --print-certs "$TEST_APK" | awk -F': ' '/(Signer #1|V[0-9.]+ Signer): certificate SHA-256 digest/ {print $NF; exit}')"
+product_signer="$($APKSIGNER verify --verbose --print-certs "$PRODUCT_APK" | awk -F': ' '/(Signer #1|V[0-9.]+ Signer): certificate SHA-256 digest/ {digest=$NF} END {print digest}')"
+test_signer="$($APKSIGNER verify --verbose --print-certs "$TEST_APK" | awk -F': ' '/(Signer #1|V[0-9.]+ Signer): certificate SHA-256 digest/ {digest=$NF} END {print digest}')"
 [[ "$product_signer" =~ ^[a-f0-9]{64}$ && "$product_signer" == "$test_signer" ]] || fail 'product and test signer lineage differs'
 
 mkdir -p "$RUN_DIR/artifacts" "$RUN_DIR/diagnostics"
