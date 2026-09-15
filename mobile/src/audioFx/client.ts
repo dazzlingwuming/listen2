@@ -1,4 +1,4 @@
-import { NativeModules } from 'react-native';
+import { DeviceEventEmitter, NativeModules } from 'react-native';
 
 export type AudioEffectsStatus =
   | 'enabled'
@@ -10,6 +10,12 @@ export type AudioEffectsSnapshot = Readonly<{
   status: AudioEffectsStatus;
   preset: 'neutral' | 'bass' | 'vocal' | 'treble';
   fixedGain: number;
+}>;
+
+export type AudioAnalysisFrame = Readonly<{
+  bins: readonly number[];
+  timestampMs: number;
+  generation: number;
 }>;
 
 type NativeEffects = Readonly<{
@@ -75,4 +81,39 @@ export function audioEffectsLabel(snapshot: AudioEffectsSnapshot) {
   if (snapshot.status === 'unavailable') return '音效不可用（当前播放会话不支持）';
   if (snapshot.status === 'enabled') return `音效：${snapshot.preset}`;
   return '音效：原声';
+}
+
+/** Reject malformed, stale-shape, or synthetic-looking native payloads at the bridge boundary. */
+export function parseAudioAnalysisFrame(value: unknown): AudioAnalysisFrame | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as Record<string, unknown>;
+  if (
+    !Array.isArray(record.bins) ||
+    record.bins.length < 1 ||
+    record.bins.length > 32 ||
+    typeof record.timestampMs !== 'number' ||
+    !Number.isFinite(record.timestampMs) ||
+    record.timestampMs < 0 ||
+    typeof record.generation !== 'number' ||
+    !Number.isSafeInteger(record.generation) ||
+    record.generation < 0
+  ) return null;
+  const bins = record.bins.map(bin =>
+    typeof bin === 'number' && Number.isFinite(bin) && bin >= 0 && bin <= 1
+      ? bin
+      : NaN,
+  );
+  return bins.every(Number.isFinite)
+    ? { bins, timestampMs: record.timestampMs, generation: record.generation }
+    : null;
+}
+
+/** Native frames remain ephemeral; callers unsubscribe when playback or foreground state changes. */
+export function subscribeAudioAnalysis(
+  onFrame: (frame: AudioAnalysisFrame) => void,
+) {
+  return DeviceEventEmitter.addListener('Listen2AudioEffectsFrame', value => {
+    const frame = parseAudioAnalysisFrame(value);
+    if (frame) onFrame(frame);
+  });
 }

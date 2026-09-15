@@ -27,4 +27,7 @@ class AudioEffectsModule(private val app: ReactApplicationContext) : ReactContex
     @ReactMethod fun reset(promise: Promise) { enabled = false; preset = "neutral"; promise.resolve(reply("disabled")) }
     @ReactMethod fun setFixedNormalizationGain(value: Double, promise: Promise) { fixedGain = AudioEffectsPolicy.gain(value); promise.resolve(reply("ok")) }
     @ReactMethod fun setVisualizationEnabled(value: Boolean, promise: Promise) { promise.resolve(reply(if (value) "unavailable" else "disabled")) }
+    /** Required by React Native event subscriptions; no frame is emitted without an actual session. */
+    @ReactMethod fun addListener(eventName: String) = Unit
+    @ReactMethod fun removeListeners(count: Double) = Unit
 }
