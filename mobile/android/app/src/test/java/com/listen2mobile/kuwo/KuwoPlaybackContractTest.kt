@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.security.SecureRandom
 
 class KuwoPlaybackContractTest {
     private companion object {
@@ -22,6 +23,11 @@ class KuwoPlaybackContractTest {
         assertEquals("0012d687", KuwoPlaybackPolicy.nonceHex(1_234_567L))
         assertEquals(null, KuwoPlaybackPolicy.nonceHex(-1))
         assertEquals(null, KuwoPlaybackPolicy.nonceHex(4_294_967_296L))
+        repeat(16) {
+            val nonce = KuwoPlaybackPolicy.secureNonce(SecureRandom())
+            assertTrue(nonce in 0L..0xffffffffL)
+            assertTrue(requireNotNull(KuwoPlaybackPolicy.nonceHex(nonce)).matches(Regex("[0-9a-f]{8}")))
+        }
         assertEquals("123456", KuwoPlaybackPolicy.parseSemanticTrack(TRACK_ID)?.mid)
 
         val transport = FixtureTransport()
