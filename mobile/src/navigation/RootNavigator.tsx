@@ -24,6 +24,7 @@ import { BilibiliDetailScreen } from '../screens/BilibiliDetailScreen';
 import { BilibiliMvScreen } from '../screens/BilibiliMvScreen';
 import { bilibiliMvClient } from '../bilibili/mvClient';
 import { colors, spacing } from '../theme';
+import { LibraryBootGate } from '../library/LibraryBootGate';
 import type { RootStackParamList, TabParamList } from './types';
 
 const Tabs = createBottomTabNavigator<TabParamList>();
@@ -125,6 +126,7 @@ export function RootNavigator() {
   }, []);
   return (
     <SafeAreaProvider>
+      <LibraryBootGate>
       <NavigationContainer onReady={restorePendingMv} ref={navigationRef}>
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           <Stack.Screen component={MainTabs} name="MainTabs" />
@@ -144,6 +146,7 @@ export function RootNavigator() {
           <Stack.Screen component={BilibiliMvScreen} name="BilibiliMv" />
         </Stack.Navigator>
       </NavigationContainer>
+      </LibraryBootGate>
     </SafeAreaProvider>
   );
 }

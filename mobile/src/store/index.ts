@@ -32,15 +32,11 @@ const persistConfig = {
 };
 
 const persistedPlayerReducer = persistReducer(persistConfig, playerReducer);
-const persistedLibraryReducer = persistReducer(
-  { key: 'listen2-mobile-library', storage: AsyncStorage, version: 1 },
-  libraryReducer,
-);
-
 export const store = configureStore({
   reducer: {
     player: persistedPlayerReducer,
-    library: persistedLibraryReducer,
+    // Room is the only durable owner; Redux is a hydrated projection.
+    library: libraryReducer,
     downloads: downloadReducer,
     // MV transport/handles are process-local. This reducer is purposefully volatile.
     mv: mvReducer,

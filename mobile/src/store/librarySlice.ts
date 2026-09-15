@@ -1,155 +1,81 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 import type { LocalTrack, PlayableTrack } from '../types/music';
+import { acceptsLibraryRevision, projectLibrarySnapshot } from '../library/libraryProjection';
+import type { LibraryMutationReceipt, LibrarySnapshot } from '../library/types';
 
-const MAX_RECENT_TRACKS = 200;
-const MAX_LOCAL_TRACKS = 5000;
+export type LibraryPlaylist = { id: string; title: string; tracks: PlayableTrack[] };
 
+/** Redux is a read-only projection of Room, never a second durable backend. */
 export type LibraryState = {
+  revision?: number;
+  hydrated?: boolean;
+  hydrationPending?: boolean;
+  hydrationError?: 'NATIVE_UNAVAILABLE' | 'TIMEOUT' | 'INVALID_RESPONSE' | null;
+  pendingRequestIds?: string[];
   favorites: PlayableTrack[];
   recentTracks: PlayableTrack[];
   playlists: LibraryPlaylist[];
   localTracks: LocalTrack[];
 };
 
-export type LibraryPlaylist = {
-  id: string;
-  title: string;
-  tracks: PlayableTrack[];
-};
-
 const initialState: LibraryState = {
+  revision: 0,
+  hydrated: false,
+  hydrationPending: false,
+  hydrationError: null,
+  pendingRequestIds: [],
   favorites: [],
   recentTracks: [],
   playlists: [],
   localTracks: [],
 };
 
-function sameTrack(left: PlayableTrack, right: PlayableTrack) {
-  return left.id === right.id && left.source === right.source;
+function applySnapshot(state: LibraryState, snapshot: LibrarySnapshot) {
+  if (!acceptsLibraryRevision(state.revision || 0, snapshot.revision)) return;
+  const projection = projectLibrarySnapshot(snapshot);
+  state.revision = projection.revision;
+  state.hydrated = projection.hydrated;
+  state.favorites = projection.favorites;
+  state.recentTracks = projection.recentTracks;
+  state.playlists = projection.playlists;
+  state.localTracks = projection.localTracks;
 }
 
 const librarySlice = createSlice({
   name: 'library',
   initialState,
   reducers: {
-    toggleFavorite(state, action: PayloadAction<PlayableTrack>) {
-      const index = state.favorites.findIndex(track =>
-        sameTrack(track, action.payload),
-      );
-      if (index >= 0) state.favorites.splice(index, 1);
-      else state.favorites.unshift(action.payload);
+    hydrationStarted(state) {
+      state.hydrationPending = true;
+      state.hydrationError = null;
     },
-    recordRecent(state, action: PayloadAction<PlayableTrack>) {
-      state.recentTracks = [
-        action.payload,
-        ...state.recentTracks.filter(
-          track => !sameTrack(track, action.payload),
-        ),
-      ].slice(0, MAX_RECENT_TRACKS);
+    hydrationSucceeded(state, action: PayloadAction<LibrarySnapshot>) {
+      applySnapshot(state, action.payload);
+      state.hydrationPending = false;
+      state.hydrationError = null;
     },
-    clearRecent(state) {
-      state.recentTracks = [];
+    hydrationFailed(state, action: PayloadAction<LibraryState['hydrationError']>) {
+      state.hydrationPending = false;
+      state.hydrationError = action.payload || 'INVALID_RESPONSE';
     },
-    importLocalTracks(state, action: PayloadAction<LocalTrack[]>) {
-      action.payload.slice(0, 500).forEach(track => {
-        if (!track.contentUri) return;
-        const existing = state.localTracks.find(
-          item => item.contentUri === track.contentUri,
-        );
-        if (existing) {
-          // Re-selecting a repaired document refreshes metadata and access.
-          Object.assign(existing, track, {
-            id: existing.id,
-            accessStatus: 'available',
-          });
-          return;
-        }
-        if (
-          state.localTracks.length >= MAX_LOCAL_TRACKS ||
-          state.localTracks.some(item => item.id === track.id)
-        )
-          return;
-        state.localTracks.push(track);
-      });
+    mutationPending(state, action: PayloadAction<{ requestId: string }>) {
+      if (!state.pendingRequestIds?.includes(action.payload.requestId)) state.pendingRequestIds = [...(state.pendingRequestIds || []), action.payload.requestId];
     },
-    removeLocalTrack(state, action: PayloadAction<string>) {
-      state.localTracks = state.localTracks.filter(
-        track => track.id !== action.payload,
-      );
-      // Local tracks can also appear in favorites, history, and a user playlist
-      // during this session. Remove those dangling references with the library
-      // record so a released content URI is never offered for playback again.
-      state.favorites = state.favorites.filter(
-        track => track.id !== action.payload,
-      );
-      state.recentTracks = state.recentTracks.filter(
-        track => track.id !== action.payload,
-      );
-      state.playlists.forEach(playlist => {
-        playlist.tracks = playlist.tracks.filter(
-          track => track.id !== action.payload,
-        );
-      });
+    mutationReceived(state, action: PayloadAction<LibraryMutationReceipt>) {
+      state.pendingRequestIds = (state.pendingRequestIds || []).filter(requestId => requestId !== action.payload.requestId);
+      if (action.payload.snapshot) applySnapshot(state, action.payload.snapshot);
     },
-    markLocalTrackNeedsRepair(state, action: PayloadAction<string>) {
-      const track = state.localTracks.find(item => item.id === action.payload);
-      if (track) track.accessStatus = 'needs-repair';
-    },
-    restoreLibrary(
-      state,
-      action: PayloadAction<{
-        favorites: PlayableTrack[];
-        playlists: LibraryPlaylist[];
-      }>,
-    ) {
-      // Backup validation happens before this action is dispatched.  Copy the
-      // arrays so the persisted slice never retains references to modal state.
-      state.favorites = action.payload.favorites.slice();
-      state.playlists = action.payload.playlists.map(playlist => ({
-        ...playlist,
-        tracks: playlist.tracks.slice(),
-      }));
-    },
-    createPlaylist(
-      state,
-      action: PayloadAction<{ id: string; title: string }>,
-    ) {
-      const title = action.payload.title.trim().slice(0, 80);
-      if (!title || state.playlists.some(item => item.id === action.payload.id))
-        return;
-      state.playlists.unshift({ id: action.payload.id, title, tracks: [] });
-    },
-    deletePlaylist(state, action: PayloadAction<string>) {
-      state.playlists = state.playlists.filter(
-        item => item.id !== action.payload,
-      );
-    },
-    addTrackToPlaylist(
-      state,
-      action: PayloadAction<{ playlistId: string; track: PlayableTrack }>,
-    ) {
-      const playlist = state.playlists.find(
-        item => item.id === action.payload.playlistId,
-      );
-      if (
-        !playlist ||
-        playlist.tracks.some(track => sameTrack(track, action.payload.track))
-      )
-        return;
-      playlist.tracks.push(action.payload.track);
-    },
-    removeTrackFromPlaylist(
-      state,
-      action: PayloadAction<{ playlistId: string; track: PlayableTrack }>,
-    ) {
-      const playlist = state.playlists.find(
-        item => item.id === action.payload.playlistId,
-      );
-      if (!playlist) return;
-      playlist.tracks = playlist.tracks.filter(
-        track => !sameTrack(track, action.payload.track),
-      );
-    },
+    toggleFavorite(_state, _action: PayloadAction<PlayableTrack>) {},
+    recordRecent(_state, _action: PayloadAction<PlayableTrack>) {},
+    clearRecent() {},
+    importLocalTracks(_state, _action: PayloadAction<LocalTrack[]>) {},
+    removeLocalTrack(_state, _action: PayloadAction<string>) {},
+    markLocalTrackNeedsRepair(_state, _action: PayloadAction<string>) {},
+    restoreLibrary(_state, _action: PayloadAction<{ favorites: PlayableTrack[]; playlists: LibraryPlaylist[] }>) {},
+    createPlaylist(_state, _action: PayloadAction<{ id: string; title: string }>) {},
+    deletePlaylist(_state, _action: PayloadAction<string>) {},
+    addTrackToPlaylist(_state, _action: PayloadAction<{ playlistId: string; track: PlayableTrack }>) {},
+    removeTrackFromPlaylist(_state, _action: PayloadAction<{ playlistId: string; track: PlayableTrack }>) {},
   },
 });
 
@@ -158,9 +84,14 @@ export const {
   clearRecent,
   createPlaylist,
   deletePlaylist,
-  recordRecent,
+  hydrationFailed,
+  hydrationStarted,
+  hydrationSucceeded,
   importLocalTracks,
   markLocalTrackNeedsRepair,
+  mutationPending,
+  mutationReceived,
+  recordRecent,
   removeLocalTrack,
   removeTrackFromPlaylist,
   restoreLibrary,
