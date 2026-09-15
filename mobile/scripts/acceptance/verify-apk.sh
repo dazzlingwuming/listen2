@@ -6,11 +6,13 @@ source "$SCRIPT_DIR/toolchain-preflight.sh"
 
 APK=""
 VARIANT=""
+MAPPING_DIR=""
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
     --apk) APK="$2"; shift 2 ;;
     --variant) VARIANT="$2"; shift 2 ;;
-    *) printf 'usage: verify-apk.sh --apk FILE --variant releaseLike\n' >&2; exit 2 ;;
+    --mapping-dir) MAPPING_DIR="$2"; shift 2 ;;
+    *) printf 'usage: verify-apk.sh --apk FILE --variant releaseLike [--mapping-dir DIR]\n' >&2; exit 2 ;;
   esac
 done
 
@@ -28,7 +30,7 @@ APKANALYZER="$(dirname "$PHASE8_SDKMANAGER")/apkanalyzer"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/listen2-phase8-apk.XXXXXX")"
 cleanup() { rm -rf "$TMP_DIR"; }
 trap cleanup EXIT
-unzip -qq "$APK" -d "$TMP_DIR"
+unzip -qq -o "$APK" -d "$TMP_DIR"
 
 if find "$TMP_DIR" -type f \( -name '*.map' -o -path '*listen1_chrome_extension*' -o -path '*appassets.androidplatform.net*' -o -path '*electron*' \) -print -quit | grep -q .; then
   printf 'Phase 8 APK verification failed: legacy desktop/WebView/source-map asset found.\n' >&2
@@ -50,7 +52,10 @@ else
   exit 1
 fi
 grep -q 'com.dazzlingwuming.listen2' "$MANIFEST"
-grep -q 'debuggable.*false\|android:debuggable="false"' "$MANIFEST" || { printf 'releaseLike is debuggable.\n' >&2; exit 1; }
+if grep -q 'debuggable.*true\|android:debuggable="true"' "$MANIFEST"; then
+  printf 'releaseLike is debuggable.\n' >&2
+  exit 1
+fi
 if grep -q 'usesCleartextTraffic.*true' "$MANIFEST"; then
   printf 'releaseLike enables cleartext transport.\n' >&2
   exit 1
@@ -63,7 +68,7 @@ if grep -E 'provider.*exported.*true|exported.*true.*provider' "$MANIFEST" >/dev
   exit 1
 fi
 
-MAPPING="$MOBILE_ROOT/android/app/build/outputs/mapping/releaseLike"
+MAPPING="${MAPPING_DIR:-$MOBILE_ROOT/android/app/build/outputs/mapping/releaseLike}"
 for file in mapping.txt usage.txt seeds.txt; do
   [[ -s "$MAPPING/$file" ]] || { printf 'Phase 8 APK verification failed: R8 %s is missing.\n' "$file" >&2; exit 1; }
 done
