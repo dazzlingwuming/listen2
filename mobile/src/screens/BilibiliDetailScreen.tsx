@@ -60,7 +60,7 @@ export function BilibiliDetailScreen() {
       artist: detail.owner || 'Bilibili',
       durationMs: part.durationMs,
     };
-    const action = (playerActions as any).playTracks({ tracks: [track] });
+    const action = playerActions.playTracks([track]);
     const result = await dispatch(action);
     if (result === true) navigation.navigate('Player');
   };
