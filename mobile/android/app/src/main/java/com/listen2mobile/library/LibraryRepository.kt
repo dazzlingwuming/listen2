@@ -74,6 +74,24 @@ internal class LibraryRepository internal constructor(private val database: List
         return LibrarySnapshot(1, meta.revision, dao.playlists(LibraryLimits.MAX_PLAYLISTS).map { SafePlaylist(it.playlistId, it.title, it.position) })
     }
 
+    /** Internal migration entry point. It is deliberately not a React Native bridge capability. */
+    internal fun stageLegacyCopy(attemptId: String, playlists: List<SafeLegacyPlaylist>, localRecords: List<SafeLegacyLocalRecord>, checksum: String): MigrationJournalEntity =
+        database.runInTransaction<MigrationJournalEntity> {
+            val dao = database.libraryDao()
+            val prefix = "migration-$attemptId-"
+            dao.deleteStagedPlaylists(prefix)
+            dao.deleteStagedLocalRecords(prefix)
+            playlists.forEachIndexed { index, item ->
+                dao.insertPlaylist(PersonalPlaylistEntity("$prefix$index", item.title, index))
+            }
+            localRecords.forEachIndexed { index, item ->
+                dao.putLocalRecord(LocalRecordEntity("$prefix$index", item.title, item.artist, "needs-repair"))
+            }
+            MigrationJournalEntity(attemptId, "validated", checksum, sourceRetained = true).also(dao::putMigrationJournal)
+        }
+
+    internal fun migrationJournal(attemptId: String): MigrationJournalEntity? = database.libraryDao().migrationJournal(attemptId)
+
     companion object {
         fun open(context: Context): LibraryRepository = LibraryRepository(
             Room.databaseBuilder(context.applicationContext, Listen2Database::class.java, "listen2-library-01.db").build(),
