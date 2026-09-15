@@ -41,12 +41,13 @@ if [[ "${1:-}" == '--self-test' ]]; then
   exit 0
 fi
 
-RUN_DIR=''; SERIAL=''; PRODUCT_APK=''
+RUN_DIR=''; SERIAL=''; PRODUCT_APK=''; TEST_APK_INPUT=''
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
     --run-dir) RUN_DIR="$2"; shift 2;;
     --serial) SERIAL="$2"; shift 2;;
     --product-apk) PRODUCT_APK="$2"; shift 2;;
+    --test-apk) TEST_APK_INPUT="$2"; shift 2;;
     *key*|*Key*|*token*|*Token*|*secret*|*Secret*|*cookie*|*Cookie*|*password*|*Password*) fail 'credential-like arguments are forbidden';;
     *) fail "unknown argument: $1";;
   esac
@@ -65,11 +66,18 @@ APKSIGNER="$SDK/build-tools/37.0.0/apksigner"; [[ -x "$APKSIGNER" ]] || fail 'Bu
 APKANALYZER="$SDK/cmdline-tools/latest/bin/apkanalyzer"; [[ -x "$APKANALYZER" ]] || APKANALYZER="$(command -v apkanalyzer)"
 
 # The only Gradle invocation emits an AndroidTest APK; product APK input is never rebuilt.
-(
-  cd mobile/android
-  ./gradlew --no-daemon :app:assembleReleaseLikeAndroidTest
-)
-TEST_APK="$(pwd)/mobile/android/app/build/outputs/apk/androidTest/releaseLike/app-releaseLike-androidTest.apk"
+# An explicit prebuilt test APK is allowed only to reuse the same sealed AndroidTest
+# output when a fresh worktree cannot compile a third-party native dependency.
+if [[ -n "$TEST_APK_INPUT" ]]; then
+  [[ "$TEST_APK_INPUT" == /* && -f "$TEST_APK_INPUT" ]] || fail 'test APK must be an existing absolute path'
+  TEST_APK="$TEST_APK_INPUT"
+else
+  (
+    cd mobile/android
+    ./gradlew --no-daemon :app:assembleReleaseLikeAndroidTest
+  )
+  TEST_APK="$(pwd)/mobile/android/app/build/outputs/apk/androidTest/releaseLike/app-releaseLike-androidTest.apk"
+fi
 [[ -f "$TEST_APK" ]] || fail 'releaseLike AndroidTest APK was not produced'
 TEST_SHA="$(sha256 "$TEST_APK")"
 "$APKANALYZER" dex packages "$TEST_APK" | grep -Fq "$SCENARIO" || fail 'test APK lacks LiveProviderSmokeTest'
@@ -124,17 +132,17 @@ outcome='PASS'
 if [[ "$instrument_status" != 0 ]] || grep -Eq 'INSTRUMENTATION_STATUS_CODE: -1|failureType=|shortMsg=' "$RUN_DIR/live-provider-instrumentation.txt"; then outcome='FAIL'; fi
 playback_status="$(grep -Eo 'live-playback=(PASS|NOT_VERIFIED)-[^[:space:]]+' "$RUN_DIR/diagnostics/live-provider-logcat-sanitized.txt" | tail -n 1 || true)"
 if [[ "$outcome" == PASS && "$playback_status" == live-playback=NOT_VERIFIED-* ]]; then outcome='NOT_VERIFIED'; fi
-node --input-type=module - "$RUN_DIR" "$TEST_SHA" "$outcome" "$classification" "$http_status" "$cleanup_status" "$SERIAL" "$playback_status" <<'NODE' > "$RUN_DIR/.live-provider.json"
+node --input-type=module - "$RUN_DIR" "$TEST_SHA" "$outcome" "$classification" "$http_status" "$cleanup_status" "$SERIAL" "$playback_status" "$(git rev-parse HEAD)" <<'NODE' > "$RUN_DIR/.live-provider.json"
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { basename } from 'node:path';
-const [run, testSha, outcome, classification, httpStatus, cleanup, serial, playback] = process.argv.slice(2);
+const [run, testSha, outcome, classification, httpStatus, cleanup, serial, playback, sourceSha] = process.argv.slice(2);
 const files = ['live-provider-instrumentation.txt', 'live-provider-window.xml', 'live-provider-phone.png', 'live-provider-results.txt', 'live-provider-failure-window.xml', 'live-provider-postrun.png', 'live-provider-payload.txt', 'diagnostics/live-provider-logcat-sanitized.txt'].filter(file => existsSync(`${run}/${file}`));
 const hash = file => createHash('sha256').update(readFileSync(`${run}/${file}`)).digest('hex');
 const results = existsSync(`${run}/live-provider-results.txt`) ? readFileSync(`${run}/live-provider-results.txt`, 'utf8').trim().split('\n').filter(Boolean) : [];
 const safePlayback = playback || (outcome === 'FAIL' ? 'NOT_VERIFIED-live-search-failed' : 'NOT_VERIFIED-not-observed');
 console.log(JSON.stringify({ schemaVersion: 1, runId: basename(run), recordId: 'phase8-live-provider-smoke', recordedAt: new Date().toISOString(),
-  git: { branch: 'acceptance-clean-worktree', sha: '56e0e8c40ea88d5eccff9254cc3b72d3c5de0ecd', trackedClean: true, allowedUntracked: [] },
+  git: { branch: 'acceptance-clean-worktree', sha: sourceSha, trackedClean: true, allowedUntracked: [] },
   toolchain: { os: process.platform, arch: process.arch, node: process.version, npm: 'recorded-by-run', java: 'recorded-by-run', gradle: 'recorded-by-run', agp: 'repository-pinned', kotlin: '2.2.0', androidHomeHash: 'recorded-by-run', buildTools: '37.0.0', compileSdk: 37, targetSdk: 36, minSdk: 24, ndk: '27.1.12297006' },
   build: { variant: 'releaseLike', applicationId: 'com.dazzlingwuming.listen2', versionCode: 1000001, versionName: '2.34.0-android', apkRelativePath: 'external-sealed-product.apk', bytes: 67106970, sha256: 'b3e06e090d273bbc11a7e16e13826e5529f862844222716fa3f31865a629865b', signerSha256: 'development-debug', zipAligned16KiB: true, minified: true, debuggable: false },
   device: { serialHash: createHash('sha256').update(serial).digest('hex'), avdName: 'recorded-api35', image: 'google_apis', apiLevel: 35, abi: 'host-matched', ramMiB: 0, cores: 0, resolution: 'recorded-by-device', density: 0, locale: 'recorded-by-device', fontScale: 0, navigationMode: 'recorded-by-device' },
