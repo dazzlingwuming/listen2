@@ -18,18 +18,15 @@ describe('deepSeekClient', () => {
 
   it('uses exact native operations and never accepts an API key or transport input', async () => {
     native.status.mockResolvedValue({
-      secureStorageAvailable: true,
-      hasApiKey: true,
+      state: 'configured',
     });
     native.configure.mockResolvedValue({
       status: 'configured',
-      secureStorageAvailable: true,
-      hasApiKey: true,
+      state: 'configured',
     });
     const { deepSeekClient } = require('../client');
     await expect(deepSeekClient.status()).resolves.toEqual({
-      secureStorageAvailable: true,
-      hasApiKey: true,
+      state: 'configured',
     });
     await expect(deepSeekClient.configure()).resolves.toMatchObject({
       status: 'configured',
@@ -76,7 +73,10 @@ describe('deepSeekClient', () => {
     native.translate.mockResolvedValue({
       operation: 'translate',
       status: 'ok',
-      translation: '[00:01.00]一',
+      translationLines: [
+        { id: 'E0001', timestamp: '[00:01.00]', text: '一' },
+      ],
+      revision: 7,
       lyricHash,
       trackHash,
       cacheHit: false,
@@ -91,6 +91,7 @@ describe('deepSeekClient', () => {
       style: '',
       lyricHash,
       trackHash,
+      revision: 7,
       target: 'zh-CN',
       consent: {
         lyrics: true,
@@ -132,6 +133,9 @@ describe('deepSeekClient', () => {
     native.translate.mockResolvedValue({
       operation: 'translate',
       status: 'not-cached',
+      revision: 0,
+      lyricHash: 'a'.repeat(64),
+      trackHash: 'b'.repeat(64),
       cacheHit: false,
     });
     const request = {

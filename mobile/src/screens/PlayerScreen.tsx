@@ -69,6 +69,7 @@ import {
   deepSeekClient,
   hashLyric,
   hashTrack,
+  translationLinesToLrc,
 } from '../deepseek/client';
 import type { DeepSeekConsent } from '../deepseek/types';
 import { bilibiliMvClient } from '../bilibili/mvClient';
@@ -85,6 +86,18 @@ export type LyricFailurePresentation = Readonly<{
   message: string;
   action: 'retry' | 'choose-source';
 }>;
+
+/** Stable, bounded semantic revision used to fence a translation transaction. */
+export function playerTranslationRevision(
+  lyric: string,
+  fallbackRevision = 0,
+): number {
+  const candidate = Number.parseInt(hashLyric(lyric).slice(0, 13), 16);
+  if (Number.isSafeInteger(candidate) && candidate >= 0) return candidate;
+  return Number.isSafeInteger(fallbackRevision) && fallbackRevision >= 0
+    ? fallbackRevision
+    : 0;
+}
 
 /** Stable lyric failures are product states, never a rendered provider error. */
 export function lyricFailurePresentation(
@@ -220,6 +233,16 @@ export function PlayerScreen() {
   const offsetEpoch = useRef(0);
   const translationEpoch = useRef(0);
   const translationOperation = useRef<string | null>(null);
+  const translationBinding = useRef<TranslationBinding | null>(null);
+  const translationLyricHash = lyrics ? hashLyric(lyrics.text) : null;
+  const translationRevision = lyrics
+    ? playerTranslationRevision(lyrics.text, bilibiliCacheRevision ?? 0)
+    : 0;
+  const translationIdentity =
+    current && lyrics && translationLyricHash
+      ? `${trackSource(current)}\n${current.id}\n${translationLyricHash}\n${translationRevision}`
+      : null;
+  const previousTranslationIdentity = useRef<string | null>(null);
   const favorite = current
     ? favorites.some(
         item => item.id === current.id && item.source === current.source,
@@ -348,6 +371,7 @@ export function PlayerScreen() {
     translationEpoch.current += 1;
     const operationId = translationOperation.current;
     translationOperation.current = null;
+    translationBinding.current = null;
     cancelPlayerTranslation(operationId);
     if (settleUi) {
       setTranslationBusy(false);
@@ -383,6 +407,15 @@ export function PlayerScreen() {
       invalidateTranslationWork(false);
     };
   }, []);
+  useEffect(() => {
+    const previous = previousTranslationIdentity.current;
+    if (previous !== null && previous !== translationIdentity) {
+      invalidateTranslationWork(true);
+      setMachineTranslation(null);
+      setTranslationError(null);
+    }
+    previousTranslationIdentity.current = translationIdentity;
+  }, [translationIdentity]);
   const openLyrics = async (force = false) => {
     setShowLyrics(true);
     if (!current || (!force && (lyrics || lyricsLoading))) return;
@@ -823,15 +856,30 @@ export function PlayerScreen() {
       (!parseExactBilibiliTrackId(current.id) || !lyrics.provenance)
     )
       return;
-    const lyricHash = hashLyric(lyrics.text);
+    const lyricHash = translationLyricHash || hashLyric(lyrics.text);
     const trackHash = hashTrack(provider, current.id, lyricHash);
+    const revision = playerTranslationRevision(
+      lyrics.text,
+      bilibiliCacheRevision ?? 0,
+    );
+    const plan = playerTranslationPlan(consent, forceRefresh);
+    if (
+      plan.allowNetwork &&
+      !sameTranslationBinding(translationBinding.current, {
+        source: provider,
+        trackId: current.id,
+        lyricHash,
+        trackHash,
+        revision,
+      })
+    )
+      return;
     const epoch = ++translationEpoch.current;
     const operationId = `deepseek_${Date.now()}_${epoch}`;
     translationOperation.current = operationId;
     setTranslationBusy(true);
     setTranslationError(null);
     try {
-      const plan = playerTranslationPlan(consent, forceRefresh);
       const result = await deepSeekClient.translate({
         operationId,
         provider,
@@ -842,6 +890,7 @@ export function PlayerScreen() {
         style: '',
         lyricHash,
         trackHash,
+        revision,
         target: 'zh-CN',
         consent,
         allowNetwork: plan.allowNetwork,
@@ -859,15 +908,24 @@ export function PlayerScreen() {
           translationEpoch.current,
           trackHash,
           result.trackHash,
+          revision,
+          result.revision,
         )
       )
         return;
-      if (result.status === 'ok' && result.translation)
-        setMachineTranslation(result.translation);
+      if (result.status === 'ok' && result.translationLines)
+        setMachineTranslation(translationLinesToLrc(result.translationLines));
       else if (result.status === 'not-cached') {
         setForceRefreshRequested(false);
+        translationBinding.current = {
+          source: provider,
+          trackId: current.id,
+          lyricHash,
+          trackHash,
+          revision,
+        };
         setConsentVisible(true);
-      } else setTranslationError(result.errorCode || 'PROVIDER_ERROR');
+      } else setTranslationError(playerTranslationErrorCopy(result.errorCode));
     } catch (caught) {
       if (epoch === translationEpoch.current)
         setTranslationError(
@@ -884,6 +942,7 @@ export function PlayerScreen() {
     }
   };
   const lookupTranslation = () => {
+    translationBinding.current = null;
     requestTranslation(
       createDeepSeekConsent(
         {
@@ -1168,6 +1227,19 @@ export function PlayerScreen() {
         onLookupTranslation={lookupTranslation}
         onRetranslate={() => {
           setForceRefreshRequested(true);
+          translationBinding.current = current && lyrics
+            ? {
+                source: trackSource(current),
+                trackId: current.id,
+                lyricHash: translationLyricHash || hashLyric(lyrics.text),
+                trackHash: hashTrack(
+                  trackSource(current),
+                  current.id,
+                  translationLyricHash || hashLyric(lyrics.text),
+                ),
+                revision: translationRevision,
+              }
+            : null;
           setConsentVisible(true);
         }}
         onRestoreSource={() => {
@@ -1184,12 +1256,31 @@ export function PlayerScreen() {
         onClose={closeLyrics}
       />
       <DeepSeekConsentSheet
+        artist={current ? trackArtist(current) : ''}
+        title={current ? trackTitle(current) : ''}
         visible={consentVisible}
         onClose={() => {
-          setConsentVisible(false);
-          setForceRefreshRequested(false);
+          invalidateTranslationWork(true);
         }}
         onConfirm={consent => {
+          const binding = translationBinding.current;
+          const expectedBinding = current && lyrics
+            ? {
+                source: trackSource(current),
+                trackId: current.id,
+                lyricHash: translationLyricHash || hashLyric(lyrics.text),
+                trackHash: hashTrack(
+                  trackSource(current),
+                  current.id,
+                  translationLyricHash || hashLyric(lyrics.text),
+                ),
+                revision: translationRevision,
+              }
+            : null;
+          if (!expectedBinding || !sameTranslationBinding(binding, expectedBinding)) {
+            invalidateTranslationWork(true);
+            return;
+          }
           setConsentVisible(false);
           requestTranslation(consent, forceRefreshRequested).catch(
             () => undefined,
@@ -1241,14 +1332,40 @@ export function shouldApplyPlayerTranslation(
   currentEpoch: number,
   expectedTrackHash: string,
   resultTrackHash: string | undefined,
+  expectedRevision?: number,
+  resultRevision?: number,
 ): boolean {
   // Cache misses and native errors intentionally omit identity hashes. They
   // still belong to the active request, while a supplied different hash is a
   // stale response that must never update the current lyric view.
   return (
     requestEpoch === currentEpoch &&
-    (!resultTrackHash || expectedTrackHash === resultTrackHash)
+    (!resultTrackHash || expectedTrackHash === resultTrackHash) &&
+    (resultRevision === undefined || expectedRevision === resultRevision)
   );
+}
+
+function sameTranslationBinding(
+  left: TranslationBinding | null,
+  right: TranslationBinding,
+): boolean {
+  return Boolean(
+    left &&
+      left.source === right.source &&
+      left.trackId === right.trackId &&
+      left.lyricHash === right.lyricHash &&
+      left.trackHash === right.trackHash &&
+      left.revision === right.revision,
+  );
+}
+
+function playerTranslationErrorCopy(code?: string): string {
+  if (code === 'STALE_REVISION' || code === 'STALE_IDENTITY' || code === 'INVALID_ALIGNMENT')
+    return '翻译结果与当前歌词不匹配，未保存。';
+  if (code === 'KEYSTORE_UNAVAILABLE' || code === 'MISSING_KEY')
+    return '当前设备无法安全保存 DeepSeek 密钥，因此翻译功能已停用。';
+  if (code === 'NOT_CACHED') return '当前没有已验证的本地译文。';
+  return '翻译暂不可用，请稍后重试。';
 }
 
 /** Only normalized provenance is rendered; provider replies never become UI copy. */
@@ -1344,6 +1461,14 @@ function Progress({
 type QueueItem = PresentableTrack & {
   occurrenceId?: string;
   track?: PresentableTrack;
+};
+
+type TranslationBinding = {
+  source: string;
+  trackId: string;
+  lyricHash: string;
+  trackHash: string;
+  revision: number;
 };
 
 function QueueSheet({

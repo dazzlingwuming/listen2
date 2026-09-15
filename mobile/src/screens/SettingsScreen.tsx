@@ -43,6 +43,49 @@ import type { BilibiliPublicState } from '../bilibili/types';
 import { deepSeekClient } from '../deepseek/client';
 import type { DeepSeekStatus } from '../deepseek/types';
 
+export function deepSeekStatusLabel(status: DeepSeekStatus | null): string {
+  if (!status) return '正在检查安全存储…';
+  switch (status.state) {
+    case 'configured':
+      return '已配置';
+    case 'not-configured':
+      return '未配置';
+    case 'keystore-unavailable':
+      return '当前设备无法安全保存 DeepSeek 密钥，因此翻译功能已停用。';
+    case 'corrupt-cleared':
+      return '密钥数据已清除，请重新配置。';
+    default:
+      return 'DeepSeek 状态不可用';
+  }
+}
+
+export function deepSeekCanConfigure(status: DeepSeekStatus | null): boolean {
+  return Boolean(status && status.state !== 'keystore-unavailable');
+}
+
+export function deepSeekCanTest(status: DeepSeekStatus | null): boolean {
+  return status?.state === 'configured';
+}
+
+function deepSeekErrorCopy(code?: string): string {
+  switch (code) {
+    case 'INVALID_KEY':
+      return '测试失败：DeepSeek 密钥不可用。';
+    case 'KEYSTORE_UNAVAILABLE':
+    case 'SECURE_STORAGE_UNAVAILABLE':
+      return '当前设备无法安全保存 DeepSeek 密钥，因此翻译功能已停用。';
+    case 'MISSING_KEY':
+      return '尚未配置 DeepSeek 密钥。';
+    case 'RATE_LIMITED':
+      return '测试暂时受限，请稍后重试。';
+    case 'SERVICE_UNAVAILABLE':
+    case 'TIMEOUT':
+      return 'DeepSeek 服务暂时不可用，请稍后重试。';
+    default:
+      return '测试失败，请稍后重试。';
+  }
+}
+
 export function SettingsScreen() {
   const navigation = useNavigation();
   const dispatch = useDispatch<AppDispatch>();
@@ -72,8 +115,7 @@ export function SettingsScreen() {
       setDeepSeek(await deepSeekClient.status());
     } catch {
       setDeepSeek({
-        secureStorageAvailable: false,
-        hasApiKey: false,
+        state: 'keystore-unavailable',
         errorCode: 'SECURE_STORAGE_UNAVAILABLE',
       });
     }
@@ -84,11 +126,11 @@ export function SettingsScreen() {
   const configureDeepSeek = async () => {
     setDeepSeekBusy(true);
     try {
-      setDeepSeek(await deepSeekClient.configure());
+      await deepSeekClient.configure();
+      await refreshDeepSeek();
     } catch {
       setDeepSeek({
-        secureStorageAvailable: false,
-        hasApiKey: false,
+        state: 'keystore-unavailable',
         errorCode: 'CONFIGURE_UNAVAILABLE',
       });
     } finally {
@@ -96,16 +138,19 @@ export function SettingsScreen() {
     }
   };
   const testDeepSeek = async () => {
+    if (!deepSeekCanTest(deepSeek)) return;
     setDeepSeekBusy(true);
     try {
       const result = await deepSeekClient.test();
+      await refreshDeepSeek();
       Alert.alert(
-        result.status === 'ok' ? 'DeepSeek 连接成功' : 'DeepSeek 连接不可用',
+        result.status === 'ok' ? 'DeepSeek 测试成功' : 'DeepSeek 测试失败',
         result.status === 'ok'
           ? '测试请求可能产生 API 费用。'
-          : result.errorCode || '请检查安全存储和 API key。',
+          : deepSeekErrorCopy(result.errorCode),
       );
     } catch {
+      await refreshDeepSeek();
       Alert.alert('DeepSeek 连接不可用', '请检查安全存储和 API key。');
     } finally {
       setDeepSeekBusy(false);
@@ -114,11 +159,11 @@ export function SettingsScreen() {
   const clearDeepSeek = async () => {
     setDeepSeekBusy(true);
     try {
-      setDeepSeek(await deepSeekClient.delete());
+      await deepSeekClient.delete();
+      await refreshDeepSeek();
     } catch {
       setDeepSeek({
-        secureStorageAvailable: false,
-        hasApiKey: false,
+        state: 'keystore-unavailable',
         errorCode: 'SECURE_STORAGE_UNAVAILABLE',
       });
     } finally {
@@ -415,13 +460,7 @@ export function SettingsScreen() {
       <View style={sectionStyles.section}>
         <Text style={text.heading}>DeepSeek 歌词翻译</Text>
         <View style={sectionStyles.card}>
-          <Text style={text.body}>
-            {deepSeek?.secureStorageAvailable === false
-              ? '安全存储不可用'
-              : deepSeek?.hasApiKey
-              ? '已在本机安全存储中配置 API key'
-              : '尚未配置 API key'}
-          </Text>
+          <Text style={text.body}>{deepSeekStatusLabel(deepSeek)}</Text>
           <Text style={text.meta}>
             设置和测试均使用原生安全页面；不会将 key 传入应用
             JavaScript。测试和翻译可能产生费用。
@@ -429,23 +468,23 @@ export function SettingsScreen() {
           <View style={styles.actions}>
             <Pressable
               accessibilityLabel="设置或替换 DeepSeek API key"
-              disabled={deepSeekBusy}
+              disabled={deepSeekBusy || !deepSeekCanConfigure(deepSeek)}
               onPress={configureDeepSeek}
               style={styles.actionButton}
             >
               <Text style={styles.actionText}>
-                {deepSeek?.hasApiKey ? '替换 API key' : '设置 API key'}
+                {deepSeek?.state === 'configured' ? '替换 API key' : '设置 API key'}
               </Text>
             </Pressable>
             <Pressable
               accessibilityLabel="测试 DeepSeek 连接"
-              disabled={deepSeekBusy || !deepSeek?.hasApiKey}
+              disabled={deepSeekBusy || !deepSeekCanTest(deepSeek)}
               onPress={testDeepSeek}
               style={styles.actionButton}
             >
               <Text style={styles.actionText}>测试连接</Text>
             </Pressable>
-            {deepSeek?.hasApiKey ? (
+            {deepSeek?.state === 'configured' || deepSeek?.state === 'corrupt-cleared' ? (
               <Pressable
                 accessibilityLabel="清除 DeepSeek API key"
                 disabled={deepSeekBusy}
@@ -456,8 +495,14 @@ export function SettingsScreen() {
               </Pressable>
             ) : null}
           </View>
-          {deepSeek?.errorCode ? (
-            <Text style={styles.status}>状态：{deepSeek.errorCode}</Text>
+          {deepSeek?.state === 'keystore-unavailable' ? (
+            <Text style={styles.status} accessibilityLiveRegion="polite">
+              当前设备无法安全保存 DeepSeek 密钥，因此翻译功能已停用。
+            </Text>
+          ) : deepSeek?.errorCode ? (
+            <Text style={styles.status} accessibilityLiveRegion="polite">
+              {deepSeekErrorCopy(deepSeek.errorCode)}
+            </Text>
           ) : null}
         </View>
       </View>

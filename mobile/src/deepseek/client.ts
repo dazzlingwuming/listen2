@@ -5,6 +5,7 @@ import type {
   DeepSeekConfigureStatus,
   DeepSeekErrorCode,
   DeepSeekStatus,
+  DeepSeekTranslationLine,
   DeepSeekTranslateRequest,
   DeepSeekTranslateResult,
   DeepSeekTestResult,
@@ -15,10 +16,13 @@ const MAX_TIMED_LINES = 400;
 const MAX_LINE_CHARS = 500;
 const MAX_METADATA_CHARS = 256;
 const MAX_STYLE_CHARS = 1200;
+const MAX_REVISION = Number.MAX_SAFE_INTEGER;
 const HASH = /^[a-f0-9]{64}$/;
 const OPERATION_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const SOURCE_TRACK_ID = /^[A-Za-z0-9_-]{1,128}$/;
-const TIMED_LINE = /^(?:\[[0-9]{1,3}:[0-5][0-9](?:\.[0-9]{1,3})?\])+/;
+const TIMED_LINE = /^(\[(?:[0-9]{1,3}:[0-5][0-9](?:\.[0-9]{1,3})?\])+)(.*)$/;
+const TIMESTAMP = /^(?:\[[0-9]{1,3}:[0-5][0-9](?:\.[0-9]{1,3})?\])+$/;
+const LINE_ID = /^E[0-9]{4}$/;
 const REQUEST_KEYS = new Set([
   'operationId',
   'provider',
@@ -29,6 +33,7 @@ const REQUEST_KEYS = new Set([
   'style',
   'lyricHash',
   'trackHash',
+  'revision',
   'target',
   'consent',
   'allowNetwork',
@@ -40,15 +45,53 @@ const RESULT_KEYS = new Set([
   'operation',
   'status',
   'errorCode',
-  'translation',
+  'translationLines',
+  'revision',
   'lyricHash',
   'trackHash',
   'cacheHit',
 ]);
 const STATUS_KEYS = new Set([
-  'secureStorageAvailable',
-  'hasApiKey',
+  'state',
   'errorCode',
+]);
+
+const VAULT_STATES = new Set([
+  'configured',
+  'not-configured',
+  'keystore-unavailable',
+  'corrupt-cleared',
+]);
+
+const ERROR_CODES = new Set<DeepSeekErrorCode>([
+  'CACHE_WRITE_FAILED',
+  'CANCELLED',
+  'CONFIGURE_UNAVAILABLE',
+  'CONSENT_REQUIRED',
+  'CORRUPT_CLEARED',
+  'INVALID_ALIGNMENT',
+  'INVALID_KEY',
+  'INVALID_REQUEST',
+  'INVALID_RESPONSE',
+  'INVALID_REVISION',
+  'KEYSTORE_UNAVAILABLE',
+  'LYRIC_TOO_LARGE',
+  'LYRIC_UNAVAILABLE',
+  'MISSING_KEY',
+  'NO_TIMED_LINES',
+  'NOT_CACHED',
+  'OPERATION_REUSED',
+  'PROVIDER_ERROR',
+  'RATE_LIMITED',
+  'REQUEST_TOO_LARGE',
+  'RESPONSE_TOO_LARGE',
+  'SECURE_STORAGE_CORRUPT',
+  'SECURE_STORAGE_UNAVAILABLE',
+  'SERVICE_UNAVAILABLE',
+  'STALE_IDENTITY',
+  'STALE_REVISION',
+  'TIMEOUT',
+  'TOO_MANY_TIMED_LINES',
 ]);
 
 type NativeDeepSeek = {
@@ -79,7 +122,7 @@ export const deepSeekClient = {
   async configure(): Promise<DeepSeekConfigureStatus> {
     const value = ensureRecord(
       await nativeModule().configure(),
-      new Set(['status', 'secureStorageAvailable', 'hasApiKey', 'errorCode']),
+      new Set(['status', 'state', 'errorCode']),
     );
     if (value.status !== 'configured' && value.status !== 'cancelled')
       fail('INVALID_RESPONSE');
@@ -99,7 +142,7 @@ export const deepSeekClient = {
   },
   async translate(request: unknown): Promise<DeepSeekTranslateResult> {
     const checked = validateRequest(request);
-    return parseResult(await nativeModule().translate(checked));
+    return parseResult(await nativeModule().translate(checked), checked);
   },
 };
 
@@ -132,6 +175,10 @@ function validateRequest(value: unknown): DeepSeekTranslateRequest {
     typeof request.style !== 'string' ||
     typeof request.lyricHash !== 'string' ||
     typeof request.trackHash !== 'string' ||
+    typeof request.revision !== 'number' ||
+    !Number.isSafeInteger(request.revision) ||
+    request.revision < 0 ||
+    request.revision > MAX_REVISION ||
     typeof request.allowNetwork !== 'boolean' ||
     typeof request.forceRefresh !== 'boolean'
   )
@@ -161,6 +208,8 @@ function validateRequest(value: unknown): DeepSeekTranslateRequest {
     request.title.length > MAX_METADATA_CHARS ||
     request.artist.length > MAX_METADATA_CHARS ||
     request.style.length > MAX_STYLE_CHARS ||
+    request.title.length === 0 ||
+    request.artist.length === 0 ||
     containsControl(request.title) ||
     containsControl(request.artist) ||
     containsControl(request.style)
@@ -169,7 +218,17 @@ function validateRequest(value: unknown): DeepSeekTranslateRequest {
   const lines = lyric.split('\n').filter(line => TIMED_LINE.test(line));
   if (!lines.length) fail('NO_TIMED_LINES');
   if (lines.length > MAX_TIMED_LINES) fail('TOO_MANY_TIMED_LINES');
-  if (lines.some(line => line.length > MAX_LINE_CHARS || containsControl(line)))
+  if (
+    lines.some(line => {
+      const match = TIMED_LINE.exec(line);
+      return (
+        line.length > MAX_LINE_CHARS ||
+        containsControl(line) ||
+        !match ||
+        match[2].trim().length === 0
+      );
+    })
+  )
     fail('INVALID_REQUEST');
   if (!HASH.test(request.lyricHash) || !HASH.test(request.trackHash))
     fail('INVALID_REQUEST');
@@ -180,6 +239,7 @@ function validateRequest(value: unknown): DeepSeekTranslateRequest {
   )
     fail('STALE_IDENTITY');
   if (request.forceRefresh && !request.allowNetwork) fail('INVALID_REQUEST');
+  if (!isConsentShape(request.consent)) fail('INVALID_REQUEST');
   if (request.allowNetwork && !hasCompleteDeepSeekConsent(request.consent))
     fail('CONSENT_REQUIRED');
   return { ...request, lyric } as DeepSeekTranslateRequest;
@@ -187,19 +247,20 @@ function validateRequest(value: unknown): DeepSeekTranslateRequest {
 
 function parseStatus(value: unknown): DeepSeekStatus {
   const status = ensureRecord(value, STATUS_KEYS);
-  if (
-    typeof status.secureStorageAvailable !== 'boolean' ||
-    typeof status.hasApiKey !== 'boolean'
-  )
+  if (typeof status.state !== 'string' || !VAULT_STATES.has(status.state))
+    fail('INVALID_RESPONSE');
+  if (status.errorCode !== undefined && !safeError(status.errorCode))
     fail('INVALID_RESPONSE');
   return {
-    secureStorageAvailable: status.secureStorageAvailable,
-    hasApiKey: status.hasApiKey,
-    ...(error(status.errorCode) ? { errorCode: status.errorCode } : {}),
+    state: status.state as DeepSeekStatus['state'],
+    ...(safeError(status.errorCode) ? { errorCode: status.errorCode } : {}),
   };
 }
 
-function parseResult(value: unknown): DeepSeekTranslateResult {
+function parseResult(
+  value: unknown,
+  expected?: DeepSeekTranslateRequest,
+): DeepSeekTranslateResult {
   const result = ensureRecord(value, RESULT_KEYS);
   if (
     result.operation !== 'translate' ||
@@ -209,34 +270,69 @@ function parseResult(value: unknown): DeepSeekTranslateResult {
     typeof result.cacheHit !== 'boolean'
   )
     fail('INVALID_RESPONSE');
+  if (result.errorCode !== undefined && !safeError(result.errorCode))
+    fail('INVALID_RESPONSE');
   if (
     result.status === 'ok' &&
-    (typeof result.translation !== 'string' ||
+    (!Array.isArray(result.translationLines) ||
+      typeof result.revision !== 'number' ||
+      !Number.isSafeInteger(result.revision) ||
       typeof result.trackHash !== 'string' ||
       typeof result.lyricHash !== 'string' ||
       !HASH.test(result.trackHash) ||
       !HASH.test(result.lyricHash))
   )
     fail('INVALID_RESPONSE');
+  if (result.status !== 'ok' && result.translationLines !== undefined)
+    fail('INVALID_RESPONSE');
   if (
-    typeof result.translation === 'string' &&
-    (result.translation.length > 128 * 1024 ||
-      containsControl(result.translation.replace(/\n/g, '')))
+    result.revision !== undefined &&
+    (typeof result.revision !== 'number' ||
+      !Number.isSafeInteger(result.revision) ||
+      result.revision < 0 ||
+      result.revision > MAX_REVISION)
   )
+    fail('INVALID_RESPONSE');
+  if (result.trackHash !== undefined && !HASH.test(String(result.trackHash)))
+    fail('INVALID_RESPONSE');
+  if (result.lyricHash !== undefined && !HASH.test(String(result.lyricHash)))
+    fail('INVALID_RESPONSE');
+  if (result.status === 'ok') {
+    const lines = parseTranslationLines(result.translationLines, expected);
+    if (
+      expected &&
+      result.revision !== expected.revision
+    )
+      fail('STALE_REVISION');
+    if (
+      expected &&
+      (result.trackHash !== expected.trackHash ||
+        result.lyricHash !== expected.lyricHash)
+    )
+      fail('STALE_IDENTITY');
+    return {
+      status: 'ok',
+      cacheHit: result.cacheHit,
+      translationLines: lines,
+      revision: result.revision as number,
+      trackHash: result.trackHash as string,
+      lyricHash: result.lyricHash as string,
+      ...(safeError(result.errorCode) ? { errorCode: result.errorCode } : {}),
+    };
+  }
+  if (result.errorCode !== undefined && !safeError(result.errorCode))
     fail('INVALID_RESPONSE');
   return {
     status: result.status as DeepSeekTranslateResult['status'],
     cacheHit: result.cacheHit,
-    ...(typeof result.translation === 'string'
-      ? { translation: result.translation }
-      : {}),
+    ...(typeof result.revision === 'number' ? { revision: result.revision } : {}),
     ...(typeof result.trackHash === 'string'
       ? { trackHash: result.trackHash }
       : {}),
     ...(typeof result.lyricHash === 'string'
       ? { lyricHash: result.lyricHash }
       : {}),
-    ...(error(result.errorCode) ? { errorCode: result.errorCode } : {}),
+    ...(safeError(result.errorCode) ? { errorCode: result.errorCode } : {}),
   };
 }
 
@@ -251,14 +347,106 @@ function parseTestResult(value: unknown): DeepSeekTestResult {
     typeof result.cacheHit !== 'boolean'
   )
     fail('INVALID_RESPONSE');
+  if (result.errorCode !== undefined && !safeError(result.errorCode))
+    fail('INVALID_RESPONSE');
   return {
     status: result.status as DeepSeekTestResult['status'],
-    ...(error(result.errorCode) ? { errorCode: result.errorCode } : {}),
+    ...(safeError(result.errorCode) ? { errorCode: result.errorCode } : {}),
   };
 }
 
-function error(value: unknown): value is DeepSeekErrorCode {
-  return typeof value === 'string' && /^[A-Z_]+$/.test(value);
+function parseTranslationLines(
+  value: unknown,
+  expected?: DeepSeekTranslateRequest,
+): readonly DeepSeekTranslationLine[] {
+  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_TIMED_LINES)
+    fail('INVALID_RESPONSE');
+  const expectedLines = expected
+    ? normalizeLyric(expected.lyric)
+        .split('\n')
+        .map(line => {
+          const match = TIMED_LINE.exec(line);
+          return match ? { timestamp: match[1], text: match[2].trim() } : null;
+        })
+        .filter(
+          (line): line is { timestamp: string; text: string } => line !== null,
+        )
+    : undefined;
+  if (expectedLines && expectedLines.length !== value.length)
+    fail('INVALID_ALIGNMENT');
+  return value.map((item, index) => {
+    const line = ensureRecord(
+      item,
+      new Set(['id', 'timestamp', 'text']),
+      'INVALID_RESPONSE',
+    );
+    if (
+      typeof line.id !== 'string' ||
+      typeof line.timestamp !== 'string' ||
+      typeof line.text !== 'string' ||
+      !LINE_ID.test(line.id) ||
+      !TIMESTAMP.test(line.timestamp) ||
+      line.id !== `E${String(index + 1).padStart(4, '0')}` ||
+      line.text.trim().length === 0 ||
+      line.text.length > 1024 ||
+      containsControl(line.text) ||
+      line.text.includes('\n') ||
+      line.text.includes('\r') ||
+      line.text === '...' ||
+      line.text === '…' ||
+      line.text.endsWith('...') ||
+      line.text.endsWith('…')
+    )
+      fail('INVALID_ALIGNMENT');
+    if (
+      expectedLines &&
+      (line.timestamp !== expectedLines[index].timestamp ||
+        line.id !== `E${String(index + 1).padStart(4, '0')}`)
+    )
+      fail('INVALID_ALIGNMENT');
+    return {
+      id: line.id,
+      timestamp: line.timestamp,
+      text: line.text.trim(),
+    };
+  });
+}
+
+export function translationLinesToLrc(
+  lines: readonly DeepSeekTranslationLine[],
+): string {
+  return lines.map(line => `${line.timestamp}${line.text}`).join('\n');
+}
+
+function isConsentShape(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const object = value as Record<string, unknown>;
+  const keys = new Set([
+    'lyrics',
+    'title',
+    'artist',
+    'possibleCost',
+    'cancellation',
+    'failureImpact',
+    'acceptedAtEpochMs',
+  ]);
+  if (Object.keys(object).length !== keys.size || !Object.keys(object).every(key => keys.has(key)))
+    return false;
+  return (
+    typeof object.lyrics === 'boolean' &&
+    typeof object.title === 'boolean' &&
+    typeof object.artist === 'boolean' &&
+    typeof object.possibleCost === 'boolean' &&
+    typeof object.cancellation === 'boolean' &&
+    typeof object.failureImpact === 'boolean' &&
+    typeof object.acceptedAtEpochMs === 'number' &&
+    Number.isSafeInteger(object.acceptedAtEpochMs) &&
+    object.acceptedAtEpochMs >= 0
+  );
+}
+
+function safeError(value: unknown): value is DeepSeekErrorCode {
+  return typeof value === 'string' && ERROR_CODES.has(value as DeepSeekErrorCode);
 }
 function ensureRecord(
   value: unknown,

@@ -9,6 +9,7 @@ const mockReact = React;
 let mockPlayerState: any;
 
 const mockLyricHash = 'a'.repeat(64);
+const mockRevision = Number.parseInt(mockLyricHash.slice(0, 13), 16);
 const mockTrackAHash = 'b'.repeat(64);
 const mockTrackBHash = 'c'.repeat(64);
 const sourceLyrics = {
@@ -31,6 +32,8 @@ jest.mock('../../deepseek/client', () => ({
   hashLyric: () => mockLyricHash,
   hashTrack: (_provider: string, sourceTrackId: string) =>
     sourceTrackId === 'track-a' ? mockTrackAHash : mockTrackBHash,
+  translationLinesToLrc: (lines: Array<{ timestamp: string; text: string }>) =>
+    lines.map(line => `${line.timestamp}${line.text}`).join('\n'),
 }));
 
 jest.mock('@react-navigation/native', () => ({
@@ -101,9 +104,12 @@ describe('PlayerScreen translation orchestration', () => {
     mockGetLyric.mockResolvedValue(sourceLyrics);
     mockTranslate.mockResolvedValue({
       status: 'ok',
-      translation: '[00:01.00] 机器译文',
+      translationLines: [
+        { id: 'E0001', timestamp: '[00:01.00]', text: '机器译文' },
+      ],
       lyricHash: mockLyricHash,
       trackHash: mockTrackAHash,
+      revision: mockRevision,
       cacheHit: true,
     });
   });
@@ -134,8 +140,8 @@ describe('PlayerScreen translation orchestration', () => {
       '将发送歌曲标题',
       '将发送歌手名称',
       '此请求可能产生 API 费用',
-      '切歌或关闭时可取消请求',
-      '失败时会保留原歌词，不会伪造译文',
+      '确认前取消不会发送请求；切歌或关闭时可取消',
+      '失败不会替换或保存当前译文',
     ];
     await act(async () => {
       disclosures.forEach(label =>
@@ -143,12 +149,12 @@ describe('PlayerScreen translation orchestration', () => {
       );
     });
     expect(
-      tree.root.findByProps({ accessibilityLabel: '确认使用 DeepSeek 翻译' })
+      tree.root.findByProps({ accessibilityLabel: '同意并翻译' })
         .props.disabled,
     ).toBe(false);
     await act(async () => {
       tree.root
-        .findByProps({ accessibilityLabel: '确认使用 DeepSeek 翻译' })
+        .findByProps({ accessibilityLabel: '同意并翻译' })
         .props.onPress();
       await Promise.resolve();
     });
@@ -222,7 +228,7 @@ describe('PlayerScreen translation orchestration', () => {
     );
     expect(
       tree.root.findAllByProps({
-        accessibilityLabel: '确认使用 DeepSeek 翻译',
+        accessibilityLabel: '同意并翻译',
       }),
     ).toHaveLength(0);
     expect(
@@ -244,9 +250,12 @@ describe('PlayerScreen translation orchestration', () => {
       }))
       .mockImplementationOnce(async () => ({
         status: 'ok',
-        translation: '[00:01.00] 机器译文',
+        translationLines: [
+          { id: 'E0001', timestamp: '[00:01.00]', text: '机器译文' },
+        ],
         lyricHash: mockLyricHash,
         trackHash: mockTrackAHash,
+        revision: mockRevision,
         cacheHit: false,
       }));
     const tree = await renderPlayer();
@@ -265,7 +274,7 @@ describe('PlayerScreen translation orchestration', () => {
       cacheHit: false,
     });
     expect(
-      tree.root.findByProps({ accessibilityLabel: '确认使用 DeepSeek 翻译' })
+      tree.root.findByProps({ accessibilityLabel: '同意并翻译' })
         .props.disabled,
     ).toBe(true);
     await confirmAllDisclosures(tree);
@@ -314,9 +323,12 @@ describe('PlayerScreen translation orchestration', () => {
     await act(async () => {
       resolveTranslation({
         status: 'ok',
-        translation: '[00:01.00] 不应显示',
+        translationLines: [
+          { id: 'E0001', timestamp: '[00:01.00]', text: '不应显示' },
+        ],
         lyricHash: mockLyricHash,
         trackHash: mockTrackAHash,
+        revision: mockRevision,
         cacheHit: false,
       });
       await Promise.resolve();
@@ -364,7 +376,7 @@ describe('PlayerScreen translation orchestration', () => {
     });
     expect(
       tree.root.findAllByProps({
-        accessibilityLabel: '确认使用 DeepSeek 翻译',
+        accessibilityLabel: '同意并翻译',
       }),
     ).toHaveLength(0);
     await openLyrics(tree);
@@ -400,9 +412,12 @@ describe('PlayerScreen translation orchestration', () => {
     await act(async () => {
       settleNetwork({
         status: 'ok',
-        translation: '[00:01.00] 不应显示',
+        translationLines: [
+          { id: 'E0001', timestamp: '[00:01.00]', text: '不应显示' },
+        ],
         lyricHash: mockLyricHash,
         trackHash: mockTrackAHash,
+        revision: mockRevision,
         cacheHit: false,
       });
       await flushTranslation();
@@ -426,9 +441,12 @@ describe('PlayerScreen translation orchestration', () => {
       )
       .mockResolvedValueOnce({
         status: 'ok',
-        translation: '[00:01.00] 新译文',
+        translationLines: [
+          { id: 'E0001', timestamp: '[00:01.00]', text: '新译文' },
+        ],
         lyricHash: mockLyricHash,
         trackHash: mockTrackAHash,
+        revision: mockRevision,
         cacheHit: true,
       });
     const tree = await renderPlayer();
