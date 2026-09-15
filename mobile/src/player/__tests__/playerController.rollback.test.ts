@@ -167,7 +167,9 @@ describe('collection playback rollback', () => {
     );
     expect(mockNative.play).toHaveBeenCalledTimes(1);
     expect(state.isPlaying).toBe(true);
-    expect(state.error).toBe('offline-media-unavailable');
+    // The queued target used a fresh provider lease, not an accepted retained
+    // offline-cache URI, so a native add failure is a generic playback error.
+    expect(state.error).toBe('playback-unavailable');
   });
 
   it('uses bounded recovery when rollback itself fails', async () => {
