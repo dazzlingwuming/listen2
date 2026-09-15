@@ -285,7 +285,7 @@ function main() {
     const candidate = resolve(process.cwd(), recordFile);
     const run = runRootFor(dirname(candidate));
     const canonicalRecord = canonicalExistingFile(run, candidate, 'evidence record');
-    if (!/^08-(?:prerequisites|build|journey|api35-performance|performance|evidence-index)\.json$/.test(basename(canonicalRecord)))
+    if (!/^08-(?:prerequisites|build|journey|api35-performance|performance|live-provider|evidence-index)\.json$/.test(basename(canonicalRecord)))
       fail('evidence record filename is not permitted');
     assertRecord(JSON.parse(readFileSync(canonicalRecord, 'utf8')), run);
     console.log('Phase 8 evidence record is valid.');
