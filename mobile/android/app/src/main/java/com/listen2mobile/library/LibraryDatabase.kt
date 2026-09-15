@@ -312,11 +312,17 @@ interface LibraryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putCacheBlob(value: CacheBlobEntity)
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putCacheOwner(value: CacheOwnerEntity)
     @Query("SELECT * FROM cache_blobs WHERE blobKey = :blobKey") fun cacheBlob(blobKey: String): CacheBlobEntity?
+    @Query("SELECT * FROM cache_blobs WHERE state = 'ready' ORDER BY lastUsedAt DESC, blobKey ASC") fun readyCacheBlobs(): List<CacheBlobEntity>
+    @Query("SELECT * FROM cache_catalog WHERE cacheId = :cacheId") fun cacheCatalog(cacheId: String): CacheCatalogEntity?
     @Query("SELECT * FROM cache_owners WHERE blobKey = :blobKey ORDER BY ownerKey ASC") fun cacheOwners(blobKey: String): List<CacheOwnerEntity>
     @Query("SELECT b.* FROM cache_blobs b INNER JOIN cache_catalog c ON b.cacheId = c.cacheId WHERE c.source = :source AND c.semanticTrackId = :trackId AND b.state = 'ready'") fun cacheBlobsForTrack(source: String, trackId: String): List<CacheBlobEntity>
     @Query("SELECT o.* FROM cache_owners o WHERE o.ownerKey = :ownerKey") fun cacheOwnersByOwnerKey(ownerKey: String): List<CacheOwnerEntity>
     @Query("DELETE FROM cache_owners WHERE blobKey = :blobKey AND ownerKey = :ownerKey") fun deleteCacheOwner(blobKey: String, ownerKey: String)
     @Query("DELETE FROM cache_owners WHERE ownerKey = :ownerKey") fun deleteCacheOwnersByOwnerKey(ownerKey: String)
+    @Query("SELECT * FROM cache_quota WHERE id = 1") fun cacheQuota(): CacheQuotaEntity?
+    @Insert(onConflict = OnConflictStrategy.REPLACE) fun putCacheQuota(value: CacheQuotaEntity)
+    @Query("DELETE FROM cache_blobs WHERE blobKey = :blobKey") fun deleteCacheBlob(blobKey: String)
+    @Query("DELETE FROM cache_catalog WHERE cacheId = :cacheId") fun deleteCacheCatalog(cacheId: String)
 }
 
 internal val LIBRARY_MIGRATION_1_2 = object : Migration(1, 2) {

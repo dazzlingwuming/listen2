@@ -21,85 +21,95 @@ import java.io.FileNotFoundException
 class OfflineAudioModule(private val app: ReactApplicationContext) : ReactContextBaseJavaModule(app) {
     companion object { const val NAME = "Listen2OfflineAudio" }
 
-    init { coordinator().setObserver { emit(it) } }
+    init { service().observe(::emit) }
     override fun getName() = NAME
 
-    @ReactMethod fun listDownloads(promise: Promise) = promise.resolve(snapshot(coordinator().snapshot()))
+    @ReactMethod fun listDownloads(promise: Promise) = promise.resolve(snapshot(service().snapshot()))
     /** v2 semantic catalog surface; it never returns paths, attempts, transport or bytes. */
-    @ReactMethod fun cacheSnapshot(promise: Promise) = promise.resolve(snapshot(coordinator().snapshot()))
+    @ReactMethod fun cacheSnapshot(promise: Promise) = promise.resolve(snapshot(service().snapshot()))
 
     @ReactMethod fun requestExplicitCache(request: ReadableMap, promise: Promise) {
         val source = request.getString("source") ?: ""; val trackId = request.getString("trackId") ?: ""
-        coordinator().enqueue(source, trackId, request.getString("title") ?: "未知歌曲", request.getString("artist") ?: "未知艺人")
-        OfflineDurableWork.enqueue(app, source, trackId, 0L); promise.resolve(snapshot(coordinator().snapshot()))
+        val next = service().request(source, trackId, request.getString("title") ?: "未知歌曲", request.getString("artist") ?: "未知艺人")
+        OfflineDurableWork.enqueue(app, source, trackId, 0L); promise.resolve(snapshot(next))
     }
-    @ReactMethod fun promoteCache(source: String, trackId: String, promise: Promise) { promise.resolve(snapshot(coordinator().snapshot())) }
-    @ReactMethod fun setCacheQuota(bytes: Double?, promise: Promise) { promise.resolve(snapshot(coordinator().snapshot())) }
+    @ReactMethod fun promoteCache(source: String, trackId: String, promise: Promise) { promise.resolve(snapshot(service().promote(source, trackId))) }
+    @ReactMethod fun setCacheQuota(bytes: Double?, promise: Promise) {
+        val exact = bytes?.takeIf { it.isFinite() && it >= 0 && it == it.toLong().toDouble() }?.toLong()
+        promise.resolve(snapshot(service().setQuota(exact)))
+    }
     @ReactMethod fun cacheAction(action: String, operationId: String, promise: Promise) {
-        when (action) { "cancel" -> coordinator().cancel(operationId); "retry" -> coordinator().snapshot().firstOrNull { it.operationId == operationId }?.let { coordinator().retry(it.source, it.trackId) }; "remove" -> coordinator().snapshot().firstOrNull { it.operationId == operationId }?.let { coordinator().remove(it.source, it.trackId) }; "clearEligible" -> coordinator().clear() }
-        promise.resolve(snapshot(coordinator().snapshot()))
+        promise.resolve(snapshot(service().action(action, operationId)))
     }
 
     @ReactMethod fun enqueueDownload(request: ReadableMap, promise: Promise) {
         val allowed = setOf("source", "trackId", "title", "artist", "album", "durationMs")
         val keys = request.keySetIterator()
         while (keys.hasNextKey()) if (!allowed.contains(keys.nextKey())) {
-            promise.resolve(snapshot(coordinator().snapshot()))
+            promise.resolve(snapshot(service().snapshot()))
             return
         }
-        coordinator().enqueue(
+        val next = service().request(
             request.getString("source") ?: "", request.getString("trackId") ?: "",
             request.getString("title") ?: "未知歌曲", request.getString("artist") ?: "未知艺人",
         )
         OfflineDurableWork.enqueue(app, request.getString("source") ?: "", request.getString("trackId") ?: "", 0L)
-        promise.resolve(snapshot(coordinator().snapshot()))
+        promise.resolve(snapshot(next))
     }
 
     @ReactMethod fun cancelDownload(operationId: String, promise: Promise) {
-        coordinator().snapshot().firstOrNull { it.operationId == operationId }?.let { OfflineDurableWork.cancel(app, it.source, it.trackId) }
-        coordinator().cancel(operationId); promise.resolve(snapshot(coordinator().snapshot()))
+        service().snapshot().entries.firstOrNull { it.operationId == operationId }?.let { OfflineDurableWork.cancel(app, it.source, it.trackId) }
+        promise.resolve(snapshot(service().action("cancel", operationId)))
     }
     @ReactMethod fun retryDownload(source: String, trackId: String, promise: Promise) {
-        coordinator().retry(source, trackId); promise.resolve(snapshot(coordinator().snapshot()))
+        service().resume(source, trackId); promise.resolve(snapshot(service().snapshot()))
     }
     @ReactMethod fun removeDownload(source: String, trackId: String, promise: Promise) {
-        coordinator().remove(source, trackId); promise.resolve(snapshot(coordinator().snapshot()))
+        OfflineDurableWork.cancel(app, source, trackId); promise.resolve(snapshot(service().invalidate(source, trackId)))
     }
     @ReactMethod fun clearDownloads(promise: Promise) {
-        coordinator().clear(); promise.resolve(snapshot(coordinator().snapshot()))
+        promise.resolve(snapshot(service().action("clearEligible", "")))
     }
     @ReactMethod fun invalidate(source: String, trackId: String, promise: Promise) {
-        coordinator().remove(source, trackId); promise.resolve(snapshot(coordinator().snapshot()))
+        OfflineDurableWork.cancel(app, source, trackId); promise.resolve(snapshot(service().invalidate(source, trackId)))
     }
 
     @ReactMethod fun resolveVerified(source: String, trackId: String, promise: Promise) {
-        val entry = coordinator().resolve(source, trackId)
+        val entry = service().resolve(source, trackId)
         if (entry == null) {
             promise.resolve(Arguments.createMap().apply { putString("status", "miss") })
             return
         }
         promise.resolve(Arguments.createMap().apply {
             putString("status", "hit")
-            putString("uri", "content://${app.packageName}.offline-cache/${OfflinePolicy.key(source, trackId)}")
+            putString("uri", "content://${app.packageName}.offline-cache/${entry.blobKey}")
             putString("mimeType", entry.mimeType)
         })
     }
 
+    /** Completed cache only; absent, stale, or unsupported analysis deliberately returns unity. */
+    @ReactMethod fun normalizationGain(source: String, trackId: String, promise: Promise) {
+        val gain = service().normalizationGain(source, trackId)
+        promise.resolve(Arguments.createMap().apply { putDouble("gain", if (gain.isFinite()) gain.coerceIn(0.0, 4.0) else 1.0) })
+    }
+
     @ReactMethod fun addListener(eventName: String) = Unit
     @ReactMethod fun removeListeners(count: Int) = Unit
-    private fun coordinator() = OfflineRegistry.get(app)
-    private fun emit(entries: List<OfflineEntry>) {
+    private fun service() = OfflineCatalogService.get(app)
+    private fun emit(entries: CatalogCacheSnapshot) {
         if (!app.hasActiveReactInstance()) return
         app.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java).emit("catalogChanged", snapshot(entries))
     }
-    private fun snapshot(entries: List<OfflineEntry>) = Arguments.createMap().apply {
-        putDouble("usedBytes", entries.filter { it.status == OfflineStatus.READY }.sumOf { it.downloadedBytes }.toDouble())
-        putDouble("quotaBytes", OfflineLimits.DEFAULT.totalBytes.toDouble())
-        putArray("entries", Arguments.fromList(entries.map(::entry)))
+    private fun snapshot(entries: CatalogCacheSnapshot) = Arguments.createMap().apply {
+        putDouble("usedBytes", entries.usedBytes.toDouble())
+        putDouble("reservedBytes", entries.reservedBytes.toDouble())
+        if (entries.quotaBytes == null) putNull("quotaBytes") else putDouble("quotaBytes", entries.quotaBytes.toDouble())
+        putArray("entries", Arguments.fromList(entries.entries.map(::entry)))
     }
-    private fun entry(value: OfflineEntry) = Arguments.createMap().apply {
+    private fun entry(value: CatalogCacheEntry) = Arguments.createMap().apply {
         putString("operationId", value.operationId); putString("source", value.source); putString("trackId", value.trackId)
-        putString("title", value.title); putString("artist", value.artist); putString("status", value.status.wire)
+        putString("title", value.title); putString("artist", value.artist); putString("status", value.status)
+        putArray("owners", Arguments.fromList(value.owners))
         putDouble("downloadedBytes", value.downloadedBytes.toDouble()); putDouble("totalBytes", value.totalBytes.toDouble())
         putString("errorCode", value.errorCode); putDouble("updatedAt", value.updatedAt.toDouble())
     }
@@ -114,7 +124,7 @@ class OfflineAudioProvider : ContentProvider() {
     override fun onCreate() = true
     override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor {
         if (mode != "r" || uri.pathSegments.size != 1) throw FileNotFoundException("not-found")
-        val file = OfflineRegistry.get(requireNotNull(context)).file(uri.lastPathSegment) ?: throw FileNotFoundException("not-found")
+        val file = OfflineCatalogService.get(requireNotNull(context)).file(uri.lastPathSegment) ?: throw FileNotFoundException("not-found")
         return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
     }
     override fun getType(uri: Uri): String? = null

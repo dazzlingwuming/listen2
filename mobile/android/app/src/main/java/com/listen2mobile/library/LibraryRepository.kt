@@ -374,8 +374,18 @@ internal class LibraryRepository internal constructor(private val database: List
     internal fun historyDatabase(): Listen2Database = database
 
     companion object {
-        fun open(context: Context): LibraryRepository = LibraryRepository(
-            Room.databaseBuilder(context.applicationContext, Listen2Database::class.java, "listen2-library-01.db").addMigrations(LIBRARY_MIGRATION_1_2, LIBRARY_MIGRATION_2_3, LIBRARY_MIGRATION_3_4).build(),
-        )
+        fun open(context: Context): LibraryRepository = LibraryRepository(LibraryDatabaseRegistry.get(context))
+    }
+}
+
+/** One process-wide Room owner prevents independent native packages from observing stale cache rows. */
+internal object LibraryDatabaseRegistry {
+    @Volatile private var instance: Listen2Database? = null
+    fun get(context: Context): Listen2Database = instance ?: synchronized(this) {
+        instance ?: Room.databaseBuilder(
+            context.applicationContext,
+            Listen2Database::class.java,
+            "listen2-library-01.db",
+        ).addMigrations(LIBRARY_MIGRATION_1_2, LIBRARY_MIGRATION_2_3, LIBRARY_MIGRATION_3_4).build().also { instance = it }
     }
 }

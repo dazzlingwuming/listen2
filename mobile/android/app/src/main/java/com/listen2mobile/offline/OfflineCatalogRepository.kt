@@ -97,6 +97,20 @@ internal class OfflineCatalogRepository(private val database: Listen2Database, p
         }
     }
 
+    /** Lookup remains content-addressed: a stored codec/sample-rate pair must still match this blob. */
+    fun normalizationGain(blobKey: String): Double {
+        val blob = database.libraryDao().cacheBlob(blobKey) ?: return 1.0
+        database.openHelper.readableDatabase.query(
+            SimpleSQLiteQuery(
+                "SELECT sampleRate, codec FROM cache_analysis WHERE contentHash = ? AND analyzerVersion = ? AND status = 'complete' LIMIT 1",
+                arrayOf<Any>(blob.contentHash, LoudnessPolicy.ANALYZER_VERSION),
+            ),
+        ).use { cursor ->
+            if (!cursor.moveToFirst()) return 1.0
+            return normalizationGain(blobKey, cursor.getInt(0), cursor.getString(1))
+        }
+    }
+
     /** Persist only bounded numeric results; decoded samples never enter Room or JS. */
     fun recordLoudness(identity: LoudnessPolicy.Identity, metrics: LoudnessPolicy.Metrics?) {
         if (!identity.isValid()) return

@@ -454,7 +454,12 @@ internal object OfflineDurableWork {
         val request = OneTimeWorkRequestBuilder<OfflineAcquireWorker>()
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).setRequiresBatteryNotLow(true).setRequiresStorageNotLow(true).build())
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 15, TimeUnit.SECONDS)
-            .setInputData(androidx.work.workDataOf("identity" to identity, "accountGeneration" to accountGeneration))
+            .setInputData(androidx.work.workDataOf(
+                "identity" to identity,
+                "source" to source,
+                "trackId" to trackId,
+                "accountGeneration" to accountGeneration,
+            ))
             .addTag(TAG)
             .build()
         WorkManager.getInstance(context.applicationContext).enqueueUniqueWork("$TAG:$identity", ExistingWorkPolicy.KEEP, request)
@@ -469,10 +474,14 @@ internal object OfflineDurableWork {
 internal class OfflineAcquireWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
     override fun doWork(): Result {
         val identity = inputData.getString("identity") ?: return Result.failure()
+        val source = inputData.getString("source") ?: return Result.failure()
+        val trackId = inputData.getString("trackId") ?: return Result.failure()
         val generation = inputData.getLong("accountGeneration", -1L)
-        if (!OfflinePolicy.validKey(identity) || generation < 0 || isStopped) return Result.failure()
-        // A process recreation has no transferred transport authority. Let the coordinator renew a
-        // native lease on its next semantic enqueue rather than persisting a signed URL in work data.
-        return Result.retry()
+        if (!OfflinePolicy.validKey(identity) || identity != OfflinePolicy.key(source, trackId) || generation < 0 || isStopped) return Result.failure()
+        // Work input contains semantic identity only.  A completed requeue is terminal from
+        // WorkManager's perspective; the bounded transfer engine persists its own terminal row
+        // and will never spin this work indefinitely on a missing URL/credential.
+        OfflineCatalogService.get(applicationContext).resume(source, trackId)
+        return Result.success()
     }
 }
