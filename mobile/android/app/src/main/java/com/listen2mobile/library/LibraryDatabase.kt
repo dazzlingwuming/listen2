@@ -40,8 +40,9 @@ import com.listen2mobile.offline.OfflineOwnerKind
         CacheRangeEntity::class,
         CacheQuotaEntity::class,
         CacheAnalysisEntity::class,
+        OfflineAuthorityEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class Listen2Database : RoomDatabase() {
@@ -182,9 +183,20 @@ data class CacheCatalogEntity(
     val state: String,
     val updatedAt: Long,
     val accountGeneration: Long = 0L,
-    val entitlementStatus: String = "allowed",
+    val entitlementStatus: String = "unknown",
     val authorizationIssuedAt: Long = 0L,
     val authorizationExpiresAt: Long = 0L,
+)
+
+/** Per-provider, non-sensitive offline authority state. Never stores a session, URL, or cookie. */
+@Entity(tableName = "offline_authorities")
+data class OfflineAuthorityEntity(
+    @PrimaryKey val source: String,
+    val generation: Long,
+    /** unknown, anonymous-free, account-bound, or revoked. */
+    val authState: String,
+    val updatedAt: Long,
+    val expiresAt: Long,
 )
 
 @Entity(tableName = "cache_blobs")
@@ -313,11 +325,15 @@ interface LibraryDao {
     @Query("DELETE FROM history_events") fun clearHistoryEvents()
     @Query("DELETE FROM history_aggregates") fun clearHistoryAggregates()
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putCacheCatalog(value: CacheCatalogEntity)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) fun putOfflineAuthority(value: OfflineAuthorityEntity)
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putCacheBlob(value: CacheBlobEntity)
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putCacheOwner(value: CacheOwnerEntity)
     @Query("SELECT * FROM cache_blobs WHERE blobKey = :blobKey") fun cacheBlob(blobKey: String): CacheBlobEntity?
     @Query("SELECT * FROM cache_blobs WHERE state = 'ready' ORDER BY lastUsedAt DESC, blobKey ASC") fun readyCacheBlobs(): List<CacheBlobEntity>
     @Query("SELECT * FROM cache_catalog WHERE cacheId = :cacheId") fun cacheCatalog(cacheId: String): CacheCatalogEntity?
+    @Query("SELECT * FROM offline_authorities WHERE source = :source") fun offlineAuthority(source: String): OfflineAuthorityEntity?
+    @Query("UPDATE offline_authorities SET authState = 'unknown', updatedAt = :now WHERE authState = 'account-bound'") fun markAccountAuthoritiesUnknown(now: Long)
+    @Query("UPDATE offline_authorities SET generation = :generation, authState = 'revoked', updatedAt = :now, expiresAt = :now WHERE source = :source") fun revokeOfflineAuthority(source: String, generation: Long, now: Long)
     @Query("SELECT * FROM cache_owners WHERE blobKey = :blobKey ORDER BY ownerKey ASC") fun cacheOwners(blobKey: String): List<CacheOwnerEntity>
     @Query("SELECT b.* FROM cache_blobs b INNER JOIN cache_catalog c ON b.cacheId = c.cacheId WHERE c.source = :source AND c.semanticTrackId = :trackId AND b.state = 'ready'") fun cacheBlobsForTrack(source: String, trackId: String): List<CacheBlobEntity>
     @Query("SELECT o.* FROM cache_owners o WHERE o.ownerKey = :ownerKey") fun cacheOwnersByOwnerKey(ownerKey: String): List<CacheOwnerEntity>
@@ -372,5 +388,13 @@ internal val LIBRARY_MIGRATION_4_5 = object : Migration(4, 5) {
         database.execSQL("ALTER TABLE cache_catalog ADD COLUMN entitlementStatus TEXT NOT NULL DEFAULT 'allowed'")
         database.execSQL("ALTER TABLE cache_catalog ADD COLUMN authorizationIssuedAt INTEGER NOT NULL DEFAULT 0")
         database.execSQL("ALTER TABLE cache_catalog ADD COLUMN authorizationExpiresAt INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+/** v6 makes authority source-scoped and defaults legacy receipts to fail closed. */
+internal val LIBRARY_MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("UPDATE cache_catalog SET entitlementStatus = 'unknown', authorizationIssuedAt = 0, authorizationExpiresAt = 0")
+        database.execSQL("CREATE TABLE IF NOT EXISTS offline_authorities (source TEXT NOT NULL, generation INTEGER NOT NULL, authState TEXT NOT NULL, updatedAt INTEGER NOT NULL, expiresAt INTEGER NOT NULL, PRIMARY KEY(source))")
     }
 }

@@ -4,6 +4,7 @@ import android.content.Context
 import com.listen2mobile.library.CacheBlobEntity
 import com.listen2mobile.library.CacheCatalogEntity
 import com.listen2mobile.library.CacheOwnerEntity
+import com.listen2mobile.library.OfflineAuthorityEntity
 import com.listen2mobile.library.Listen2Database
 import java.io.File
 import java.io.FileInputStream
@@ -52,8 +53,9 @@ internal class OfflineCatalogRepository(private val database: Listen2Database, p
         if (!destination.isFile || destination.length() != expectedLength || !canRead(destination)) return OfflineCatalogResult("VERIFY_FAILED")
         database.runInTransaction {
             val dao = database.libraryDao()
-            val issuedAt = now()
-            dao.putCacheCatalog(CacheCatalogEntity(identity.cacheId(), identity.source, identity.semanticTrackId, identity.partId, identity.renditionId, identity.mediaRevision, "ready", issuedAt, 0L, "allowed", issuedAt, issuedAt + ANONYMOUS_RECEIPT_TTL))
+            // A verified blob is not an authorization receipt. Only a native provider
+            // descriptor may attach one after resolving the source entitlement.
+            dao.putCacheCatalog(CacheCatalogEntity(identity.cacheId(), identity.source, identity.semanticTrackId, identity.partId, identity.renditionId, identity.mediaRevision, "ready", now(), 0L, "unknown", 0L, 0L))
             dao.putCacheBlob(blob.copy(lastUsedAt = now(), verifiedAt = now()))
             val row = when (owner) { OfflineOwnerKind.TEMPORARY -> CacheOwnerEntity.temporary(blob.blobKey, now()); OfflineOwnerKind.EXPLICIT -> CacheOwnerEntity.explicit(blob.blobKey, now()); OfflineOwnerKind.PLAYLIST -> CacheOwnerEntity.playlist(blob.blobKey, playlistId ?: return@runInTransaction, now()) }
             dao.putCacheOwner(row)
@@ -86,12 +88,17 @@ internal class OfflineCatalogRepository(private val database: Listen2Database, p
         return file.takeIf { canRead(it) && it.length() == blob.byteLength && hash(it) == blob.contentHash }
     }
 
-    fun recordAuthorization(blobKey: String, generation: Long, expiresAt: Long) {
-        if (generation < 0 || expiresAt <= now()) return
+    fun recordAuthorization(blobKey: String, generation: Long, entitlementClass: String, expiresAt: Long) {
+        if (generation < 0 || entitlementClass !in AUTHORITY_CLASSES || expiresAt <= now()) return
         database.runInTransaction {
             val dao = database.libraryDao(); val blob = dao.cacheBlob(blobKey) ?: return@runInTransaction
             val catalog = dao.cacheCatalog(blob.cacheId) ?: return@runInTransaction
-            dao.putCacheCatalog(catalog.copy(accountGeneration = generation, entitlementStatus = "allowed", authorizationIssuedAt = now(), authorizationExpiresAt = expiresAt))
+            // Generation zero is safe only for a descriptor explicitly classified
+            // anonymous-free by the source-native resolver.
+            if (generation == 0L && entitlementClass != "anonymous-free") return@runInTransaction
+            val issuedAt = now()
+            dao.putOfflineAuthority(OfflineAuthorityEntity(catalog.source, generation, entitlementClass, issuedAt, expiresAt))
+            dao.putCacheCatalog(catalog.copy(accountGeneration = generation, entitlementStatus = entitlementClass, authorizationIssuedAt = issuedAt, authorizationExpiresAt = expiresAt))
         }
     }
 
@@ -100,6 +107,13 @@ internal class OfflineCatalogRepository(private val database: Listen2Database, p
         return database.libraryDao().cacheCatalog(blob.cacheId)
     }
 
+    fun authority(source: String): OfflineAuthorityEntity? = database.libraryDao().offlineAuthority(source)
+
+    /** A restarted process cannot infer signed-in state from a stale receipt. */
+    fun markAccountAuthoritiesUnknown() = database.libraryDao().markAccountAuthoritiesUnknown(now())
+
+    fun revokeAuthority(source: String, generation: Long) = database.libraryDao().revokeOfflineAuthority(source, generation, now())
+
     private fun purgeLegacyOwnerCopies() {
         val aliases = File(root, "owners")
         if (!aliases.isDirectory) return
@@ -107,7 +121,7 @@ internal class OfflineCatalogRepository(private val database: Listen2Database, p
         aliases.walkBottomUp().filter { it.isDirectory && it != aliases }.forEach { it.delete() }
     }
 
-    private companion object { const val ANONYMOUS_RECEIPT_TTL = 7L * 24 * 60 * 60 * 1000 }
+    private companion object { val AUTHORITY_CLASSES = setOf("account-bound", "anonymous-free") }
 
     /** A metric may cross the cache boundary only when every content identity component matches. */
     fun normalizationGain(blobKey: String, sampleRate: Int, codec: String): Double {

@@ -109,6 +109,31 @@ class MediaDescriptorContractTest {
         assertFalse(registry.isCurrentCacheAuthorization(grant))
     }
 
+    @Test fun `anonymous offline class is explicit while default generation zero remains account bound`() {
+        val registry = MediaLeaseRegistry("com.dazzlingwuming.listen2.media", clock = { now })
+        val identity = MediaIdentity("netease", "netrack_7", null, 0L)
+        registry.register(
+            "request-anonymous-12345678", identity,
+            MediaRendition("default", "verified-free", "audio/mpeg", "mp3", "mp3", 1L, null),
+            NativeTransport("https://music.163.com/song/media/outer/url?id=7.mp3", emptyMap(), source = "netease"),
+            0L,
+            OfflineEntitlementClass.ANONYMOUS_FREE,
+        )
+        assertEquals(
+            OfflineEntitlementClass.ANONYMOUS_FREE,
+            requireNotNull(registry.cacheAuthorization("request-anonymous-12345678", "netease", "netrack_7")).entitlementClass,
+        )
+        registry.register(
+            "request-default-12345678", MediaIdentity("qq", "qqtrack_7", null, 0L),
+            MediaRendition("default", "default", "audio/mpeg", "mp3", "mp3", 1L, null),
+            NativeTransport("https://isure.stream.qqmusic.qq.com/audio/7", mapOf("Accept" to "audio/*", "Range" to "bytes=0-0", "User-Agent" to "Listen2Mobile/1"), source = "qq"), 0L,
+        )
+        assertEquals(
+            OfflineEntitlementClass.ACCOUNT_BOUND,
+            requireNotNull(registry.cacheAuthorization("request-default-12345678", "qq", "qqtrack_7")).entitlementClass,
+        )
+    }
+
     @Test fun `api 24 only permits complete verified local playback`() {
         val remote = MediaDescriptor.downloadFirst(MediaIdentity("bilibili", "track", null, 1L))
         assertEquals(EntitlementStatus.DOWNLOAD_FIRST, remote.entitlement)

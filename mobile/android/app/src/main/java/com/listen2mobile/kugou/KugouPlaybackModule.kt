@@ -11,6 +11,7 @@ import com.facebook.react.module.annotations.ReactModule
 import com.listen2mobile.media.MediaIdentity
 import com.listen2mobile.media.MediaLeaseRegistry
 import com.listen2mobile.media.MediaRendition
+import com.listen2mobile.media.OfflineEntitlementClass
 import com.listen2mobile.media.toWritableMap
 
 @ReactModule(name = KugouPlaybackModule.NAME)
@@ -35,7 +36,7 @@ internal class KugouPlaybackModule(context: ReactApplicationContext, private val
             val keys = request.keySetIterator(); while (keys.hasNextKey()) require(keys.nextKey() in setOf("version", "requestId", "trackId"))
             require(request.getType("version") == ReadableType.Number && request.getDouble("version") == VERSION.toDouble())
             val requestId = text(request, "requestId", 96); val trackId = text(request, "trackId", 136); val resolution = gateway.resolve(requestId, trackId)
-            val value = leases.register(resolution.requestId, MediaIdentity("kugou", resolution.trackId, null, 0L), MediaRendition("default", "authorized", "audio/mpeg", "mp3", "mp3", 1L, null), resolution.transport, 0L)
+            val value = leases.register(resolution.requestId, MediaIdentity("kugou", resolution.trackId, null, 0L), MediaRendition("default", "authorized", "audio/mpeg", "mp3", "mp3", 1L, null), resolution.transport, 0L, OfflineEntitlementClass.ANONYMOUS_FREE)
             promise.resolve(value.toWritableMap())
         } catch (_: Exception) { promise.resolve(Arguments.createMap().apply { putString("errorCode", "INVALID_REQUEST") }) }
     }

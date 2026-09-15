@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import com.listen2mobile.library.CacheCatalogEntity
+import com.listen2mobile.library.OfflineAuthorityEntity
 
 class OfflineRecoveryContractTest {
     @Test
@@ -37,12 +38,32 @@ class OfflineRecoveryContractTest {
     }
 
     @Test
-    fun `durable authorization receipt survives reopen but expires and rejects switched account`() {
-        val receipt = CacheCatalogEntity("cache", "netease", "netrack_1", null, "default", "revision", "ready", 10L, 0L, "allowed", 10L, 100L)
-        // The entity is the Room-reopened projection: no URL, header, cookie or lease id is needed.
-        assertTrue(OfflineAuthorizationPolicy.permits(receipt, "netease", "netrack_1", 0L, 50L))
-        assertFalse(OfflineAuthorizationPolicy.permits(receipt, "netease", "netrack_1", 1L, 50L))
-        assertFalse(OfflineAuthorizationPolicy.permits(receipt, "netease", "netrack_1", 0L, 100L))
-        assertFalse(OfflineAuthorizationPolicy.permits(receipt.copy(entitlementStatus = "drm"), "netease", "netrack_1", 0L, 50L))
+    fun `fresh restart default generation receipt is denied until native source authority is verified`() {
+        val stale = CacheCatalogEntity("cache", "netease", "netrack_1", null, "default", "revision", "ready", 10L, 0L, "unknown", 0L, 0L)
+        assertFalse(OfflineAuthorizationPolicy.permits(stale, null, "netease", "netrack_1", 50L))
+        // Generation zero is not anonymous merely because a provider happens to use it.
+        val unclassified = stale.copy(entitlementStatus = "account-bound", authorizationIssuedAt = 10L, authorizationExpiresAt = 100L)
+        val authority = OfflineAuthorityEntity("netease", 0L, "account-bound", 10L, 100L)
+        assertFalse(OfflineAuthorizationPolicy.permits(unclassified, authority, "netease", "netrack_1", 50L))
+    }
+
+    @Test
+    fun `source authority is isolated and account switch or logout revokes only that source`() {
+        val receipt = CacheCatalogEntity("cache", "bilibili", "track_1", null, "default", "revision", "ready", 10L, 7L, "account-bound", 10L, 100L)
+        val bilibili = OfflineAuthorityEntity("bilibili", 7L, "account-bound", 10L, 100L)
+        val netease = OfflineAuthorityEntity("netease", 99L, "account-bound", 10L, 100L)
+        assertTrue(OfflineAuthorizationPolicy.permits(receipt, bilibili, "bilibili", "track_1", 50L))
+        assertFalse(OfflineAuthorizationPolicy.permits(receipt, netease, "bilibili", "track_1", 50L))
+        assertFalse(OfflineAuthorizationPolicy.permits(receipt, bilibili.copy(generation = 8L), "bilibili", "track_1", 50L))
+        assertFalse(OfflineAuthorizationPolicy.permits(receipt, bilibili.copy(authState = "revoked", expiresAt = 50L), "bilibili", "track_1", 50L))
+    }
+
+    @Test
+    fun `only explicitly verified anonymous free descriptor survives restart until expiry`() {
+        val receipt = CacheCatalogEntity("cache", "kuwo", "track_1", null, "default", "revision", "ready", 10L, 0L, "anonymous-free", 10L, 100L)
+        val anonymous = OfflineAuthorityEntity("kuwo", 0L, "anonymous-free", 10L, 100L)
+        assertTrue(OfflineAuthorizationPolicy.permits(receipt, anonymous, "kuwo", "track_1", 50L))
+        assertFalse(OfflineAuthorizationPolicy.permits(receipt, anonymous, "kuwo", "track_1", 100L))
+        assertFalse(OfflineAuthorizationPolicy.permits(receipt.copy(entitlementStatus = "drm"), anonymous, "kuwo", "track_1", 50L))
     }
 }

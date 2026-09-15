@@ -295,7 +295,7 @@ internal class BilibiliModule(
     }
     private fun revokeAccountAuthority() {
         accountGeneration += 1L
-        mediaLeases.invalidateAccount(accountGeneration)
+        mediaLeases.invalidateSource("bilibili", accountGeneration)
         mvController.setAccountGeneration(accountGeneration)
     }
 }

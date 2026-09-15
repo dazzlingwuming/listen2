@@ -11,6 +11,7 @@ import com.facebook.react.module.annotations.ReactModule
 import com.listen2mobile.media.MediaIdentity
 import com.listen2mobile.media.MediaLeaseRegistry
 import com.listen2mobile.media.MediaRendition
+import com.listen2mobile.media.OfflineEntitlementClass
 import com.listen2mobile.media.NativeTransport
 import com.listen2mobile.media.toWritableMap
 import java.util.concurrent.Executors
@@ -131,6 +132,7 @@ internal class QqPlaybackModule(
             value.requestId, MediaIdentity(value.source, value.trackId, null, 0L),
             MediaRendition("default", "authorized", value.mimeType, if (value.mimeType == "audio/mpeg") "mp3" else "mp4", if (value.mimeType == "audio/mpeg") "mp3" else "aac", 1L, value.sizeBytes),
             NativeTransport(value.url, QqPlaybackPolicy.fixedProbeHeaders(), source = "qq"), 0L,
+            OfflineEntitlementClass.ANONYMOUS_FREE,
         )
         return safeDescriptor(descriptor)
     }

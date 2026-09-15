@@ -11,6 +11,7 @@ import com.facebook.react.module.annotations.ReactModule
 import com.listen2mobile.media.MediaIdentity
 import com.listen2mobile.media.MediaLeaseRegistry
 import com.listen2mobile.media.MediaRendition
+import com.listen2mobile.media.OfflineEntitlementClass
 import com.listen2mobile.media.toWritableMap
 
 @ReactModule(name = NeteasePlaybackModule.NAME)
@@ -45,6 +46,7 @@ internal class NeteasePlaybackModule(
             val value = leases.register(
                 resolution.requestId, MediaIdentity("netease", resolution.trackId, null, 0L),
                 MediaRendition("default", "authorized", "audio/mpeg", "mp3", "mp3", 1L, null), resolution.transport, 0L,
+                OfflineEntitlementClass.ANONYMOUS_FREE,
             )
             promise.resolve(value.toWritableMap())
         } catch (_: Exception) { promise.resolve(Arguments.createMap().apply { putString("errorCode", "INVALID_REQUEST") }) }

@@ -60,12 +60,19 @@ internal enum class LeaseStatus {
     ACTIVE, UNKNOWN, EXPIRED, CANCELLED, IDENTITY_MISMATCH, ACCOUNT_CHANGED, READ_LIMIT,
 }
 
+/** Only a native provider resolver may classify a descriptor as anonymous-free. */
+internal enum class OfflineEntitlementClass(val wire: String) {
+    ACCOUNT_BOUND("account-bound"),
+    ANONYMOUS_FREE("anonymous-free"),
+}
+
 /** Native-only proof that an immediately preceding provider resolution is still current. */
 internal data class CacheAuthorization(
     val leaseId: String,
     val requestId: String,
     val identity: MediaIdentity,
     val accountGeneration: Long,
+    val entitlementClass: OfflineEntitlementClass,
 )
 
 /** Private data only. It must never appear in a bridge result, Redux, logs, or persistence. */
@@ -191,6 +198,7 @@ internal class MediaLeaseRegistry(
         val rendition: MediaRendition,
         val transport: NativeTransport,
         val accountGeneration: Long,
+        val entitlementClass: OfflineEntitlementClass,
         val expiresAt: Long,
         var reads: Int = 0,
         var cancelled: Boolean = false,
@@ -198,15 +206,21 @@ internal class MediaLeaseRegistry(
 
     private val leases = ConcurrentHashMap<String, Lease>()
 
-    fun register(requestId: String, identity: MediaIdentity, rendition: MediaRendition, transport: NativeTransport, accountGeneration: Long): MediaDescriptor {
+    fun register(
+        requestId: String,
+        identity: MediaIdentity,
+        rendition: MediaRendition,
+        transport: NativeTransport,
+        accountGeneration: Long,
+        entitlementClass: OfflineEntitlementClass = OfflineEntitlementClass.ACCOUNT_BOUND,
+    ): MediaDescriptor {
         require(requestId.matches(REQUEST_ID) && identity.isValid() && rendition.isValid() && accountGeneration >= 0L)
         require(transport.localFile != null || isSafeNativeTransport(transport))
-        MediaLeaseRegistryHolder.updateAccountGeneration(accountGeneration)
         prune()
         require(leases.size < MAX_LEASES)
         val leaseId = randomLeaseId()
         val expiresAt = clock() + MAX_TTL_MS
-        leases[leaseId] = Lease(requestId, identity, rendition, transport, accountGeneration, expiresAt)
+        leases[leaseId] = Lease(requestId, identity, rendition, transport, accountGeneration, entitlementClass, expiresAt)
         return MediaDescriptor(
             MediaDescriptor.VERSION,
             requestId,
@@ -253,7 +267,7 @@ internal class MediaLeaseRegistry(
                 clock() < it.expiresAt
         } ?: return null
         val leaseId = leases.entries.firstOrNull { it.value === lease }?.key ?: return null
-        return CacheAuthorization(leaseId, requestId, lease.identity, lease.accountGeneration)
+        return CacheAuthorization(leaseId, requestId, lease.identity, lease.accountGeneration, lease.entitlementClass)
     }
 
     /**
@@ -269,7 +283,7 @@ internal class MediaLeaseRegistry(
                 validate(leaseId, lease.identity, lease.accountGeneration) == LeaseStatus.ACTIVE
         } ?: return null
         val lease = match.value
-        return CacheAuthorization(match.key, lease.requestId, lease.identity, lease.accountGeneration)
+        return CacheAuthorization(match.key, lease.requestId, lease.identity, lease.accountGeneration, lease.entitlementClass)
     }
 
     fun isCurrentCacheAuthorization(value: CacheAuthorization): Boolean =
@@ -277,8 +291,14 @@ internal class MediaLeaseRegistry(
 
     fun cancel(requestId: String) { leases.values.filter { it.requestId == requestId }.forEach { it.cancelled = true } }
     fun invalidateAccount(accountGeneration: Long) {
-        MediaLeaseRegistryHolder.updateAccountGeneration(accountGeneration)
         leases.values.filter { it.accountGeneration != accountGeneration }.forEach { it.cancelled = true }
+    }
+
+    /** A logout or account switch is source-local; it must not invalidate unrelated providers. */
+    fun invalidateSource(source: String, accountGeneration: Long) {
+        if (source !in SOURCES || accountGeneration < 0L) return
+        leases.values.filter { it.identity.source == source && it.accountGeneration != accountGeneration }.forEach { it.cancelled = true }
+        MediaLeaseRegistryHolder.revokeOfflineAuthority(source, accountGeneration)
     }
 
     private fun prune() { leases.entries.removeIf { (_, value) -> value.cancelled || clock() >= value.expiresAt } }
@@ -295,15 +315,16 @@ internal class MediaLeaseRegistry(
         private const val MAX_URL_BYTES = 4_096
         private val REQUEST_ID = Regex("[A-Za-z0-9_-]{8,96}")
         private val LEASE_ID = Regex("[a-f0-9]{48}")
+        private val SOURCES = setOf("bilibili", "netease", "kugou", "qq", "kuwo")
     }
 }
 
 /** Provider singleton bridge; descriptor leases are deliberately not persisted. */
 internal object MediaLeaseRegistryHolder {
     @Volatile private var registry: MediaLeaseRegistry? = null
-    @Volatile private var accountGeneration: Long = 0L
+    @Volatile private var offlineAuthorityInvalidator: ((String, Long) -> Unit)? = null
     fun install(value: MediaLeaseRegistry) { registry = value }
     fun current(): MediaLeaseRegistry? = registry
-    fun updateAccountGeneration(value: Long) { if (value >= 0) accountGeneration = value }
-    fun currentAccountGeneration(): Long = accountGeneration
+    fun installOfflineAuthorityInvalidator(value: (String, Long) -> Unit) { offlineAuthorityInvalidator = value }
+    fun revokeOfflineAuthority(source: String, generation: Long) { offlineAuthorityInvalidator?.invoke(source, generation) }
 }

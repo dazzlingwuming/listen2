@@ -406,6 +406,6 @@ internal object LibraryDatabaseRegistry {
             context.applicationContext,
             Listen2Database::class.java,
             "listen2-library-01.db",
-        ).addMigrations(LIBRARY_MIGRATION_1_2, LIBRARY_MIGRATION_2_3, LIBRARY_MIGRATION_3_4, LIBRARY_MIGRATION_4_5).build().also { instance = it }
+        ).addMigrations(LIBRARY_MIGRATION_1_2, LIBRARY_MIGRATION_2_3, LIBRARY_MIGRATION_3_4, LIBRARY_MIGRATION_4_5, LIBRARY_MIGRATION_5_6).build().also { instance = it }
     }
 }
