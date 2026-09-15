@@ -5,13 +5,13 @@ instrumentation_result_ok() {
   local output="$1"
   [[ -s "$output" ]] || return 1
   ! grep -Eqi 'FAILURES!!!|INSTRUMENTATION_FAILED|shortMsg=|AssertionError' "$output" || return 1
-  grep -Eq '^INSTRUMENTATION_CODE: 0[[:space:]]*$' "$output"
+  grep -Eq '^INSTRUMENTATION_CODE: (-1|0)[[:space:]]*$' "$output"
 }
 
 if [[ "${1:-}" == "--self-test" ]]; then
   self_test_dir="$(mktemp -d "${TMPDIR:-/tmp}/listen2-instrumentation-result.XXXXXX")"
   trap 'rm -rf "$self_test_dir"' EXIT
-  printf '%s\n' 'INSTRUMENTATION_STATUS_CODE: 0' 'INSTRUMENTATION_CODE: 0' > "$self_test_dir/success.txt"
+  printf '%s\n' 'INSTRUMENTATION_STATUS_CODE: 0' 'INSTRUMENTATION_CODE: -1' > "$self_test_dir/success.txt"
   printf '%s\n' 'FAILURES!!! Tests run: 1,  Failures: 1' 'java.lang.AssertionError' 'INSTRUMENTATION_CODE: 0' > "$self_test_dir/assertion.txt"
   printf '%s\n' 'INSTRUMENTATION_FAILED: com.listen2mobile.MainActivity' 'shortMsg=Process crashed.' > "$self_test_dir/failed.txt"
   instrumentation_result_ok "$self_test_dir/success.txt" || { echo 'instrumentation success fixture rejected' >&2; exit 1; }
