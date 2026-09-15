@@ -13,7 +13,6 @@ import type { RootState } from '../store';
 import { ScreenLayout, sectionStyles } from './ScreenLayout';
 import { colors, spacing, text } from '../theme';
 import { hydrationSucceeded, mutationPending, mutationReceived } from '../store/librarySlice';
-import { importLocalTracks } from '../store/librarySlice';
 import { pickLocalAudio } from '../localAudio/picker';
 import { libraryClient } from '../library/libraryClient';
 
@@ -47,15 +46,14 @@ export function MyMusicScreen() {
       setLocalImportStatus('无法取得长期访问权限，未导入任何音频。');
       return;
     }
-    if (result.tracks.length) dispatch(importLocalTracks(result.tracks));
-    if (!result.tracks.length) {
+    if (!result.imported) {
       setLocalImportStatus('未导入音频：请选择可长期访问的真实音频文件。');
       return;
     }
     setLocalImportStatus(
       result.rejected
-        ? `已导入 ${result.tracks.length} 首，跳过 ${result.rejected} 个不可用或重复文件。`
-        : `已导入 ${result.tracks.length} 首本地音频。`,
+        ? `已导入 ${result.imported} 首，跳过 ${result.rejected} 个不可用或重复文件。`
+        : `已导入 ${result.imported} 首本地音频。`,
     );
   };
   const submitPlaylist = async () => {
