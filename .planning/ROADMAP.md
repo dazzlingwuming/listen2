@@ -108,13 +108,13 @@ Those facts reduce implementation work, but none proves that a user can complete
   4. A user can turn effects, real-time visualization, or fixed loudness normalization on/off only when the device and complete media support them; effect/analysis failure preserves audio, first playback does not wait, and static/hidden visual fallback is labelled honestly.
   5. A user can configure or remove a protected DeepSeek key and explicitly consent to the title, artist, lyrics, possible cost, cancellation, and failure consequences before translation; only schema- and alignment-valid translations persist, and no secret or lyric payload leaks to UI state, artifacts, logs, or backups.
 
-**Plans:** 3/5 plans executed
+**Plans:** 4/5 plans executed
 
 Plans:
 
 - [x] 07-01-PLAN.md — Unify five-source native media descriptors, entitlement, Bilibili parts/renditions and MV fallback.
 - [x] 07-02-PLAN.md — Deliver owner-aware durable offline cache, recovery/quota policies and the complete cache library UI.
-- [ ] 07-03-PLAN.md — Add actual-session effects, real visualization and asynchronous loudness normalization.
+- [x] 07-03-PLAN.md — Add actual-session effects, real visualization and asynchronous loudness normalization.
 - [x] 07-04-PLAN.md — Make DeepSeek Keystore-only, explicitly consented and native-private through validated persistence.
 - [ ] 07-05-PLAN.md — Close SEC-004 and run the single integrated deterministic Phase 7 gate.
 
@@ -144,5 +144,5 @@ Plans:
 | 4. Official Mobile Shell & Unified Provider Registry | 3/3 | Complete    | 2026-09-10 |
 | 5. Five-Source Listen Journey | 3/3 | In Progress|  |
 | 6. Personal Library & Continuity | 3/7 | In Progress|  |
-| 7. Offline & Advanced Desktop-Equivalent Playback | 3/5 | In Progress|  |
+| 7. Offline & Advanced Desktop-Equivalent Playback | 4/5 | In Progress|  |
 | 8. Integrated API 35 Acceptance & Release-Like Evidence | 0/TBD | Not started | - |

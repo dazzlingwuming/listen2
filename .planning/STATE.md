@@ -5,13 +5,13 @@ milestone_name: android-official-mobile-product-pivot
 current_phase: 5
 current_phase_name: Five-Source Listen Journey
 status: verifying
-stopped_at: Completed 07-02-PLAN.md
-last_updated: "2026-09-15T12:42:47.698Z"
+stopped_at: Completed 07-03-PLAN.md
+last_updated: "2026-09-15T13:23:42.004Z"
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 20
-  completed_plans: 18
+  completed_plans: 19
   percent: 60
 last_activity: 2026-09-14
 last_activity_desc: Closed quick 260914-kh4 MV source and native JVM gates; 26 mobile suites/145 tests plus Android JVM tests passed
@@ -35,7 +35,7 @@ Plan: 3 of 3
 
 Status: Phase complete — ready for verification
 
-Progress: [█████████░] 90%
+Progress: [██████████] 95%
 
 ## Performance Metrics
 
@@ -62,6 +62,7 @@ Progress: [█████████░] 90%
 | Phase 06-personal-library-continuity P02 | 94m | 3 tasks | 14 files |
 | Phase 06-personal-library-continuity P03 | 140m | 3 tasks | 21 files |
 | Phase 07-offline-advanced-playback P02 | 31m | 3 tasks | 21 files |
+| Phase 07-offline-advanced-playback P03 | 135m | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -91,6 +92,8 @@ Progress: [█████████░] 90%
 - [Phase ?]: Backup apply accepts a short-lived native preview token bound to the base revision and SHA-256 checksum.
 - [Phase ?]: Only Bilibili gets login-shaped controls because it is the only source with a supported public native authentication contract.
 - [Phase ?]: Offline cache owns semantic-only Room v4 identities with separate temporary, playlist, and explicit owner rows.
+- [Phase ?]: RNTP remains the sole audio-session owner; effects consume only a process-local native bridge.
+- [Phase ?]: Loudness metrics are reusable only for matching hash, sample rate, codec, and analyzer version.
 
 ### Pending Todos
 
@@ -132,8 +135,8 @@ Progress: [█████████░] 90%
 
 **Resume file:** None
 
-Last session: 2026-09-15T12:42:47.691Z
+Last session: 2026-09-15T13:23:41.997Z
 
-Stopped at: Completed 07-02-PLAN.md
+Stopped at: Completed 07-03-PLAN.md
 
 Resume with: implement the next coherent mobile-parity slice without per-feature APK generation; preserve API 35 emulator/device, live-provider, and release-like checks for integrated acceptance

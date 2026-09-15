@@ -98,9 +98,9 @@ Android 保留共享前端，但 native 只提供窄的、版本化、可取消�
 
 ### 音效/响度（FX）
 
-- [ ] **FX-001** [P][E] 我可以启用、停用、选择和重置音效预设；设备音量、静音、耳机/Bluetooth 和应用固定增益独立，异常 effect 不停止播放。
-- [ ] **FX-002** [P][E] 支持设备上的频谱/可视化由真实音频分析驱动并与暂停、seek、切歌同步；后台、低端设备或能力不足时显示静态/隐藏降级，不伪造实时数据。
-- [ ] **FX-003** [P][E][S] 响度标准化在完整媒体上按约 -14 LUFS、-1 dBTP 测量并应用固定增益；首播不等待分析，未分析/失败保持原音量，媒体 hash/采样率/codec 变化会使结果失效。
+- [x] **FX-001** [P][E] 我可以启用、停用、选择和重置音效预设；设备音量、静音、耳机/Bluetooth 和应用固定增益独立，异常 effect 不停止播放。
+- [x] **FX-002** [P][E] 支持设备上的频谱/可视化由真实音频分析驱动并与暂停、seek、切歌同步；后台、低端设备或能力不足时显示静态/隐藏降级，不伪造实时数据。
+- [x] **FX-003** [P][E][S] 响度标准化在完整媒体上按约 -14 LUFS、-1 dBTP 测量并应用固定增益；首播不等待分析，未分析/失败保持原音量，媒体 hash/采样率/codec 变化会使结果失效。
 
 ### DeepSeek（AI）
 
@@ -213,9 +213,9 @@ Android 保留共享前端，但 native 只提供窄的、版本化、可取消�
 | CACHE-002 | Phase 7 | Complete | offline/resume/repair |
 | CACHE-003 | Phase 7 | Complete | quota/LRU policy |
 | CACHE-004 | Phase 7 | Complete | cache library/disk-full |
-| FX-001 | Phase 7 | Pending | effect preset device test |
-| FX-002 | Phase 7 | Pending | spectrum/degradation test |
-| FX-003 | Phase 7 | Pending | LUFS/hash/background analysis |
+| FX-001 | Phase 7 | Complete | effect preset device test |
+| FX-002 | Phase 7 | Complete | spectrum/degradation test |
+| FX-003 | Phase 7 | Complete | LUFS/hash/background analysis |
 | AI-001 | Phase 7 | Pending | key settings/Keystore |
 | AI-002 | Phase 7 | Pending | confirmation/no-call test |
 | AI-003 | Phase 7 | Pending | alignment/cache/secret scan |
