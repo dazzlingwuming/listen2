@@ -802,6 +802,57 @@ describe('providerClient', () => {
     expect(JSON.stringify(page)).not.toContain('neplaylist_1');
   });
 
+  it('activates QQ and Kuwo bootstrap only for exact ready native contracts and cancels stale native work', async () => {
+    jest.resetModules();
+    let resolveQq!: (value: unknown) => void;
+    const qq = {
+      provider: 'qq',
+      version: 1,
+      policyReady: true,
+      approvedHosts: ['isure.stream.qqmusic.qq.com'],
+      resolveAudio: jest.fn(
+        () => new Promise<unknown>(resolve => { resolveQq = resolve; }),
+      ),
+      cancel: jest.fn().mockResolvedValue({ ok: true }),
+    };
+    const kuwo = {
+      provider: 'kuwo',
+      version: 1,
+      policyReady: true,
+      approvedHosts: ['er-sycdn.kuwo.cn'],
+      resolveAudio: jest.fn().mockResolvedValue({
+        version: 1,
+        requestId: 'placeholder',
+        trackId: 'kwtrack_123456',
+        source: 'kuwo',
+        url: 'https://er-sycdn.kuwo.cn/fixture.mp3',
+        mimeType: 'audio/mpeg',
+        sizeBytes: 4096,
+        expiresAt: Date.now() + 30_000,
+      }),
+      cancel: jest.fn().mockResolvedValue({ ok: true }),
+    };
+    jest.doMock('react-native', () => ({
+      NativeModules: { Listen2QqPlayback: qq, Listen2KuwoPlayback: kuwo },
+    }));
+    const fresh = require('../client') as typeof import('../client');
+    expect(fresh.PROVIDER_CAPABILITIES.qq.playback).toBe(true);
+    expect(fresh.PROVIDER_CAPABILITIES.kuwo.playback).toBe(true);
+    const aborter = new AbortController();
+    const pending = fresh.providerClient.bootstrapTrack(
+      { id: 'qqtrack_001', source: 'qq', title: 'Song', artist: 'Artist' },
+      aborter.signal,
+    );
+    aborter.abort();
+    await expect(pending).rejects.toMatchObject({ code: 'CANCELLED', source: 'qq' });
+    expect(qq.cancel).toHaveBeenCalledWith(
+      expect.objectContaining({ version: 1, requestId: expect.any(String) }),
+    );
+    resolveQq({ errorCode: 'PLAYBACK_UNAVAILABLE' });
+    const currentRequest = (kuwo.resolveAudio as jest.Mock).mock.calls.length;
+    expect(currentRequest).toBe(0);
+  });
+
   it('hydrates ordered NetEase track IDs through fixed 50-id detail batches', async () => {
     const trackIds = Array.from({ length: 51 }, (_, index) => ({
       id: index + 1,

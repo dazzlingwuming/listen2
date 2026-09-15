@@ -34,6 +34,7 @@ import {
   providerFor,
 } from './providers';
 import { resolveBilibiliLyric } from '../bilibili/lyrics';
+import { bootstrapNativeTrack, isNativePlaybackReady } from './nativePlayback';
 
 const available = { status: 'available' } as const;
 const unavailableRoute = {
@@ -123,13 +124,14 @@ export const PROVIDER_CAPABILITIES: Readonly<
     }),
   },
   kuwo: {
-    ...capabilityProjection({ search: available }),
+    ...capabilityProjection(isNativePlaybackReady('kuwo') ? { search: available, playback: available, bootstrap: available } : { search: available }),
   },
   qq: {
     ...capabilityProjection({
       search: available,
       lyrics: available,
       lyric: available,
+      ...(isNativePlaybackReady('qq') ? { playback: available, bootstrap: available } : {}),
     }),
   },
   bilibili: {
@@ -241,7 +243,8 @@ export const providerClient = {
     if (source === 'kugou')
       return bootstrapKugouTrack(track, { signal: _signal });
     if (source === 'netease') return bootstrapNetEaseTrack(track, _signal);
-    // QQ and Kuwo lack an approved fixed media-candidate contract.
+    if ((source === 'qq' || source === 'kuwo') && isNativePlaybackReady(source))
+      return bootstrapNativeTrack(track, _signal);
     throw unavailable(source, 'bootstrap', 'PLAYBACK_UNAVAILABLE');
   },
 

@@ -22,6 +22,7 @@ internal class QqPlaybackModule(
         const val PROVIDER = QqPlaybackPolicy.PROVIDER
         const val CONTRACT_VERSION = QqPlaybackPolicy.CONTRACT_VERSION
         val POLICY_READY: Boolean get() = QqPlaybackPolicy.policyReady()
+        val APPROVED_HOSTS: List<String> get() = if (POLICY_READY) listOf("isure.stream.qqmusic.qq.com") else emptyList()
     }
 
     private val worker = Executors.newSingleThreadExecutor()
@@ -29,6 +30,13 @@ internal class QqPlaybackModule(
     @Volatile private var invalidated = false
 
     override fun getName() = NAME
+
+    override fun getConstants(): MutableMap<String, Any> = mutableMapOf(
+        "provider" to PROVIDER,
+        "version" to CONTRACT_VERSION,
+        "policyReady" to POLICY_READY,
+        "approvedHosts" to APPROVED_HOSTS,
+    )
 
     @ReactMethod
     fun resolveAudio(request: ReadableMap, promise: Promise) {
