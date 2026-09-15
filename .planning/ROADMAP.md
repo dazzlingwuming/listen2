@@ -136,12 +136,13 @@ Plans:
   3. The debug and minified release-like builds reproducibly resolve dependencies, package approved assets, pass required JavaScript/JVM/instrumentation suites, and pass Media3 service, notification, Room migration, manifest, network-security, version-upgrade, alignment, signature, artifact-hash, and secret-scan checks without using release credentials.
   4. Every result records date, build, API/device, network, fixture, command, outcome, uncovered items, and recovery path. Android v1.0 becomes `parity-ready` only when all 58 requirements have passing implementation and evidence; `foundation present`, `degraded`, and `not verified` remain incomplete.
 
-**Plans:** 4 plans
+**Plans:** 1/4 plans executed
 
-- [ ] 08-01-PLAN.md — Validate Phase 4–7 truth, locked inputs/toolchain, and reproducible debug/release-like app plus releaseLikeAndroidTest artifacts.
+- [x] 08-01-PLAN.md — Validate Phase 4–7 truth, locked inputs/toolchain, and reproducible debug/release-like app plus releaseLikeAndroidTest artifacts.
 - [ ] 08-02-PLAN.md — Seed debug state, upgrade the same package to the exact release-like candidate, and run one class-filtered API 35 integrated journey.
 - [ ] 08-03-PLAN.md — Seal API 35 timing/recovery/soak evidence and resume only for API 26/API 36 compatibility.
 - [ ] 08-04-PLAN.md — Resolve the 58-row current-HEAD evidence map and hand off the exact development-signed APK/hash/install/rollback contract.
+
 **UI hint:** yes
 
 ## Progress
@@ -154,4 +155,4 @@ Plans:
 | 5. Five-Source Listen Journey | 5/5 | Deterministic complete; Phase 8 external acceptance pending | 2026-09-15 |
 | 6. Personal Library & Continuity | 7/7 | Verification passed; Phase 8 live/system acceptance pending | 2026-09-15 |
 | 7. Offline & Advanced Desktop-Equivalent Playback | 5/5 | Awaiting clean review and passed verification |  |
-| 8. Integrated API 35 Acceptance & Release-Like Evidence | 0/4 | Planned; conditionally blocked by Phase 7 final pass | - |
+| 8. Integrated API 35 Acceptance & Release-Like Evidence | 1/4 | In Progress|  |
