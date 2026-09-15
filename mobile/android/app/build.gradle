@@ -125,6 +125,9 @@ dependencies {
     implementation 'androidx.room:room-ktx:2.8.5'
     kapt 'androidx.room:room-compiler:2.8.5'
     implementation 'androidx.datastore:datastore-preferences:1.2.1'
+    // Audited AndroidX coordinates from Phase 7 research: durable constrained cache work only.
+    implementation 'androidx.work:work-runtime:2.11.2'
+    testImplementation 'androidx.work:work-testing:2.11.2'
     // React Native's test classpath strictly pins this official runner line.
     androidTestImplementation 'androidx.test:runner:1.4.0'
     androidTestImplementation 'androidx.room:room-testing:2.8.5'

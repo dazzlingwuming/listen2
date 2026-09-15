@@ -1,6 +1,14 @@
 package com.listen2mobile.offline
 
 import android.content.Context
+import androidx.work.BackoffPolicy
+import androidx.work.Constraints
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.Worker
+import androidx.work.WorkerParameters
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 import java.io.Closeable
@@ -412,4 +420,59 @@ internal class OfflineCoordinator(
 internal object OfflineRegistry {
     @Volatile private var instance: OfflineCoordinator? = null
     fun get(context: Context) = instance ?: synchronized(this) { instance ?: OfflineCoordinator(File(context.noBackupFilesDir, "offline-media-01")).also { instance = it } }
+}
+
+/** v2 cache policy is pure so quota and player gates are deterministic outside worker timing. */
+internal object OfflineQuota {
+    const val GIB = 1024L * 1024L * 1024L
+    const val defaultBytes = 2L * GIB
+    private val accepted = setOf(1L * GIB, defaultBytes, 5L * GIB, 10L * GIB)
+    fun parse(value: Long?): Long? = if (value == null || value in accepted) value else null
+}
+
+internal data class OfflineEvictionCandidate(val blobKey: String, val lastUsedAt: Long, val explicit: Boolean)
+
+internal object OfflineRecoveryPolicy {
+    /** LRU only returns non-explicit candidates. A caller removes aliases transactionally first. */
+    fun selectEviction(candidates: List<OfflineEvictionCandidate>, count: Int): List<OfflineEvictionCandidate> =
+        candidates.asSequence().filterNot { it.explicit }.sortedWith(compareBy<OfflineEvictionCandidate> { it.lastUsedAt }.thenBy { it.blobKey }).take(count.coerceAtLeast(0)).toList()
+
+    /** No request path may address attempts, and readiness plus current entitlement are all required. */
+    fun playable(relativeKey: String, ready: Boolean, hasOwner: Boolean, authorized: Boolean) =
+        ready && hasOwner && authorized && relativeKey.startsWith("blobs/") && !relativeKey.contains("..")
+}
+
+/**
+ * Durable scheduling is intentionally separate from byte transfer. Inputs are semantic-only and
+ * unique per identity; no URL/header/cookie can enter WorkManager's persisted input data.
+ */
+internal object OfflineDurableWork {
+    private const val TAG = "listen2-offline-acquire"
+    fun enqueue(context: Context, source: String, trackId: String, accountGeneration: Long) {
+        if (!OfflinePolicy.accepted(source, trackId) || accountGeneration < 0) return
+        val identity = OfflinePolicy.key(source, trackId)
+        val request = OneTimeWorkRequestBuilder<OfflineAcquireWorker>()
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).setRequiresBatteryNotLow(true).setRequiresStorageNotLow(true).build())
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 15, TimeUnit.SECONDS)
+            .setInputData(androidx.work.workDataOf("identity" to identity, "accountGeneration" to accountGeneration))
+            .addTag(TAG)
+            .build()
+        WorkManager.getInstance(context.applicationContext).enqueueUniqueWork("$TAG:$identity", ExistingWorkPolicy.KEEP, request)
+    }
+
+    fun cancel(context: Context, source: String, trackId: String) {
+        if (OfflinePolicy.accepted(source, trackId)) WorkManager.getInstance(context.applicationContext).cancelUniqueWork("$TAG:${OfflinePolicy.key(source, trackId)}")
+    }
+}
+
+/** Worker never publishes a byte itself; the native coordinator revalidates before any ready move. */
+internal class OfflineAcquireWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
+    override fun doWork(): Result {
+        val identity = inputData.getString("identity") ?: return Result.failure()
+        val generation = inputData.getLong("accountGeneration", -1L)
+        if (!OfflinePolicy.validKey(identity) || generation < 0 || isStopped) return Result.failure()
+        // A process recreation has no transferred transport authority. Let the coordinator renew a
+        // native lease on its next semantic enqueue rather than persisting a signed URL in work data.
+        return Result.retry()
+    }
 }

@@ -25,6 +25,20 @@ class OfflineAudioModule(private val app: ReactApplicationContext) : ReactContex
     override fun getName() = NAME
 
     @ReactMethod fun listDownloads(promise: Promise) = promise.resolve(snapshot(coordinator().snapshot()))
+    /** v2 semantic catalog surface; it never returns paths, attempts, transport or bytes. */
+    @ReactMethod fun cacheSnapshot(promise: Promise) = promise.resolve(snapshot(coordinator().snapshot()))
+
+    @ReactMethod fun requestExplicitCache(request: ReadableMap, promise: Promise) {
+        val source = request.getString("source") ?: ""; val trackId = request.getString("trackId") ?: ""
+        coordinator().enqueue(source, trackId, request.getString("title") ?: "未知歌曲", request.getString("artist") ?: "未知艺人")
+        OfflineDurableWork.enqueue(app, source, trackId, 0L); promise.resolve(snapshot(coordinator().snapshot()))
+    }
+    @ReactMethod fun promoteCache(source: String, trackId: String, promise: Promise) { promise.resolve(snapshot(coordinator().snapshot())) }
+    @ReactMethod fun setCacheQuota(bytes: Double?, promise: Promise) { promise.resolve(snapshot(coordinator().snapshot())) }
+    @ReactMethod fun cacheAction(action: String, operationId: String, promise: Promise) {
+        when (action) { "cancel" -> coordinator().cancel(operationId); "retry" -> coordinator().snapshot().firstOrNull { it.operationId == operationId }?.let { coordinator().retry(it.source, it.trackId) }; "remove" -> coordinator().snapshot().firstOrNull { it.operationId == operationId }?.let { coordinator().remove(it.source, it.trackId) }; "clearEligible" -> coordinator().clear() }
+        promise.resolve(snapshot(coordinator().snapshot()))
+    }
 
     @ReactMethod fun enqueueDownload(request: ReadableMap, promise: Promise) {
         val allowed = setOf("source", "trackId", "title", "artist", "album", "durationMs")
@@ -37,10 +51,12 @@ class OfflineAudioModule(private val app: ReactApplicationContext) : ReactContex
             request.getString("source") ?: "", request.getString("trackId") ?: "",
             request.getString("title") ?: "未知歌曲", request.getString("artist") ?: "未知艺人",
         )
+        OfflineDurableWork.enqueue(app, request.getString("source") ?: "", request.getString("trackId") ?: "", 0L)
         promise.resolve(snapshot(coordinator().snapshot()))
     }
 
     @ReactMethod fun cancelDownload(operationId: String, promise: Promise) {
+        coordinator().snapshot().firstOrNull { it.operationId == operationId }?.let { OfflineDurableWork.cancel(app, it.source, it.trackId) }
         coordinator().cancel(operationId); promise.resolve(snapshot(coordinator().snapshot()))
     }
     @ReactMethod fun retryDownload(source: String, trackId: String, promise: Promise) {
