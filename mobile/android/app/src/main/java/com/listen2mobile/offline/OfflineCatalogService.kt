@@ -17,13 +17,35 @@ internal class OfflineCatalogService private constructor(context: Context) {
     private val root = File(app.noBackupFilesDir, "offline-cache-02")
     private val repository = OfflineCatalogRepository(LibraryDatabaseRegistry.get(app), root)
     private val transfer = OfflineCoordinator(File(root, "transfers"))
+    private val legacy = OfflineRegistry.get(app)
     private val analysis = Executors.newSingleThreadExecutor()
     private val listeners = mutableSetOf<(CatalogCacheSnapshot) -> Unit>()
 
     init {
+        migrateLegacyReadyEntries()
         transfer.setObserver { entries ->
             entries.filter { it.status == OfflineStatus.READY }.forEach(::commitCompletedTransfer)
             publish()
+        }
+    }
+
+    /** One-shot readback migration keeps pre-Room verified blobs playable without exposing paths to JS. */
+    private fun migrateLegacyReadyEntries() {
+        legacy.snapshot().filter { it.status == OfflineStatus.READY }.forEach { entry ->
+            if (readyBlob(entry.source, entry.trackId) != null) return@forEach
+            val staged = legacy.file(OfflinePolicy.key(entry.source, entry.trackId)) ?: return@forEach
+            val digest = entry.digest ?: return@forEach
+            val mime = entry.mimeType ?: return@forEach
+            val result = repository.ready(
+                OfflineCatalogIdentity(entry.source, entry.trackId, null, "default", "legacy"),
+                digest,
+                entry.downloadedBytes,
+                mime,
+                mime,
+                staged,
+                OfflineOwnerKind.EXPLICIT,
+            )
+            if (result.status == "READY") legacy.remove(entry.source, entry.trackId)
         }
     }
 
