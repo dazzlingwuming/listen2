@@ -28,7 +28,7 @@ key-files:
     - mobile/scripts/acceptance/evidence.mjs
 key-decisions:
   - Raw APK SHA-256 differences are diagnostic only when parsed signing-block-stripped raw payload, canonical ZIP metadata, entry content, verified signing schemes, signer certificate digest, and public-key digest all match.
-  - The authoritative candidate was rebuilt from its actual HEAD 4c1f893 after the RNTP startup repair; the earlier 7b163a4 candidate is explicitly superseded and is not an acceptance candidate.
+  - The authoritative candidate was rebuilt from its actual HEAD 54bc100 after the invalid-hook startup repair; the earlier 7b163a4 and 4c1f893 candidates are explicitly superseded and are not acceptance candidates.
 requirements-completed: []
 coverage:
   - id: D1
@@ -44,7 +44,7 @@ coverage:
     requirement: TEST-004
     verification:
       - kind: other
-        ref: evidence/phase08-20260915T183432Z-4c1f893dccb0/08-build.json
+        ref: evidence/phase08-20260915T192628Z-54bc100b79cf/08-build.json
         status: pass
     human_judgment: true
     rationale: API 35 install, upgrade, and journey evidence remain owned by Plan 08-02.
@@ -55,13 +55,13 @@ status: complete
 
 # Phase 08 Plan 01: Release-Like Candidate Foundation Summary
 
-**A 67,106,878-byte R8-minified, development-signed release-like APK was rebuilt from 4c1f893 after the RNTP startup repair and sealed with signing-block-aware reproducibility, signing, alignment, manifest, R8, inventory, and secret-scan evidence.**
+**A 67,106,970-byte R8-minified, development-signed release-like APK was rebuilt from 54bc100 after the invalid-hook startup repair and sealed with signing-block-aware reproducibility, signing, alignment, manifest, R8, inventory, and secret-scan evidence.**
 
 ## Performance
 
 - **Duration:** 1h 28min across the original harness work and candidate refresh
 - **Started:** 2026-09-15T17:18:29Z
-- **Completed:** 2026-09-15T18:45:27Z
+- **Completed:** 2026-09-15T19:36:00Z
 - **Tasks:** 2/2
 - **Files modified:** 14 source files; local run evidence retained separately
 
@@ -69,17 +69,18 @@ status: complete
 
 - Added the locked, fail-closed release-like build/evidence harness, toolchain and prerequisite checks, closed untracked-path validation, releaseLike configuration, APK verifier, and evidence schema/writer.
 - Hardened reproducibility after audit: the gate parses the EOCD and APK Signing Block fail-closed, then requires byte-identical raw payload outside that complete block in addition to canonical ZIP metadata, entry payloads, `apksigner` verification, signing schemes, certificate SHA-256, and public-key SHA-256 identity. Its negative self-tests cover content, signer, local-header/compressed-byte/alignment, and malformed-signing-block mutations.
-- Rebuilt the sole current candidate pair from `4c1f893dccb0d19dff1daf56aa7e6a395ba781d9`, which includes the RNTP startup repair (`43b17fb`). The retained releaseLike APK is `ca69cfa161ca8622641f047e6e6fffc08f1db6b5b3f129c5181266926d1cfe24`; its clean repeat is `2c10bf18cf28394ea73972c9e60e4f18da35ec43208e53d033cd2bae5f1d7d66`.
-- Classified the byte difference as `AGP_SDK_DEPENDENCY_METADATA_RANDOMIZED`: both releaseLike APKs have identical signing-block-stripped raw payload SHA-256 `6ec6254272fb79f2a9dfc4a1237b93c5fef0dc71f3799b9205e896a67f591162`, canonical ZIP metadata, entry payloads, and signer identity.
+- Rebuilt the sole current candidate pair from `54bc100b79cff1a52c40dd823fd077f4ad0476c6`, which includes the invalid-hook startup repair (`0915d50`). The retained releaseLike APK is `b3e06e090d273bbc11a7e16e13826e5529f862844222716fa3f31865a629865b`; its clean repeat is `c176feb21b1f9ea486c342f0ff396b97de732b502c2b09571e120dcdd22d4ca2`.
+- Classified the byte difference as `AGP_SDK_DEPENDENCY_METADATA_RANDOMIZED`: both releaseLike APKs have identical signing-block-stripped raw payload SHA-256 `4982a050d09f6b21370f48c12acfc3a77e7e54a1f8fe646465f8bde7f646f9bf`, canonical ZIP metadata, entry payloads, and signer identity.
 
 ## Candidate Evidence
 
-- **Authoritative run:** `.planning/phases/08-integrated-api-35-acceptance-release-like-evidence/evidence/phase08-20260915T183432Z-4c1f893dccb0/`
-- **Build HEAD:** `4c1f893dccb0d19dff1daf56aa7e6a395ba781d9` (including RNTP startup repair `43b17fb`).
-- **ReleaseLike:** `artifacts/releaseLike.apk`; 67,106,878 bytes; SHA-256 `ca69cfa161ca8622641f047e6e6fffc08f1db6b5b3f129c5181266926d1cfe24`; v2 signing verified; signer identity SHA-256 `5841c1ac409f196a516cee13913818a866de0fa08ca243a5e0e133c48ccc61ad`.
-- **Repeat releaseLike:** `reproducibility/releaseLike.apk`; SHA-256 `2c10bf18cf28394ea73972c9e60e4f18da35ec43208e53d033cd2bae5f1d7d66`; signing-block-stripped payload SHA-256 matches primary at `6ec6254272fb79f2a9dfc4a1237b93c5fef0dc71f3799b9205e896a67f591162`; classification `AGP_SDK_DEPENDENCY_METADATA_RANDOMIZED`.
+- **Authoritative run:** `.planning/phases/08-integrated-api-35-acceptance-release-like-evidence/evidence/phase08-20260915T192628Z-54bc100b79cf/`
+- **Build HEAD:** `54bc100b79cff1a52c40dd823fd077f4ad0476c6` (including invalid-hook startup repair `0915d50`).
+- **ReleaseLike:** `artifacts/releaseLike.apk`; 67,106,970 bytes; SHA-256 `b3e06e090d273bbc11a7e16e13826e5529f862844222716fa3f31865a629865b`; v2 signing verified; signer identity SHA-256 `5841c1ac409f196a516cee13913818a866de0fa08ca243a5e0e133c48ccc61ad`.
+- **ReleaseLike AndroidTest:** `artifacts/releaseLikeAndroidTest.apk`; 117,180 bytes; SHA-256 `b4472e73cf2750b2663069f6e664f53a3e73753889e933ea24a576f286c84845`.
+- **Repeat releaseLike:** `reproducibility/releaseLike.apk`; SHA-256 `c176feb21b1f9ea486c342f0ff396b97de732b502c2b09571e120dcdd22d4ca2`; signing-block-stripped payload SHA-256 matches primary at `4982a050d09f6b21370f48c12acfc3a77e7e54a1f8fe646465f8bde7f646f9bf`; canonical ZIP metadata digest `385ba93af388411661d613881f77ad4e976d06f9de94ea30c72ec32e34c0a5da`; entry-content digest `f9f42b5a41b7b0c709d372c24ddbb8047093499b73c561e9998d327931e66feb`; classification `AGP_SDK_DEPENDENCY_METADATA_RANDOMIZED`.
 - **APK checks:** Build Tools 37.0.0 `zipalign -c -P 16 4`, `apksigner verify`, manifest review, R8 mapping/usage/seeds, APK inventory and Phase 7 security scan all passed.
-- **Evidence:** `08-prerequisites.json` and `08-build.json` validate under the closed redacted schema. APKs and diagnostics are deliberately local/untracked candidate evidence, not committed binaries. The prior `phase08-20260915T171829Z-7b163a471721` / `56ad…` run is retained only as superseded historical evidence and must not be installed for acceptance.
+- **Evidence:** `08-prerequisites.json` and `08-build.json` validate under the closed redacted schema. APKs and diagnostics are deliberately local/untracked candidate evidence, not committed binaries. The prior `phase08-20260915T171829Z-7b163a471721` / `56ad…` and `phase08-20260915T183432Z-4c1f893dccb0` / `ca69…` runs are retained only as superseded historical evidence and must not be installed for acceptance.
 
 ## Local CI
 
@@ -90,6 +91,7 @@ Starting `2026-09-15T18:30:44Z` (Asia/Shanghai), in a clean worktree based on th
 - `npm run mobile:typecheck`, mobile ESLint, `git diff --check`, and `node mobile/scripts/verify-phase7-security.mjs` passed.
 - `./gradlew --offline --no-daemon :app:testDebugUnitTest` passed. Existing AGP/KSP deprecation/version warnings remain external toolchain warnings; no source error occurred.
 - The final documentation snapshot was re-gated at `2026-09-15T18:48:22Z`–`18:48:37Z`: the same 52 suites / 263 tests, typecheck, lint, diff check, Phase 7 scan, hardened self-test, and offline JVM gate passed.
+- The invalid-hook candidate was fully re-gated from `2026-09-15T19:24:20Z`: locked `npm ci`, 53 suites / 264 tests, typecheck, lint, diff check, Phase 7 scan, hardened self-test, and offline JVM gate passed before the sole candidate pair was built.
 
 ## Task Commits
 
@@ -127,7 +129,7 @@ Starting `2026-09-15T18:30:44Z` (Asia/Shanghai), in a clean worktree based on th
 
 ## Next Phase Readiness
 
-Plan 08-02 can install the retained debug baseline and the authoritative `ca69…` releaseLike candidate once on an API 35 emulator for the data-preserving upgrade and integrated journey. This plan did not launch an emulator, use real credentials, change formal release signing, merge, or deploy.
+Plan 08-02 can install the retained debug baseline and the authoritative `b3e0…` releaseLike candidate once on an API 35 emulator for the data-preserving upgrade and integrated journey. This plan did not launch an emulator, use real credentials, change formal release signing, merge, or deploy.
 
 ## Self-Check: PASSED
 
