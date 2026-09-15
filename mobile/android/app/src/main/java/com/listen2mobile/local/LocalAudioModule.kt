@@ -5,6 +5,8 @@ import android.content.Intent
 import com.facebook.react.bridge.*
 import com.facebook.react.module.annotations.ReactModule
 import java.util.UUID
+import com.listen2mobile.library.LibraryRepository
+import com.listen2mobile.library.SafeLocalRecord
 
 @ReactModule(name = LocalAudioModule.NAME)
 class LocalAudioModule(private val app: ReactApplicationContext) : ReactContextBaseJavaModule(app), ActivityEventListener {
@@ -23,8 +25,13 @@ class LocalAudioModule(private val app: ReactApplicationContext) : ReactContextB
         val current = pending ?: return; pending = null
         if (resultCode != Activity.RESULT_OK || data == null) { current.second.resolve(receipt(current.first, "cancelled")); return }
         val uris = buildList { data.data?.let(::add); data.clipData?.let { clip -> for (i in 0 until minOf(clip.itemCount, LocalAudioPolicy.MAX_BATCH)) add(clip.getItemAt(i).uri) } }.distinct()
-        var imported = 0; var unsupported = 0
-        uris.forEach { uri -> try { app.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION); if (LocalAudioPolicy.supportedMime(app.contentResolver.getType(uri))) imported++ else unsupported++ } catch (_: Exception) { unsupported++ } }
+        var unsupported = 0
+        val accepted = uris.mapNotNull { uri -> try {
+            app.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            if (!LocalAudioPolicy.supportedMime(app.contentResolver.getType(uri))) { unsupported++; null }
+            else SafeLocalRecord(UUID.randomUUID().toString(), "本地音频", "本地音频", "available")
+        } catch (_: Exception) { unsupported++; null } }
+        val imported = if (accepted.isEmpty()) 0 else LibraryRepository.open(app).insertLocalRecords(accepted).first
         current.second.resolve(receipt(current.first, if (imported > 0) "success" else "rejected", imported, unsupported))
     }
     override fun onNewIntent(intent: Intent) = Unit

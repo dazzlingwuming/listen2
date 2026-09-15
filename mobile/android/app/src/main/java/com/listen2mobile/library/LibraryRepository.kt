@@ -63,6 +63,7 @@ internal data class SafeTrack(val source: String, val trackId: String, val title
 internal data class SafePlaylist(val playlistId: String, val title: String, val position: Int, val tracks: List<SafeTrack>)
 internal data class LibrarySnapshot(val schemaVersion: Int, val revision: Long, val personalPlaylists: List<SafePlaylist>, val favorites: List<SafeTrack>)
 internal data class LibraryReceipt(val requestId: String, val status: String, val revision: Long, val errorCode: String? = null, val snapshot: LibrarySnapshot? = null)
+internal data class SafeLocalRecord(val recordId: String, val title: String, val artist: String, val availability: String)
 internal data class BackupPlaylistInput(val playlistId: String, val title: String, val tracks: List<SafeTrack>)
 internal data class BackupInput(val expectedRevision: Long, val mode: String, val favorites: List<SafeTrack>, val playlists: List<BackupPlaylistInput>)
 internal data class BackupPreview(val status: String, val token: String?, val checksum: String?, val baseRevision: Long, val addedFavorites: Int, val addedPlaylists: Int, val skippedPlaylists: Int, val conflictedPlaylists: Int, val errorCode: String? = null)
@@ -73,6 +74,17 @@ private data class PlannedBackup(val input: BackupInput, val addedFavorites: Int
 internal class LibraryRepository internal constructor(private val database: Listen2Database) {
     private val pendingBackups = LinkedHashMap<String, PendingBackup>()
     fun snapshot(): LibrarySnapshot = database.runInTransaction<LibrarySnapshot> { snapshotLocked() }
+
+    /** URI/grant association remains outside Room; Room receives only the opaque display record. */
+    internal fun insertLocalRecords(records: List<SafeLocalRecord>): Pair<Int, Long> = database.runInTransaction<Pair<Int, Long>> {
+        val dao = database.libraryDao()
+        val current = dao.meta() ?: LibraryMetaEntity(revision = 0L).also(dao::insertMeta)
+        val known = dao.localRecords().map { it.localRecordId }.toSet()
+        records.filter { it.recordId !in known }.forEach { dao.putLocalRecord(LocalRecordEntity(it.recordId, it.title, it.artist, it.availability)) }
+        val added = records.count { it.recordId !in known }
+        if (added > 0) dao.updateMeta(LibraryMetaEntity(revision = current.revision + 1))
+        added to (if (added > 0) current.revision + 1 else current.revision)
+    }
 
     fun apply(mutation: LibraryMutation): LibraryReceipt = database.runInTransaction<LibraryReceipt> {
         val dao = database.libraryDao()
