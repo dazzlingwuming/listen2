@@ -721,6 +721,10 @@ class PlayerController {
     );
   }
 
+  private isQueuedOccurrenceHead(occurrenceId: string) {
+    return playerState().playNextQueue[0]?.occurrenceId === occurrenceId;
+  }
+
   private hasHistoryEntry(entry: HistoryEntry) {
     return playerState().history.some(
       item =>
@@ -975,9 +979,24 @@ class PlayerController {
         media = null;
       }
     }
+    const priorState = playerState();
+    let rollback: NativeRollbackSnapshot | null;
     try {
       await ensurePlayer();
+      rollback = await captureRollbackSnapshot(priorState);
       assertNativeOperationCurrent(context);
+    } catch {
+      if (!isNativeOperationCurrent(context)) return false;
+      // Do not reset RNTP unless the existing semantic item has a native
+      // snapshot we can restore.  An empty semantic player intentionally has
+      // no snapshot and may still proceed with an import.
+      if (priorState.nowPlaying) {
+        emit(dispatch, 'player/setError', 'playback-transition-unavailable');
+        return false;
+      }
+      rollback = null;
+    }
+    try {
       context.markMutation();
       await TrackPlayer.stop();
       assertNativeOperationCurrent(context);
@@ -1001,6 +1020,31 @@ class PlayerController {
       return true;
     } catch (error) {
       if (!isNativeOperationCurrent(context)) return false;
+      if (context.didMutate() && rollback) {
+        try {
+          await restoreRollbackSnapshot(rollback, context);
+          this.markNativeTrackLoaded();
+          emit(dispatch, 'player/setPlaying', rollback.playing);
+          emit(dispatch, 'player/setError', 'playback-unavailable');
+          return false;
+        } catch {
+          try {
+            await TrackPlayer.pause();
+          } catch {
+            // Recovery is bounded to a single best-effort native pause.
+          }
+          // The old semantic queue remains authoritative, but RNTP can no
+          // longer be trusted.  Force the next Play through a fresh load.
+          this.markNativeQueueCleared();
+          emit(dispatch, 'player/setPlaying', false);
+          emit(dispatch, 'player/setError', 'playback-recovery-required');
+          return false;
+        }
+      }
+      if (context.didMutate()) {
+        this.markNativeQueueCleared();
+        emit(dispatch, 'player/setPlaying', false);
+      }
       emit(
         dispatch,
         'player/setError',
@@ -1021,7 +1065,7 @@ class PlayerController {
     if (state.playNextQueue.length) {
       const occurrence = state.playNextQueue[0];
       const { transitionToken, context } = this.beginTransition(dispatch, () =>
-        this.hasQueuedOccurrence(occurrence.occurrenceId),
+        this.isQueuedOccurrenceHead(occurrence.occurrenceId),
       );
       return transition(
         dispatch,
@@ -1340,7 +1384,8 @@ class PlayerController {
         : undefined;
     if (
       typeof nativeTrackId !== 'string' ||
-      nativeTrackId !== this.activeNativeTrackId
+      nativeTrackId !== this.activeNativeTrackId ||
+      this.activeNativeGeneration !== this.nativeGeneration
     )
       return null;
     this.activeNativeTrackIndex =
@@ -1355,24 +1400,12 @@ class PlayerController {
     };
   }
 
-  nativeCallbackIdentity(
-    nativeTrackIndex?: number,
-  ): NativeCallbackIdentity | null {
-    if (
-      !this.activeNativeTrackId ||
-      (nativeTrackIndex !== undefined &&
-        nativeTrackIndex !== this.activeNativeTrackIndex)
-    )
-      return null;
-    return {
-      nativeTrackId: this.activeNativeTrackId,
-      generation: this.activeNativeGeneration,
-      nativeTrackIndex: this.activeNativeTrackIndex ?? undefined,
-    };
-  }
-
   private isNativeCallbackCurrent(identity?: NativeCallbackIdentity) {
-    if (!identity) return true;
+    // PlaybackState and PlaybackError omit an RNTP track identity.  They can
+    // arrive late after a reset/load, so treating them as whichever item is
+    // current would let A mutate B.  Only callbacks closed over an identity
+    // observed in PlaybackActiveTrackChanged are allowed through.
+    if (!identity) return false;
     return (
       identity.nativeTrackId === this.activeNativeTrackId &&
       identity.generation === this.activeNativeGeneration &&

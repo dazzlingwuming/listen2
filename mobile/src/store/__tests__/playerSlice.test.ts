@@ -116,6 +116,25 @@ describe('playerSlice', () => {
     expect(state.transitionToken).toBeGreaterThan(7);
   });
 
+  it('invalidates an in-flight transition when a queued occurrence is reordered', () => {
+    let state = reducer(undefined, playerActions.enqueueNext(track('ne_1')));
+    state = reducer(state, playerActions.enqueueNext(track('ne_2')));
+    state = reducer(state, playerActions.beginTransition(7));
+    state = reducer(
+      state,
+      playerActions.moveQueuedNext({
+        occurrenceId: state.playNextQueue[0].occurrenceId,
+        direction: 1,
+      }),
+    );
+
+    expect(state.playNextQueue.map(item => item.track.id)).toEqual([
+      'ne_2',
+      'ne_1',
+    ]);
+    expect(state.transitionToken).toBeGreaterThan(7);
+  });
+
   it('invalidates an in-flight transition when the playlist is replaced', () => {
     let state = reducer(undefined, playerActions.beginTransition(4));
     state = reducer(

@@ -12,7 +12,7 @@ export const PLAY_MODE = Object.freeze({
   REPEAT_ONE: 2,
 } as const);
 
-export type PlayMode = typeof PLAY_MODE[keyof typeof PLAY_MODE];
+export type PlayMode = (typeof PLAY_MODE)[keyof typeof PLAY_MODE];
 export type PlaybackSource = 'playlist' | 'play-next';
 
 /**
@@ -282,6 +282,10 @@ const playerSlice = createSlice({
       const target = index + action.payload.direction;
       if (index < 0 || target < 0 || target >= state.playNextQueue.length)
         return;
+      // A successful reorder changes the requested FIFO head.  Any deferred
+      // native transition captured against the old ordering must fail closed
+      // rather than consuming that occurrence from its new position.
+      invalidateTransition(state);
       [state.playNextQueue[index], state.playNextQueue[target]] = [
         state.playNextQueue[target],
         state.playNextQueue[index],

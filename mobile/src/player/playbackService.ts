@@ -7,17 +7,24 @@ import { playerController } from './playerController';
  * and Redux only receives a snapshot of that native state.
  */
 export default async function playbackService() {
-  // RNTP progress/state/error events do not all carry a track object. Bind the
-  // generated RNTP ID from the authoritative active-track event and carry that
-  // generation through every later callback. A late event cannot then mutate a
-  // newer one-item queue after a controller reset.
+  // RNTP progress/terminal callbacks do not all carry a track object.  The
+  // active-track event is the only authoritative identity hand-off.  In
+  // particular, state/error events have no track identifier, so they are
+  // deliberately quarantined instead of being forged as the newest track.
   let activeIdentity: ReturnType<
     typeof playerController.onNativeActiveTrackChanged
   > = null;
-  const callbackIdentity = (nativeTrackIndex?: number) =>
-    playerController.nativeCallbackIdentity(nativeTrackIndex) ??
-    activeIdentity ??
-    undefined;
+  const callbackIdentity = (nativeTrackIndex?: number) => {
+    if (!activeIdentity) return undefined;
+    if (
+      nativeTrackIndex !== undefined &&
+      activeIdentity.nativeTrackIndex !== undefined &&
+      nativeTrackIndex !== activeIdentity.nativeTrackIndex
+    ) {
+      return undefined;
+    }
+    return activeIdentity;
+  };
   const settle = async (operation: () => Promise<unknown>) => {
     try {
       await operation();
@@ -57,10 +64,10 @@ export default async function playbackService() {
     );
   });
   TrackPlayer.addEventListener(Event.PlaybackState, event => {
-    playerController.onPlaybackState(event.state as State, callbackIdentity());
+    playerController.onPlaybackState(event.state as State, undefined);
   });
   TrackPlayer.addEventListener(Event.PlaybackError, () => {
-    playerController.onPlaybackError(callbackIdentity());
+    playerController.onPlaybackError(undefined);
   });
   TrackPlayer.addEventListener(Event.PlaybackQueueEnded, event =>
     playerController.onPlaybackQueueEnded(callbackIdentity(event.track)),

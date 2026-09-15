@@ -21,7 +21,6 @@ const mockController = {
   onPlaybackError: jest.fn(),
   onPlaybackQueueEnded: jest.fn().mockResolvedValue(true),
   onNativeActiveTrackChanged: jest.fn(),
-  nativeCallbackIdentity: jest.fn(),
 };
 
 jest.mock('react-native-track-player', () => ({
@@ -64,8 +63,6 @@ jest.mock('../playerController', () => ({
       mockController.onPlaybackQueueEnded(...args),
     onNativeActiveTrackChanged: (...args: unknown[]) =>
       mockController.onNativeActiveTrackChanged(...args),
-    nativeCallbackIdentity: (...args: unknown[]) =>
-      mockController.nativeCallbackIdentity(...args),
   },
 }));
 
@@ -106,7 +103,6 @@ describe('playbackService delegation', () => {
       nativeTrackIndex: 0,
     };
     mockController.onNativeActiveTrackChanged.mockReturnValue(identity);
-    mockController.nativeCallbackIdentity.mockReturnValue(identity);
     await playbackService();
 
     mockListeners.get(Event.PlaybackActiveTrackChanged)?.({
@@ -135,9 +131,45 @@ describe('playbackService delegation', () => {
     );
     expect(mockController.onPlaybackState).toHaveBeenCalledWith(
       State.Playing,
-      identity,
+      undefined,
     );
-    expect(mockController.onPlaybackError).toHaveBeenCalledWith(identity);
+    expect(mockController.onPlaybackError).toHaveBeenCalledWith(undefined);
     expect(mockController.onPlaybackQueueEnded).toHaveBeenCalledWith(identity);
+  });
+
+  it('quarantines identifier-less terminal callbacks after active ownership changes from A to B', async () => {
+    const firstIdentity = {
+      nativeTrackId: 'listen2:netrack_a:generated',
+      generation: 7,
+      nativeTrackIndex: 0,
+    };
+    const secondIdentity = {
+      nativeTrackId: 'listen2:netrack_b:generated',
+      generation: 8,
+      nativeTrackIndex: 0,
+    };
+    mockController.onNativeActiveTrackChanged
+      .mockReturnValueOnce(firstIdentity)
+      .mockReturnValueOnce(secondIdentity);
+    await playbackService();
+
+    mockListeners.get(Event.PlaybackActiveTrackChanged)?.({
+      index: 0,
+      track: { id: firstIdentity.nativeTrackId },
+    });
+    mockListeners.get(Event.PlaybackActiveTrackChanged)?.({
+      index: 0,
+      track: { id: secondIdentity.nativeTrackId },
+    });
+    // RNTP omits a track ID here, so this may be a delayed A callback.  The
+    // service deliberately refuses to turn it into a synthetic B identity.
+    mockListeners.get(Event.PlaybackState)?.({ state: State.Playing });
+    mockListeners.get(Event.PlaybackError)?.({});
+
+    expect(mockController.onPlaybackState).toHaveBeenLastCalledWith(
+      State.Playing,
+      undefined,
+    );
+    expect(mockController.onPlaybackError).toHaveBeenLastCalledWith(undefined);
   });
 });
