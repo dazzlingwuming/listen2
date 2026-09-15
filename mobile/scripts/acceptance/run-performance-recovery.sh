@@ -71,7 +71,13 @@ if [[ "$MODE" == api35 ]]; then
   "$ADB" -s "$SERIAL" shell top -b -n 1 > "$RUN_DIR/performance/resources-top.txt" 2>&1 || true
   "$ADB" -s "$SERIAL" shell dumpsys batterystats "$PACKAGE" > "$RUN_DIR/performance/resources-battery.txt" 2>&1 || true
   "$ADB" -s "$SERIAL" shell dumpsys netstats > "$RUN_DIR/performance/resources-netstats.txt" 2>&1 || true
-  "$ADB" -s "$SERIAL" shell input keyevent KEYCODE_SLEEP || true; sleep "$SOAK_SECONDS"; "$ADB" -s "$SERIAL" shell input keyevent KEYCODE_WAKEUP || true
+  SOAK_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  SOAK_DEADLINE_EPOCH="$(( $(date +%s) + SOAK_SECONDS ))"
+  printf 'runner_pid=%s\ninstrumentation=completed-sync-adb\nstarted_at=%s\ndeadline_epoch=%s\nserial=%s\n' "$$" "$SOAK_STARTED_AT" "$SOAK_DEADLINE_EPOCH" "$SERIAL" > "$RUN_DIR/performance/api35-soak-window.txt"
+  "$ADB" -s "$SERIAL" shell input keyevent KEYCODE_SLEEP || fail 'could not start screen-off soak'
+  sleep "$SOAK_SECONDS"
+  [[ "$("$ADB" -s "$SERIAL" get-state 2>/dev/null || true)" == device ]] || fail 'API35 soak interrupted: explicit serial is unavailable after deadline'
+  "$ADB" -s "$SERIAL" shell input keyevent KEYCODE_WAKEUP || fail 'could not finish screen-off soak'
   node --input-type=module - "$RUN_DIR" "$BUILD_HEAD" "$RELEASE_SHA" "$TEST_SHA" "$FIXTURE_SHA" "$STARTED_AT" "$DEVICE_API" "$COLD" <<'NODE' > "$RUN_DIR/.api35-performance.json"
 import { readFileSync } from 'node:fs'; import { createHash } from 'node:crypto';
 const [run, head, productSha, testSha, fixtureSha, started, api, cold] = process.argv.slice(2); const hash = file => createHash('sha256').update(readFileSync(file)).digest('hex');
