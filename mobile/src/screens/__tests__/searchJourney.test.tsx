@@ -61,9 +61,6 @@ jest.mock('../../store/playerSlice', () => ({
   playTrack: jest.fn(() => ({ type: 'player/playTrack' })),
   addNextTrack: jest.fn(() => ({ type: 'player/addNextTrack' })),
 }));
-jest.mock('../../store/downloadSlice', () => ({
-  requestDownload: jest.fn(() => ({ type: 'downloads/request' })),
-}));
 jest.mock('../../components/SourceTabs', () => ({
   SourceTabs: () => null,
   providerLabels: {

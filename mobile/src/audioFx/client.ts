@@ -26,14 +26,19 @@ type NativeEffects = Readonly<{
   setFixedNormalizationGain?: (gain: number) => Promise<unknown>;
 }>;
 
-const nativeEffects = NativeModules.Listen2AudioEffects as NativeEffects | undefined;
+// Some test/browser hosts expose no NativeModules object at all; effects stay optional.
+const nativeEffects = NativeModules?.Listen2AudioEffects as
+  | NativeEffects
+  | undefined;
 const neutral: AudioEffectsSnapshot = {
   status: 'unavailable',
   preset: 'neutral',
   fixedGain: 1,
 };
 
-export function parseAudioEffectsSnapshot(value: unknown): AudioEffectsSnapshot {
+export function parseAudioEffectsSnapshot(
+  value: unknown,
+): AudioEffectsSnapshot {
   if (!value || typeof value !== 'object') return neutral;
   const record = value as Record<string, unknown>;
   const status = record.status;
@@ -41,7 +46,9 @@ export function parseAudioEffectsSnapshot(value: unknown): AudioEffectsSnapshot 
   const fixedGain = record.fixedGain;
   return {
     status:
-      status === 'enabled' || status === 'disabled' || status === 'invalid-preset'
+      status === 'enabled' ||
+      status === 'disabled' ||
+      status === 'invalid-preset'
         ? status
         : 'unavailable',
     preset:
@@ -78,13 +85,16 @@ export const audioEffectsClient = {
 };
 
 export function audioEffectsLabel(snapshot: AudioEffectsSnapshot) {
-  if (snapshot.status === 'unavailable') return '音效不可用（当前播放会话不支持）';
+  if (snapshot.status === 'unavailable')
+    return '音效不可用（当前播放会话不支持）';
   if (snapshot.status === 'enabled') return `音效：${snapshot.preset}`;
   return '音效：原声';
 }
 
 /** Reject malformed, stale-shape, or synthetic-looking native payloads at the bridge boundary. */
-export function parseAudioAnalysisFrame(value: unknown): AudioAnalysisFrame | null {
+export function parseAudioAnalysisFrame(
+  value: unknown,
+): AudioAnalysisFrame | null {
   if (!value || typeof value !== 'object') return null;
   const record = value as Record<string, unknown>;
   if (
@@ -97,7 +107,8 @@ export function parseAudioAnalysisFrame(value: unknown): AudioAnalysisFrame | nu
     typeof record.generation !== 'number' ||
     !Number.isSafeInteger(record.generation) ||
     record.generation < 0
-  ) return null;
+  )
+    return null;
   const bins = record.bins.map(bin =>
     typeof bin === 'number' && Number.isFinite(bin) && bin >= 0 && bin <= 1
       ? bin

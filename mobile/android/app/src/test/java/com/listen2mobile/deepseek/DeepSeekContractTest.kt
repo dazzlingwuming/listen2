@@ -54,7 +54,7 @@ class DeepSeekContractTest {
             request.headerNames,
         )
         assertTrue(request.body.contains(DeepSeekPolicy.RESPONSE_SCHEMA))
-        assertTrue(request.body.contains("\"revision\":$revision"))
+        assertTrue(request.body.contains("revision $revision"))
     }
 
     @Test

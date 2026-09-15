@@ -73,9 +73,7 @@ describe('deepSeekClient', () => {
     native.translate.mockResolvedValue({
       operation: 'translate',
       status: 'ok',
-      translationLines: [
-        { id: 'E0001', timestamp: '[00:01.00]', text: '一' },
-      ],
+      translationLines: [{ id: 'E0001', timestamp: '[00:01.00]', text: '一' }],
       revision: 7,
       lyricHash,
       trackHash,
@@ -148,6 +146,7 @@ describe('deepSeekClient', () => {
       style: '',
       lyricHash,
       trackHash,
+      revision: 0,
       target: 'zh-CN',
       consent: {
         lyrics: false,
@@ -161,7 +160,7 @@ describe('deepSeekClient', () => {
       allowNetwork: false,
       forceRefresh: false,
       matchedProvider: 'netease',
-      matchedCandidateId: 'netrack_1',
+      matchedCandidateId: 'netrack_123456',
     };
     await expect(deepSeekClient.translate(request)).resolves.toMatchObject({
       status: 'not-cached',

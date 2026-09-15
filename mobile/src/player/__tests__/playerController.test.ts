@@ -14,17 +14,20 @@ const mockNativePlayer = {
   getPlaybackState: jest.fn(),
 };
 const mockResolveMedia = jest.fn();
-const SAFE_MEDIA_URI = 'content://com.dazzlingwuming.listen2.media/lease/' + 'a'.repeat(48);
+const SAFE_MEDIA_URI =
+  'content://com.dazzlingwuming.listen2.media/lease/' + 'a'.repeat(48);
 const nativeMediaFixture = (value: unknown) => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
   const result = { ...(value as Record<string, unknown>) };
   const playableUri =
-    typeof result.playableUri === 'string' ? result.playableUri : SAFE_MEDIA_URI;
+    typeof result.playableUri === 'string'
+      ? result.playableUri
+      : SAFE_MEDIA_URI;
   delete result.url;
   delete result.headers;
   return { ...result, playableUri };
 };
-const mockResolveVerified = jest.fn().mockResolvedValue({ status: 'miss' });
+const mockResolveReady = jest.fn().mockResolvedValue({ status: 'miss' });
 const mockInvalidate = jest.fn().mockResolvedValue({});
 const mockPrepareLocalPlayback = jest.fn();
 
@@ -63,14 +66,15 @@ jest.mock('react-native-track-player', () => ({
 
 jest.mock('../../api/client', () => ({
   providerClient: {
-    resolveMedia: (...args: unknown[]) => Promise.resolve(mockResolveMedia(...args)).then(nativeMediaFixture),
+    resolveMedia: (...args: unknown[]) =>
+      Promise.resolve(mockResolveMedia(...args)).then(nativeMediaFixture),
   },
 }));
 jest.mock('../../offline/offlineAudio', () => ({
   isOfflineDownloadEligible: (value: any) =>
     value?.source === 'netease' || value?.source === 'kugou',
   offlineAudio: {
-    resolveVerified: (...args: unknown[]) => mockResolveVerified(...args),
+    resolveReady: (...args: unknown[]) => mockResolveReady(...args),
     invalidate: (...args: unknown[]) => mockInvalidate(...args),
   },
 }));
@@ -142,7 +146,7 @@ describe('PlayerController queue transitions', () => {
     mockNativePlayer.getPlaybackState
       .mockReset()
       .mockResolvedValue({ state: 'playing' });
-    mockResolveVerified.mockResolvedValue({ status: 'miss' });
+    mockResolveReady.mockResolvedValue({ status: 'miss' });
     mockPrepareLocalPlayback.mockReset();
     Object.defineProperty(NativeModules, 'Listen2LocalAudio', {
       configurable: true,
@@ -201,7 +205,10 @@ describe('PlayerController queue transitions', () => {
     );
 
     // Diagnostic assertion keeps failures readable without exposing provider data.
-    expect(mockResolveMedia).toHaveBeenCalledWith(selected, expect.any(AbortSignal));
+    expect(mockResolveMedia).toHaveBeenCalledWith(
+      selected,
+      expect.any(AbortSignal),
+    );
 
     expect(state.currentTrack?.id).toBe(selected.id);
     expect(state.playNextQueue.map(item => item.track.id)).toEqual([first.id]);
@@ -242,7 +249,10 @@ describe('PlayerController queue transitions', () => {
     let resolveQq!: (value: { url: string }) => void;
     mockResolveMedia
       .mockImplementationOnce(
-        () => new Promise<{ url: string }>(resolve => { resolveQq = resolve; }),
+        () =>
+          new Promise<{ url: string }>(resolve => {
+            resolveQq = resolve;
+          }),
       )
       .mockResolvedValueOnce({ url: SAFE_MEDIA_URI });
 
@@ -307,7 +317,7 @@ describe('PlayerController queue transitions', () => {
       playerActions.replacePlaylist({ tracks: [track('netrack_1')] }),
     );
     state = reducer(state, playerActions.enqueueNext(queued));
-    mockResolveVerified.mockResolvedValueOnce({
+    mockResolveReady.mockResolvedValueOnce({
       status: 'hit',
       uri: SAFE_MEDIA_URI,
       mimeType: 'audio/mpeg',
@@ -329,7 +339,10 @@ describe('PlayerController queue transitions', () => {
       headers: { Referer: SAFE_MEDIA_URI },
     });
     await playerController.playTracks(dispatch, [selected]);
-    expect(mockResolveMedia).toHaveBeenCalledWith(selected, expect.any(AbortSignal));
+    expect(mockResolveMedia).toHaveBeenCalledWith(
+      selected,
+      expect.any(AbortSignal),
+    );
     expect(mockNativePlayer.add).toHaveBeenCalledWith(
       expect.objectContaining({ url: signedUrl }),
     );
@@ -392,14 +405,14 @@ describe('PlayerController queue transitions', () => {
       playerActions.replacePlaylist({ tracks: [track('netrack_1')] }),
     );
     state = reducer(state, playerActions.enqueueNext(queued));
-    mockResolveVerified.mockResolvedValueOnce({ status: 'corrupt' });
+    mockResolveReady.mockResolvedValueOnce({ status: 'corrupt' });
     mockResolveMedia.mockResolvedValueOnce({
       url: SAFE_MEDIA_URI,
     });
 
     await playerController.next(dispatch);
 
-    expect(mockResolveVerified).toHaveBeenCalledWith('netease', queued.id);
+    expect(mockResolveReady).toHaveBeenCalledWith('netease', queued.id);
     expect(mockResolveMedia).toHaveBeenCalledTimes(1);
     expect(state.playNextQueue).toEqual([]);
   });
@@ -411,7 +424,7 @@ describe('PlayerController queue transitions', () => {
       playerActions.replacePlaylist({ tracks: [track('netrack_1')] }),
     );
     state = reducer(state, playerActions.enqueueNext(queued));
-    mockResolveVerified.mockResolvedValueOnce({
+    mockResolveReady.mockResolvedValueOnce({
       status: 'hit',
       uri: SAFE_MEDIA_URI,
       mimeType: 'audio/mpeg',
@@ -435,7 +448,7 @@ describe('PlayerController queue transitions', () => {
     );
     state = reducer(state, playerActions.setPlaying(true));
     state = reducer(state, playerActions.enqueueNext(queued));
-    mockResolveVerified.mockResolvedValueOnce({
+    mockResolveReady.mockResolvedValueOnce({
       status: 'hit',
       uri: SAFE_MEDIA_URI,
       mimeType: 'audio/mpeg',
@@ -458,11 +471,7 @@ describe('PlayerController queue transitions', () => {
       playerActions.replacePlaylist({ tracks: [track('netrack_1')] }),
     );
     state = reducer(state, playerActions.enqueueNext(queued));
-    mockResolveMedia.mockRejectedValueOnce(
-      new Error(
-        SAFE_MEDIA_URI,
-      ),
-    );
+    mockResolveMedia.mockRejectedValueOnce(new Error(SAFE_MEDIA_URI));
 
     await playerController.next(dispatch);
 
@@ -470,9 +479,7 @@ describe('PlayerController queue transitions', () => {
     expect(state.error).not.toContain(SAFE_MEDIA_URI);
     expect(state.error).not.toContain('content://');
     expect(playerErrorCopy(state.error)).toBe('播放暂不可用，请稍后重试。');
-    expect(playerErrorCopy(SAFE_MEDIA_URI)).toBe(
-      '播放暂不可用，请稍后重试。',
-    );
+    expect(playerErrorCopy(SAFE_MEDIA_URI)).toBe('播放暂不可用，请稍后重试。');
   });
 
   it('does not query offline storage for an unsupported provider', async () => {
@@ -488,8 +495,11 @@ describe('PlayerController queue transitions', () => {
 
     await playerController.next(dispatch);
 
-    expect(mockResolveVerified).not.toHaveBeenCalled();
-    expect(mockResolveMedia).toHaveBeenCalledWith(unsupported, expect.any(AbortSignal));
+    expect(mockResolveReady).not.toHaveBeenCalled();
+    expect(mockResolveMedia).toHaveBeenCalledWith(
+      unsupported,
+      expect.any(AbortSignal),
+    );
   });
 
   it('does not consume a local queued track when native loading fails', async () => {
@@ -522,12 +532,19 @@ describe('PlayerController queue transitions', () => {
         }),
     );
 
-    await expect(playerController.playTrack(dispatch, local)).resolves.toBe(true);
+    await expect(playerController.playTrack(dispatch, local)).resolves.toBe(
+      true,
+    );
 
-    expect(mockPrepareLocalPlayback).toHaveBeenCalledWith(local.id, expect.stringMatching(/^local_play_/));
-    expect(mockNativePlayer.add).toHaveBeenCalledWith(expect.objectContaining({
-      url: 'content://com.dazzlingwuming.listen2.local-media/play/abcdefghijklmnopqrstuvwxyzABCDEF',
-    }));
+    expect(mockPrepareLocalPlayback).toHaveBeenCalledWith(
+      local.id,
+      expect.stringMatching(/^local_play_/),
+    );
+    expect(mockNativePlayer.add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: 'content://com.dazzlingwuming.listen2.local-media/play/abcdefghijklmnopqrstuvwxyzABCDEF',
+      }),
+    );
     expect(JSON.stringify(state)).not.toContain('.local-media/play/');
   });
 
@@ -593,7 +610,10 @@ describe('PlayerController queue transitions', () => {
 
     const pending = playerController.next(dispatch);
     await waitForBootstrapStart();
-    expect(mockResolveMedia).toHaveBeenCalledWith(first, expect.any(AbortSignal));
+    expect(mockResolveMedia).toHaveBeenCalledWith(
+      first,
+      expect.any(AbortSignal),
+    );
     dispatch(
       playerActions.moveQueuedNext({
         occurrenceId: state.playNextQueue[0].occurrenceId,
@@ -819,7 +839,10 @@ describe('PlayerController queue transitions', () => {
     expect(state.error).toBe('playback-recovery-required');
 
     await expect(playerController.play(dispatch)).resolves.toBe(true);
-    expect(mockResolveMedia).toHaveBeenLastCalledWith(current, expect.any(AbortSignal));
+    expect(mockResolveMedia).toHaveBeenLastCalledWith(
+      current,
+      expect.any(AbortSignal),
+    );
     expect(mockNativePlayer.add).toHaveBeenCalledTimes(3);
     expect(state.isPlaying).toBe(true);
   });

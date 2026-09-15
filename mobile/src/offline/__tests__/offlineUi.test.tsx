@@ -1,12 +1,12 @@
 const mockListeners: Array<(value: unknown) => void> = [];
 const mockNativeModule = {
-  listDownloads: jest.fn(),
-  enqueueDownload: jest.fn(),
-  cancelDownload: jest.fn(),
-  retryDownload: jest.fn(),
-  removeDownload: jest.fn(),
-  clearDownloads: jest.fn(),
+  cacheSnapshot: jest.fn(),
+  requestExplicitCache: jest.fn(),
+  promoteCache: jest.fn(),
+  cacheAction: jest.fn(),
   invalidate: jest.fn(),
+  setCacheQuota: jest.fn(),
+  resolveVerified: jest.fn(),
 };
 
 const mockReactNative = () => {
@@ -14,10 +14,7 @@ const mockReactNative = () => {
     addListener(_event: string, listener: (value: unknown) => void) {
       mockListeners.push(listener);
       return {
-        remove: () => {
-          const index = mockListeners.indexOf(listener);
-          if (index >= 0) mockListeners.splice(index, 1);
-        },
+        remove: () => mockListeners.splice(mockListeners.indexOf(listener), 1),
       };
     }
   }
@@ -27,17 +24,14 @@ const mockReactNative = () => {
   };
 };
 
-import type { DownloadSnapshot } from '../offlineAudio';
-import type { DownloadEntry } from '../offlineAudio';
 import { offlineDownloadErrorCopy } from '../offlineErrorCopy';
 
 let offlineAudio: typeof import('../offlineAudio').offlineAudio;
 let isOfflineDownloadEligible: typeof import('../offlineAudio').isOfflineDownloadEligible;
-let reducer: typeof import('../../store/downloadSlice').default;
-let downloadActions: typeof import('../../store/downloadSlice').downloadActions;
 
-const readySnapshot: DownloadSnapshot = {
+const readySnapshot = {
   usedBytes: 12,
+  reservedBytes: 0,
   quotaBytes: 512 * 1024 * 1024,
   entries: [
     {
@@ -46,6 +40,7 @@ const readySnapshot: DownloadSnapshot = {
       trackId: 'netrack_1',
       title: 'title',
       artist: 'artist',
+      owners: ['explicit'],
       status: 'ready',
       downloadedBytes: 12,
       totalBytes: 12,
@@ -55,7 +50,7 @@ const readySnapshot: DownloadSnapshot = {
   ],
 };
 
-describe('offline download adapter and volatile catalog projection', () => {
+describe('offline cache adapter and native catalog projection', () => {
   const track = (source: string, id: string) =>
     ({ source, id, title: '歌', artist: '艺人' } as any);
 
@@ -63,10 +58,6 @@ describe('offline download adapter and volatile catalog projection', () => {
     jest.resetModules();
     jest.doMock('react-native', mockReactNative);
     ({ offlineAudio, isOfflineDownloadEligible } = require('../offlineAudio'));
-    ({
-      default: reducer,
-      downloadActions,
-    } = require('../../store/downloadSlice'));
     jest.clearAllMocks();
     mockListeners.splice(0);
     Object.values(mockNativeModule).forEach(method =>
@@ -74,7 +65,7 @@ describe('offline download adapter and volatile catalog projection', () => {
     );
   });
 
-  it('allows only explicit semantic NetEase and Kugou tracks', () => {
+  it('allows only semantic NetEase and Kugou requests', () => {
     expect(isOfflineDownloadEligible(track('netease', 'netrack_123'))).toBe(
       true,
     );
@@ -86,101 +77,72 @@ describe('offline download adapter and volatile catalog projection', () => {
     );
     expect(isOfflineDownloadEligible(track('qq', 'qqtrack_1'))).toBe(false);
     expect(
-      isOfflineDownloadEligible({
-        ...track('local', 'local_1'),
-        contentUri: 'content://documents/1',
-        fileName: 'a.mp3',
-      }),
+      isOfflineDownloadEligible({ ...track('local', 'local_1'), local: true }),
     ).toBe(false);
   });
 
-  it('uses only semantic track metadata in explicit native actions', async () => {
-    await offlineAudio.enqueueDownload(track('netease', 'netrack_1'));
-    expect(mockNativeModule.enqueueDownload).toHaveBeenCalledWith({
+  it('uses explicit native cache methods with semantic metadata only', async () => {
+    await offlineAudio.requestExplicit(track('netease', 'netrack_1'));
+    await offlineAudio.promote('netease', 'netrack_1');
+    await offlineAudio.action('retry', 'operation');
+    await offlineAudio.setQuota(2 * 1024 ** 3);
+    expect(mockNativeModule.requestExplicitCache).toHaveBeenCalledWith({
       source: 'netease',
       trackId: 'netrack_1',
       title: '歌',
       artist: '艺人',
-      album: undefined,
-      durationMs: undefined,
     });
-    await offlineAudio.cancelDownload('operation');
-    await offlineAudio.retryDownload('netease', 'netrack_1');
-    await offlineAudio.removeDownload('netease', 'netrack_1');
-    await offlineAudio.clearDownloads();
-    expect(mockNativeModule.cancelDownload).toHaveBeenCalledWith('operation');
-    expect(mockNativeModule.retryDownload).toHaveBeenCalledWith(
+    expect(mockNativeModule.promoteCache).toHaveBeenCalledWith(
       'netease',
       'netrack_1',
     );
-    expect(mockNativeModule.removeDownload).toHaveBeenCalledWith(
-      'netease',
-      'netrack_1',
+    expect(mockNativeModule.cacheAction).toHaveBeenCalledWith(
+      'retry',
+      'operation',
     );
-    expect(mockNativeModule.clearDownloads).toHaveBeenCalledTimes(1);
+    expect(mockNativeModule.setCacheQuota).toHaveBeenCalledWith(2 * 1024 ** 3);
   });
 
-  it('hydrates Redux from native progress events without polling or private fields', () => {
-    let state = reducer(undefined, { type: 'init' });
-    const unsubscribe = offlineAudio.subscribe(value => {
-      state = reducer(state, downloadActions.received(value));
-    });
+  it('sanitizes catalog events without exposing transport or filesystem fields', () => {
+    const received = jest.fn();
+    const unsubscribe = offlineAudio.subscribe(received);
     mockListeners[0]({
       ...readySnapshot,
-      entries: [{ ...readySnapshot.entries[0], status: 'downloading' }],
       candidateUrl: 'https://private.example/audio',
       filesystemPath: '/private/cache',
     });
-    expect(state.hydrated).toBe(true);
-    expect(state.entries as DownloadEntry[]).toEqual([
-      expect.objectContaining({ status: 'downloading', trackId: 'netrack_1' }),
-    ]);
-    expect(state.entries[0]).not.toHaveProperty('candidateUrl');
-    expect(state.entries[0]).not.toHaveProperty('filesystemPath');
+    expect(received).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entries: [
+          expect.not.objectContaining({
+            candidateUrl: expect.anything(),
+            filesystemPath: expect.anything(),
+          }),
+        ],
+      }),
+    );
     unsubscribe();
     expect(mockListeners).toEqual([]);
   });
 
-  it('turns malformed snapshots and native failures into an unchanged safe catalog', async () => {
-    mockNativeModule.listDownloads.mockResolvedValueOnce({
+  it('turns malformed snapshots and native failures into an empty safe catalog', async () => {
+    mockNativeModule.cacheSnapshot.mockResolvedValueOnce({
       usedBytes: -1,
       entries: [{ source: 'bilibili', trackId: 'bitrack_1' }],
     });
-    const invalid = await offlineAudio.listDownloads();
-    expect(invalid.entries).toEqual([]);
-    const state = reducer(undefined, downloadActions.received(invalid));
-    expect(state.entries).toEqual([]);
-    mockNativeModule.listDownloads.mockRejectedValueOnce(
+    expect((await offlineAudio.list()).entries).toEqual([]);
+    mockNativeModule.cacheSnapshot.mockRejectedValueOnce(
       new Error('native-failure'),
     );
-    expect(await offlineAudio.listDownloads()).toEqual({
-      usedBytes: 0,
-      quotaBytes: 512 * 1024 * 1024,
-      entries: [],
-    });
+    await expect(offlineAudio.list()).rejects.toThrow('native-failure');
   });
 
-  it('maps stable download failures to fixed actionable Chinese copy', () => {
+  it('maps stable failures to fixed actionable Chinese copy', () => {
     expect(offlineDownloadErrorCopy('QUEUE_FULL')).toBe(
       '下载任务已满，请等待当前任务完成后重试。',
     );
     expect(offlineDownloadErrorCopy('CAPACITY_EXCEEDED')).toBe(
       '离线空间不足，请删除已下载内容后重试。',
-    );
-    expect(offlineDownloadErrorCopy('FILE_TOO_LARGE')).toBe(
-      '文件超过离线下载大小限制，请选择其他音源。',
-    );
-    expect(offlineDownloadErrorCopy('CANCELLED')).toBe(
-      '下载已取消，可随时重新下载。',
-    );
-    expect(offlineDownloadErrorCopy('NETWORK')).toBe(
-      '网络连接不稳定，请检查网络后重试。',
-    );
-    expect(offlineDownloadErrorCopy('PROVIDER_REJECTED')).toBe(
-      '音源暂不可下载，请稍后重试或更换音源。',
-    );
-    expect(offlineDownloadErrorCopy('CORRUPT')).toBe(
-      '离线文件不可用，请移除后重新下载。',
     );
     expect(offlineDownloadErrorCopy('https://private.example')).toBe(
       '下载失败，请重试。',

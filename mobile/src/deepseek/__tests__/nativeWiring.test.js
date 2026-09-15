@@ -12,9 +12,9 @@ describe('native DeepSeek wiring', () => {
     );
     expect(module).toContain('val input = DeepSeekPolicy.Input(');
     expect(module).toContain('lyricText(request, "lyric")');
-    expect(module).toContain(
-      'client.translate(text(request, "operationId", 64), input',
-    );
+    expect(module).toContain('val value = client.translate(');
+    expect(module).toContain('text(request, "operationId", 64),');
+    expect(module).toContain('input,');
     expect(module).not.toContain(
       'client.translate(text(request, "operationId", 64), text(request, "provider", 16)',
     );

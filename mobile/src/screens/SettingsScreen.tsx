@@ -583,7 +583,7 @@ export function SettingsScreen() {
                       {entry.artist} · {entry.source} ·{' '}
                       {entry.status === 'ready'
                         ? '已下载'
-                        : entry.status === 'downloading'
+                        : entry.status === 'transferring'
                         ? '下载中'
                         : entry.status === 'queued'
                         ? '等待下载'
@@ -604,7 +604,7 @@ export function SettingsScreen() {
                     ) : null}
                   </View>
                   {entry.status === 'queued' ||
-                  entry.status === 'downloading' ? (
+                  entry.status === 'transferring' ? (
                     <Pressable
                       accessibilityLabel={`取消下载${entry.title}`}
                       onPress={() =>
