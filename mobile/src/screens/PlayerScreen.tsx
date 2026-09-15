@@ -7,6 +7,8 @@ import React, {
 } from 'react';
 import {
   Image,
+  PermissionsAndroid,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -235,6 +237,9 @@ export function PlayerScreen() {
     preset: 'neutral',
     fixedGain: 1,
   });
+  const [visualizerState, setVisualizerState] = useState(
+    '可视化已隐藏（未启用）',
+  );
   const lyricRequest = useRef<AbortController | null>(null);
   const lyricEpoch = useRef(0);
   const candidateRequest = useRef<AbortController | null>(null);
@@ -973,6 +978,31 @@ export function PlayerScreen() {
       dispatch,
       playing ? ['pause', 'togglePlayback'] : ['play', 'togglePlayback'],
     );
+  const enableVisualizer = () => {
+    void (async () => {
+      if (Platform.OS === 'android') {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+          {
+            title: '启用播放可视化',
+            message: '仅在前台播放时读取当前播放器会话的短暂音频分析帧；不会录音或保存音频。',
+            buttonPositive: '允许',
+            buttonNegative: '暂不允许',
+          },
+        );
+        if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+          setVisualizerState('可视化不可用（麦克风权限未授予）');
+          return;
+        }
+      }
+      const snapshot = await audioEffectsClient.setVisualizationEnabled(true);
+      setVisualizerState(
+        snapshot.status === 'enabled'
+          ? '可视化已启用（当前播放）'
+          : '可视化不可用（当前播放会话不支持）',
+      );
+    })().catch(() => setVisualizerState('可视化不可用（系统拒绝）'));
+  };
   useEffect(() => {
     let active = true;
     void audioEffectsClient.status().then(snapshot => {
@@ -1127,7 +1157,17 @@ export function PlayerScreen() {
                   <Text style={styles.actionText}>{preset === 'neutral' ? '原声' : preset}</Text>
                 </Pressable>
               ))}
+              <Pressable
+                accessibilityLabel="启用播放可视化"
+                onPress={enableVisualizer}
+                style={styles.effectButton}
+              >
+                <Text style={styles.actionText}>可视化</Text>
+              </Pressable>
             </View>
+            <Text accessibilityLabel="可视化状态" style={text.meta}>
+              {visualizerState}
+            </Text>
           </View>
           <View style={styles.controls}>
             <Pressable
