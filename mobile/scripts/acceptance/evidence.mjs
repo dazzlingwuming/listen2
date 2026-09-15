@@ -261,7 +261,7 @@ function main() {
     console.log(currentRun(phase, head, true));
     return;
   }
-  if (flags.has('--validate')) {
+  if (values.has('--validate')) {
     const recordFile = values.get('--validate');
     if (!recordFile) fail('missing record for validation');
     const run = runRootFor(dirname(resolve(process.cwd(), recordFile)));
