@@ -116,6 +116,49 @@ describe('playerSlice', () => {
     expect(state.transitionToken).toBeGreaterThan(7);
   });
 
+  it('restores a Room-only remote checkpoint in order and leaves local rows unresolved', () => {
+    const checkpoints = [
+      {
+        occurrenceId: 'native-remote-1',
+        position: 12,
+        source: 'netease' as const,
+        trackId: 'netrack_1',
+      },
+      {
+        occurrenceId: 'native-remote-2',
+        position: 34,
+        source: 'qq' as const,
+        trackId: 'qqtrack_2',
+      },
+    ];
+    let state = reducer(
+      undefined,
+      playerActions.restorePlayNextCheckpoint(checkpoints),
+    );
+
+    expect(state.playNextQueue.map(item => item.occurrenceId)).toEqual([
+      'native-remote-1',
+      'native-remote-2',
+    ]);
+    expect(state.playNextQueue.map(item => item.track.id)).toEqual([
+      'netrack_1',
+      'qqtrack_2',
+    ]);
+
+    state = reducer(
+      undefined,
+      playerActions.restorePlayNextCheckpoint([
+        {
+          occurrenceId: 'native-local',
+          position: 56,
+          source: 'local',
+          trackId: 'local-record-1',
+        },
+      ]),
+    );
+    expect(state.playNextQueue).toEqual([]);
+  });
+
   it('invalidates an in-flight transition when a queued occurrence is reordered', () => {
     let state = reducer(undefined, playerActions.enqueueNext(track('ne_1')));
     state = reducer(state, playerActions.enqueueNext(track('ne_2')));

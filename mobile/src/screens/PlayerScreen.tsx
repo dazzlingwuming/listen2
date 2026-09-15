@@ -135,6 +135,27 @@ export function lyricFailurePresentation(
   };
 }
 
+function manualLyricFromCandidate(
+  trackId: string,
+  candidate: BilibiliLyricCandidate,
+): Lyric {
+  return {
+    trackId,
+    source: 'bilibili',
+    text: candidate.text,
+    translation: candidate.translation,
+    provenance: {
+      mode: 'manual',
+      matchedProvider: candidate.matchedProvider,
+      matchedCandidateId: candidate.id,
+      matchScore: candidate.matchScore,
+      ...(candidate.translation
+        ? { translationProvider: candidate.matchedProvider }
+        : {}),
+    },
+  };
+}
+
 export function PlayerScreen() {
   const navigation = useNavigation<any>();
   const dispatch = useDispatch<any>();
@@ -179,6 +200,9 @@ export function PlayerScreen() {
   const [selectionRevision, setSelectionRevision] = useState<
     number | undefined
   >();
+  const [restoredManualVariantId, setRestoredManualVariantId] = useState<
+    string | null
+  >(null);
   const [offsetSaving, setOffsetSaving] = useState(false);
   const [offsetNotice, setOffsetNotice] = useState<string | null>(null);
   const [machineTranslation, setMachineTranslation] = useState<string | null>(
@@ -234,6 +258,8 @@ export function PlayerScreen() {
       ? root.library.lyricMetadata?.find(item => item.source === selectionKey.source && item.trackId === selectionKey.trackId)
       : undefined,
   );
+  const nativeLyricMetadataRef = useRef(nativeLyricMetadata);
+  nativeLyricMetadataRef.current = nativeLyricMetadata;
   const operations = current
     ? PROVIDER_CAPABILITIES?.[trackSource(current) as SourceId]?.operations
     : undefined;
@@ -243,27 +269,56 @@ export function PlayerScreen() {
   useEffect(() => {
     setLyricOffsetMs(0);
     setSelectionRevision(undefined);
+    setRestoredManualVariantId(null);
     const requestSession = lyricSession;
     if (!selectionKey || !requestSession) return;
     const requestKey = lyricSessionKey(requestSession);
+    const nativeMetadata = nativeLyricMetadata;
+    const nativeMetadataIsCurrent = () => {
+      const latest = nativeLyricMetadataRef.current;
+      return nativeMetadata
+        ? Boolean(
+            latest &&
+              latest.source === nativeMetadata.source &&
+              latest.trackId === nativeMetadata.trackId &&
+              latest.selectedVariantId === nativeMetadata.selectedVariantId &&
+              latest.offsetMillis === nativeMetadata.offsetMillis,
+          )
+        : latest === undefined;
+    };
+    if (nativeMetadata) {
+      // Room is the durable owner. Seed the render state synchronously so a
+      // user opening lyrics immediately after hydration cannot fall through
+      // to automatic matching before the AsyncStorage read settles.
+      setLyricOffsetMs(nativeMetadata.offsetMillis);
+      setRestoredManualVariantId(nativeMetadata.selectedVariantId);
+    }
     lyricSelectionStore.get(selectionKey).then(record => {
       if (
         !lyricSessionRef.current ||
-        lyricSessionKey(lyricSessionRef.current) !== requestKey
+        lyricSessionKey(lyricSessionRef.current) !== requestKey ||
+        !nativeMetadataIsCurrent()
       )
         return;
-      if (record) {
+      if (nativeMetadata) {
+        // Do not let an older or mismatched JS selection overwrite the native
+        // projection. Its revision is still useful for a subsequent local
+        // CAS write (for example, adjusting the offset).
+        setLyricOffsetMs(nativeMetadata.offsetMillis);
+        setRestoredManualVariantId(nativeMetadata.selectedVariantId);
+        setSelectionRevision(record?.revision);
+      } else if (record) {
         setLyricOffsetMs(record.offsetMs);
         setSelectionRevision(record.revision);
-        dispatch(continuityLyricMetadataObserved({
-          source: selectionKey.source,
-          trackId: selectionKey.trackId,
-          selectedVariantId: record.manual?.candidateId || null,
-          offsetMillis: record.offsetMs,
-        }));
-      } else if (nativeLyricMetadata) {
-        setLyricOffsetMs(nativeLyricMetadata.offsetMillis);
-        setSelectionRevision(undefined);
+        setRestoredManualVariantId(record.manual?.candidateId || null);
+        dispatch(
+          continuityLyricMetadataObserved({
+            source: selectionKey.source,
+            trackId: selectionKey.trackId,
+            selectedVariantId: record.manual?.candidateId || null,
+            offsetMillis: record.offsetMs,
+          }),
+        );
       }
     });
   }, [dispatch, lyricSession, nativeLyricMetadata, selectionKey]);
@@ -358,8 +413,110 @@ export function PlayerScreen() {
           : null;
       if (bilibiliIdentity) {
         const cached = await bilibiliLyricCache.get(current.id);
+        const nativeVariantId = nativeLyricMetadata?.selectedVariantId || null;
+        const nativeOffsetMillis = nativeLyricMetadata?.offsetMillis ?? 0;
+        const nativeMetadataIsCurrent = () => {
+          const latest = nativeLyricMetadataRef.current;
+          return Boolean(
+            latest &&
+              latest.source === 'bilibili' &&
+              latest.trackId === current.id &&
+              latest.selectedVariantId === nativeVariantId &&
+              latest.offsetMillis === nativeOffsetMillis,
+          );
+        };
+        if (nativeVariantId) {
+          const cachedProvenance = cached?.lyric.provenance;
+          if (
+            cached &&
+            cachedProvenance?.mode === 'manual' &&
+            cachedProvenance.matchedCandidateId === nativeVariantId &&
+            epoch === lyricEpoch.current &&
+            !controller.signal.aborted &&
+            isCurrentLyricSession(requestSession) &&
+            nativeMetadataIsCurrent()
+          ) {
+            setLyrics(cached.lyric);
+            setBilibiliCacheRevision(cached.revision);
+            setLyricOffsetMs(nativeOffsetMillis);
+            setRestoredManualVariantId(nativeVariantId);
+            return;
+          }
+          const result = await findBilibiliLyricCandidates(current as Track, {
+            signal: controller.signal,
+          });
+          if (
+            epoch !== lyricEpoch.current ||
+            controller.signal.aborted ||
+            !isCurrentLyricSession(requestSession) ||
+            !nativeMetadataIsCurrent()
+          )
+            return;
+          const candidate = result.candidates.find(
+            item => item.id === nativeVariantId,
+          );
+          if (!candidate) {
+            setCandidates([...result.candidates]);
+            setCandidatePartial(result.partial);
+            setCandidateProviderErrors(result.providerErrors);
+            setCandidateError(false);
+            setLyricsUnavailable(true);
+            setLyricFailure({
+              code: 'missing',
+              title: '未找到已保存的歌词版本',
+              message: '请选择其他歌词来源。',
+              action: 'choose-source',
+            });
+            setPickerVisible(true);
+            return;
+          }
+          const restoredLyric = manualLyricFromCandidate(
+            bilibiliIdentity.trackId,
+            candidate,
+          );
+          let saved = await bilibiliLyricCache.put(
+            { lyric: restoredLyric },
+            bilibiliCacheRevision,
+          );
+          if (
+            saved.status === 'stale' &&
+            epoch === lyricEpoch.current &&
+            !controller.signal.aborted &&
+            isCurrentLyricSession(requestSession) &&
+            nativeMetadataIsCurrent()
+          ) {
+            const latest = await bilibiliLyricCache.get(
+              bilibiliIdentity.trackId,
+            );
+            if (
+              epoch === lyricEpoch.current &&
+              !controller.signal.aborted &&
+              isCurrentLyricSession(requestSession) &&
+              nativeMetadataIsCurrent()
+            ) {
+              saved = await bilibiliLyricCache.put(
+                { lyric: restoredLyric },
+                latest?.revision ?? 0,
+              );
+            }
+          }
+          if (
+            epoch !== lyricEpoch.current ||
+            controller.signal.aborted ||
+            !isCurrentLyricSession(requestSession) ||
+            !nativeMetadataIsCurrent()
+          )
+            return;
+          setLyrics(restoredLyric);
+          setLyricOffsetMs(nativeOffsetMillis);
+          setRestoredManualVariantId(nativeVariantId);
+          if (saved.status === 'ok')
+            setBilibiliCacheRevision(saved.record.revision);
+          return;
+        }
         if (
           cached &&
+          (!nativeLyricMetadata || cached.lyric.provenance?.mode !== 'manual') &&
           epoch === lyricEpoch.current &&
           !controller.signal.aborted
         ) {
@@ -463,21 +620,7 @@ export function PlayerScreen() {
     if (!identity) return;
     const requestSession = lyricSession;
     if (!requestSession) return;
-    const lyric: Lyric = {
-      trackId: identity.trackId,
-      source: 'bilibili',
-      text: candidate.text,
-      translation: candidate.translation,
-      provenance: {
-        mode: 'manual',
-        matchedProvider: candidate.matchedProvider,
-        matchedCandidateId: candidate.id,
-        matchScore: candidate.matchScore,
-        ...(candidate.translation
-          ? { translationProvider: candidate.matchedProvider }
-          : {}),
-      },
-    };
+    const lyric = manualLyricFromCandidate(identity.trackId, candidate);
     let saved = await bilibiliLyricCache.put({ lyric }, bilibiliCacheRevision);
     if (
       saved.status === 'stale' &&
@@ -503,6 +646,7 @@ export function PlayerScreen() {
       return;
     setLyrics(lyric);
     setBilibiliCacheRevision(saved.record.revision);
+    setRestoredManualVariantId(candidate.id);
     if (selectionKey) {
       const selection = await lyricSelectionStore.put(
         {
@@ -575,6 +719,7 @@ export function PlayerScreen() {
       setSelectionRevision(undefined);
       dispatch(continuityLyricMetadataRemoved({ source: selectionKey.source, trackId: selectionKey.trackId }));
     }
+    setRestoredManualVariantId(null);
     setLyrics(null);
     setLyricsUnavailable(false);
     setLyricFailure(null);
@@ -615,7 +760,9 @@ export function PlayerScreen() {
         dispatch(continuityLyricMetadataObserved({
           source: selectionKey.source,
           trackId: selectionKey.trackId,
-          selectedVariantId: saved.record.manual?.candidateId || null,
+          selectedVariantId: nativeLyricMetadata
+            ? nativeLyricMetadata.selectedVariantId
+            : restoredManualVariantId || saved.record.manual?.candidateId || null,
           offsetMillis: saved.record.offsetMs,
         }));
         setOffsetNotice(

@@ -12,6 +12,7 @@ const mockSelectionPut = jest.fn();
 const mockSelectionClearManual = jest.fn();
 const mockSelectionSetOffset = jest.fn();
 let mockPlayerState: any;
+let mockLibraryState: any;
 
 jest.mock('@react-navigation/native', () => ({
   useNavigation: () => ({ goBack: jest.fn() }),
@@ -19,7 +20,7 @@ jest.mock('@react-navigation/native', () => ({
 jest.mock('react-redux', () => ({
   useDispatch: () => mockDispatch,
   useSelector: (selector: (state: unknown) => unknown) =>
-    selector({ player: mockPlayerState, library: { favorites: [] } }),
+    selector({ player: mockPlayerState, library: mockLibraryState }),
 }));
 jest.mock('../../api/client', () => ({
   providerClient: { getLyric: (...args: unknown[]) => mockGetLyric(...args) },
@@ -57,7 +58,15 @@ jest.mock('../../deepseek/client', () => ({
   hashTrack: () => 'b'.repeat(64),
 }));
 jest.mock('../../store/playerSlice', () => ({ togglePlayback: jest.fn() }));
-jest.mock('../../store/librarySlice', () => ({ toggleFavorite: jest.fn(), continuityLyricMetadataObserved: jest.fn(() => ({ type: 'library/continuityLyricMetadataObserved' })), continuityLyricMetadataRemoved: jest.fn(() => ({ type: 'library/continuityLyricMetadataRemoved' })) }));
+jest.mock('../../store/librarySlice', () => ({
+  toggleFavorite: jest.fn(),
+  continuityLyricMetadataObserved: jest.fn(() => ({
+    type: 'library/continuityLyricMetadataObserved',
+  })),
+  continuityLyricMetadataRemoved: jest.fn(() => ({
+    type: 'library/continuityLyricMetadataRemoved',
+  })),
+}));
 jest.mock('../../types/music', () => ({ isLocalTrack: () => false }));
 jest.mock('../../components/TrackRow', () => ({
   artwork: () => undefined,
@@ -94,6 +103,7 @@ describe('Bilibili lyric player flow', () => {
       },
       position: 0,
     };
+    mockLibraryState = { favorites: [], lyricMetadata: [] };
     mockCacheGet.mockResolvedValue(null);
     mockCacheClear.mockResolvedValue({ status: 'ok' });
     mockCachePut.mockResolvedValue({ status: 'ok', record: { revision: 1 } });
@@ -220,6 +230,69 @@ describe('Bilibili lyric player flow', () => {
       0,
     );
     expect(JSON.stringify(tree.toJSON())).toContain('已保存 +250毫秒');
+  });
+
+  it('restores a native-only manual lyric candidate and its offset before auto matching', async () => {
+    mockLibraryState = {
+      favorites: [],
+      lyricMetadata: [
+        {
+          source: 'bilibili',
+          trackId: 'bitrack_v_BV1xx411c7mD-12',
+          selectedVariantId: 'qq-42',
+          offsetMillis: 750,
+        },
+      ],
+    };
+    mockFindCandidates.mockResolvedValue({
+      candidates: [
+        {
+          id: 'qq-42',
+          matchedProvider: 'qq',
+          title: 'Song',
+          artist: 'Artist',
+          text: '[00:01.00]native manual line',
+          matchScore: 0.61,
+          hasTranslation: false,
+        },
+      ],
+      partial: false,
+      providerErrors: [],
+    });
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<PlayerScreen />);
+    });
+    await act(async () => {
+      tree.root.findByProps({ accessibilityLabel: '查看歌词' }).props.onPress();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockGetLyric).not.toHaveBeenCalled();
+    expect(mockFindCandidates).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'bitrack_v_BV1xx411c7mD-12' }),
+      expect.any(Object),
+    );
+    expect(mockCachePut).toHaveBeenCalledWith(
+      {
+        lyric: expect.objectContaining({
+          trackId: 'bitrack_v_BV1xx411c7mD-12',
+          provenance: expect.objectContaining({
+            mode: 'manual',
+            matchedProvider: 'qq',
+            matchedCandidateId: 'qq-42',
+          }),
+        }),
+      },
+      undefined,
+    );
+    expect(JSON.stringify(tree.toJSON())).toContain('native manual line');
+    expect(
+      tree.root.findByProps({
+        accessibilityLabel: '本地歌词校正，当前+750毫秒，已保存',
+      }),
+    ).toBeTruthy();
   });
 
   it('drops a late lyric response after the current Bilibili part changes', async () => {
