@@ -60,6 +60,17 @@ if [[ "${1:-}" == "--self-test" ]]; then
     [[ -f "$source" ]] || { echo "missing pure-Java acceptance source: $source" >&2; exit 1; }
     ! grep -Eqi 'kotlin|androidx\.test|InstrumentationRegistry|ActivityScenario' "$source" || { echo "acceptance source has a forbidden runtime dependency: $source" >&2; exit 1; }
   done
+  node --input-type=module - <<'NODE'
+const limit = 240;
+const sanitize = value => value
+  .replace(/https?:\/\/[^\s]+/giu, '<redacted-url>')
+  .replace(/(api[_-]?key|authorization|cookie|password|secret|token)\s*[:=]\s*[^\s,;]+|bearer\s+[^\s,;]+/giu, '<redacted>')
+  .replace(/[\r\n\t]+/gu, ' ').trim().slice(0, limit);
+const detail = sanitize(`AssertionError token=forbidden-value https://example.invalid/${'x'.repeat(400)}`);
+if (!detail.includes('<redacted>') || !detail.includes('<redacted-url>') || detail.length > limit) throw new Error('runner failure detail redaction/truncation failed');
+NODE
+  grep -Fq 'captureFailureEvidence' mobile/android/app/src/androidTest/java/com/listen2mobile/acceptance/Phase08Instrumentation.java || { echo 'runner must capture failure evidence before teardown' >&2; exit 1; }
+  grep -Fq 'RESULT_CANCELED' mobile/android/app/src/androidTest/java/com/listen2mobile/acceptance/Phase08Instrumentation.java || { echo 'runner must retain failed instrumentation status' >&2; exit 1; }
   echo 'Instrumentation result self-test passed.'
   exit 0
 fi
@@ -205,6 +216,8 @@ trap 'stop_diagnostic_capture >/dev/null 2>&1 || true; exit 130' INT TERM HUP
 
 record_failure() {
   local code="$1"; printf '%s\n' "terminal=$code" > "$EVENTS"
+  "$ADB" -s "$SERIAL" pull "/sdcard/Android/data/$PACKAGE/files/listen2-phase8-failure.xml" "$RUN_DIR/failure-window.xml" >/dev/null 2>&1 || true
+  "$ADB" -s "$SERIAL" pull "/sdcard/Android/data/$PACKAGE/files/listen2-phase8-failure.png" "$RUN_DIR/failure-phone.png" >/dev/null 2>&1 || true
   "$ADB" -s "$SERIAL" exec-out screencap -p > "$SCREENSHOT" 2>/dev/null || true
   write_record "FAIL" "$code" || true
 }
@@ -230,7 +243,7 @@ const diagnosticFiles = ['upgrade-seed-instrumentation', 'integrated-journey-ins
   'logcat-clear.txt', 'logcat-raw.txt', 'logcat-sanitized.txt', 'dumpsys-activity.txt',
   'dumpsys-window.txt', 'dumpsys-package.txt', 'tombstone-references.txt', 'dropbox-references.txt',
 ].map(file => `diagnostics/${label}/${file}`));
-const listed = ['journey-events.txt', 'upgrade-seed-instrumentation.txt', 'integrated-journey-instrumentation.txt', 'smoke-phone.png', 'smoke-window.xml', 'integrated-phone.png', 'integrated-window.xml', 'postrun-phone.png', 'postrun-window.xml', 'fixture.json', 'fixtures/synthetic-phase08.wav', 'fixtures/synthetic-phase08.lrc', 'device-state-before.sh', 'journey-test-payload.json', 'artifacts/releaseLikeAndroidTest-journey.apk', ...diagnosticFiles].filter(file => { try { return statSync(`${run}/${file}`).isFile(); } catch { return false; } });
+const listed = ['journey-events.txt', 'upgrade-seed-instrumentation.txt', 'integrated-journey-instrumentation.txt', 'smoke-phone.png', 'smoke-window.xml', 'failure-phone.png', 'failure-window.xml', 'integrated-phone.png', 'integrated-window.xml', 'postrun-phone.png', 'postrun-window.xml', 'fixture.json', 'fixtures/synthetic-phase08.wav', 'fixtures/synthetic-phase08.lrc', 'device-state-before.sh', 'journey-test-payload.json', 'artifacts/releaseLikeAndroidTest-journey.apk', ...diagnosticFiles].filter(file => { try { return statSync(`${run}/${file}`).isFile(); } catch { return false; } });
 const artifacts = listed.map(file => ({ kind: basename(file).replace(/[^a-z0-9]+/gi, '-').toLowerCase(), relativePath: file, sha256: hash(file), bytes: statSync(`${run}/${file}`).size, sanitized: true }));
 console.log(JSON.stringify({ schemaVersion: 1, runId: basename(run), recordId: 'phase8-api35-journey', recordedAt: ended,
   git: { branch: 'acceptance-clean-worktree', sha: buildHead, trackedClean: true, allowedUntracked: [] },

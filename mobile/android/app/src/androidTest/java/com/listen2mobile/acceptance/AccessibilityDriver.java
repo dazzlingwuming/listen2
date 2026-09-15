@@ -130,6 +130,26 @@ public final class AccessibilityDriver {
         }
     }
 
+    /** Failure capture is best-effort and must never replace the primary assertion. */
+    void captureFailureEvidence() {
+        File directory = instrumentation.getTargetContext().getExternalFilesDir(null);
+        if (directory == null) {
+            throw new AssertionError("target external-files failure evidence directory is unavailable");
+        }
+        writeText(new File(directory, "listen2-phase8-failure.xml"), dumpWindow());
+        Bitmap screenshot = instrumentation.getUiAutomation().takeScreenshot();
+        if (screenshot == null) {
+            throw new AssertionError("failure screenshot is unavailable");
+        }
+        try (FileOutputStream output = new FileOutputStream(new File(directory, "listen2-phase8-failure.png"))) {
+            require(screenshot.compress(Bitmap.CompressFormat.PNG, 100, output), "could not write failure screenshot");
+        } catch (Exception error) {
+            throw new AssertionError("could not write failure screenshot", error);
+        } finally {
+            screenshot.recycle();
+        }
+    }
+
     void record(String event) {
         Log.i("Listen2Acceptance", "acceptance-event=" + event);
     }
