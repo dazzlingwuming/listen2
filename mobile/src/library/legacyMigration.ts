@@ -219,15 +219,21 @@ function safePausedPlayer(value: unknown): ReturnType<typeof sanitizePlayerState
 
 function checksum(exported: Pick<LegacyMigrationRequest, 'playlists' | 'favorites' | 'remoteCollections' | 'queueCheckpoint' | 'lyricMetadata' | 'localEntries'>) {
   const field = (value: string | number | null) => `${String(value ?? '').length}:${String(value ?? '')}`;
+  const compareText = (left: string, right: string) => left === right ? 0 : left < right ? -1 : 1;
+  const playlists = exported.playlists.slice().sort((left, right) => left.position - right.position || compareText(left.playlistId, right.playlistId));
+  const favorites = exported.favorites.slice().sort((left, right) => compareText(left.source, right.source) || compareText(left.trackId, right.trackId));
+  const remoteCollections = exported.remoteCollections.slice().sort((left, right) => compareText(left.source, right.source) || compareText(left.title, right.title) || compareText(left.collectionId, right.collectionId));
+  const queueCheckpoint = exported.queueCheckpoint.slice().sort((left, right) => left.position - right.position || compareText(left.occurrenceId, right.occurrenceId));
+  const lyricMetadata = exported.lyricMetadata.slice().sort((left, right) => compareText(left.source, right.source) || compareText(left.trackId, right.trackId));
   const canonical = [
-    ...exported.playlists.map(item => [
+    ...playlists.map(item => [
       `p${field(item.playlistId)}${field(item.title)}${field(item.position)}\n`,
       ...item.tracks.map(track => `t${field(track.source)}${field(track.trackId)}${field(track.title)}${field(track.artist)}\n`),
     ].join('')),
-    ...exported.favorites.map(track => `f${field(track.source)}${field(track.trackId)}${field(track.title)}${field(track.artist)}\n`),
-    ...exported.remoteCollections.map(item => `r${field(item.collectionId)}${field(item.source)}${field(item.title)}${field(item.syncState)}\n`),
-    ...exported.queueCheckpoint.map(item => `q${field(item.occurrenceId)}${field(item.position)}${field(item.source)}${field(item.trackId)}\n`),
-    ...exported.lyricMetadata.map(item => `y${field(item.source)}${field(item.trackId)}${field(item.selectedVariantId)}${field(item.offsetMillis)}\n`),
+    ...favorites.map(track => `f${field(track.source)}${field(track.trackId)}${field(track.title)}${field(track.artist)}\n`),
+    ...remoteCollections.map(item => `r${field(item.collectionId)}${field(item.source)}${field(item.title)}${field(item.syncState)}\n`),
+    ...queueCheckpoint.map(item => `q${field(item.occurrenceId)}${field(item.position)}${field(item.source)}${field(item.trackId)}\n`),
+    ...lyricMetadata.map(item => `y${field(item.source)}${field(item.trackId)}${field(item.selectedVariantId)}${field(item.offsetMillis)}\n`),
     ...exported.localEntries.map(item => `l${field(item.title)}${field(item.artist)}\n`),
   ].join('');
   return sha256(canonical);

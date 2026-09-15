@@ -142,11 +142,11 @@ internal class LegacyLibraryMigration(private val repository: LibraryRepository,
     internal fun checksum(input: SafeLegacyInput): String {
         fun field(value: Any?) = "${value?.toString()?.length ?: 0}:${value ?: ""}"
         val canonical = buildString {
-            input.playlists.forEach { playlist -> append('p').append(field(playlist.playlistId)).append(field(playlist.title)).append(field(playlist.position)).append('\n'); playlist.tracks.forEach { append('t').append(field(it.source)).append(field(it.trackId)).append(field(it.title)).append(field(it.artist)).append('\n') } }
-            input.favorites.forEach { append('f').append(field(it.source)).append(field(it.trackId)).append(field(it.title)).append(field(it.artist)).append('\n') }
-            input.remoteCollections.forEach { append('r').append(field(it.collectionId)).append(field(it.source)).append(field(it.title)).append(field(it.syncState)).append('\n') }
-            input.queueCheckpoint.forEach { append('q').append(field(it.occurrenceId)).append(field(it.position)).append(field(it.source)).append(field(it.trackId)).append('\n') }
-            input.lyricMetadata.forEach { append('y').append(field(it.source)).append(field(it.trackId)).append(field(it.selectedVariantId)).append(field(it.offsetMillis)).append('\n') }
+            input.playlists.sortedWith(compareBy<SafeLegacyPlaylist> { it.position }.thenBy { it.playlistId }).forEach { playlist -> append('p').append(field(playlist.playlistId)).append(field(playlist.title)).append(field(playlist.position)).append('\n'); playlist.tracks.forEach { append('t').append(field(it.source)).append(field(it.trackId)).append(field(it.title)).append(field(it.artist)).append('\n') } }
+            input.favorites.sortedWith(compareBy<SafeTrack> { it.source }.thenBy { it.trackId }).forEach { append('f').append(field(it.source)).append(field(it.trackId)).append(field(it.title)).append(field(it.artist)).append('\n') }
+            input.remoteCollections.sortedWith(compareBy<SafeRemoteCollection> { it.source }.thenBy { it.title }.thenBy { it.collectionId }).forEach { append('r').append(field(it.collectionId)).append(field(it.source)).append(field(it.title)).append(field(it.syncState)).append('\n') }
+            input.queueCheckpoint.sortedWith(compareBy<SafeQueueCheckpoint> { it.position }.thenBy { it.occurrenceId }).forEach { append('q').append(field(it.occurrenceId)).append(field(it.position)).append(field(it.source)).append(field(it.trackId)).append('\n') }
+            input.lyricMetadata.sortedWith(compareBy<SafeLyricMetadata> { it.source }.thenBy { it.trackId }).forEach { append('y').append(field(it.source)).append(field(it.trackId)).append(field(it.selectedVariantId)).append(field(it.offsetMillis)).append('\n') }
             input.localRecords.forEach { append('l').append(field(it.title)).append(field(it.artist)).append('\n') }
         }
         return MessageDigest.getInstance("SHA-256").digest(canonical.toByteArray(StandardCharsets.UTF_8)).joinToString("") { "%02x".format(it) }
