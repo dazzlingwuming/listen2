@@ -180,7 +180,7 @@ async function resolveTrackMedia(
     return { playableUri: privateUri, durationMs: track.durationMs };
   }
   if (isOfflineDownloadEligible(track)) {
-    const cached = await offlineAudio.resolveVerified(track.source, track.id);
+    const cached = await offlineAudio.resolveReady(track.source, track.id);
     if (cached.status === 'hit' && safeOwnedPlaybackUri(cached.uri))
       return {
         playableUri: cached.uri,

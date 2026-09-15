@@ -31,4 +31,5 @@ export type RootStackParamList = {
   };
   AccountSources: undefined;
   History: undefined;
+  CacheLibrary: undefined;
 };

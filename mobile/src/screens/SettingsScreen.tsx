@@ -30,13 +30,7 @@ import {
 } from '../backup/backupCodec';
 import { createPortableBackupState } from '../localAudio/backup';
 import { libraryClient, type LibraryBackupPreview } from '../library/libraryClient';
-import {
-  cancelDownload,
-  clearDownloads,
-  hydrateDownloads,
-  removeDownload,
-  retryDownload,
-} from '../store/downloadSlice';
+import { offlineAudio, type CacheSnapshot } from '../offline/offlineAudio';
 import { offlineDownloadErrorCopy } from '../offline/offlineErrorCopy';
 import { bilibiliClient } from '../bilibili/client';
 import type { BilibiliPublicState } from '../bilibili/types';
@@ -90,7 +84,7 @@ export function SettingsScreen() {
   const navigation = useNavigation();
   const dispatch = useDispatch<AppDispatch>();
   const library = useSelector((state: RootState) => state.library);
-  const downloads = useSelector((state: RootState) => state.downloads);
+  const [cache, setCache] = useState<CacheSnapshot>({ usedBytes: 0, reservedBytes: 0, quotaBytes: 2 * 1024 ** 3, entries: [] });
   const [importVisible, setImportVisible] = useState(false);
   const [importText, setImportText] = useState('');
   const [importDocument, setImportDocument] = useState<BackupDocument | null>(
@@ -279,9 +273,7 @@ export function SettingsScreen() {
       });
     }
   };
-  React.useEffect(() => {
-    dispatch(hydrateDownloads());
-  }, [dispatch]);
+  React.useEffect(() => { void offlineAudio.list().then(setCache); }, []);
   React.useEffect(() => {
     bilibiliClient
       .status()
@@ -307,15 +299,7 @@ export function SettingsScreen() {
         void bilibiliClient.qrCancel(attemptId).catch(() => undefined);
     };
   }, []);
-  const confirmClearDownloads = () =>
-    Alert.alert('清空全部下载？', '已下载的离线媒体将从本机移除。', [
-      { text: '取消', style: 'cancel' },
-      {
-        text: '确认清空',
-        style: 'destructive',
-        onPress: () => dispatch(clearDownloads()),
-      },
-    ]);
+  const confirmClearDownloads = () => Alert.alert('清理可回收缓存？', '明确下载不会自动删除。', [{ text: '取消', style: 'cancel' }, { text: '确认清理', style: 'destructive', onPress: () => { void offlineAudio.action('clearEligible').then(setCache); } }]);
 
   const currentBackupState = (): BackupImportState =>
     createPortableBackupState(library);
@@ -575,13 +559,18 @@ export function SettingsScreen() {
         <Text style={text.heading}>下载管理</Text>
         <View style={sectionStyles.card}>
           <Text style={text.meta}>
-            已用 {Math.floor(downloads.usedBytes / 1024 / 1024)} MiB /{' '}
-            {Math.floor(downloads.quotaBytes / 1024 / 1024)} MiB
+            已用 {Math.floor(cache.usedBytes / 1024 / 1024)} MiB /{' '}
+            {cache.quotaBytes === null ? '不限' : `${Math.floor(cache.quotaBytes / 1024 / 1024)} MiB`}
           </Text>
-          {downloads.entries.length === 0 ? (
+          <View style={styles.backupActions}>
+            {[1, 2, 5, 10].map(gib => <Pressable key={gib} accessibilityLabel={`缓存上限 ${gib} GB`} onPress={() => void offlineAudio.setQuota(gib * 1024 ** 3).then(setCache)}><Text style={text.meta}>{gib} GB</Text></Pressable>)}
+            <Pressable accessibilityLabel="缓存上限不限" onPress={() => void offlineAudio.setQuota(null).then(setCache)}><Text style={text.meta}>不限</Text></Pressable>
+          </View>
+          <Pressable accessibilityLabel="打开缓存与下载" onPress={() => navigation.navigate('CacheLibrary' as never)} style={sectionStyles.secondaryButton}><Text style={sectionStyles.secondaryText}>打开缓存与下载</Text></Pressable>
+          {cache.entries.length === 0 ? (
             <Text style={text.meta}>暂无离线下载。</Text>
           ) : (
-            downloads.entries.map(entry => {
+            cache.entries.map(entry => {
               const failureCopy = offlineDownloadErrorCopy(entry.errorCode);
               return (
                 <View
@@ -619,7 +608,7 @@ export function SettingsScreen() {
                     <Pressable
                       accessibilityLabel={`取消下载${entry.title}`}
                       onPress={() =>
-                        dispatch(cancelDownload(entry.operationId))
+                        void offlineAudio.action('cancel', entry.operationId).then(setCache)
                       }
                     >
                       <Text style={styles.status}>取消</Text>
@@ -628,14 +617,14 @@ export function SettingsScreen() {
                     entry.status === 'cancelled' ? (
                     <Pressable
                       accessibilityLabel={`重试下载${entry.title}`}
-                      onPress={() => dispatch(retryDownload(entry))}
+                      onPress={() => void offlineAudio.action('retry', entry.operationId).then(setCache)}
                     >
                       <Text style={styles.status}>重试</Text>
                     </Pressable>
                   ) : (
                     <Pressable
                       accessibilityLabel={`移除下载${entry.title}`}
-                      onPress={() => dispatch(removeDownload(entry))}
+                      onPress={() => void offlineAudio.action('remove', entry.operationId).then(setCache)}
                     >
                       <Text style={styles.status}>移除</Text>
                     </Pressable>
@@ -644,7 +633,7 @@ export function SettingsScreen() {
               );
             })
           )}
-          {downloads.entries.length ? (
+          {cache.entries.length ? (
             <Pressable
               accessibilityLabel="清空全部下载"
               onPress={confirmClearDownloads}

@@ -19,6 +19,7 @@ import { DiscoverScreen } from '../screens/DiscoverScreen';
 import { SearchScreen } from '../screens/SearchScreen';
 import { AccountSourcesScreen, SettingsScreen } from '../screens/SettingsScreen';
 import { HistoryScreen } from '../screens/HistoryScreen';
+import { CacheLibraryScreen } from '../screens/CacheLibraryScreen';
 import { PlaylistDetailScreen } from '../screens/PlaylistDetailScreen';
 import { PlayerScreen } from '../screens/PlayerScreen';
 import { BilibiliDetailScreen } from '../screens/BilibiliDetailScreen';
@@ -147,6 +148,7 @@ export function RootNavigator() {
           <Stack.Screen component={BilibiliMvScreen} name="BilibiliMv" />
           <Stack.Screen component={AccountSourcesScreen} name="AccountSources" />
           <Stack.Screen component={HistoryScreen} name="History" />
+          <Stack.Screen component={CacheLibraryScreen} name="CacheLibrary" />
         </Stack.Navigator>
       </NavigationContainer>
       </LibraryBootGate>

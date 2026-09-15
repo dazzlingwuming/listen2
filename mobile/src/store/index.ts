@@ -12,8 +12,6 @@ import {
 } from 'redux-persist/es/constants';
 import playerReducer from './playerSlice';
 import libraryReducer from './librarySlice';
-import downloadReducer, { downloadActions } from './downloadSlice';
-import { offlineAudio } from '../offline/offlineAudio';
 import { configurePlayerController } from '../player/playerController';
 import mvReducer from './mvSlice';
 import { migratePlayerState, sanitizePlayerState } from './playerPersistence';
@@ -41,7 +39,6 @@ export const store = configureStore({
     player: persistedPlayerReducer,
     // Room is the only durable owner; Redux is a hydrated projection.
     library: libraryReducer,
-    downloads: downloadReducer,
     // MV transport/handles are process-local. This reducer is purposefully volatile.
     mv: mvReducer,
   },
@@ -169,9 +166,6 @@ history.subscribeRecent(reason => {
   if (reason === 'clear') store.dispatch(historyProjectionReceived([]));
   refreshRecentProjection();
 });
-offlineAudio.subscribe(snapshot =>
-  store.dispatch(downloadActions.received(snapshot)),
-);
 
 export const persistor = persistStore(store, undefined, () => {
   playerRehydrated = true;

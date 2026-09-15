@@ -11,7 +11,7 @@ import {
   type NativeSyntheticEvent,
   type ScrollViewInstance,
 } from 'react-native';
-import { useDispatch, useSelector } from 'react-redux';
+import { useDispatch } from 'react-redux';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type {
@@ -29,9 +29,7 @@ import { colors, spacing, text } from '../theme';
 import { SourceTabs, providerLabels } from '../components/SourceTabs';
 import { TrackRow, type PresentableTrack } from '../components/TrackRow';
 import { sectionStyles } from './ScreenLayout';
-import { isOfflineDownloadEligible } from '../offline/offlineAudio';
-import { requestDownload } from '../store/downloadSlice';
-import type { RootState } from '../store';
+import { isOfflineDownloadEligible, offlineAudio } from '../offline/offlineAudio';
 import {
   createSearchJourneyRestoration,
   createSearchJourneyState,
@@ -57,7 +55,6 @@ export function SearchScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const dispatch = useDispatch<any>();
-  const downloads = useSelector((state: RootState) => state.downloads.entries);
   const routeRestoration =
     route.params?.restorationScope ?? route.params?.restoration;
   const initialRestoredJourney = restoreSearchJourneyState(routeRestoration);
@@ -547,8 +544,7 @@ export function SearchScreen() {
           onPlay={play}
           onAddNext={addNext}
           onRetry={retry}
-          downloads={downloads}
-          onDownload={track => dispatch(requestDownload(track as Track))}
+          onDownload={track => void offlineAudio.requestExplicit(track as Track)}
           onSelectPlaylist={playlist => {
             if (!isOperationAvailable(playlist.source, 'detail')) return;
             const restorationScope = updateJourneyForNavigation(
@@ -597,7 +593,6 @@ function SearchSurface({
   onPlay,
   onAddNext,
   onRetry,
-  downloads,
   onDownload,
   errorCopy,
 }: {
@@ -611,7 +606,6 @@ function SearchSurface({
   onPlay: (track: PresentableTrack, selectedIdentity?: string) => void;
   onAddNext: (track: PresentableTrack) => void;
   onRetry: () => void;
-  downloads: RootState['downloads']['entries'];
   onDownload: (track: PresentableTrack) => void;
   errorCopy: ReturnType<typeof presentProviderError> | null;
 }) {
@@ -730,13 +724,6 @@ function SearchSurface({
               isOfflineDownloadEligible(item.track)
                 ? () => onDownload(item.track)
                 : undefined
-            }
-            downloadStatus={
-              downloads.find(
-                entry =>
-                  entry.source === item.track.source &&
-                  entry.trackId === item.track.id,
-              )?.status
             }
           />
         ) : (
