@@ -91,10 +91,10 @@ Android 保留共享前端，但 native 只提供窄的、版本化、可取消�
 
 ### 缓存/下载（CACHE）
 
-- [ ] **CACHE-001** [P][T][E] 播放后临时缓存、歌单缓存和用户明确下载使用不同 owner、目录和索引；只有原子写入完成、长度/hash 校验通过且 Media3 可读取的完整媒体才可播放。
-- [ ] **CACHE-002** [T][E] 断网时我能播放完整且仍有权访问的缓存；断点/恢复、取消、损坏 repair、进程杀死、网络切换和旧 URL 失效不会产生重复文件或把 partial 文件交给播放器。
-- [ ] **CACHE-003** [P][E] 缓存设置默认 2 GB，并提供 1 GB、5 GB、10 GB 和不限制选项；达到上限按最近最少使用淘汰非明确下载项，明确下载只由我取消/删除。
-- [ ] **CACHE-004** [P][E][S] 缓存库可以搜索、排序、筛选临时/歌单/下载状态，支持单曲/批量删除、清空和转为明确下载；后台任务遵守网络、电量、Doze、通知和取消约束，磁盘满/索引不一致可有界修复，缓存不进备份或日志。
+- [x] **CACHE-001** [P][T][E] 播放后临时缓存、歌单缓存和用户明确下载使用不同 owner、目录和索引；只有原子写入完成、长度/hash 校验通过且 Media3 可读取的完整媒体才可播放。
+- [x] **CACHE-002** [T][E] 断网时我能播放完整且仍有权访问的缓存；断点/恢复、取消、损坏 repair、进程杀死、网络切换和旧 URL 失效不会产生重复文件或把 partial 文件交给播放器。
+- [x] **CACHE-003** [P][E] 缓存设置默认 2 GB，并提供 1 GB、5 GB、10 GB 和不限制选项；达到上限按最近最少使用淘汰非明确下载项，明确下载只由我取消/删除。
+- [x] **CACHE-004** [P][E][S] 缓存库可以搜索、排序、筛选临时/歌单/下载状态，支持单曲/批量删除、清空和转为明确下载；后台任务遵守网络、电量、Doze、通知和取消约束，磁盘满/索引不一致可有界修复，缓存不进备份或日志。
 
 ### 音效/响度（FX）
 
@@ -113,7 +113,7 @@ Android 保留共享前端，但 native 只提供窄的、版本化、可取消�
 - [x] **SEC-001** [T][S] bridge 仅接受固定 appassets HTTPS origin、主 frame、可信 source 和当前 epoch；跨 origin/iframe/旧页面消息以及 javascript、file、content、intent 等危险导航被拒绝或交给安全系统策略。
 - [x] **SEC-002** [T][S] WebView 在 debug 与 release-like 配置均关闭 file/universal-file access、混合内容、地理位置和不必要多窗口；provider 网络禁止 cleartext，外部导航不携带 token/cookie。
 - [x] **SEC-003** [T][S] operation、字段类型、长度、枚举、请求/响应大小、URL、HTML/SVG/metadata sink 和 provider 数据逐项 allow-list/安全编码；恶意标题、歌词、封面和 JSON 不可执行脚本、原型污染或提升 bridge 权限。
-- [ ] **SEC-004** [T][P][S] source、APK、assets、WebView storage、日志、崩溃报告、备份和测试产物扫描不打印 secret 值；所有播放、下载、MV、离线和质量选择尊重实际 entitlement、会员、地区、DRM 和账号权限，拒绝时如实失败或降级。
+- [x] **SEC-004** [T][P][S] source、APK、assets、WebView storage、日志、崩溃报告、备份和测试产物扫描不打印 secret 值；所有播放、下载、MV、离线和质量选择尊重实际 entitlement、会员、地区、DRM 和账号权限，拒绝时如实失败或降级。
 
 ### 测试/验收（TEST）
 
@@ -209,10 +209,10 @@ Android 保留共享前端，但 native 只提供窄的、版本化、可取消�
 | HIST-001 | Phase 6 | Pending | threshold/dedup fixture |
 | HIST-002 | Phase 6 | Pending | lifecycle/annual aggregation |
 | HIST-003 | Phase 6 | Pending | opt-out/export/clear |
-| CACHE-001 | Phase 7 | Pending | atomic/hash/catalog test |
-| CACHE-002 | Phase 7 | Pending | offline/resume/repair |
-| CACHE-003 | Phase 7 | Pending | quota/LRU policy |
-| CACHE-004 | Phase 7 | Pending | cache library/disk-full |
+| CACHE-001 | Phase 7 | Complete | atomic/hash/catalog test |
+| CACHE-002 | Phase 7 | Complete | offline/resume/repair |
+| CACHE-003 | Phase 7 | Complete | quota/LRU policy |
+| CACHE-004 | Phase 7 | Complete | cache library/disk-full |
 | FX-001 | Phase 7 | Pending | effect preset device test |
 | FX-002 | Phase 7 | Pending | spectrum/degradation test |
 | FX-003 | Phase 7 | Pending | LUFS/hash/background analysis |
@@ -222,7 +222,7 @@ Android 保留共享前端，但 native 只提供窄的、版本化、可取消�
 | SEC-001 | Phase 4 | Complete | origin/navigation policy |
 | SEC-002 | Phase 4 | Complete | cleartext/WebView config scan |
 | SEC-003 | Phase 4 | Complete | schema/sink negative test |
-| SEC-004 | Phase 7 | Pending | secret/entitlement audit |
+| SEC-004 | Phase 7 | Complete | secret/entitlement audit |
 | TEST-001 | Phase 4 | Complete | JS/JVM registry and boundary suites |
 | TEST-002 | Phase 8 | Pending | integrated WebView/Media3/storage suite |
 | TEST-003 | Phase 8 | Pending | API 35 emulator E2E evidence |
