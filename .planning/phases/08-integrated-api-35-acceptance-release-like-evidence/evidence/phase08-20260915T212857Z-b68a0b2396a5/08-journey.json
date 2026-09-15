@@ -1,0 +1,329 @@
+{
+  "schemaVersion": 1,
+  "runId": "phase08-20260915T212857Z-b68a0b2396a5",
+  "recordId": "phase8-api35-journey",
+  "recordedAt": "2026-09-16T05:31:45+08:00",
+  "git": {
+    "branch": "acceptance-clean-worktree",
+    "sha": "b68a0b2396a58572a01e134a122151e7c825d39b",
+    "trackedClean": true,
+    "allowedUntracked": []
+  },
+  "toolchain": {
+    "os": "host-recorded",
+    "arch": "host-recorded",
+    "node": "host-recorded",
+    "npm": "recorded-by-build",
+    "java": "recorded-by-build",
+    "gradle": "recorded-by-build",
+    "agp": "repository-pinned",
+    "kotlin": "2.2.0",
+    "androidHomeHash": "recorded-by-build",
+    "buildTools": "37.0.0",
+    "compileSdk": 37,
+    "targetSdk": 36,
+    "minSdk": 24,
+    "ndk": "27.1.12297006"
+  },
+  "build": {
+    "variant": "releaseLike",
+    "applicationId": "com.dazzlingwuming.listen2",
+    "versionCode": 1000001,
+    "versionName": "2.34.0-android",
+    "apkRelativePath": "artifacts/releaseLike.apk",
+    "bytes": 67106970,
+    "sha256": "b3e06e090d273bbc11a7e16e13826e5529f862844222716fa3f31865a629865b",
+    "signerSha256": "development-debug",
+    "zipAligned16KiB": true,
+    "minified": true,
+    "debuggable": false
+  },
+  "device": {
+    "serialHash": "04ab3fc382bfb33ea4fbc120f5172ecfc4aed71652e00977064492ca0f65a017",
+    "avdName": "recorded-api35",
+    "image": "google_apis",
+    "apiLevel": 35,
+    "abi": "host-matched",
+    "ramMiB": 0,
+    "cores": 0,
+    "resolution": "recorded-by-device",
+    "density": 0,
+    "locale": "recorded-by-device",
+    "fontScale": 0,
+    "navigationMode": "recorded-by-device"
+  },
+  "network": {
+    "mode": "production-routes",
+    "transport": "emulator",
+    "offlineWindows": [],
+    "proxyConfigured": false
+  },
+  "fixture": {
+    "id": "phase08",
+    "revision": "1",
+    "manifestSha256": "a5c317682f357404932604d0600477d1f1db332f2f216911e8d636c3c1b7d59d",
+    "queryIds": [
+      "qinghuaci"
+    ],
+    "generatedMediaSha256": "afc8a6613090d674bfe7d5c5e171a45294a09f3ff10cfcb7fa09a89461eacc78",
+    "accountLane": "none"
+  },
+  "command": {
+    "id": "api35-integrated-journey-once",
+    "argvRedacted": [
+      "explicit-api35-serial",
+      "debug-install",
+      "one-clear",
+      "upgrade-seed",
+      "release-like-install",
+      "integrated-journey"
+    ],
+    "startedAt": "2026-09-16T05:31:04+08:00",
+    "endedAt": "2026-09-16T05:31:45+08:00",
+    "timezone": "Asia/Shanghai",
+    "exitCode": 0
+  },
+  "outcome": "NOT_VERIFIED",
+  "requirements": [
+    "TEST-002",
+    "TEST-003",
+    "TEST-004",
+    "REL-002"
+  ],
+  "metrics": [],
+  "artifacts": [
+    {
+      "kind": "journey-events-txt",
+      "relativePath": "journey-events.txt",
+      "sha256": "19e33659a54c5f7a778e1b2e76564cd966d98933428d3fa44d7e9caec96b9751",
+      "bytes": 62,
+      "sanitized": true
+    },
+    {
+      "kind": "upgrade-seed-instrumentation-txt",
+      "relativePath": "upgrade-seed-instrumentation.txt",
+      "sha256": "42e38e390d49614930336687f2ad5820fbed49e5c2e6dcbeb7179539461b4022",
+      "bytes": 502,
+      "sanitized": true
+    },
+    {
+      "kind": "integrated-journey-instrumentation-txt",
+      "relativePath": "integrated-journey-instrumentation.txt",
+      "sha256": "e6058247b9ebec8b7a778133688f4654e983448339f44c641b1dbc65ea786491",
+      "bytes": 520,
+      "sanitized": true
+    },
+    {
+      "kind": "smoke-phone-png",
+      "relativePath": "smoke-phone.png",
+      "sha256": "7d05f2c92ac039294cff58b9baacbd263b145a56a4e265659206f77ef4127fcf",
+      "bytes": 41524,
+      "sanitized": true
+    },
+    {
+      "kind": "smoke-window-xml",
+      "relativePath": "smoke-window.xml",
+      "sha256": "38a27424bf0fe0faa380bfcd024270cab4563bcf69b9926184e7d7770d7925a3",
+      "bytes": 15725,
+      "sanitized": true
+    },
+    {
+      "kind": "integrated-phone-png",
+      "relativePath": "integrated-phone.png",
+      "sha256": "48322f523411889816989d42009ea56a1a8ca9e699a8214db82a620cb5280199",
+      "bytes": 37319,
+      "sanitized": true
+    },
+    {
+      "kind": "integrated-window-xml",
+      "relativePath": "integrated-window.xml",
+      "sha256": "f94a5649fbc5d5934ac8eb71f42637f419a2b8edef1691bcedbedfc4555c9e74",
+      "bytes": 7446,
+      "sanitized": true
+    },
+    {
+      "kind": "postrun-phone-png",
+      "relativePath": "postrun-phone.png",
+      "sha256": "8059449f03c9d43aa1fc96fc8b1beae6ebbf5256370b2b3bbfdb181e6e157dfc",
+      "bytes": 41625,
+      "sanitized": true
+    },
+    {
+      "kind": "postrun-window-xml",
+      "relativePath": "postrun-window.xml",
+      "sha256": "38a27424bf0fe0faa380bfcd024270cab4563bcf69b9926184e7d7770d7925a3",
+      "bytes": 15725,
+      "sanitized": true
+    },
+    {
+      "kind": "fixture-json",
+      "relativePath": "fixture.json",
+      "sha256": "a5c317682f357404932604d0600477d1f1db332f2f216911e8d636c3c1b7d59d",
+      "bytes": 607,
+      "sanitized": true
+    },
+    {
+      "kind": "synthetic-phase08-wav",
+      "relativePath": "fixtures/synthetic-phase08.wav",
+      "sha256": "afc8a6613090d674bfe7d5c5e171a45294a09f3ff10cfcb7fa09a89461eacc78",
+      "bytes": 9600044,
+      "sanitized": true
+    },
+    {
+      "kind": "synthetic-phase08-lrc",
+      "relativePath": "fixtures/synthetic-phase08.lrc",
+      "sha256": "dc1ae881343d2207c5b73f227fb40328524ba2823c3f19e5453e5cc04338ab70",
+      "bytes": 78,
+      "sanitized": true
+    },
+    {
+      "kind": "device-state-before-sh",
+      "relativePath": "device-state-before.sh",
+      "sha256": "2c92cc4c6c6d3d36a4c84cd5c2f17bd3af971750b5f9d6f35f0a6017fa15f1c3",
+      "bytes": 127,
+      "sanitized": true
+    },
+    {
+      "kind": "journey-test-payload-json",
+      "relativePath": "journey-test-payload.json",
+      "sha256": "001350cc5a816ea33a43a9a4446862caefa97c863bab671a65585a8887a2f860",
+      "bytes": 740,
+      "sanitized": true
+    },
+    {
+      "kind": "releaselikeandroidtest-journey-apk",
+      "relativePath": "artifacts/releaseLikeAndroidTest-journey.apk",
+      "sha256": "27076883db2c66e621d043ed0e07780d7efc3f7561686b18f3dc888bdf481954",
+      "bytes": 65474,
+      "sanitized": true
+    },
+    {
+      "kind": "logcat-clear-txt",
+      "relativePath": "diagnostics/upgrade-seed-instrumentation/logcat-clear.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "sanitized": true
+    },
+    {
+      "kind": "logcat-raw-txt",
+      "relativePath": "diagnostics/upgrade-seed-instrumentation/logcat-raw.txt",
+      "sha256": "ce1bdbc973183e78dbaed4c6d8d252ff5c5d493dd924930f7ca309dd83f107d2",
+      "bytes": 1398,
+      "sanitized": true
+    },
+    {
+      "kind": "logcat-sanitized-txt",
+      "relativePath": "diagnostics/upgrade-seed-instrumentation/logcat-sanitized.txt",
+      "sha256": "ce1bdbc973183e78dbaed4c6d8d252ff5c5d493dd924930f7ca309dd83f107d2",
+      "bytes": 1398,
+      "sanitized": true
+    },
+    {
+      "kind": "dumpsys-activity-txt",
+      "relativePath": "diagnostics/upgrade-seed-instrumentation/dumpsys-activity.txt",
+      "sha256": "4e8a432b2558ba7ede7e20e95ac2ea706b3f592118dc0908af246c02a3168a5d",
+      "bytes": 30601,
+      "sanitized": true
+    },
+    {
+      "kind": "dumpsys-window-txt",
+      "relativePath": "diagnostics/upgrade-seed-instrumentation/dumpsys-window.txt",
+      "sha256": "ba312c0a1d5c97d4c0dd6c0938462dc990c700156b2e21fb59f815f0411b6f1b",
+      "bytes": 53137,
+      "sanitized": true
+    },
+    {
+      "kind": "dumpsys-package-txt",
+      "relativePath": "diagnostics/upgrade-seed-instrumentation/dumpsys-package.txt",
+      "sha256": "3e53595d374c2d2881acb8284b54e891b0aa97cfa46d1a8307fa740f289456a7",
+      "bytes": 9756,
+      "sanitized": true
+    },
+    {
+      "kind": "tombstone-references-txt",
+      "relativePath": "diagnostics/upgrade-seed-instrumentation/tombstone-references.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "sanitized": true
+    },
+    {
+      "kind": "dropbox-references-txt",
+      "relativePath": "diagnostics/upgrade-seed-instrumentation/dropbox-references.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "sanitized": true
+    },
+    {
+      "kind": "logcat-clear-txt",
+      "relativePath": "diagnostics/integrated-journey-instrumentation/logcat-clear.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "sanitized": true
+    },
+    {
+      "kind": "logcat-raw-txt",
+      "relativePath": "diagnostics/integrated-journey-instrumentation/logcat-raw.txt",
+      "sha256": "1eea65ea1e6c84edb702d8a4b125856ebaf46825f0983b9218dbd987d56a5a8c",
+      "bytes": 1157,
+      "sanitized": true
+    },
+    {
+      "kind": "logcat-sanitized-txt",
+      "relativePath": "diagnostics/integrated-journey-instrumentation/logcat-sanitized.txt",
+      "sha256": "1eea65ea1e6c84edb702d8a4b125856ebaf46825f0983b9218dbd987d56a5a8c",
+      "bytes": 1157,
+      "sanitized": true
+    },
+    {
+      "kind": "dumpsys-activity-txt",
+      "relativePath": "diagnostics/integrated-journey-instrumentation/dumpsys-activity.txt",
+      "sha256": "2f45644cd18c8ebfae31ec45d90ad4a662c60e4507b11fc033137a7bf932ac64",
+      "bytes": 31405,
+      "sanitized": true
+    },
+    {
+      "kind": "dumpsys-window-txt",
+      "relativePath": "diagnostics/integrated-journey-instrumentation/dumpsys-window.txt",
+      "sha256": "bb2735fbfd9ff7992ca54c3a73e2fbccca3eae73367dce4ee96a7104cbc4de34",
+      "bytes": 52778,
+      "sanitized": true
+    },
+    {
+      "kind": "dumpsys-package-txt",
+      "relativePath": "diagnostics/integrated-journey-instrumentation/dumpsys-package.txt",
+      "sha256": "d5e2d54225b6709b358783df403dd03d5ed16ac73740294696fe6bdc588177bb",
+      "bytes": 9882,
+      "sanitized": true
+    },
+    {
+      "kind": "tombstone-references-txt",
+      "relativePath": "diagnostics/integrated-journey-instrumentation/tombstone-references.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "sanitized": true
+    },
+    {
+      "kind": "dropbox-references-txt",
+      "relativePath": "diagnostics/integrated-journey-instrumentation/dropbox-references.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "sanitized": true
+    }
+  ],
+  "uncovered": [
+    {
+      "requirement": "TEST-003",
+      "reasonCode": "NO_CREDENTIAL_UI_INTERACTION",
+      "safeDetail": "Credential-controlled Bilibili login and DeepSeek translation were intentionally not exercised.",
+      "ownerAction": "Review retained device evidence and run only an authorized future acceptance session."
+    }
+  ],
+  "recovery": {
+    "cleanupStatus": "restored",
+    "deviceStateRestored": true,
+    "rollbackArtifactSha256": "b3e06e090d273bbc11a7e16e13826e5529f862844222716fa3f31865a629865b",
+    "steps": [
+      "restored animation, font-scale, and rotation settings from the pre-run snapshot"
+    ]
+  }
+}

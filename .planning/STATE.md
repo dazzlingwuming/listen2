@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: android-official-mobile-product-pivot
-current_phase: 5
-current_phase_name: Five-Source Listen Journey
-status: verifying
-stopped_at: Refreshed 08-01 releaseLike candidate after invalid-hook startup repair; ready for 08-02 API 35 journey
-last_updated: "2026-09-15T19:38:52.224Z"
+current_phase: 8
+current_phase_name: Integrated API 35 Acceptance & Release-Like Evidence
+status: in_progress
+stopped_at: Retained one partial API 35 upgrade/CJK-search journey; API 26/35/36 performance, recovery, and 58-row evidence closure remain
+last_updated: "2026-09-16T05:31:45+08:00"
 progress:
   total_phases: 5
   completed_phases: 4
@@ -29,13 +29,13 @@ See: `.planning/PROJECT.md`
 
 ## Current Position
 
-Phase: 5 — Five-Source Listen Journey
+Phase: 8 — Integrated API 35 Acceptance & Release-Like Evidence
 
-Plan: 3 of 3
+Plan: 2 of 4
 
-Status: Phase complete — ready for verification
+Status: Partial API 35 journey evidence retained — not parity-ready
 
-Progress: [█████████░] 88%
+Progress: [█████████░] 90%
 
 ## Performance Metrics
 
@@ -66,6 +66,7 @@ Progress: [█████████░] 88%
 | Phase 07-offline-advanced-playback P05 | 90min | 2 tasks | 17 files |
 | Phase 08 P01 | 27m | 2 tasks | 13 files |
 | Phase 08 P01 | 88m | 2 tasks | 14 files |
+| Phase 08 P02 | 45m | 2 tasks | 7 source/evidence files |
 
 ## Accumulated Context
 
@@ -101,6 +102,8 @@ Progress: [█████████░] 88%
 - [Phase ?]: Phase 08 release-like reproducibility compares canonical ZIP entries and signer identity; raw v2 signing-block SHA differences are diagnostic only.
 - [Phase ?]: Phase 08 candidate reproducibility requires canonical ZIP metadata/content, signer identity, and raw APK equality excluding only a validated complete APK Signing Block; the post-RNTP-fix 4c1f893 candidate supersedes 7b163a4.
 - [Phase ?]: Phase 08 authoritative candidate is 54bc100 / b3e06e after the invalid-hook startup repair; 7b163a4, 4c1f893, and their APKs are superseded and prohibited from acceptance.
+- [Phase 08]: API 35 CJK acceptance uses a visible editable-node ACTION_SET_TEXT and exact reacquisition, not the platform shell input route.
+- [Phase 08]: The one retained API 35 run proves only its recorded upgrade, shell, source-search and library/settings interactions; its NOT_VERIFIED credential lane and unexercised D-07 domains remain incomplete.
 
 ### Pending Todos
 
@@ -140,10 +143,10 @@ Progress: [█████████░] 88%
 
 ## Session Continuity
 
-**Resume file:** .planning/phases/08-integrated-api-35-acceptance-release-like-evidence/08-02-PLAN.md
+**Resume file:** .planning/phases/08-integrated-api-35-acceptance-release-like-evidence/08-03-PLAN.md
 
-Last session: 2026-09-15T19:38:52.216Z
+Last session: 2026-09-16T05:31:45+08:00
 
-Stopped at: Refreshed 08-01 releaseLike candidate after invalid-hook startup repair; ready for 08-02 API 35 journey
+Stopped at: Retained partial API 35 upgrade/CJK-search evidence; continue performance, recovery and truthful requirement mapping without rerunning the sealed journey
 
-Resume with: implement the next coherent mobile-parity slice without per-feature APK generation; preserve API 35 emulator/device, live-provider, and release-like checks for integrated acceptance
+Resume with: execute the remaining Phase 08 performance/recovery and requirement-map work; do not promote the partial journey or credential lane to parity-ready

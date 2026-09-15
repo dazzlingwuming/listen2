@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "runId": "phase08-20260915T212857Z-b68a0b2396a5",
+  "recordId": "phase8-build",
+  "recordedAt": "2026-09-15T21:29:26.537Z",
+  "git": {
+    "branch": "detached",
+    "sha": "b68a0b2396a58572a01e134a122151e7c825d39b",
+    "trackedClean": true,
+    "allowedUntracked": []
+  },
+  "toolchain": {
+    "os": "darwin",
+    "arch": "arm64",
+    "node": "v24.15.0",
+    "npm": "recorded-by-build",
+    "java": "recorded-by-build",
+    "gradle": "recorded-by-build",
+    "agp": "repository-pinned",
+    "kotlin": "2.2.0",
+    "androidHomeHash": "recorded-by-build",
+    "buildTools": "37.0.0",
+    "compileSdk": 37,
+    "targetSdk": 36,
+    "minSdk": 24,
+    "ndk": "27.1.12297006"
+  },
+  "build": {
+    "variant": "releaseLike",
+    "applicationId": "com.dazzlingwuming.listen2",
+    "versionCode": 1000001,
+    "versionName": "2.34.0-android",
+    "apkRelativePath": "artifacts/releaseLike.apk",
+    "bytes": 67106970,
+    "sha256": "b3e06e090d273bbc11a7e16e13826e5529f862844222716fa3f31865a629865b",
+    "signerSha256": "development-debug",
+    "zipAligned16KiB": true,
+    "minified": true,
+    "debuggable": false
+  },
+  "device": {
+    "serialHash": "not-used",
+    "avdName": "not-used",
+    "image": "not-used",
+    "apiLevel": 0,
+    "abi": "not-used",
+    "ramMiB": 0,
+    "cores": 0,
+    "resolution": "not-used",
+    "density": 0,
+    "locale": "not-used",
+    "fontScale": 0,
+    "navigationMode": "not-used"
+  },
+  "network": {
+    "mode": "host-build",
+    "transport": "not-used",
+    "offlineWindows": [],
+    "proxyConfigured": false
+  },
+  "fixture": {
+    "id": "phase8-build",
+    "revision": "1",
+    "manifestSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "queryIds": [],
+    "generatedMediaSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "accountLane": "none"
+  },
+  "command": {
+    "id": "phase8-build",
+    "argvRedacted": [
+      "phase8-acceptance"
+    ],
+    "startedAt": "2026-09-15T21:29:26.547Z",
+    "endedAt": "2026-09-15T21:29:26.547Z",
+    "timezone": "Asia/Shanghai",
+    "exitCode": 0
+  },
+  "outcome": "PASS",
+  "requirements": [
+    "REL-001",
+    "REL-002",
+    "TEST-004"
+  ],
+  "metrics": [],
+  "artifacts": [
+    {
+      "kind": "debug-apk",
+      "relativePath": "artifacts/debug.apk",
+      "sha256": "3dbfd6d0048fb436442f13e3b826ca25d485fa69873a6c8d31c8307b0f5c1652",
+      "bytes": 167745948,
+      "sanitized": true
+    },
+    {
+      "kind": "release-like-apk",
+      "relativePath": "artifacts/releaseLike.apk",
+      "sha256": "b3e06e090d273bbc11a7e16e13826e5529f862844222716fa3f31865a629865b",
+      "bytes": 67106970,
+      "sanitized": true
+    },
+    {
+      "kind": "release-like-android-test-apk",
+      "relativePath": "artifacts/releaseLikeAndroidTest.apk",
+      "sha256": "27076883db2c66e621d043ed0e07780d7efc3f7561686b18f3dc888bdf481954",
+      "bytes": 65474,
+      "sanitized": true
+    }
+  ],
+  "uncovered": [],
+  "recovery": {
+    "cleanupStatus": "not-required",
+    "deviceStateRestored": true,
+    "rollbackArtifactSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "steps": []
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "kind": "AndroidTest-only",
+  "sha256": "27076883db2c66e621d043ed0e07780d7efc3f7561686b18f3dc888bdf481954",
+  "signerSha256": "fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c",
+  "candidateBuildHead": "b68a0b2396a58572a01e134a122151e7c825d39b",
+  "testPayloadBuildHead": "b68a0b2396a58572a01e134a122151e7c825d39b",
+  "targetPackage": "com.dazzlingwuming.listen2",
+  "targetVersionCode": 1000001,
+  "testPackage": "com.dazzlingwuming.listen2.test",
+  "runner": "com.listen2mobile.acceptance.Phase08Instrumentation",
+  "contains": [
+    "Phase08Instrumentation",
+    "UpgradeSeedTest",
+    "IntegratedJourneyTest"
+  ],
+  "reason": "AndroidTest-only payload is separately sealed; releaseLike product hash is unchanged."
+}
