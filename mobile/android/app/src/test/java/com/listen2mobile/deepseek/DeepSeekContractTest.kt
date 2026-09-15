@@ -118,4 +118,15 @@ class DeepSeekContractTest {
         assertEquals(DeepSeekVault.State.NotConfigured, vault.clear().state)
         assertNull(store.read())
     }
+
+    @Test
+    fun vaultEnvelopeIsCompactAndRoundTripsWithoutPadding() {
+        val store = DeepSeekVault.InMemoryCiphertextStore()
+        val vault = DeepSeekVault.forTesting(store)
+        assertEquals(DeepSeekVault.State.Configured, vault.saveFromNativeEntry("x").state)
+        val envelope = requireNotNull(store.read())
+        assertTrue(envelope.startsWith("v2:"))
+        assertFalse(envelope.removePrefix("v2:").contains('='))
+        assertEquals("x", vault.withApiKey { it })
+    }
 }

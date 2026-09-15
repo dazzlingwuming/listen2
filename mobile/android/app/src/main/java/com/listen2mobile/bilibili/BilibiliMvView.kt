@@ -3,10 +3,12 @@ package com.listen2mobile.bilibili
 import android.content.Context
 import android.view.SurfaceView
 import android.widget.FrameLayout
+import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
 import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
@@ -16,6 +18,7 @@ import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
  * A deliberately muted video renderer. RNTP owns audio focus, MediaSession and notification
  * playback; this surface never configures audio attributes or starts an audio service.
  */
+@OptIn(UnstableApi::class)
 internal class BilibiliMvView(context: Context, private val controller: BilibiliMvController) : FrameLayout(context) {
     private val surface = SurfaceView(context)
     private var player: ExoPlayer? = null

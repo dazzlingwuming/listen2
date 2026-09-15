@@ -5,8 +5,9 @@ import com.listen2mobile.library.HistoryEventEntity
 import com.listen2mobile.library.HistorySessionEntity
 import com.listen2mobile.library.HistoryStateEntity
 import com.listen2mobile.library.Listen2Database
-import java.time.Instant
-import java.time.ZoneId
+import java.util.Calendar
+import java.util.Locale
+import java.util.TimeZone
 
 internal data class SafeHistoryTrack(val source: String, val trackId: String, val title: String, val artist: String)
 internal data class PlaybackStart(val playbackInstanceId: String, val clearGeneration: Long, val track: SafeHistoryTrack, val durationMs: Long, val startedElapsedMs: Long)
@@ -23,11 +24,21 @@ internal data class HistoryRecap(
     val monthly: List<Map<String, Any>>,
 )
 
+internal data class LocalHistoryDate(val value: String, val year: Int, val month: Int)
+
+internal fun localHistoryDate(wallClockMs: Long, zone: TimeZone): LocalHistoryDate {
+    val calendar = Calendar.getInstance(zone, Locale.ROOT).apply { timeInMillis = wallClockMs }
+    val year = calendar.get(Calendar.YEAR)
+    val month = calendar.get(Calendar.MONTH) + 1
+    val day = calendar.get(Calendar.DAY_OF_MONTH)
+    return LocalHistoryDate(String.format(Locale.ROOT, "%04d-%02d-%02d", year, month, day), year, month)
+}
+
 /** Room owner for valid-listen evidence. Every public result is semantic and bounded. */
 internal class ListeningLedger(
     private val database: Listen2Database,
     private val wallClockMs: () -> Long = System::currentTimeMillis,
-    private val zone: () -> ZoneId = ZoneId::systemDefault,
+    private val zone: () -> TimeZone = TimeZone::getDefault,
 ) {
     fun generation(): Long = database.runInTransaction<Long> { state().clearGeneration }
     fun revision(): Long = database.runInTransaction<Long> { state().revision }
@@ -54,14 +65,14 @@ internal class ListeningLedger(
         dao.putHistorySession(row.copy(lastSequence = step.session.sequence, lastPositionMs = step.session.positionMs, lastElapsedMs = step.session.elapsedMs, listenedForwardMs = step.session.listenedForwardMs, tracking = step.session.tracking))
         if (!step.commit) return@runInTransaction null
         val threshold = requireNotNull(ListeningPolicy.threshold(row.durationMs))
-        val date = Instant.ofEpochMilli(wallClockMs()).atZone(zone()).toLocalDate()
-        val event = HistoryEventEntity("${row.clearGeneration}:${row.playbackInstanceId}", row.playbackInstanceId, row.clearGeneration, row.source, row.semanticTrackId, row.title, row.artist, date.toString(), date.year, date.monthValue, step.session.listenedForwardMs, threshold)
+        val date = localHistoryDate(wallClockMs(), zone())
+        val event = HistoryEventEntity("${row.clearGeneration}:${row.playbackInstanceId}", row.playbackInstanceId, row.clearGeneration, row.source, row.semanticTrackId, row.title, row.artist, date.value, date.year, date.month, step.session.listenedForwardMs, threshold)
         dao.insertHistoryEvent(event)
         val prior = dao.historyAggregate(date.year, row.source, row.semanticTrackId)
         dao.putHistoryAggregate(HistoryAggregateEntity(date.year, row.source, row.semanticTrackId, (prior?.playCount ?: 0) + 1, row.title, row.artist))
         dao.deleteHistorySession(row.playbackInstanceId, row.clearGeneration)
         dao.putHistoryState(currentState.copy(revision = currentState.revision + 1))
-        ListeningCommit(event.eventId, row.playbackInstanceId, event.committedLocalDate, date.year, date.monthValue, event.listenedForwardMs, threshold)
+        ListeningCommit(event.eventId, row.playbackInstanceId, event.committedLocalDate, date.year, date.month, event.listenedForwardMs, threshold)
     }
 
     fun clear(): Long = database.runInTransaction<Long> {

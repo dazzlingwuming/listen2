@@ -198,7 +198,7 @@ class LocalAudioModule(private val app: ReactApplicationContext) : ReactContextB
         if ((resultFlags and required) != required) return null
         try { app.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: SecurityException) { return null }
         if (privateStore.hasDocument(uri)) { releaseReadGrant(uri); return DUPLICATE }
-        val header = try { app.contentResolver.openInputStream(uri)?.use { it.readNBytes(16) } } catch (_: Exception) { null }
+        val header = try { app.contentResolver.openInputStream(uri)?.use { LocalAudioPolicy.readAtMost(it, 16) } } catch (_: Exception) { null }
         if (header == null) { releaseReadGrant(uri); return null }
         if (!LocalAudioPolicy.supportedMime(app.contentResolver.getType(uri)) || !LocalAudioPolicy.supportedHeader(header)) { releaseReadGrant(uri); return UNSUPPORTED }
         val metadata = readMetadata(uri)
@@ -211,7 +211,7 @@ class LocalAudioModule(private val app: ReactApplicationContext) : ReactContextB
         if ((resultFlags and required) != required) { current.promise.resolve(receipt(current.requestId, "rejected")); return }
         try { app.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: SecurityException) { current.promise.resolve(receipt(current.requestId, "rejected")); return }
         try {
-            val normalized = try { app.contentResolver.openInputStream(uri)?.use { LocalAudioPolicy.normalizeLrc(it.readNBytes(LocalAudioPolicy.MAX_LRC_BYTES + 1)) } } catch (_: Exception) { null }
+            val normalized = try { app.contentResolver.openInputStream(uri)?.use { LocalAudioPolicy.normalizeLrc(LocalAudioPolicy.readAtMost(it, LocalAudioPolicy.MAX_LRC_BYTES + 1)) } } catch (_: Exception) { null }
             if (!current.active) return
             if (normalized == null || !LibraryRepository.open(app).attachExplicitLyric(recordId)) { if (current.active) current.promise.resolve(receipt(current.requestId, "rejected")); return }
             // The Room flag and copied private text form one committed association;
@@ -228,7 +228,7 @@ class LocalAudioModule(private val app: ReactApplicationContext) : ReactContextB
         val required = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
         if ((resultFlags and required) != required) { current.promise.resolve(repairReceipt(current.requestId, recordId, "rejected")); return }
         try { app.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: SecurityException) { current.promise.resolve(repairReceipt(current.requestId, recordId, "rejected")); return }
-        val header = try { app.contentResolver.openInputStream(uri)?.use { it.readNBytes(16) } } catch (_: Exception) { null }
+        val header = try { app.contentResolver.openInputStream(uri)?.use { LocalAudioPolicy.readAtMost(it, 16) } } catch (_: Exception) { null }
         if (header == null || !LocalAudioPolicy.supportedMime(app.contentResolver.getType(uri)) || !LocalAudioPolicy.supportedHeader(header)) {
             releaseReadGrant(uri)
             current.promise.resolve(repairReceipt(current.requestId, recordId, "mismatch")); return

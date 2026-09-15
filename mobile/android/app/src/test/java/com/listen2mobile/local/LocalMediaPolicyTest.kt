@@ -21,4 +21,11 @@ class LocalMediaPolicyTest {
         val expired = requireNotNull(LocalPlaybackTokens.issue(id, "load_2", 10))
         assertNull(LocalPlaybackTokens.consume(expired, 10 + LocalMediaPolicy.TOKEN_TTL_MS))
     }
+    @Test fun issued_tokens_are_url_safe_entropy_values() {
+        val token = requireNotNull(LocalPlaybackTokens.issue(id, "load_3", 10))
+        assertEquals(48, token.length)
+        assertTrue(LocalMediaPolicy.validToken(token))
+        assertFalse(token.contains('='))
+        assertTrue(token.matches(Regex("[0-9a-f]{48}")))
+    }
 }

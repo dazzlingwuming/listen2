@@ -25,6 +25,7 @@ internal object LocalMediaPolicy {
 /** In-memory single-use mapping. Neither the provider path nor its token exposes a SAF URI. */
 internal object LocalPlaybackTokens {
     private data class Entry(val recordId: String, val playbackRequestId: String, val expiresAt: Long)
+    private val hex = "0123456789abcdef".toCharArray()
     private val lock = Any()
     private val random = SecureRandom()
     private val entries = LinkedHashMap<String, Entry>()
@@ -34,7 +35,13 @@ internal object LocalPlaybackTokens {
             entries.entries.removeIf { it.value.expiresAt <= now }
             while (entries.size >= LocalMediaPolicy.MAX_TOKENS) entries.remove(entries.entries.first().key)
             val bytes = ByteArray(24); random.nextBytes(bytes)
-            val token = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+            val token = buildString(bytes.size * 2) {
+                bytes.forEach { byte ->
+                    val unsigned = byte.toInt() and 0xff
+                    append(hex[unsigned ushr 4])
+                    append(hex[unsigned and 0x0f])
+                }
+            }
             entries[token] = Entry(recordId, playbackRequestId, now + LocalMediaPolicy.TOKEN_TTL_MS)
             return token
         }

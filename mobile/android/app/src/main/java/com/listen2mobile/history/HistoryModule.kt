@@ -9,6 +9,7 @@ import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.module.annotations.ReactModule
 import com.listen2mobile.library.LibraryPreferences
 import com.listen2mobile.library.LibraryRepository
+import java.util.Calendar
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
@@ -39,7 +40,7 @@ class HistoryModule internal constructor(app: ReactApplicationContext, private v
     }
     @ReactMethod fun getHistory(limit: Int, promise: Promise) = submitResult(promise) { safeEvents(null, limit) }
     @ReactMethod fun getRecap(year: Int, promise: Promise) = submitResult(promise) {
-        val safeYear = year.takeIf { it in 1970..9999 } ?: java.time.Year.now().value
+        val safeYear = year.takeIf { it in 1970..9999 } ?: Calendar.getInstance().get(Calendar.YEAR)
         val recap = ledger.recap(safeYear)
         mapOf(
             "year" to recap.year,

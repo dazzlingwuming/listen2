@@ -1,10 +1,18 @@
 package com.listen2mobile.history
 
+import java.util.TimeZone
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ListeningLedgerTest {
+    @Test fun local_history_date_uses_the_supplied_zone_at_a_day_boundary() {
+        val epoch = 1_704_067_200_000L // 2024-01-01T00:00:00Z
+        assertEquals(LocalHistoryDate("2023-12-31", 2023, 12), localHistoryDate(epoch, TimeZone.getTimeZone("GMT-08:00")))
+        assertEquals(LocalHistoryDate("2024-01-01", 2024, 1), localHistoryDate(epoch, TimeZone.getTimeZone("GMT+08:00")))
+    }
+
     @Test fun exact_threshold_requires_more_than_thirty_seconds_and_half_duration() {
         var session = ListeningPolicy.initial(0)
         session = ListeningPolicy.observe(session, 80_000, 1, "progress", 15_000, 15_000).session

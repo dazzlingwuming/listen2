@@ -515,11 +515,14 @@ internal class OfflineAcquireWorker(context: Context, params: WorkerParameters) 
 
     private fun foregroundInfo(): ForegroundInfo {
         val manager = applicationContext.getSystemService(NotificationManager::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             manager.createNotificationChannel(NotificationChannel(CHANNEL, "离线下载", NotificationManager.IMPORTANCE_LOW))
+            Notification.Builder(applicationContext, CHANNEL)
+        } else {
+            Notification.Builder(applicationContext)
         }
         val cancel = WorkManager.getInstance(applicationContext).createCancelPendingIntent(id)
-        val notification = Notification.Builder(applicationContext, CHANNEL)
+        val notification = builder
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentTitle("正在准备离线下载")
             .setContentText("可随时取消，已下载内容会安全清理")

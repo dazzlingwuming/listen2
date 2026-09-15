@@ -3,10 +3,10 @@ package com.listen2mobile.deepseek
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import android.util.Base64
 import java.nio.charset.StandardCharsets
 import java.security.GeneralSecurityException
 import java.security.KeyStore
-import java.util.Base64
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -24,6 +24,7 @@ import javax.crypto.spec.GCMParameterSpec
 class DeepSeekVault private constructor(
     private val storage: CiphertextStore,
     private val protector: KeyProtector,
+    private val envelopeCodec: EnvelopeCodec,
 ) {
     sealed interface State {
         val wire: String
@@ -79,6 +80,44 @@ class DeepSeekVault private constructor(
         fun getOrCreate(): SecretKey
         fun getExisting(): SecretKey?
         fun delete(): Boolean
+    }
+
+    private interface EnvelopeCodec {
+        fun encode(value: ByteArray): String
+        fun decode(value: String): ByteArray
+    }
+
+    private object AndroidEnvelopeCodec : EnvelopeCodec {
+        override fun encode(value: ByteArray): String =
+            Base64.encodeToString(value, Base64.NO_PADDING or Base64.NO_WRAP)
+
+        override fun decode(value: String): ByteArray = Base64.decode(value, Base64.NO_WRAP)
+    }
+
+    /** JVM tests exercise the cipher seam without invoking Android framework method stubs. */
+    private object TestEnvelopeCodec : EnvelopeCodec {
+        private val alphabet = "0123456789abcdef".toCharArray()
+
+        override fun encode(value: ByteArray): String = buildString(value.size * 2) {
+            value.forEach { byte ->
+                val unsigned = byte.toInt() and 0xff
+                append(alphabet[unsigned ushr 4])
+                append(alphabet[unsigned and 0x0f])
+            }
+        }
+
+        override fun decode(value: String): ByteArray {
+            if (value.length % 2 != 0) throw IllegalArgumentException()
+            return ByteArray(value.length / 2) { index ->
+                ((hex(value[index * 2]) shl 4) or hex(value[index * 2 + 1])).toByte()
+            }
+        }
+
+        private fun hex(value: Char): Int = when (value) {
+            in '0'..'9' -> value - '0'
+            in 'a'..'f' -> value - 'a' + 10
+            else -> throw IllegalArgumentException()
+        }
     }
 
     /** Test-only AES protector; it deliberately has no plaintext mode. */
@@ -174,7 +213,7 @@ class DeepSeekVault private constructor(
         }
     }
 
-    constructor(context: Context) : this(Preferences(context), AndroidKeystoreProtector())
+    constructor(context: Context) : this(Preferences(context), AndroidKeystoreProtector(), AndroidEnvelopeCodec)
 
     /**
      * Status is deliberately a projection. It never contains whether a key
@@ -324,7 +363,7 @@ class DeepSeekVault private constructor(
             val payload = ByteArray(cipher.iv.size + ciphertext.size)
             System.arraycopy(cipher.iv, 0, payload, 0, cipher.iv.size)
             System.arraycopy(ciphertext, 0, payload, cipher.iv.size, ciphertext.size)
-            return ENVELOPE_PREFIX + Base64.getEncoder().withoutPadding().encodeToString(payload)
+            return ENVELOPE_PREFIX + envelopeCodec.encode(payload)
         } catch (_: GeneralSecurityException) {
             throw VaultException("keystore-unavailable")
         }
@@ -334,7 +373,7 @@ class DeepSeekVault private constructor(
         if (!stored.startsWith(ENVELOPE_PREFIX)) throw VaultException("corrupt-cleared")
         val encoded = stored.removePrefix(ENVELOPE_PREFIX)
         val payload = try {
-            Base64.getDecoder().decode(encoded)
+            envelopeCodec.decode(encoded)
         } catch (_: IllegalArgumentException) {
             throw VaultException("corrupt-cleared")
         }
@@ -379,6 +418,6 @@ class DeepSeekVault private constructor(
         internal fun forTesting(
             store: CiphertextStore,
             protector: KeyProtector = InMemoryKeyProtector(),
-        ): DeepSeekVault = DeepSeekVault(store, protector)
+        ): DeepSeekVault = DeepSeekVault(store, protector, TestEnvelopeCodec)
     }
 }

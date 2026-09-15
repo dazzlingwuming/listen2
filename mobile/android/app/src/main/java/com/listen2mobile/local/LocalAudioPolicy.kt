@@ -1,6 +1,8 @@
 package com.listen2mobile.local
 
 import android.content.Intent
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 
 /** Pure SAF policy: grants are selected by the system picker, never supplied by JS. */
 internal object LocalAudioPolicy {
@@ -28,6 +30,18 @@ internal object LocalAudioPolicy {
     }
 
     fun supportedMime(value: String?) = value != null && acceptedMimePrefixes.any { value.startsWith(it, ignoreCase = true) }
+    /** Reads no more than the caller-authorized byte limit on every Android API level. */
+    fun readAtMost(input: InputStream, maximum: Int): ByteArray {
+        require(maximum >= 0)
+        val output = ByteArrayOutputStream(minOf(maximum, 8192))
+        val buffer = ByteArray(minOf(maximum.coerceAtLeast(1), 8192))
+        while (output.size() < maximum) {
+            val count = input.read(buffer, 0, minOf(buffer.size, maximum - output.size()))
+            if (count <= 0) break
+            output.write(buffer, 0, count)
+        }
+        return output.toByteArray()
+    }
     /** MIME is only a hint; descriptor bytes must identify a supported container. */
     fun supportedHeader(bytes: ByteArray): Boolean {
         if (bytes.size < 4) return false

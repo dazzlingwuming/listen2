@@ -10,6 +10,7 @@ import android.os.HandlerThread
 import android.os.ParcelFileDescriptor
 import android.os.ProxyFileDescriptorCallback
 import android.os.storage.StorageManager
+import androidx.annotation.RequiresApi
 import java.io.FileNotFoundException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -40,6 +41,7 @@ class MediaStreamProvider : ContentProvider() {
     override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?) = 0
     override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?) = 0
 
+    @RequiresApi(Build.VERSION_CODES.O)
     private class LeaseCallback(private val leaseId: String) : ProxyFileDescriptorCallback() {
         override fun onGetSize(): Long = -1L
         override fun onRead(offset: Long, size: Int, data: ByteArray): Int {
