@@ -183,7 +183,7 @@ describe('PlayerController queue transitions', () => {
     );
 
     // Diagnostic assertion keeps failures readable without exposing provider data.
-    expect(mockBootstrapTrack).toHaveBeenCalledWith(selected);
+    expect(mockBootstrapTrack).toHaveBeenCalledWith(selected, expect.any(AbortSignal));
 
     expect(state.currentTrack?.id).toBe(selected.id);
     expect(state.playNextQueue.map(item => item.track.id)).toEqual([first.id]);
@@ -216,6 +216,30 @@ describe('PlayerController queue transitions', () => {
 
     expect(state.currentTrack?.id).toBe(first.id);
     expect(state.playNextQueue.map(item => item.track.id)).toEqual([second.id]);
+  });
+
+  it('aborts a superseded QQ selection before a ready Kuwo selection can mutate RNTP', async () => {
+    const qq = { ...track('qqtrack_001'), source: 'qq' as const };
+    const kuwo = { ...track('kwtrack_123456'), source: 'kuwo' as const };
+    let resolveQq!: (value: { url: string }) => void;
+    mockBootstrapTrack
+      .mockImplementationOnce(
+        () => new Promise<{ url: string }>(resolve => { resolveQq = resolve; }),
+      )
+      .mockResolvedValueOnce({ url: 'https://music.example/kuwo.mp3' });
+
+    const stale = playerController.playTrack(dispatch, qq);
+    await waitForBootstrapStart();
+    const staleSignal = mockBootstrapTrack.mock.calls[0][1] as AbortSignal;
+    const current = playerController.playTrack(dispatch, kuwo);
+    await expect(stale).resolves.toBe(false);
+    await expect(current).resolves.toBe(true);
+    expect(staleSignal.aborted).toBe(true);
+    expect(mockNativePlayer.add).toHaveBeenCalledTimes(1);
+    expect(mockNativePlayer.add).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: expect.stringContaining(kuwo.id) }),
+    );
+    resolveQq({ url: 'https://music.example/late-qq.mp3' });
   });
 
   it('keeps the current track and queued occurrence when native loading fails', async () => {
@@ -289,7 +313,7 @@ describe('PlayerController queue transitions', () => {
       headers: { Referer: 'https://www.bilibili.com/' },
     });
     await playerController.playTracks(dispatch, [selected]);
-    expect(mockBootstrapTrack).toHaveBeenCalledWith(selected);
+    expect(mockBootstrapTrack).toHaveBeenCalledWith(selected, expect.any(AbortSignal));
     expect(mockNativePlayer.add).toHaveBeenCalledWith(
       expect.objectContaining({
         url: signedUrl,
@@ -418,7 +442,7 @@ describe('PlayerController queue transitions', () => {
     await playerController.next(dispatch);
 
     expect(mockResolveVerified).not.toHaveBeenCalled();
-    expect(mockBootstrapTrack).toHaveBeenCalledWith(unsupported);
+    expect(mockBootstrapTrack).toHaveBeenCalledWith(unsupported, expect.any(AbortSignal));
   });
 
   it('does not consume a local queued track when native loading fails', async () => {
@@ -499,7 +523,7 @@ describe('PlayerController queue transitions', () => {
 
     const pending = playerController.next(dispatch);
     await waitForBootstrapStart();
-    expect(mockBootstrapTrack).toHaveBeenCalledWith(first);
+    expect(mockBootstrapTrack).toHaveBeenCalledWith(first, expect.any(AbortSignal));
     dispatch(
       playerActions.moveQueuedNext({
         occurrenceId: state.playNextQueue[0].occurrenceId,
@@ -725,7 +749,7 @@ describe('PlayerController queue transitions', () => {
     expect(state.error).toBe('playback-recovery-required');
 
     await expect(playerController.play(dispatch)).resolves.toBe(true);
-    expect(mockBootstrapTrack).toHaveBeenLastCalledWith(current);
+    expect(mockBootstrapTrack).toHaveBeenLastCalledWith(current, expect.any(AbortSignal));
     expect(mockNativePlayer.add).toHaveBeenCalledTimes(3);
     expect(state.isPlaying).toBe(true);
   });

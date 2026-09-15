@@ -5,6 +5,7 @@ import TrackPlayer, {
 } from 'react-native-track-player';
 import { PermissionsAndroid, Platform } from 'react-native';
 import { providerClient } from '../api/client';
+import { ProviderClientError } from '../api/errors';
 import { isLocalTrack, type PlayableTrack } from '../types/music';
 import {
   isOfflineDownloadEligible,
@@ -30,6 +31,7 @@ const STALE_NATIVE_COMMAND = Symbol('stale-native-command');
 const MAX_SEEK_SECONDS = 86_400;
 
 type NativeOperationContext = {
+  signal: AbortSignal;
   isCurrent: () => boolean;
   isTargetAvailable: () => boolean;
   markMutation: () => void;
@@ -132,7 +134,7 @@ function shuffledIndexes(length: number): number[] {
   return indexes;
 }
 
-async function resolveTrackUrl(track: PlayableTrack) {
+async function resolveTrackUrl(track: PlayableTrack, signal?: AbortSignal) {
   if (isLocalTrack(track)) {
     return { url: track.contentUri };
   }
@@ -142,19 +144,40 @@ async function resolveTrackUrl(track: PlayableTrack) {
   }
   let candidate: Awaited<ReturnType<typeof providerClient.bootstrapTrack>>;
   try {
-    candidate = await providerClient.bootstrapTrack(track);
+    candidate = await bootstrapWithSignal(track, signal);
   } catch (error) {
     // Bilibili media URLs are intentionally transient. A single fresh native
     // resolution is allowed for transport failure; entitlement/DRM/cancel
     // failures are terminal and never alter the RNTP queue.
     if (!isRetryableBilibiliResolution(track, error)) throw error;
-    candidate = await providerClient.bootstrapTrack(track);
+    candidate = await bootstrapWithSignal(track, signal);
   }
   const { url } = candidate;
   if (!url || typeof url !== 'string') throw new Error('provider-unavailable');
   if (track.source === 'bilibili' && !isExactBilibiliMedia(track.id, candidate))
     throw new Error('provider-unavailable');
   return candidate;
+}
+
+async function bootstrapWithSignal(track: PlayableTrack, signal?: AbortSignal) {
+  const remote = track as Exclude<PlayableTrack, { source: 'local' }>;
+  if (!signal) return providerClient.bootstrapTrack(remote);
+  if (signal.aborted) throw new ProviderClientError('CANCELLED', remote.source, 'bootstrap');
+  let rejectAbort: ((reason: unknown) => void) | undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    rejectAbort = reject;
+  });
+  const abort = () =>
+    rejectAbort?.(new ProviderClientError('CANCELLED', remote.source, 'bootstrap'));
+  signal.addEventListener('abort', abort, { once: true });
+  try {
+    return await Promise.race([
+      providerClient.bootstrapTrack(remote, signal),
+      aborted,
+    ]);
+  } finally {
+    signal.removeEventListener('abort', abort);
+  }
 }
 
 function isRetryableBilibiliResolution(track: PlayableTrack, error: unknown) {
@@ -412,7 +435,7 @@ async function loadAndPlay(
     assertNativeOperationCurrent(context);
     await ensurePlayer();
     assertNativeOperationCurrent(context);
-    const media = resolvedMedia ?? (await resolveTrackUrl(track));
+    const media = resolvedMedia ?? (await resolveTrackUrl(track, context?.signal));
     assertNativeOperationCurrent(context);
     const state = playerState();
     const nativeTrack = asNativeTrack(track, media);
@@ -444,7 +467,7 @@ async function loadAndPlay(
           dispatch,
           track,
           position,
-          await providerClient.bootstrapTrack(track),
+          await bootstrapWithSignal(track, context?.signal),
           context,
         );
       } catch {
@@ -454,7 +477,7 @@ async function loadAndPlay(
     if (resolvedMedia && isRetryableBilibiliResolution(track, error)) {
       try {
         assertNativeOperationCurrent(context);
-        const replacement = await resolveTrackUrl(track);
+        const replacement = await resolveTrackUrl(track, context?.signal);
         assertNativeOperationCurrent(context);
         const nativeTrack = asNativeTrack(track, replacement);
         context?.markMutation();
@@ -528,7 +551,7 @@ async function transition(
   if (!isNativeOperationCurrent(context)) return false;
   let media: { url: string; headers?: Readonly<Record<string, string>> };
   try {
-    media = await resolveTrackUrl(payload.track);
+    media = await resolveTrackUrl(payload.track, context?.signal);
   } catch (error) {
     if (!isNativeOperationCurrent(context)) return false;
     emit(
@@ -638,6 +661,7 @@ class PlayerController {
   private activeNativeTrackId: string | null = null;
   private activeNativeGeneration = 0;
   private activeNativeTrackIndex: number | null = null;
+  private activeResolution: AbortController | null = null;
 
   /**
    * RNTP has one mutable queue.  Running each user command through this gate
@@ -659,11 +683,13 @@ class PlayerController {
 
   private createTransitionContext(
     transitionToken: number,
+    controller: AbortController,
     isTargetAvailable: () => boolean = () => true,
   ): NativeOperationContext {
     let mutated = false;
     return {
-      isCurrent: () => playerState().transitionToken === transitionToken,
+      signal: controller.signal,
+      isCurrent: () => !controller.signal.aborted && playerState().transitionToken === transitionToken,
       isTargetAvailable,
       markMutation: () => {
         mutated = true;
@@ -696,6 +722,9 @@ class PlayerController {
     dispatch: Dispatch | undefined,
     isTargetAvailable?: () => boolean,
   ) {
+    this.activeResolution?.abort();
+    const controller = new AbortController();
+    this.activeResolution = controller;
     const state = playerState();
     const transitionToken = Math.max(
       state.transitionToken + 1,
@@ -705,7 +734,7 @@ class PlayerController {
     emit(dispatch, 'player/beginTransition', transitionToken);
     return {
       transitionToken,
-      context: this.createTransitionContext(transitionToken, isTargetAvailable),
+      context: this.createTransitionContext(transitionToken, controller, isTargetAvailable),
     };
   }
 
@@ -814,14 +843,23 @@ class PlayerController {
   }
 
   async playTrack(dispatch: Dispatch | undefined, track: PlayableTrack) {
+    const state = playerState();
+    const playlistIndex = state.playlist.findIndex(
+      item => trackId(item) === trackId(track),
+    );
+    const { context } = this.beginTransition(
+      dispatch,
+      playlistIndex < 0 ? undefined : () => this.hasPlaylistTrack(track),
+    );
     return this.runNativeMutation(() =>
-      this.playTrackInternal(dispatch, track),
+      this.playTrackInternal(dispatch, track, context),
     );
   }
 
   private async playTrackInternal(
     dispatch: Dispatch | undefined,
     track: PlayableTrack,
+    context: NativeOperationContext,
   ): Promise<boolean> {
     const state = playerState();
     let playlistIndex = state.playlist.indexOf(track);
@@ -832,12 +870,7 @@ class PlayerController {
     if (playlistIndex < 0) {
       playlistIndex = state.playlist.length;
     }
-    const { transitionToken, context } = this.beginTransition(
-      dispatch,
-      playlistIndex === state.playlist.length
-        ? undefined
-        : () => this.hasPlaylistTrack(track),
-    );
+    const transitionToken = playerState().transitionToken;
     return transition(
       dispatch,
       {
@@ -873,7 +906,7 @@ class PlayerController {
     const { context } = this.beginTransition(dispatch);
     let media: { url: string; headers?: Readonly<Record<string, string>> };
     try {
-      media = await resolveTrackUrl(target);
+      media = await resolveTrackUrl(target, context.signal);
       assertNativeOperationCurrent(context);
     } catch (error) {
       if (!isNativeOperationCurrent(context)) return false;
@@ -970,7 +1003,7 @@ class PlayerController {
     } | null = null;
     if (target) {
       try {
-        media = await resolveTrackUrl(target);
+        media = await resolveTrackUrl(target, context.signal);
         assertNativeOperationCurrent(context);
       } catch {
         if (!isNativeOperationCurrent(context)) return false;
@@ -1156,7 +1189,7 @@ class PlayerController {
     const remaining = state.history.slice(0, -1);
     let media: { url: string; headers?: Readonly<Record<string, string>> };
     try {
-      media = await resolveTrackUrl(entry.track);
+      media = await resolveTrackUrl(entry.track, context.signal);
       assertNativeOperationCurrent(context);
     } catch (error) {
       if (!isNativeOperationCurrent(context)) return false;
@@ -1419,6 +1452,8 @@ class PlayerController {
   }
 
   resetForTests() {
+    this.activeResolution?.abort();
+    this.activeResolution = null;
     this.queueTransitionInFlight = null;
     this.nativeMutationTail = null;
     this.transitionSequence = 0;

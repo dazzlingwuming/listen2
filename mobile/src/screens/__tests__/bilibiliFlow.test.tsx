@@ -193,6 +193,7 @@ describe('Bilibili exact part flow', () => {
         id: 'bitrack_v_BV1xx411c7mD-13',
         source: 'bilibili',
       }),
+      expect.any(AbortSignal),
     );
     expect(mockNativePlayer.add).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -231,6 +232,7 @@ describe('Bilibili exact part flow', () => {
     });
     expect(mockBootstrapTrack).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'bitrack_v_BV1xx411c7mD-13' }),
+      expect.any(AbortSignal),
     );
     expect(mockNativePlayer.add).not.toHaveBeenCalled();
     expect(mockPlayerState.currentTrack).toBeNull();
