@@ -54,6 +54,7 @@ hash_inputs() {
 }
 
 source "$SCRIPT_DIR/toolchain-preflight.sh"
+source "$SCRIPT_DIR/reproducibility-gate.sh"
 tracked_clean
 node "$SCRIPT_DIR/verify-phase8-prerequisites.mjs" --check --untracked-manifest "$MANIFEST"
 RUN_DIR="$(node "$SCRIPT_DIR/evidence.mjs" --resolve-current-run --phase-dir "${PHASE_DIR#$REPO_ROOT/}" --head "$(git -C "$REPO_ROOT" rev-parse HEAD)")"
@@ -91,17 +92,18 @@ copy_unique_apk "$ANDROID_ROOT/app/build/outputs/apk/debug" "$ARTIFACT_DIR/debug
 copy_unique_apk "$ANDROID_ROOT/app/build/outputs/apk/releaseLike" "$ARTIFACT_DIR/releaseLike.apk"
 copy_unique_apk "$ANDROID_ROOT/app/build/outputs/apk/androidTest/releaseLike" "$ARTIFACT_DIR/releaseLikeAndroidTest.apk"
 
-REPEAT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/listen2-phase8-repeat.XXXXXX")"
-cleanup() { rm -rf "$REPEAT_DIR"; }
-trap cleanup EXIT
+REPEAT_DIR="$RUN_DIR/reproducibility"
+[[ ! -e "$REPEAT_DIR" ]] || blocked 'current run already contains reproducibility artifacts.'
+mkdir -p "$REPEAT_DIR"
 (
   cd "$ANDROID_ROOT"
   ./gradlew --offline --no-daemon clean :app:assembleDebug :app:assembleReleaseLike
 )
 copy_unique_apk "$ANDROID_ROOT/app/build/outputs/apk/debug" "$REPEAT_DIR/debug.apk"
 copy_unique_apk "$ANDROID_ROOT/app/build/outputs/apk/releaseLike" "$REPEAT_DIR/releaseLike.apk"
+APKSIGNER="$ANDROID_SDK_ROOT/build-tools/37.0.0/apksigner"
 for variant in debug releaseLike; do
-  [[ "$(shasum -a 256 "$ARTIFACT_DIR/$variant.apk" | awk '{print $1}')" == "$(shasum -a 256 "$REPEAT_DIR/$variant.apk" | awk '{print $1}')" ]] || blocked "two clean ${variant} assemblies differ byte-for-byte."
+  phase8_compare_apks "$ARTIFACT_DIR/$variant.apk" "$REPEAT_DIR/$variant.apk" "$APKSIGNER" "$variant" || blocked "two clean ${variant} assemblies are not semantically reproducible."
 done
 
 bash "$SCRIPT_DIR/verify-apk.sh" --apk "$ARTIFACT_DIR/releaseLike.apk" --variant releaseLike
