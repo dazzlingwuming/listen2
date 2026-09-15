@@ -62,10 +62,10 @@ Those facts reduce implementation work, but none proves that a user can complete
   4. A user can use play-next, duplicate queue entries, reorder/removal, shuffle, repeat, and real previous history, then close, rotate, or temporarily lose the renderer without silently consuming or duplicating the queue.
   5. A user can view synchronized lyrics and available translations for the active source track, change lyric offset or choose a manual lyric source where available, and receive an explicit missing/mismatch/timeout/unsupported state instead of lyrics from a previous track or fabricated timestamps.
 
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 
 - [x] 05-01-PLAN.md
-- [ ] 05-02-PLAN.md
+- [x] 05-02-PLAN.md
 - [ ] 05-03-PLAN.md
 
 **UI hint:** yes
@@ -124,7 +124,7 @@ Those facts reduce implementation work, but none proves that a user can complete
 | Phase | Plans Complete | Status | Completed |
 | --- | --- | --- | --- |
 | 4. Official Mobile Shell & Unified Provider Registry | 3/3 | Complete    | 2026-09-10 |
-| 5. Five-Source Listen Journey | 1/3 | In Progress|  |
+| 5. Five-Source Listen Journey | 2/3 | In Progress|  |
 | 6. Personal Library & Continuity | 0/TBD | Not started | - |
 | 7. Offline & Advanced Desktop-Equivalent Playback | 0/TBD | Not started | - |
 | 8. Integrated API 35 Acceptance & Release-Like Evidence | 0/TBD | Not started | - |
