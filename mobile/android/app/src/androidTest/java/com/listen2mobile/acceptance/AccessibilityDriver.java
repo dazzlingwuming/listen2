@@ -46,6 +46,25 @@ public final class AccessibilityDriver {
         instrumentation.waitForIdleSync();
     }
 
+    /**
+     * Starts the visible target activity through the platform Activity Manager and waits for the
+     * two phone-shell tabs that make the first screen usable. This is deliberately test-only:
+     * callers receive bounded numeric timings rather than application state or logcat data.
+     */
+    StartupTiming startColdTargetAndWaitForShell() {
+        long startedAt = SystemClock.elapsedRealtime();
+        String activityOutput = shell("am start -W -n " + TARGET_PACKAGE + "/com.listen2mobile.MainActivity");
+        require(activityOutput.matches("(?sm).*^Status:\\s*ok\\s*$.*"), "Activity Manager did not report Status: ok");
+        require(activityOutput.matches("(?sm).*^LaunchState:\\s*COLD\\s*$.*"), "Activity Manager did not report LaunchState: COLD");
+        long totalTimeMillis = requiredActivityTiming(activityOutput, "TotalTime");
+        long waitTimeMillis = requiredActivityTiming(activityOutput, "WaitTime");
+        require(waitForLabel("搜索", 20_000L), "phone shell search tab did not become visible");
+        require(waitForLabel("我的", 5_000L), "phone shell library tab did not become visible");
+        long shellReadyMillis = SystemClock.elapsedRealtime() - startedAt;
+        require(shellReadyMillis >= 0L, "monotonic clock moved backwards");
+        return new StartupTiming(totalTimeMillis, waitTimeMillis, shellReadyMillis);
+    }
+
     boolean waitForLabel(String label, long timeoutMillis) {
         long deadline = SystemClock.elapsedRealtime() + timeoutMillis;
         while (SystemClock.elapsedRealtime() < deadline) {
@@ -165,6 +184,30 @@ public final class AccessibilityDriver {
 
     void record(String event) {
         Log.i("Listen2Acceptance", "acceptance-event=" + event);
+    }
+
+    private static long requiredActivityTiming(String output, String field) {
+        Matcher match = Pattern.compile("(?m)^" + Pattern.quote(field) + ":\\s*(\\d+)\\s*$").matcher(output);
+        if (!match.find()) {
+            throw new AssertionError("Activity Manager did not report " + field);
+        }
+        try {
+            return Long.parseLong(match.group(1));
+        } catch (NumberFormatException error) {
+            throw new AssertionError("Activity Manager reported an invalid " + field, error);
+        }
+    }
+
+    static final class StartupTiming {
+        final long totalTimeMillis;
+        final long waitTimeMillis;
+        final long shellReadyMillis;
+
+        StartupTiming(long totalTimeMillis, long waitTimeMillis, long shellReadyMillis) {
+            this.totalTimeMillis = totalTimeMillis;
+            this.waitTimeMillis = waitTimeMillis;
+            this.shellReadyMillis = shellReadyMillis;
+        }
     }
 
     private String nodeFor(String label) {

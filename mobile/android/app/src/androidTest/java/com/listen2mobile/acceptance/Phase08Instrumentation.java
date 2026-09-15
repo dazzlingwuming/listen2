@@ -101,6 +101,10 @@ public final class Phase08Instrumentation extends Instrumentation {
             PerformanceRecoveryTest.compatibilityColdStart(this, progress, requestedArguments);
             return;
         }
+        if ("com.listen2mobile.acceptance.PerformanceRecoveryTest#startupProbe".equals(scenarioClass)) {
+            PerformanceRecoveryTest.startupProbe(this, progress, requestedArguments);
+            return;
+        }
         throw new IllegalArgumentException("unapproved Phase 8 instrumentation class");
     }
 

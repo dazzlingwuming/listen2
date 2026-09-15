@@ -35,6 +35,38 @@ public final class PerformanceRecoveryTest {
         observeVisibleShell(instrumentation, progress, "compatibility-cold-start");
     }
 
+    /**
+     * A single corrected process-cold probe. The host performs force-stop and PID disappearance
+     * checks; this instrumentation command records device Activity Manager timing and a visible
+     * accessibility-shell readiness time from one device monotonic clock.
+     */
+    public static void startupProbe(Instrumentation instrumentation, ScenarioProgress progress, Bundle arguments) {
+        int api = integerArgument(arguments, "phase08Api");
+        if (api != 35 && api != 36) {
+            throw new AssertionError("startup probe API must be 35 or 36");
+        }
+        int attempts = integerArgument(arguments, "phase08Attempts");
+        if (attempts != 3 && attempts != 5) {
+            throw new AssertionError("startup probe attempts must be 3 or 5");
+        }
+        String attemptId = arguments.getString("phase08AttemptId");
+        if (attemptId == null || !attemptId.matches("0[1-5]")) {
+            throw new AssertionError("startup probe attempt ID is invalid");
+        }
+
+        progress.step("startup-probe-launch");
+        AccessibilityDriver.StartupTiming timing = new AccessibilityDriver(instrumentation).startColdTargetAndWaitForShell();
+        Bundle status = new Bundle();
+        status.putString(
+            "phase08StartupProbe",
+            "id=" + attemptId + ";status=PASS;totalTimeMs=" + timing.totalTimeMillis +
+                ";waitTimeMs=" + timing.waitTimeMillis + ";a11yReadyMs=" + timing.shellReadyMillis +
+                ";launchState=COLD"
+        );
+        instrumentation.sendStatus(1, status);
+        progress.step("startup-probe-complete");
+    }
+
     private static void observeVisibleShell(Instrumentation instrumentation, ScenarioProgress progress, String stage) {
         long started = SystemClock.elapsedRealtime();
         progress.step(stage + "-launch");
