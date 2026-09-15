@@ -4,12 +4,13 @@ set -euo pipefail
 PACKAGE="com.dazzlingwuming.listen2"
 TEST_PACKAGE="com.dazzlingwuming.listen2.test"
 PHASE_DIR=".planning/phases/08-integrated-api-35-acceptance-release-like-evidence"
-RUN_DIR=""; SERIAL=""; SEED_CLASS=""; JOURNEY_CLASS=""; JOURNEY_TEST_APK=""
+RUN_DIR=""; SERIAL=""; SEED_CLASS=""; JOURNEY_CLASS=""; JOURNEY_TEST_APK=""; JOURNEY_TEST_BUILD_HEAD=""
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
     --run-dir) RUN_DIR="$2"; shift 2;; --serial) SERIAL="$2"; shift 2;;
     --seed-class) SEED_CLASS="$2"; shift 2;; --journey-class) JOURNEY_CLASS="$2"; shift 2;;
     --journey-test-apk) JOURNEY_TEST_APK="$2"; shift 2;;
+    --journey-test-build-head) JOURNEY_TEST_BUILD_HEAD="$2"; shift 2;;
     *key*|*Key*|*token*|*Token*|*secret*|*Secret*|*cookie*|*Cookie*|*password*|*Password*) echo "credential-like arguments are forbidden" >&2; exit 2;;
     *) echo "unknown argument: $1" >&2; exit 2;;
   esac
@@ -18,6 +19,7 @@ done
 [[ "$SEED_CLASS" == "com.listen2mobile.acceptance.UpgradeSeedTest" ]] || { echo "unexpected seed class" >&2; exit 2; }
 [[ "$JOURNEY_CLASS" == "com.listen2mobile.acceptance.IntegratedJourneyTest" ]] || { echo "unexpected journey class" >&2; exit 2; }
 [[ -n "$JOURNEY_TEST_APK" && -f "$JOURNEY_TEST_APK" ]] || { echo "a sealed journey AndroidTest APK is required" >&2; exit 2; }
+[[ "$JOURNEY_TEST_BUILD_HEAD" =~ ^[a-f0-9]{7,40}$ ]] || { echo "a sealed journey AndroidTest build head is required" >&2; exit 2; }
 for name in $(env | cut -d= -f1); do
   if [[ "$name" =~ (BILIBILI|DEEPSEEK|COOKIE|TOKEN|AUTHORIZATION|PASSWORD|SECRET) ]] && [[ -n "${!name:-}" ]]; then echo "credential-like environment variable is forbidden: $name" >&2; exit 2; fi
 done
@@ -65,10 +67,10 @@ TEST_SIGNER="$($APKSIGNER verify --verbose --print-certs "$TEST_APK" | awk -F': 
 STATE="$RUN_DIR/device-state-before.sh"; EVENTS="$RUN_DIR/journey-events.txt"; SCREENSHOT="$RUN_DIR/journey-phone.png"
 FIXTURE_DIR="$RUN_DIR/fixtures"; mkdir -p "$FIXTURE_DIR"; umask 077
 cp "$TEST_APK" "$RUN_DIR/artifacts/releaseLikeAndroidTest-journey.apk"
-node --input-type=module - "$RUN_DIR" "$TEST_SHA" "$TEST_SIGNER" "$BUILD_HEAD" <<'NODE' > "$RUN_DIR/journey-test-payload.json"
+node --input-type=module - "$RUN_DIR" "$TEST_SHA" "$TEST_SIGNER" "$BUILD_HEAD" "$JOURNEY_TEST_BUILD_HEAD" <<'NODE' > "$RUN_DIR/journey-test-payload.json"
 import { createHash } from 'node:crypto'; import { readFileSync } from 'node:fs';
-const [run, sha, signerSha256, buildHead] = process.argv.slice(2);
-console.log(JSON.stringify({ kind: 'AndroidTest-only', sha256: sha, signerSha256, buildHead, targetPackage: 'com.dazzlingwuming.listen2', targetVersionCode: 1000001, testPackage: 'com.dazzlingwuming.listen2.test', runner: 'androidx.test.runner.AndroidJUnitRunner', contains: ['UpgradeSeedTest', 'IntegratedJourneyTest'], reason: 'AndroidTest-only payload is separately sealed; releaseLike product hash is unchanged.' }, null, 2));
+const [run, sha, signerSha256, candidateBuildHead, testPayloadBuildHead] = process.argv.slice(2);
+console.log(JSON.stringify({ kind: 'AndroidTest-only', sha256: sha, signerSha256, candidateBuildHead, testPayloadBuildHead, targetPackage: 'com.dazzlingwuming.listen2', targetVersionCode: 1000001, testPackage: 'com.dazzlingwuming.listen2.test', runner: 'androidx.test.runner.AndroidJUnitRunner', contains: ['UpgradeSeedTest', 'IntegratedJourneyTest'], reason: 'AndroidTest-only payload is separately sealed; releaseLike product hash is unchanged.' }, null, 2));
 NODE
 node mobile/scripts/acceptance/generate-fixtures.mjs --out "$FIXTURE_DIR" > "$RUN_DIR/fixture.json"
 FIXTURE_SHA="$(node --input-type=module - "$RUN_DIR/fixture.json" <<'NODE'
