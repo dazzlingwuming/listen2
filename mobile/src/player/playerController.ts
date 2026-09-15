@@ -891,8 +891,12 @@ class PlayerController {
     tracks: PlayableTrack[],
     startIndex = 0,
   ): Promise<boolean> {
+    // This must happen before the serialized RNTP mutation queue. A later
+    // selection owns the transition immediately and aborts a deferred media
+    // resolution before that stale request can reset or replace RNTP.
+    const { context } = this.beginTransition(dispatch);
     return this.runNativeMutation(() =>
-      this.playTracksInternal(dispatch, tracks, startIndex),
+      this.playTracksInternal(dispatch, tracks, startIndex, context),
     );
   }
 
@@ -900,10 +904,10 @@ class PlayerController {
     dispatch: Dispatch | undefined,
     tracks: PlayableTrack[],
     startIndex = 0,
+    context: NativeOperationContext,
   ): Promise<boolean> {
     const target = tracks[startIndex];
     if (!target) return false;
-    const { context } = this.beginTransition(dispatch);
     let media: { url: string; headers?: Readonly<Record<string, string>> };
     try {
       media = await resolveTrackUrl(target, context.signal);

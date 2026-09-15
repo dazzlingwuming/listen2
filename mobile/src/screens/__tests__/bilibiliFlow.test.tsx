@@ -210,6 +210,68 @@ describe('Bilibili exact part flow', () => {
     expect(mockNavigate).toHaveBeenCalledWith('Player');
   });
 
+  it('lets a fast second part press abort the first detail thunk before RNTP changes', async () => {
+    mockDetail.mockResolvedValue({
+      bvid: 'BV1xx411c7mD',
+      title: '视频',
+      owner: '作者',
+      parts: [
+        { cid: '12', page: '1', title: '第一段' },
+        { cid: '13', page: '2', title: '第二段' },
+      ],
+    });
+    mockBootstrapTrack
+      .mockImplementationOnce(
+        (_track: unknown, signal?: AbortSignal) =>
+          new Promise<never>((_resolve, reject) => {
+            signal?.addEventListener(
+              'abort',
+              () => reject({ code: 'CANCELLED' }),
+              { once: true },
+            );
+          }),
+      )
+      .mockResolvedValueOnce({
+        trackId: 'bitrack_v_BV1xx411c7mD-13',
+        source: 'bilibili',
+        url: 'https://upos-sz-mirror.example.bilivideo.com/part-13.m4s',
+        headers: { Referer: 'https://www.bilibili.com/' },
+      });
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<BilibiliDetailScreen />);
+    });
+
+    const first = tree.root
+      .findByProps({ accessibilityLabel: '播放第一段' })
+      .props.onPress();
+    for (
+      let turn = 0;
+      turn < 10 && mockBootstrapTrack.mock.calls.length === 0;
+      turn += 1
+    )
+      await Promise.resolve();
+    const firstSignal = mockBootstrapTrack.mock.calls[0][1] as AbortSignal;
+    const second = tree.root
+      .findByProps({ accessibilityLabel: '播放第二段' })
+      .props.onPress();
+    await act(async () => {
+      await Promise.all([first, second]);
+    });
+
+    expect(firstSignal.aborted).toBe(true);
+    expect(mockNativePlayer.reset).toHaveBeenCalledTimes(1);
+    expect(mockNativePlayer.add).toHaveBeenCalledTimes(1);
+    expect(mockNativePlayer.add).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        id: expect.stringContaining('bitrack_v_BV1xx411c7mD-13'),
+      }),
+    );
+    expect(mockPlayerState.currentTrack).toEqual(
+      expect.objectContaining({ id: 'bitrack_v_BV1xx411c7mD-13' }),
+    );
+  });
+
   it('keeps the detail screen in place when the exact part bootstrap fails', async () => {
     mockDetail.mockResolvedValue({
       bvid: 'BV1xx411c7mD',

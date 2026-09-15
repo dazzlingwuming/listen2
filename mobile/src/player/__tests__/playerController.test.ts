@@ -324,6 +324,40 @@ describe('PlayerController queue transitions', () => {
     expect(JSON.stringify(state)).not.toContain('Referer');
   });
 
+  it('aborts a superseded Bilibili parts transition before only the latest part mutates RNTP', async () => {
+    const first = bilibiliTrack('bitrack_v_BV1xx411c7mD-12');
+    const second = bilibiliTrack('bitrack_v_BV1xx411c7mD-13');
+    mockBootstrapTrack
+      .mockImplementationOnce(
+        (_track: Track, signal?: AbortSignal) =>
+          new Promise<{ url: string }>((_resolve, reject) => {
+            signal?.addEventListener(
+              'abort',
+              () => reject({ code: 'CANCELLED' }),
+              { once: true },
+            );
+          }),
+      )
+      .mockResolvedValueOnce({
+        url: 'https://upos-sz-mirror.example.bilivideo.com/part-13.m4s',
+        headers: { Referer: 'https://www.bilibili.com/' },
+      });
+
+    const stale = playerController.playTracks(dispatch, [first]);
+    await waitForBootstrapStart();
+    const staleSignal = mockBootstrapTrack.mock.calls[0][1] as AbortSignal;
+    const current = playerController.playTracks(dispatch, [second]);
+
+    await expect(stale).resolves.toBe(false);
+    await expect(current).resolves.toBe(true);
+    expect(staleSignal.aborted).toBe(true);
+    expect(mockNativePlayer.reset).toHaveBeenCalledTimes(1);
+    expect(mockNativePlayer.add).toHaveBeenCalledTimes(1);
+    expect(mockNativePlayer.add).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: expect.stringContaining(second.id) }),
+    );
+  });
+
   it.each([
     'LOGIN_REQUIRED',
     'MEMBERSHIP_REQUIRED',
