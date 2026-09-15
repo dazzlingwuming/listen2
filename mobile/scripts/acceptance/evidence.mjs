@@ -212,7 +212,7 @@ function baseRecord(runRoot, recordId, requirements) {
 }
 
 function writeRecord(runRoot, name, record) {
-  if (!/^(?:08-(?:prerequisites|build|journey|api35-performance|performance|evidence-index)\.json)$/.test(name))
+  if (!/^(?:08-(?:prerequisites|build|journey|api35-performance|performance|live-provider|evidence-index)\.json)$/.test(name))
     fail('record filename is not a permitted Phase 8 evidence record');
   const destination = resolve(runRoot, name);
   if (existsSync(destination)) fail('evidence record already exists and is immutable');
