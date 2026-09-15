@@ -126,7 +126,7 @@ describe('PlayerController queue transitions', () => {
     await playerController.next(dispatch);
 
     expect(state.currentTrack?.id).toBe(current.id);
-    expect(state.playNextQueue.map(item => item.id)).toEqual([queued.id]);
+    expect(state.playNextQueue.map(item => item.track.id)).toEqual([queued.id]);
   });
 
   it('consumes exactly the selected queued occurrence after bootstrap', async () => {
@@ -143,19 +143,50 @@ describe('PlayerController queue transitions', () => {
       source: selected.source,
       url: 'https://music.example/track.mp3',
     });
-    expect(state.playNextQueue.map(item => item.id)).toEqual([
+    expect(state.playNextQueue.map(item => item.track.id)).toEqual([
       first.id,
       selected.id,
     ]);
     expect(playerController.snapshot().playNextQueue).toHaveLength(2);
-    await playerController.playQueuedAt(dispatch, 1);
+    await playerController.playQueuedAt(
+      dispatch,
+      state.playNextQueue[1].occurrenceId,
+    );
 
     // Diagnostic assertion keeps failures readable without exposing provider data.
     expect(mockBootstrapTrack).toHaveBeenCalledWith(selected);
 
     expect(state.currentTrack?.id).toBe(selected.id);
-    expect(state.playNextQueue.map(item => item.id)).toEqual([first.id]);
+    expect(state.playNextQueue.map(item => item.track.id)).toEqual([first.id]);
     expect(mockNativePlayer.add).toHaveBeenCalledTimes(1);
+  });
+
+  it('coalesces rapid next callbacks so one accepted transition consumes one row', async () => {
+    const first = track('netrack_2');
+    const second = track('netrack_3');
+    state = reducer(
+      state,
+      playerActions.replacePlaylist({ tracks: [track('netrack_1')] }),
+    );
+    state = reducer(state, playerActions.enqueueNext(first));
+    state = reducer(state, playerActions.enqueueNext(second));
+    let resolveBootstrap!: (value: { url: string }) => void;
+    mockBootstrapTrack.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          resolveBootstrap = resolve;
+        }),
+    );
+
+    const firstNext = playerController.next(dispatch);
+    const secondNext = playerController.next(dispatch);
+    await Promise.resolve();
+    expect(mockBootstrapTrack).toHaveBeenCalledTimes(1);
+    resolveBootstrap({ url: 'https://music.example/track.mp3' });
+    await Promise.all([firstNext, secondNext]);
+
+    expect(state.currentTrack?.id).toBe(first.id);
+    expect(state.playNextQueue.map(item => item.track.id)).toEqual([second.id]);
   });
 
   it('keeps the current track and queued occurrence when native loading fails', async () => {
@@ -177,7 +208,7 @@ describe('PlayerController queue transitions', () => {
     await playerController.next(dispatch);
 
     expect(state.currentTrack?.id).toBe(current.id);
-    expect(state.playNextQueue.map(item => item.id)).toEqual([queued.id]);
+    expect(state.playNextQueue.map(item => item.track.id)).toEqual([queued.id]);
     expect(state.error).toBe('playback-unavailable');
     expect(state.isPlaying).toBe(false);
   });
@@ -317,7 +348,7 @@ describe('PlayerController queue transitions', () => {
     expect(mockInvalidate).toHaveBeenCalledWith('netease', queued.id);
     expect(mockBootstrapTrack).toHaveBeenCalledTimes(1);
     expect(state.currentTrack?.id).toBe(current.id);
-    expect(state.playNextQueue.map(item => item.id)).toEqual([queued.id]);
+    expect(state.playNextQueue.map(item => item.track.id)).toEqual([queued.id]);
   });
 
   it('never stores content or provider locations from rejected playback errors', async () => {
@@ -373,7 +404,7 @@ describe('PlayerController queue transitions', () => {
     await playerController.next(dispatch);
 
     expect(mockBootstrapTrack).not.toHaveBeenCalled();
-    expect(state.playNextQueue.map(item => item.id)).toEqual([local.id]);
+    expect(state.playNextQueue.map(item => item.track.id)).toEqual([local.id]);
     expect(state.error).toBe('local-media-unavailable');
   });
 

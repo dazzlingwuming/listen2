@@ -26,13 +26,55 @@ describe('playerSlice', () => {
     state = reducer(state, playerActions.enqueueNext(duplicate));
     state = reducer(state, playerActions.enqueueNext(track('ne_2')));
 
-    expect(state.playNextQueue.map(item => item.id)).toEqual([
+    expect(state.playNextQueue.map(item => item.track.id)).toEqual([
       'ne_1',
       'ne_1',
       'ne_2',
     ]);
-    state = reducer(state, playerActions.consumeQueuedNext());
-    expect(state.playNextQueue.map(item => item.id)).toEqual(['ne_1', 'ne_2']);
+    expect(state.playNextQueue[0].occurrenceId).not.toBe(
+      state.playNextQueue[1].occurrenceId,
+    );
+    state = reducer(state, playerActions.beginTransition(1));
+    state = reducer(
+      state,
+      playerActions.consumeQueuedNext({
+        occurrenceId: state.playNextQueue[0].occurrenceId,
+        transitionToken: 1,
+      }),
+    );
+    expect(state.playNextQueue.map(item => item.track.id)).toEqual([
+      'ne_1',
+      'ne_2',
+    ]);
+  });
+
+  it('edits queued rows by occurrence rather than a duplicate track identity', () => {
+    const duplicate = track('ne_1');
+    let state = reducer(undefined, playerActions.enqueueNext(duplicate));
+    state = reducer(state, playerActions.enqueueNext(duplicate));
+    state = reducer(state, playerActions.enqueueNext(track('ne_2')));
+    const [first, second, third] = state.playNextQueue;
+
+    state = reducer(
+      state,
+      playerActions.moveQueuedNext({
+        occurrenceId: third.occurrenceId,
+        direction: -1,
+      }),
+    );
+    expect(state.playNextQueue.map(item => item.occurrenceId)).toEqual([
+      first.occurrenceId,
+      third.occurrenceId,
+      second.occurrenceId,
+    ]);
+    state = reducer(state, playerActions.removeQueuedNext(second.occurrenceId));
+    expect(state.playNextQueue.map(item => item.occurrenceId)).toEqual([
+      first.occurrenceId,
+      third.occurrenceId,
+    ]);
+    state = reducer(state, playerActions.clearPlayNextQueue());
+    expect(state.playNextQueue).toEqual([]);
+    expect(state.playlist).toEqual([]);
   });
 
   it('records actual previous history rather than deriving previous from the playlist', () => {

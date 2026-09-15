@@ -15,11 +15,22 @@ export const PLAY_MODE = Object.freeze({
 export type PlayMode = (typeof PLAY_MODE)[keyof typeof PLAY_MODE];
 export type PlaybackSource = 'playlist' | 'play-next';
 
+/**
+ * A play-next request is an occurrence, not a track identity.  Keeping the
+ * semantic track nested makes the persisted boundary explicit; spreading it
+ * preserves the legacy read-only track shape used by portable backups.
+ */
+export type PlayNextOccurrence = Track & {
+  occurrenceId: string;
+  track: Track;
+};
+
 export type HistoryEntry = {
   track: Track;
   playlistIndex: number;
   source: PlaybackSource;
   position: number;
+  occurrenceId?: string | null;
 };
 
 export type PlayerState = {
@@ -34,7 +45,8 @@ export type PlayerState = {
   currentTrack: Track | null;
   currentIndex: number;
   currentSource: PlaybackSource;
-  playNextQueue: Track[];
+  currentOccurrenceId: string | null;
+  playNextQueue: PlayNextOccurrence[];
   history: HistoryEntry[];
   playMode: PlayMode;
   shuffleOrder: number[];
@@ -46,6 +58,9 @@ export type PlayerState = {
   volume: number;
   muted: boolean;
   error: string | null;
+  /** Monotonic semantic transaction identifiers; RNTP IDs are never stored. */
+  transitionToken: number;
+  acceptedTransitionToken: number;
 };
 
 const initialState: PlayerState = {
@@ -56,6 +71,7 @@ const initialState: PlayerState = {
   currentTrack: null,
   currentIndex: -1,
   currentSource: 'playlist',
+  currentOccurrenceId: null,
   playNextQueue: [],
   history: [],
   playMode: PLAY_MODE.LOOP,
@@ -68,7 +84,26 @@ const initialState: PlayerState = {
   volume: 1,
   muted: false,
   error: null,
+  transitionToken: 0,
+  acceptedTransitionToken: 0,
 };
+
+let occurrenceSequence = 0;
+
+function mintOccurrenceId(state: PlayerState): string {
+  let occurrenceId = '';
+  do {
+    occurrenceSequence += 1;
+    occurrenceId = `play-next-${occurrenceSequence.toString(36)}`;
+  } while (
+    state.playNextQueue.some(item => item.occurrenceId === occurrenceId)
+  );
+  return occurrenceId;
+}
+
+function playlistOccurrenceId(track: Track, index: number): string {
+  return `playlist-${index}-${String(track.id)}`;
+}
 
 export function shuffleIndexes(length: number, random = Math.random): number[] {
   const indexes = Array.from({ length }, (_, index) => index);
@@ -93,6 +128,7 @@ function activate(
     position?: number;
     shuffleOrder?: number[];
     shuffleCursor?: number;
+    currentOccurrenceId?: string | null;
   },
 ) {
   if (payload.rememberCurrent && state.nowPlaying) {
@@ -101,12 +137,18 @@ function activate(
       playlistIndex: state.currentIndex,
       source: state.currentSource,
       position: state.position,
+      occurrenceId: state.currentOccurrenceId,
     });
   }
   state.nowPlaying = payload.track;
   state.currentTrack = payload.track;
   state.currentIndex = payload.playlistIndex;
   state.currentSource = payload.source;
+  state.currentOccurrenceId =
+    payload.currentOccurrenceId ??
+    (payload.source === 'playlist'
+      ? playlistOccurrenceId(payload.track, payload.playlistIndex)
+      : null);
   state.position = Math.max(0, payload.position ?? 0);
   state.duration = 0;
   state.bufferedPosition = 0;
@@ -154,12 +196,35 @@ const playerSlice = createSlice({
     },
     enqueueNext(state, action: PayloadAction<Track>) {
       // Do not de-duplicate: two taps mean two requested plays.
-      state.playNextQueue.push(action.payload);
+      state.playNextQueue.push({
+        ...action.payload,
+        occurrenceId: mintOccurrenceId(state),
+        track: action.payload,
+      });
     },
-    removeQueuedNext(state, action: PayloadAction<number>) {
-      if (action.payload >= 0 && action.payload < state.playNextQueue.length) {
-        state.playNextQueue.splice(action.payload, 1);
-      }
+    removeQueuedNext(state, action: PayloadAction<string>) {
+      const index = state.playNextQueue.findIndex(
+        item => item.occurrenceId === action.payload,
+      );
+      if (index >= 0) state.playNextQueue.splice(index, 1);
+    },
+    moveQueuedNext(
+      state,
+      action: PayloadAction<{
+        occurrenceId: string;
+        direction: -1 | 1;
+      }>,
+    ) {
+      const index = state.playNextQueue.findIndex(
+        item => item.occurrenceId === action.payload.occurrenceId,
+      );
+      const target = index + action.payload.direction;
+      if (index < 0 || target < 0 || target >= state.playNextQueue.length)
+        return;
+      [state.playNextQueue[index], state.playNextQueue[target]] = [
+        state.playNextQueue[target],
+        state.playNextQueue[index],
+      ];
     },
     removeTrackReferences(state, action: PayloadAction<string>) {
       const id = action.payload;
@@ -168,7 +233,7 @@ const playerSlice = createSlice({
       state.tracks = state.playlist;
       state.queue = state.playlist;
       state.playNextQueue = state.playNextQueue.filter(
-        track => track.id !== id,
+        occurrence => occurrence.track.id !== id,
       );
       state.history = state.history.filter(entry => entry.track.id !== id);
       state.shuffleOrder = shuffleIndexes(state.playlist.length);
@@ -190,8 +255,25 @@ const playerSlice = createSlice({
     clearPlayNextQueue(state) {
       state.playNextQueue = [];
     },
-    consumeQueuedNext(state) {
-      state.playNextQueue.shift();
+    beginTransition(state, action: PayloadAction<number>) {
+      if (action.payload > state.transitionToken)
+        state.transitionToken = action.payload;
+    },
+    consumeQueuedNext(
+      state,
+      action: PayloadAction<{ occurrenceId: string; transitionToken: number }>,
+    ) {
+      if (
+        action.payload.transitionToken !== state.transitionToken ||
+        action.payload.transitionToken <= state.acceptedTransitionToken
+      )
+        return;
+      const index = state.playNextQueue.findIndex(
+        item => item.occurrenceId === action.payload.occurrenceId,
+      );
+      if (index < 0) return;
+      state.playNextQueue.splice(index, 1);
+      state.acceptedTransitionToken = action.payload.transitionToken;
     },
     activateTrack(
       state,
@@ -203,8 +285,15 @@ const playerSlice = createSlice({
         position?: number;
         shuffleOrder?: number[];
         shuffleCursor?: number;
+        currentOccurrenceId?: string | null;
+        transitionToken?: number;
       }>,
     ) {
+      if (
+        action.payload.transitionToken !== undefined &&
+        action.payload.transitionToken !== state.transitionToken
+      )
+        return;
       activate(state, action.payload);
     },
     restoreHistory(
@@ -275,6 +364,7 @@ export const {
   consumeQueuedNext,
   cyclePlayModeSnapshot,
   enqueueNext,
+  moveQueuedNext,
   removeQueuedNext,
   removeTrackReferences,
   replacePlaylist,
@@ -329,8 +419,14 @@ export const playTrackInPlaylist =
 export const addNextTrack = (track: Track) => (dispatch: Dispatch) => {
   dispatch(enqueueNext(track));
 };
-export const playQueuedTrack = (index: number) => (dispatch: Dispatch) =>
-  playerController.playQueuedAt(dispatch, index);
+export const playQueuedTrack = (occurrenceId: string) => (dispatch: Dispatch) =>
+  playerController.playQueuedAt(dispatch, occurrenceId);
+export const movePlayNextTrack =
+  (occurrenceId: string, direction: -1 | 1) => (dispatch: Dispatch) =>
+    dispatch(moveQueuedNext({ occurrenceId, direction }));
+export const removePlayNextTrack =
+  (occurrenceId: string) => (dispatch: Dispatch) =>
+    dispatch(removeQueuedNext(occurrenceId));
 export const forgetTrack = (track: Track) => (dispatch: Dispatch) =>
   playerController.forgetTrack(dispatch, track);
 

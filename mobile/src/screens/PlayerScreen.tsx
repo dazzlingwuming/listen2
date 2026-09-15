@@ -63,7 +63,7 @@ export function PlayerScreen() {
     state.playNextQueue?.length
       ? state.playNextQueue
       : state.playlist || state.tracks || []
-  ) as PresentableTrack[];
+  ) as QueueItem[];
   const showingPlayNext = Boolean(state.playNextQueue?.length);
   const playing = Boolean(state.isPlaying ?? state.playing);
   const currentPosition = state.position ?? state.progress ?? 0;
@@ -677,13 +677,26 @@ export function PlayerScreen() {
         queue={queue}
         visible={showQueue}
         onClose={() => setShowQueue(false)}
-        onPlay={(track, index) => {
+        onPlay={item => {
+          const track = item.track || item;
           const action = showingPlayNext
-            ? (playerActions as any).playQueuedTrack?.(index)
+            ? item.occurrenceId
+              ? (playerActions as any).playQueuedTrack?.(item.occurrenceId)
+              : undefined
             : (playerActions as any).playTrack?.(track);
           if (action) dispatch(action);
           setShowQueue(false);
         }}
+        onMove={(occurrenceId, direction) =>
+          dispatch(
+            (playerActions as any).movePlayNextTrack(occurrenceId, direction),
+          )
+        }
+        onRemove={occurrenceId =>
+          dispatch((playerActions as any).removePlayNextTrack(occurrenceId))
+        }
+        onClear={() => dispatch((playerActions as any).clearPlayNextQueue())}
+        showingPlayNext={showingPlayNext}
       />
       <LyricsSheet
         current={current}
@@ -805,39 +818,134 @@ function Progress({
   );
 }
 
+type QueueItem = PresentableTrack & {
+  occurrenceId?: string;
+  track?: PresentableTrack;
+};
+
 function QueueSheet({
   visible,
   onClose,
   queue,
   onPlay,
+  onMove,
+  onRemove,
+  onClear,
+  showingPlayNext,
 }: {
   visible: boolean;
   onClose: () => void;
-  queue: PresentableTrack[];
-  onPlay: (track: PresentableTrack, index: number) => void;
+  queue: QueueItem[];
+  onPlay: (item: QueueItem, index: number) => void;
+  onMove: (occurrenceId: string, direction: -1 | 1) => void;
+  onRemove: (occurrenceId: string) => void;
+  onClear: () => void;
+  showingPlayNext: boolean;
 }) {
+  const [confirmClear, setConfirmClear] = useState(false);
   return (
     <Sheet onClose={onClose} title="播放队列" visible={visible}>
       <ScrollView contentContainerStyle={styles.sheetContent}>
-        {queue.length ? (
-          queue.map((track, index) => (
+        {showingPlayNext && queue.length ? (
+          confirmClear ? (
+            <View style={styles.queueTools}>
+              <Text style={text.meta}>清空后不会影响当前播放或基础歌单。</Text>
+              <Pressable
+                accessibilityLabel="确认清空待播队列"
+                accessibilityRole="button"
+                onPress={() => {
+                  onClear();
+                  setConfirmClear(false);
+                }}
+                style={styles.action}
+              >
+                <Text style={styles.actionText}>确认清空</Text>
+              </Pressable>
+              <Pressable
+                accessibilityLabel="取消清空待播队列"
+                accessibilityRole="button"
+                onPress={() => setConfirmClear(false)}
+                style={styles.action}
+              >
+                <Text style={styles.actionText}>取消</Text>
+              </Pressable>
+            </View>
+          ) : (
             <Pressable
-              accessibilityLabel={`播放队列第${index + 1}首，${trackTitle(
-                track,
-              )}`}
-              key={`${track.id || 'track'}-${index}`}
-              onPress={() => onPlay(track, index)}
-              style={styles.queueRow}
+              accessibilityLabel="清空待播队列"
+              accessibilityRole="button"
+              onPress={() => setConfirmClear(true)}
+              style={styles.action}
             >
-              <Text numberOfLines={1} style={text.body}>
-                {trackTitle(track)}
-              </Text>
-              <Text numberOfLines={1} style={text.meta}>
-                {trackArtist(track)} ·{' '}
-                {providerLabels[trackSource(track)] || trackSource(track)}
-              </Text>
+              <Text style={styles.actionText}>清空待播</Text>
             </Pressable>
-          ))
+          )
+        ) : null}
+        {queue.length ? (
+          queue.map((item, index) => {
+            const track = item.track || item;
+            const duplicateOrdinal = queue
+              .slice(0, index + 1)
+              .filter(candidate => {
+                const candidateTrack = candidate.track || candidate;
+                return candidateTrack.id === track.id;
+              }).length;
+            return (
+              <View
+                key={item.occurrenceId || `${track.id || 'track'}-${index}`}
+                style={styles.queueRow}
+              >
+                <Pressable
+                  accessibilityLabel={`播放队列第${index + 1}首，${trackTitle(
+                    track,
+                  )}${
+                    duplicateOrdinal > 1 ? `，重复第${duplicateOrdinal}项` : ''
+                  }`}
+                  accessibilityRole="button"
+                  onPress={() => onPlay(item, index)}
+                  style={styles.queueCopy}
+                >
+                  <Text numberOfLines={1} style={text.body}>
+                    {trackTitle(track)}
+                  </Text>
+                  <Text numberOfLines={1} style={text.meta}>
+                    {trackArtist(track)} ·{' '}
+                    {providerLabels[trackSource(track)] || trackSource(track)}
+                  </Text>
+                </Pressable>
+                {showingPlayNext && item.occurrenceId ? (
+                  <View style={styles.queueActions}>
+                    <Pressable
+                      accessibilityLabel={`上移${trackTitle(track)}`}
+                      accessibilityRole="button"
+                      disabled={index === 0}
+                      onPress={() => onMove(item.occurrenceId!, -1)}
+                      style={styles.queueAction}
+                    >
+                      <Text style={styles.actionText}>上移</Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityLabel={`下移${trackTitle(track)}`}
+                      accessibilityRole="button"
+                      disabled={index === queue.length - 1}
+                      onPress={() => onMove(item.occurrenceId!, 1)}
+                      style={styles.queueAction}
+                    >
+                      <Text style={styles.actionText}>下移</Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityLabel={`移除${trackTitle(track)}`}
+                      accessibilityRole="button"
+                      onPress={() => onRemove(item.occurrenceId!)}
+                      style={styles.queueAction}
+                    >
+                      <Text style={styles.actionText}>移除</Text>
+                    </Pressable>
+                  </View>
+                ) : null}
+              </View>
+            );
+          })
         ) : (
           <Text style={text.meta}>播放队列为空</Text>
         )}
@@ -1124,6 +1232,19 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
+  queueCopy: { minHeight: 48, justifyContent: 'center' },
+  queueActions: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+    paddingBottom: spacing.sm,
+  },
+  queueAction: {
+    minWidth: 48,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  queueTools: { gap: spacing.sm, paddingBottom: spacing.md },
   lyrics: { gap: spacing.lg, alignItems: 'center', padding: spacing.lg },
   translationActions: { flexDirection: 'row', gap: spacing.sm },
   translationButton: {

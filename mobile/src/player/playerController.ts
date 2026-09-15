@@ -419,8 +419,9 @@ async function transition(
     position?: number;
     shuffleOrder?: number[];
     shuffleCursor?: number;
-    consumePlayNext?: boolean;
-    consumePlayNextIndex?: number;
+    currentOccurrenceId?: string | null;
+    transitionToken?: number;
+    consumePlayNext?: { occurrenceId: string; transitionToken: number };
     appendToPlaylist?: boolean;
   },
 ) {
@@ -445,9 +446,8 @@ async function transition(
     if (payload.appendToPlaylist)
       emit(dispatch, 'player/appendPlaylistTrack', payload.track);
     emit(dispatch, 'player/activateTrack', payload);
-    if (payload.consumePlayNext) emit(dispatch, 'player/consumeQueuedNext');
-    if (payload.consumePlayNextIndex !== undefined)
-      emit(dispatch, 'player/removeQueuedNext', payload.consumePlayNextIndex);
+    if (payload.consumePlayNext)
+      emit(dispatch, 'player/consumeQueuedNext', payload.consumePlayNext);
     emit(dispatch, 'library/recordRecent', payload.track);
   }
   return started;
@@ -487,6 +487,19 @@ function nextPlaylistTarget(state: PlayerState) {
 }
 
 class PlayerController {
+  private queueTransitionInFlight: Promise<boolean | void> | null = null;
+  private transitionSequence = 0;
+
+  private runQueueTransition(operation: () => Promise<boolean | void>) {
+    if (this.queueTransitionInFlight) return this.queueTransitionInFlight;
+    const running = operation();
+    this.queueTransitionInFlight = running;
+    return running.finally(() => {
+      if (this.queueTransitionInFlight === running)
+        this.queueTransitionInFlight = null;
+    });
+  }
+
   async play(dispatch?: Dispatch) {
     const state = playerState();
     if (!state.nowPlaying) return;
@@ -606,21 +619,35 @@ class PlayerController {
   }
 
   async next(dispatch?: Dispatch) {
+    return this.runQueueTransition(() => this.nextInternal(dispatch));
+  }
+
+  private async nextInternal(dispatch?: Dispatch): Promise<boolean | void> {
     const state = playerState();
     if (state.playNextQueue.length) {
-      const track = state.playNextQueue[0];
-      await transition(dispatch, {
-        track,
+      const occurrence = state.playNextQueue[0];
+      const transitionToken = Math.max(
+        state.transitionToken + 1,
+        this.transitionSequence + 1,
+      );
+      this.transitionSequence = transitionToken;
+      emit(dispatch, 'player/beginTransition', transitionToken);
+      return transition(dispatch, {
+        track: occurrence.track,
         playlistIndex: state.currentIndex,
         source: 'play-next',
         rememberCurrent: Boolean(state.nowPlaying),
-        consumePlayNext: true,
+        currentOccurrenceId: occurrence.occurrenceId,
+        transitionToken,
+        consumePlayNext: {
+          occurrenceId: occurrence.occurrenceId,
+          transitionToken,
+        },
       });
-      return;
     }
     const target = nextPlaylistTarget(state);
     if (!target) return this.pause(dispatch);
-    await transition(dispatch, {
+    return transition(dispatch, {
       track: state.playlist[target.index],
       playlistIndex: target.index,
       source: 'playlist',
@@ -630,16 +657,38 @@ class PlayerController {
     });
   }
 
-  async playQueuedAt(dispatch: Dispatch | undefined, index: number) {
+  async playQueuedAt(dispatch: Dispatch | undefined, occurrenceId: string) {
+    return this.runQueueTransition(() =>
+      this.playQueuedOccurrence(dispatch, occurrenceId),
+    );
+  }
+
+  private async playQueuedOccurrence(
+    dispatch: Dispatch | undefined,
+    occurrenceId: string,
+  ) {
     const state = playerState();
-    const track = state.playNextQueue[index];
-    if (!track) return;
-    await transition(dispatch, {
-      track,
+    const occurrence = state.playNextQueue.find(
+      item => item.occurrenceId === occurrenceId,
+    );
+    if (!occurrence) return false;
+    const transitionToken = Math.max(
+      state.transitionToken + 1,
+      this.transitionSequence + 1,
+    );
+    this.transitionSequence = transitionToken;
+    emit(dispatch, 'player/beginTransition', transitionToken);
+    return transition(dispatch, {
+      track: occurrence.track,
       playlistIndex: state.currentIndex,
       source: 'play-next',
       rememberCurrent: Boolean(state.nowPlaying),
-      consumePlayNextIndex: index,
+      currentOccurrenceId: occurrence.occurrenceId,
+      transitionToken,
+      consumePlayNext: {
+        occurrenceId: occurrence.occurrenceId,
+        transitionToken,
+      },
     });
   }
 
