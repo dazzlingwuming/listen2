@@ -80,20 +80,41 @@ safe_probe_scalar() {
 
 capture_startup_probe_environment() {
   local file="$RUN_DIR/performance/api${DEVICE_API}-startup-probe-environment.txt"
-  local boot animationWindow animationTransition animationAnimator thermal artProfile cpu io
+  local boot animationWindow animationTransition animationAnimator artProfile io deviceCores
+  local deadline consecutive=0 sample=0 now top aggregateCpu load thermal battery stable=false
   boot="$("$ADB" -s "$SERIAL" shell getprop sys.boot_completed 2>/dev/null | safe_probe_scalar)"
   [[ "$boot" == 1 ]] || fail 'startup probe requires a boot-complete emulator'
-  # The runner observes settings but never changes animation/thermal/profile state.
-  sleep 3
+  # The runner observes settings but never changes animation/thermal/profile state. It waits for
+  # system_server and GMS aggregate CPU to remain below the recorded threshold for three samples,
+  # rather than measuring immediately after boot completion.
   animationWindow="$("$ADB" -s "$SERIAL" shell settings get global window_animation_scale 2>/dev/null | safe_probe_scalar)"
   animationTransition="$("$ADB" -s "$SERIAL" shell settings get global transition_animation_scale 2>/dev/null | safe_probe_scalar)"
   animationAnimator="$("$ADB" -s "$SERIAL" shell settings get global animator_duration_scale 2>/dev/null | safe_probe_scalar)"
-  thermal="$("$ADB" -s "$SERIAL" shell cmd thermalservice get-current-status 2>/dev/null | safe_probe_scalar || true)"; thermal="${thermal:-unavailable}"
   artProfile="$("$ADB" -s "$SERIAL" shell "dumpsys package $PACKAGE | grep -E -m 1 'Dexopt|compiler-filter|profile'" 2>/dev/null | safe_probe_scalar || true)"; artProfile="${artProfile:-unavailable}"
-  cpu="$("$ADB" -s "$SERIAL" shell 'head -n 1 /proc/stat' 2>/dev/null | safe_probe_scalar)"
   io="$("$ADB" -s "$SERIAL" shell 'head -n 3 /proc/diskstats | tail -n 1' 2>/dev/null | safe_probe_scalar)"
-  printf 'capturedAt=%s\nbootCompleted=%s\nbootSettleSeconds=3\nwindowAnimationScale=%s\ntransitionAnimationScale=%s\nanimatorDurationScale=%s\nthermal=%s\nartProfile=%s\ncpu=%s\nio=%s\n' \
-    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${boot:-unavailable}" "${animationWindow:-unavailable}" "${animationTransition:-unavailable}" "${animationAnimator:-unavailable}" "${thermal}" "${artProfile}" "${cpu:-unavailable}" "${io:-unavailable}" > "$file"
+  deviceCores="$("$ADB" -s "$SERIAL" shell 'grep -c ^processor /proc/cpuinfo' 2>/dev/null | tr -d '\r')"; deviceCores="${deviceCores:-unknown}"
+  printf 'capturedAt=%s\nbootCompleted=%s\nwindowAnimationScale=%s\ntransitionAnimationScale=%s\nanimatorDurationScale=%s\nartProfile=%s\nio=%s\ndeviceCores=%s\nstabilityContract=max90s;5sInterval;threeConsecutive;systemServerPlusGmsCpuPct<=40;load1<=deviceCores\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${boot:-unavailable}" "${animationWindow:-unavailable}" "${animationTransition:-unavailable}" "${animationAnimator:-unavailable}" "${artProfile}" "${io:-unavailable}" "${deviceCores}" > "$file"
+  deadline=$(( $(date +%s) + 90 ))
+  while [[ $(date +%s) -le $deadline ]]; do
+    sample=$((sample + 1)); now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    top="$("$ADB" -s "$SERIAL" shell 'top -b -n 1 -o NAME,%CPU' 2>/dev/null || true)"
+    aggregateCpu="$(printf '%s\n' "$top" | awk '/system_server|com.google.android.gms|gms\.persistent|gms\.unstable/ { value=$NF; gsub(/%/, "", value); sum += value } END { printf "%.1f", sum + 0 }')"
+    load="$("$ADB" -s "$SERIAL" shell "awk '{ print \$1 }' /proc/loadavg" 2>/dev/null | tr -d '\r')"
+    thermal="$("$ADB" -s "$SERIAL" shell cmd thermalservice get-current-status 2>/dev/null | safe_probe_scalar || true)"; thermal="${thermal:-unavailable}"
+    battery="$("$ADB" -s "$SERIAL" shell dumpsys battery 2>/dev/null | rg 'AC powered|USB powered|Wireless powered|status:|level:|temperature:' | tr '\n' ';' | safe_probe_scalar)"; battery="${battery:-unavailable}"
+    if [[ "$aggregateCpu" =~ ^[0-9]+([.][0-9]+)?$ && "$load" =~ ^[0-9]+([.][0-9]+)?$ ]] && awk "BEGIN { exit !($aggregateCpu <= 40 && $load <= $deviceCores) }"; then
+      consecutive=$((consecutive + 1)); stable=true
+    else
+      consecutive=0; stable=false
+    fi
+    printf 'sample=%s;at=%s;systemServerPlusGmsCpuPct=%s;load1=%s;thermal=%s;battery=%s;consecutiveStable=%s;stable=%s\n' \
+      "$sample" "$now" "$aggregateCpu" "$load" "$thermal" "$battery" "$consecutive" "$stable" >> "$file"
+    [[ "$consecutive" -ge 3 ]] && break
+    sleep 5
+  done
+  [[ "$consecutive" -ge 3 ]] || fail 'startup probe environment did not reach three stable system samples within 90 seconds'
+  printf 'stabilityReachedAt=%s;sample=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$sample" >> "$file"
   chmod 600 "$file"
 }
 

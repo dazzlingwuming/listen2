@@ -33,6 +33,12 @@ The UiAutomator polling operation itself has latency, so its device-monotonic TT
 - The API 36 run-created AVD and emulator were shut down and deleted after capture.
 - Pre-existing failed/partial probe roots (`phase08-20260916T070500Z-d5c2bdd-probe`, `phase08-20260916T073000Z-d5c2bdd-probe`, and the interrupted API 36 lane in `phase08-20260916T081000Z-d5c2bdd-probe`) are retained unchanged; they contribute no successful samples.
 
+## API 36 environment-control attempt
+
+`phase08-20260916T091500Z-d5c2bdd-api36-controlled` ran a separate official API 36 Google APIs arm64-v8a AVD. Before it could collect any cold-start row, the runner recorded 16 samples across the fixed 90-second stabilization window. The contract required three consecutive samples with `system_server + GMS` CPU at most 40% and one-minute device load at most four cores.
+
+It never reached that contract: aggregate CPU ranged from 0.0% to 253.5% (most samples were above 70%) and load ranged from 13.61 to 23.05 on a four-core guest. The emulator reported software GL under host memory pressure. The run is therefore `BLOCKED` before sample collection, not a successful environment-control batch. Its raw stability ledger is retained; no animation, thermal, compile-mode, or profile setting was changed. The run-owned API 36 AVD and emulator were shut down and deleted.
+
 ## Next action
 
-Do not change startup product code speculatively. If performance work continues, first add narrowly scoped, privacy-safe native/RN/bootstrap stage markers to attribute API 36 `TotalTime` before selecting an optimization.
+Do not change startup product code speculatively. The existing API 36 device `TotalTime` p95 already fails, and the controlled retry could not establish a stable emulator baseline. If performance work continues, first obtain a stable API 36 environment and add narrowly scoped, privacy-safe native/RN/bootstrap stage markers to attribute API 36 `TotalTime` before selecting an optimization.
