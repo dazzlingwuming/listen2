@@ -43,7 +43,8 @@ internal class KugouPlaybackModule(context: ReactApplicationContext, private val
         try {
             val keys = request.keySetIterator(); while (keys.hasNextKey()) require(keys.nextKey() in setOf("version", "requestId"))
             require(request.getType("version") == ReadableType.Number && request.getDouble("version") == VERSION.toDouble())
-            text(request, "requestId", 96)
+            // Close any descriptor which raced with this semantic cancellation.
+            leases.cancel(text(request, "requestId", 96))
             promise.resolve(Arguments.createMap().apply { putBoolean("ok", true) })
         } catch (_: Exception) {
             promise.resolve(Arguments.createMap().apply { putString("errorCode", "INVALID_REQUEST") })

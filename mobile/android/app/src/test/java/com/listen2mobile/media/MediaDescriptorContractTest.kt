@@ -47,6 +47,36 @@ class MediaDescriptorContractTest {
         assertEquals(LeaseStatus.EXPIRED, registry.validate(expired.leaseId, expired.identity, 7L))
     }
 
+    @Test fun `every provider cancellation revokes the content lease before a provider read`() {
+        val registry = MediaLeaseRegistry("com.dazzlingwuming.listen2.media", clock = { now })
+        listOf("netease", "kugou", "qq", "kuwo").forEachIndexed { index, source ->
+            val requestId = "request-${source}-12345678"
+            val descriptor = registry.register(
+                requestId,
+                MediaIdentity(source, "track-$source", null, 0L),
+                MediaRendition("default", "authorized", "audio/mpeg", "mp3", "mp3", 1L, null),
+                NativeTransport(
+                    when (source) {
+                        "netease" -> "https://music.163.com/song/media/outer/url?id=${index + 1}.mp3"
+                        "kugou" -> "https://sharefs.kugou.com/audio/${index + 1}"
+                        "qq" -> "https://isure.stream.qqmusic.qq.com/audio/${index + 1}"
+                        else -> "https://er-sycdn.kuwo.cn/audio/${index + 1}"
+                    },
+                    when (source) {
+                        "netease" -> emptyMap()
+                        "kugou" -> mapOf("Accept" to "audio/*", "User-Agent" to "Listen2Mobile/1")
+                        else -> mapOf("Accept" to "audio/*", "Range" to "bytes=0-0", "User-Agent" to "Listen2Mobile/1")
+                    },
+                    source = source,
+                ),
+                0L,
+            )
+            registry.cancel(requestId)
+            assertEquals(LeaseStatus.CANCELLED, registry.validate(descriptor.leaseId, descriptor.identity, 0L))
+            assertNull(registry.transportForProvider(requireNotNull(descriptor.leaseId)))
+        }
+    }
+
     @Test fun `api 24 only permits complete verified local playback`() {
         val remote = MediaDescriptor.downloadFirst(MediaIdentity("bilibili", "track", null, 1L))
         assertEquals(EntitlementStatus.DOWNLOAD_FIRST, remote.entitlement)

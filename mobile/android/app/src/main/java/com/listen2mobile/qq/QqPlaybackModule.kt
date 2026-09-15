@@ -90,13 +90,19 @@ internal class QqPlaybackModule(
             require(request.getType("version") == ReadableType.Number && QqPlaybackPolicy.isContractVersion(request.getDouble("version")))
             requireRequestId(request, "requestId")
         } catch (_: Exception) { return promise.resolve(error(QqPlaybackPolicy.ErrorCode.INVALID_REQUEST)) }
+        // The request ledger only stops resolver work.  A resolution which already
+        // registered an app-owned content URI must be revoked independently.
+        mediaLeases.cancel(requestId)
         if (ledger.cancel(requestId) != null) gateway.cancel(requestId)
         promise.resolve(Arguments.createMap().apply { putBoolean("ok", true) })
     }
 
     override fun invalidate() {
         invalidated = true
-        ledger.cancelAll().forEach { gateway.cancel(it.requestId) }
+        ledger.cancelAll().forEach {
+            mediaLeases.cancel(it.requestId)
+            gateway.cancel(it.requestId)
+        }
         worker.shutdownNow()
         super.invalidate()
     }

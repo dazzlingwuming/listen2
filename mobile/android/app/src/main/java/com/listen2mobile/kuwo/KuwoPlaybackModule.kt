@@ -80,13 +80,19 @@ internal class KuwoPlaybackModule(
             require(request.getType("version") == ReadableType.Number && KuwoPlaybackPolicy.isContractVersion(request.getDouble("version")))
             requireRequestId(request)
         } catch (_: Exception) { return promise.resolve(error(KuwoPlaybackPolicy.ErrorCode.INVALID_REQUEST)) }
+        // Resolver cancellation alone leaves a previously registered content lease
+        // readable until its TTL.  Always revoke it by the same request identity.
+        mediaLeases.cancel(requestId)
         if (ledger.cancel(requestId) != null) gateway.cancel(requestId)
         promise.resolve(Arguments.createMap().apply { putBoolean("ok", true) })
     }
 
     override fun invalidate() {
         invalidated = true
-        ledger.cancelAll().forEach { gateway.cancel(it.requestId) }
+        ledger.cancelAll().forEach {
+            mediaLeases.cancel(it.requestId)
+            gateway.cancel(it.requestId)
+        }
         gateway.clearSession()
         worker.shutdownNow()
         super.invalidate()

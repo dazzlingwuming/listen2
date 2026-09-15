@@ -53,7 +53,10 @@ internal class NeteasePlaybackModule(
         try {
             requireExact(request, setOf("version", "requestId"))
             require(request.getType("version") == ReadableType.Number && request.getDouble("version") == VERSION.toDouble())
-            requireText(request, "requestId", 96)
+            // A descriptor can have been returned before JS observes an abort.  Revoking
+            // by request id closes that already-issued content lease as well as making
+            // cancellation idempotent when resolution never reached registration.
+            leases.cancel(requireText(request, "requestId", 96))
             promise.resolve(Arguments.createMap().apply { putBoolean("ok", true) })
         } catch (_: Exception) {
             promise.resolve(Arguments.createMap().apply { putString("errorCode", "INVALID_REQUEST") })
