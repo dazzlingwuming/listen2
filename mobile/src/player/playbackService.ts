@@ -34,6 +34,6 @@ export default async function playbackService() {
     playerController.onPlaybackError();
   });
   TrackPlayer.addEventListener(Event.PlaybackQueueEnded, () =>
-    playerController.next(),
+    playerController.onPlaybackQueueEnded(),
   );
 }

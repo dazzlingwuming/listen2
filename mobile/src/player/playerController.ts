@@ -443,6 +443,7 @@ async function transition(
     media,
   );
   if (started) {
+    playerController.markNativeTrackLoaded();
     if (payload.appendToPlaylist)
       emit(dispatch, 'player/appendPlaylistTrack', payload.track);
     emit(dispatch, 'player/activateTrack', payload);
@@ -489,6 +490,11 @@ function nextPlaylistTarget(state: PlayerState) {
 class PlayerController {
   private queueTransitionInFlight: Promise<boolean | void> | null = null;
   private transitionSequence = 0;
+  private restoredNeedsLoad = false;
+
+  markNativeTrackLoaded() {
+    this.restoredNeedsLoad = false;
+  }
 
   private runQueueTransition(operation: () => Promise<boolean | void>) {
     if (this.queueTransitionInFlight) return this.queueTransitionInFlight;
@@ -503,14 +509,17 @@ class PlayerController {
   async play(dispatch?: Dispatch) {
     const state = playerState();
     if (!state.nowPlaying) return;
-    if (state.error) {
+    if (state.error || this.restoredNeedsLoad) {
       const started = await loadAndPlay(
         dispatch,
         state.nowPlaying,
         state.position,
       );
-      if (started) emit(dispatch, 'library/recordRecent', state.nowPlaying);
-      return;
+      if (started) {
+        this.restoredNeedsLoad = false;
+        emit(dispatch, 'library/recordRecent', state.nowPlaying);
+      }
+      return started;
     }
     try {
       await ensurePlayer();
@@ -612,6 +621,7 @@ class PlayerController {
       }
       return false;
     }
+    this.restoredNeedsLoad = false;
     emit(dispatch, 'player/setPlaying', true);
     emit(dispatch, 'player/replacePlaylist', { tracks, startIndex });
     emit(dispatch, 'library/recordRecent', target);
@@ -806,8 +816,13 @@ class PlayerController {
   }
 
   onPlaybackError() {
+    this.restoredNeedsLoad = true;
     emit(undefined, 'player/setPlaying', false);
     emit(undefined, 'player/setError', 'native-playback-error');
+  }
+
+  onPlaybackQueueEnded() {
+    return this.next();
   }
 
   snapshot(): PlayerState {
@@ -817,10 +832,16 @@ class PlayerController {
   async restore() {
     const state = playerState();
     if (!state.nowPlaying) return;
-    await loadAndPlay(undefined, state.nowPlaying, state.position);
-    // restore is intentionally paused even if a previous process persisted a
-    // stale `isPlaying` value. The user resumes from the visible shell.
-    await this.pause();
+    this.restoredNeedsLoad = true;
+    // Rehydration restores semantic state for the UI only. Media resolution
+    // and native loading wait for an explicit user play command.
+    try {
+      await ensurePlayer();
+      await configureNativeSnapshot(state);
+      await TrackPlayer.pause();
+    } finally {
+      emit(undefined, 'player/setPlaying', false);
+    }
   }
 }
 
