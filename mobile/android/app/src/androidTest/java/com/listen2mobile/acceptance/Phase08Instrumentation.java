@@ -16,11 +16,13 @@ public final class Phase08Instrumentation extends Instrumentation {
     private static final Pattern URL_PATTERN = Pattern.compile("https?://[^\\s]+", Pattern.CASE_INSENSITIVE);
     private static final Pattern SECRET_PATTERN = Pattern.compile("(?i)(api[_-]?key|authorization|cookie|password|secret|token)\\s*[:=]\\s*[^\\s,;]+|bearer\\s+[^\\s,;]+");
     private String requestedClass;
+    private Bundle requestedArguments;
 
     @Override
     public void onCreate(Bundle arguments) {
         super.onCreate(arguments);
         requestedClass = arguments.getString("class");
+        requestedArguments = new Bundle(arguments);
         start();
     }
 
@@ -89,6 +91,14 @@ public final class Phase08Instrumentation extends Instrumentation {
         }
         if ("com.listen2mobile.acceptance.IntegratedJourneyTest".equals(scenarioClass)) {
             IntegratedJourneyTest.run(this, progress);
+            return;
+        }
+        if ("com.listen2mobile.acceptance.PerformanceRecoveryTest#api35Full".equals(scenarioClass)) {
+            PerformanceRecoveryTest.api35Full(this, progress, requestedArguments);
+            return;
+        }
+        if ("com.listen2mobile.acceptance.PerformanceRecoveryTest#compatibilityColdStart".equals(scenarioClass)) {
+            PerformanceRecoveryTest.compatibilityColdStart(this, progress, requestedArguments);
             return;
         }
         throw new IllegalArgumentException("unapproved Phase 8 instrumentation class");
