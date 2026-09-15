@@ -8,6 +8,19 @@ instrumentation_result_ok() {
   grep -Eq '^INSTRUMENTATION_CODE: (-1|0)[[:space:]]*$' "$output"
 }
 
+sanitize_diagnostic_log() {
+  local source="$1" destination="$2"
+  node --input-type=module - "$source" "$destination" <<'NODE'
+import { readFileSync, writeFileSync } from 'node:fs';
+const [source, destination] = process.argv.slice(2);
+const text = readFileSync(source, 'utf8')
+  .replace(/https?:\/\/[^\s"'<>]+/giu, '<redacted-url>')
+  .replace(/\b((?:api[_-]?key|authorization|cookie|password|secret|token)\b\s*[:=])\s*[^\s,;]+/giu, '$1 <redacted>')
+  .replace(/\bbearer\s+[^\s,;]+/giu, 'Bearer <redacted>');
+writeFileSync(destination, text, { mode: 0o600 });
+NODE
+}
+
 js_ready_phone_shell() {
   local xml="$1"
   [[ "$xml" == *"我的"* && "$xml" == *"设置"* ]] || return 1
@@ -23,11 +36,17 @@ if [[ "${1:-}" == "--self-test" ]]; then
   instrumentation_result_ok "$self_test_dir/success.txt" || { echo 'instrumentation success fixture rejected' >&2; exit 1; }
   ! instrumentation_result_ok "$self_test_dir/assertion.txt" || { echo 'AssertionError fixture accepted' >&2; exit 1; }
   ! instrumentation_result_ok "$self_test_dir/failed.txt" || { echo 'INSTRUMENTATION_FAILED fixture accepted' >&2; exit 1; }
+  printf '%s\n' 'token=forbidden-value https://example.invalid/path' > "$self_test_dir/raw-logcat.txt"
+  sanitize_diagnostic_log "$self_test_dir/raw-logcat.txt" "$self_test_dir/sanitized-logcat.txt"
+  ! grep -Eq 'forbidden-value|https?://' "$self_test_dir/sanitized-logcat.txt" || { echo 'diagnostic sanitizer leaked a fixture secret or URL' >&2; exit 1; }
+  grep -Fq '<redacted-url>' "$self_test_dir/sanitized-logcat.txt" || { echo 'diagnostic sanitizer did not redact the fixture URL' >&2; exit 1; }
   js_ready_phone_shell '<node text="我的"/><node text="设置"/><node text="搜索音乐"/>' || { echo 'phone shell fixture rejected' >&2; exit 1; }
   ! js_ready_phone_shell '<node text="我的"/><node text="设置"/>' || { echo 'incomplete shell fixture accepted' >&2; exit 1; }
   grep -Fq 'RELEASE_BYTES="$(wc -c < "$RELEASE_APK" | tr -d '\'' '\'')"' "$0" || { echo 'journey record must derive product bytes from the sealed APK' >&2; exit 1; }
   grep -Fq 'bytes: Number(releaseBytes)' "$0" || { echo 'journey record must preserve the derived product byte count' >&2; exit 1; }
   grep -Fq "assets/index.android.bundle" "$0" || { echo 'runner must reject an unbundled debug seed before reset' >&2; exit 1; }
+  grep -Fq 'start_diagnostic_capture' "$0" || { echo 'runner must start bounded diagnostic capture around instrumentation' >&2; exit 1; }
+  grep -Fq 'stop_diagnostic_capture' "$0" || { echo 'runner must stop and retain diagnostics around instrumentation' >&2; exit 1; }
   echo 'Instrumentation result self-test passed.'
   exit 0
 fi
@@ -119,7 +138,46 @@ NODE
 bash mobile/scripts/acceptance/device-state.sh snapshot --serial "$SERIAL" --file "$STATE"
 CLEANUP_STATUS="pending"; CLEAR_COUNT=0; STARTED_AT="$(date -Iseconds)"
 cleanup() { bash mobile/scripts/acceptance/device-state.sh restore --serial "$SERIAL" --file "$STATE" >/dev/null 2>&1 || CLEANUP_STATUS="restore-failed"; [[ "$CLEANUP_STATUS" == pending ]] && CLEANUP_STATUS="restored"; }
-trap cleanup EXIT
+CAPTURE_LOGCAT_PID=""; CAPTURE_WATCHDOG_PID=""; CAPTURE_DIR=""
+CAPTURE_MAX_SECONDS=75
+
+stop_diagnostic_capture() {
+  if [[ -n "$CAPTURE_LOGCAT_PID" ]]; then
+    kill "$CAPTURE_LOGCAT_PID" >/dev/null 2>&1 || true
+    wait "$CAPTURE_LOGCAT_PID" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$CAPTURE_WATCHDOG_PID" ]]; then
+    kill "$CAPTURE_WATCHDOG_PID" >/dev/null 2>&1 || true
+    wait "$CAPTURE_WATCHDOG_PID" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$CAPTURE_DIR" ]]; then
+    "$ADB" -s "$SERIAL" shell dumpsys activity activities > "$CAPTURE_DIR/dumpsys-activity.txt" 2>&1 || printf '%s\n' 'capture-unavailable=dumpsys-activity' > "$CAPTURE_DIR/dumpsys-activity.txt"
+    "$ADB" -s "$SERIAL" shell dumpsys window > "$CAPTURE_DIR/dumpsys-window.txt" 2>&1 || printf '%s\n' 'capture-unavailable=dumpsys-window' > "$CAPTURE_DIR/dumpsys-window.txt"
+    "$ADB" -s "$SERIAL" shell dumpsys package "$PACKAGE" > "$CAPTURE_DIR/dumpsys-package.txt" 2>&1 || printf '%s\n' 'capture-unavailable=dumpsys-package' > "$CAPTURE_DIR/dumpsys-package.txt"
+    "$ADB" -s "$SERIAL" shell 'ls -1 /data/tombstones 2>/dev/null | tail -n 20' > "$CAPTURE_DIR/tombstone-references.txt" 2>&1 || printf '%s\n' 'capture-unavailable=tombstone-references' > "$CAPTURE_DIR/tombstone-references.txt"
+    "$ADB" -s "$SERIAL" shell 'dumpsys dropbox --print 2>/dev/null | grep -Ei "(system_app_crash|data_app_crash|SYSTEM_TOMBSTONE|listen2mobile)" | tail -n 80' > "$CAPTURE_DIR/dropbox-references.txt" 2>&1 || printf '%s\n' 'capture-unavailable=dropbox-references' > "$CAPTURE_DIR/dropbox-references.txt"
+    sanitize_diagnostic_log "$CAPTURE_DIR/logcat-raw.txt" "$CAPTURE_DIR/logcat-sanitized.txt" || printf '%s\n' 'capture-unavailable=logcat-sanitization' > "$CAPTURE_DIR/logcat-sanitized.txt"
+  fi
+  CAPTURE_LOGCAT_PID=""; CAPTURE_WATCHDOG_PID=""; CAPTURE_DIR=""
+}
+
+start_diagnostic_capture() {
+  local label="$1"
+  stop_diagnostic_capture >/dev/null 2>&1 || true
+  CAPTURE_DIR="$RUN_DIR/diagnostics/$label"
+  mkdir -p "$CAPTURE_DIR"
+  "$ADB" -s "$SERIAL" shell logcat -c > "$CAPTURE_DIR/logcat-clear.txt" 2>&1 || printf '%s\n' 'capture-unavailable=logcat-clear' > "$CAPTURE_DIR/logcat-clear.txt"
+  "$ADB" -s "$SERIAL" logcat -v threadtime AndroidRuntime:E ActivityManager:I ReactNative:V ReactNativeJS:V '*:S' > "$CAPTURE_DIR/logcat-raw.txt" 2>&1 &
+  CAPTURE_LOGCAT_PID="$!"
+  (
+    sleep "$CAPTURE_MAX_SECONDS"
+    kill "$CAPTURE_LOGCAT_PID" >/dev/null 2>&1 || true
+  ) &
+  CAPTURE_WATCHDOG_PID="$!"
+}
+
+trap 'stop_diagnostic_capture >/dev/null 2>&1 || true; cleanup' EXIT
+trap 'stop_diagnostic_capture >/dev/null 2>&1 || true; exit 130' INT TERM HUP
 
 record_failure() {
   local code="$1"; printf '%s\n' "terminal=$code" > "$EVENTS"
@@ -128,7 +186,14 @@ record_failure() {
 }
 run_instrumentation() {
   local test_class="$1" output="$2"
-  "$ADB" -s "$SERIAL" shell am instrument -w -r -e class "$test_class" "$TEST_PACKAGE/androidx.test.runner.AndroidJUnitRunner" > "$output" 2>&1 || return 1
+  local command_status=0 capture_status=0
+  start_diagnostic_capture "$(basename "$output" .txt)"
+  "$ADB" -s "$SERIAL" shell am instrument -w -r -e class "$test_class" "$TEST_PACKAGE/androidx.test.runner.AndroidJUnitRunner" > "$output" 2>&1 || command_status=$?
+  stop_diagnostic_capture || capture_status=$?
+  if [[ "$capture_status" != 0 ]]; then
+    printf '%s\n' "diagnostic-capture-status=$capture_status" >> "$output"
+  fi
+  [[ "$command_status" == 0 ]] || return "$command_status"
   instrumentation_result_ok "$output"
 }
 write_record() {
@@ -137,7 +202,11 @@ write_record() {
 import { createHash } from 'node:crypto'; import { readFileSync, statSync } from 'node:fs'; import { basename } from 'node:path';
 const [run, sha, releaseBytes, fixtureSha, outcome, detail, started, ended, serial, cleanup, buildHead] = process.argv.slice(2);
 const hash = file => createHash('sha256').update(readFileSync(`${run}/${file}`)).digest('hex');
-const listed = ['journey-events.txt', 'upgrade-seed-instrumentation.txt', 'integrated-journey-instrumentation.txt', 'smoke-phone.png', 'smoke-window.xml', 'integrated-phone.png', 'integrated-window.xml', 'postrun-phone.png', 'postrun-window.xml', 'fixture.json', 'fixtures/synthetic-phase08.wav', 'fixtures/synthetic-phase08.lrc', 'device-state-before.sh', 'journey-test-payload.json', 'artifacts/releaseLikeAndroidTest-journey.apk'].filter(file => { try { return statSync(`${run}/${file}`).isFile(); } catch { return false; } });
+const diagnosticFiles = ['upgrade-seed-instrumentation', 'integrated-journey-instrumentation'].flatMap(label => [
+  'logcat-clear.txt', 'logcat-raw.txt', 'logcat-sanitized.txt', 'dumpsys-activity.txt',
+  'dumpsys-window.txt', 'dumpsys-package.txt', 'tombstone-references.txt', 'dropbox-references.txt',
+].map(file => `diagnostics/${label}/${file}`));
+const listed = ['journey-events.txt', 'upgrade-seed-instrumentation.txt', 'integrated-journey-instrumentation.txt', 'smoke-phone.png', 'smoke-window.xml', 'integrated-phone.png', 'integrated-window.xml', 'postrun-phone.png', 'postrun-window.xml', 'fixture.json', 'fixtures/synthetic-phase08.wav', 'fixtures/synthetic-phase08.lrc', 'device-state-before.sh', 'journey-test-payload.json', 'artifacts/releaseLikeAndroidTest-journey.apk', ...diagnosticFiles].filter(file => { try { return statSync(`${run}/${file}`).isFile(); } catch { return false; } });
 const artifacts = listed.map(file => ({ kind: basename(file).replace(/[^a-z0-9]+/gi, '-').toLowerCase(), relativePath: file, sha256: hash(file), bytes: statSync(`${run}/${file}`).size, sanitized: true }));
 console.log(JSON.stringify({ schemaVersion: 1, runId: basename(run), recordId: 'phase8-api35-journey', recordedAt: ended,
   git: { branch: 'acceptance-clean-worktree', sha: buildHead, trackedClean: true, allowedUntracked: [] },
