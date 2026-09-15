@@ -32,7 +32,8 @@ case "$(uname -m)" in arm64|aarch64) HOST_ABI=arm64-v8a;; x86_64|amd64) HOST_ABI
 
 BUILD_RECORD="$RUN_DIR/08-build.json"
 [[ -f "$BUILD_RECORD" ]] || { echo "missing 08-build.json" >&2; exit 3; }
-readarray -t BUILD_FIELDS < <(node --input-type=module - "$BUILD_RECORD" <<'NODE'
+BUILD_FIELDS=()
+while IFS= read -r field; do BUILD_FIELDS+=("$field"); done < <(node --input-type=module - "$BUILD_RECORD" <<'NODE'
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 const record = JSON.parse(readFileSync(process.argv[2], 'utf8'));
