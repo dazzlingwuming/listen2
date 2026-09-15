@@ -35,14 +35,14 @@ Android 保留共享前端，但 native 只提供窄的、版本化、可取消�
 
 - [x] **NET-001** [T][S] 前端与 native 使用带协议版本、operation、request id、page epoch、结果或结构化错误的类型化 RPC；仅接受可信 appassets 主 frame/source 和精确 HTTPS provider allow-list，拒绝任意 URL、重定向、明文、caller header/cookie、文件 URI 和原始媒体代理。
 - [x] **NET-002** [T][E][S] 我能取消搜索、目录、媒体、歌词和登录请求；每次调用都有请求/响应大小上限、deadline、有限退避和真正取消，取消、超时、页面销毁和过期响应各返回一次 terminal result。
-- [ ] **NET-003** [P][T][E] 在实际授权范围内，我能完成 Bilibili 搜索 → 详情/分 P → 媒体 manifest/音质 → 播放 → 主歌词入口闭环；adapter 校验 schema、CID、MIME、权限和过期时间，并对无结果、网络/TLS、接口变更、登录和权限错误给出真实恢复动作。
-- [ ] **NET-004** [P][T][E] 在实际授权范围内，我能完成 NetEase 搜索 → 详情/歌单曲目 → 媒体清单 → 播放 → 主歌词入口闭环；QQ、Kugou、Kuwo、Migu、Taihe 各有独立的搜索、目录、详情、媒体、歌词、fallback、登录和权限字段，未经 fixture/设备证据的字段保持未启用。
+- [x] **NET-003** [P][T][E] 在实际授权范围内，我能完成 Bilibili 搜索 → 详情/分 P → 媒体 manifest/音质 → 播放 → 主歌词入口闭环；adapter 校验 schema、CID、MIME、权限和过期时间，并对无结果、网络/TLS、接口变更、登录和权限错误给出真实恢复动作。
+- [x] **NET-004** [P][T][E] 在实际授权范围内，我能完成 NetEase 搜索 → 详情/歌单曲目 → 媒体清单 → 播放 → 主歌词入口闭环；QQ、Kugou、Kuwo、Migu、Taihe 各有独立的搜索、目录、详情、媒体、歌词、fallback、登录和权限字段，未经 fixture/设备证据的字段保持未启用。
 
 ### 搜索/目录（SRCH）
 
-- [ ] **SRCH-001** [T][E] 我可以提交、取消和重新提交带 query、provider、分页和 request id 的搜索；重复提交、快速输入和旧响应不会覆盖当前结果，成功、空结果、部分失败和取消均有终态。
-- [ ] **SRCH-002** [T][P][E] 对矩阵声明支持目录的 provider，我能执行目录 → 详情 → 曲目列表 → 播放并保留游标；旋转、返回或重进不会重复追加，封面失败不阻塞文字和播放。
-- [ ] **SRCH-003** [T][E] 每条结果显示来源、标题、艺人/作者、封面、时长、结果类型和可播放/需登录/不支持状态；坏 JSON、超时、离线、权限拒绝和 provider 部分失败显示可操作错误，不清空已成功结果。
+- [x] **SRCH-001** [T][E] 我可以提交、取消和重新提交带 query、provider、分页和 request id 的搜索；重复提交、快速输入和旧响应不会覆盖当前结果，成功、空结果、部分失败和取消均有终态。
+- [x] **SRCH-002** [T][P][E] 对矩阵声明支持目录的 provider，我能执行目录 → 详情 → 曲目列表 → 播放并保留游标；旋转、返回或重进不会重复追加，封面失败不阻塞文字和播放。
+- [x] **SRCH-003** [T][E] 每条结果显示来源、标题、艺人/作者、封面、时长、结果类型和可播放/需登录/不支持状态；坏 JSON、超时、离线、权限拒绝和 provider 部分失败显示可操作错误，不清空已成功结果。
 
 ### 播放/队列（PLAY）
 
@@ -180,11 +180,11 @@ Android 保留共享前端，但 native 只提供窄的、版本化、可取消�
 | UI-003 | Phase 4 | Complete | Android-equivalent UX matrix |
 | NET-001 | Phase 4 | Complete | typed bridge/origin policy |
 | NET-002 | Phase 4 | Complete | cancel/timeout/error fixture |
-| NET-003 | Phase 5 | Pending | Bilibili closed-loop E2E |
-| NET-004 | Phase 5 | Pending | NetEase/QQ/Kugou/Kuwo/Bilibili matrix |
-| SRCH-001 | Phase 5 | Pending | five-source query/paging/cancel contract |
-| SRCH-002 | Phase 5 | Pending | five-source directory/detail E2E |
-| SRCH-003 | Phase 5 | Pending | negative/partial result fixture |
+| NET-003 | Phase 5 | Complete | Bilibili closed-loop E2E |
+| NET-004 | Phase 5 | Complete | NetEase/QQ/Kugou/Kuwo/Bilibili matrix |
+| SRCH-001 | Phase 5 | Complete | five-source query/paging/cancel contract |
+| SRCH-002 | Phase 5 | Complete | five-source directory/detail E2E |
+| SRCH-003 | Phase 5 | Complete | negative/partial result fixture |
 | PLAY-001 | Phase 5 | Foundation present; Pending acceptance | sole Media3 owner test plus five-source E2E |
 | PLAY-002 | Phase 7 | Pending | rendition/CDN/MV fixture |
 | PLAY-003 | Phase 5 | Foundation present; Pending acceptance | unified PlaybackState and device-control E2E |
