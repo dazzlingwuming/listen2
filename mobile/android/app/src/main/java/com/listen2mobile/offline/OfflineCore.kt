@@ -160,6 +160,7 @@ internal class OfflineCoordinator(
     private val root: File, private val transport: OfflineTransport = HttpOfflineTransport(), private val executor: OfflineExecutor = ThreadOfflineExecutor(),
     private val clock: () -> Long = { System.currentTimeMillis() }, private val limits: OfflineLimits = OfflineLimits.DEFAULT,
     private val monotonicClock: () -> Long = ::monotonicMillis,
+    private val reserveAdmission: (String, Long) -> Boolean = { _, _ -> true },
 ) {
     private val lock = Any()
     private val entries = LinkedHashMap<String, OfflineEntry>()
@@ -278,7 +279,7 @@ internal class OfflineCoordinator(
         if (length <= 0) return
         val event = synchronized(lock) {
             val entry = currentLocked(key, work) ?: throw InterruptedIOException()
-            if (committedLocked() + reservedLocked() - work.reservation + length > limits.totalBytes) throw IOException("CAPACITY_EXCEEDED")
+            if (committedLocked() + reservedLocked() - work.reservation + length > limits.totalBytes || !reserveAdmission(key, length)) throw IOException("CAPACITY_EXCEEDED")
             work.reservation = length; entry.totalBytes = length; entry.updatedAt = clock(); persistLocked(); snapshotLocked()
         }
         publish(event)
@@ -295,7 +296,7 @@ internal class OfflineCoordinator(
                 val event = synchronized(lock) {
                     val entry = currentLocked(key, work) ?: throw InterruptedIOException()
                     val nextReservation = maxOf(work.reservation, downloaded)
-                    if (committedLocked() + reservedLocked() - work.reservation + nextReservation > limits.totalBytes) throw IOException("CAPACITY_EXCEEDED")
+                    if (committedLocked() + reservedLocked() - work.reservation + nextReservation > limits.totalBytes || !reserveAdmission(key, nextReservation)) throw IOException("CAPACITY_EXCEEDED")
                     work.reservation = nextReservation
                     entry.downloadedBytes = downloaded; entry.totalBytes = if (length > 0) length else downloaded; entry.updatedAt = clock(); persistLocked(); snapshotLocked()
                 }
@@ -428,6 +429,8 @@ internal object OfflineQuota {
     const val defaultBytes = 2L * GIB
     private val accepted = setOf(1L * GIB, defaultBytes, 5L * GIB, 10L * GIB)
     fun parse(value: Long?): Long? = if (value == null || value in accepted) value else null
+    fun admits(quota: Long?, used: Long, reserved: Long, request: Long): Boolean =
+        used >= 0 && reserved >= 0 && request >= 0 && (quota == null || used <= quota - reserved - request)
 }
 
 internal data class OfflineEvictionCandidate(val blobKey: String, val lastUsedAt: Long, val explicit: Boolean)

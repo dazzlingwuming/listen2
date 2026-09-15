@@ -141,6 +141,10 @@ export const offlineAudio = {
     safeId(source) && safeId(trackId)
       ? call('promoteCache', source, trackId)
       : Promise.resolve(empty),
+  markPlayed: (source: string, trackId: string) =>
+    safeId(source) && safeId(trackId)
+      ? call('markCachePlayed', source, trackId)
+      : Promise.resolve(empty),
   action: (
     action: 'cancel' | 'retry' | 'repair' | 'remove' | 'clearEligible',
     value?: string,
@@ -172,6 +176,25 @@ export const offlineAudio = {
               : 'application/octet-stream',
         }
       : { status: 'miss' as const };
+  },
+  async authorizeResolvedCache(source: string, trackId: string, requestId: string) {
+    if (
+      !safeId(source) ||
+      !safeId(trackId) ||
+      !safeId(requestId) ||
+      !native?.authorizeResolvedCache
+    )
+      return false;
+    try {
+      const raw = (await (native.authorizeResolvedCache as Function)(
+        source,
+        trackId,
+        requestId,
+      )) as Record<string, unknown>;
+      return raw.allowed === true;
+    } catch {
+      return false;
+    }
   },
   async normalizationGain(source: string, trackId: string) {
     if (!safeId(source) || !safeId(trackId) || !native?.normalizationGain)

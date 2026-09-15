@@ -34,6 +34,7 @@ class OfflineAudioModule(private val app: ReactApplicationContext) : ReactContex
         OfflineDurableWork.enqueue(app, source, trackId, 0L); promise.resolve(snapshot(next))
     }
     @ReactMethod fun promoteCache(source: String, trackId: String, promise: Promise) { promise.resolve(snapshot(service().promote(source, trackId))) }
+    @ReactMethod fun markCachePlayed(source: String, trackId: String, promise: Promise) { promise.resolve(snapshot(service().markPlayed(source, trackId))) }
     @ReactMethod fun setCacheQuota(bytes: Double?, promise: Promise) {
         if (bytes != null && (!bytes.isFinite() || bytes < 0 || bytes != bytes.toLong().toDouble())) {
             promise.resolve(snapshot(service().snapshot()))
@@ -89,6 +90,12 @@ class OfflineAudioModule(private val app: ReactApplicationContext) : ReactContex
             putString("uri", "content://${app.packageName}.offline-cache/${entry.blobKey}")
             putString("mimeType", entry.mimeType)
         })
+    }
+
+    /** Only a just-created native provider descriptor may authorize a retained blob. */
+    @ReactMethod fun authorizeResolvedCache(source: String, trackId: String, requestId: String, promise: Promise) {
+        val allowed = source.length <= 32 && trackId.length <= 160 && requestId.matches(Regex("[A-Za-z0-9_-]{8,96}")) && service().authorize(source, trackId, requestId)
+        promise.resolve(Arguments.createMap().apply { putBoolean("allowed", allowed) })
     }
 
     /** Completed cache only; absent, stale, or unsupported analysis deliberately returns unity. */

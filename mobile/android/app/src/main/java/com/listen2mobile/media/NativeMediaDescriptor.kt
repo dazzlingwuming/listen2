@@ -60,6 +60,14 @@ internal enum class LeaseStatus {
     ACTIVE, UNKNOWN, EXPIRED, CANCELLED, IDENTITY_MISMATCH, ACCOUNT_CHANGED, READ_LIMIT,
 }
 
+/** Native-only proof that an immediately preceding provider resolution is still current. */
+internal data class CacheAuthorization(
+    val leaseId: String,
+    val requestId: String,
+    val identity: MediaIdentity,
+    val accountGeneration: Long,
+)
+
 /** Private data only. It must never appear in a bridge result, Redux, logs, or persistence. */
 internal data class NativeTransport(
     val url: String,
@@ -234,6 +242,21 @@ internal class MediaLeaseRegistry(
         lease.reads += 1
         return lease.transport
     }
+
+    fun cacheAuthorization(requestId: String, source: String, trackId: String): CacheAuthorization? {
+        val lease = leases.values.firstOrNull {
+            it.requestId == requestId &&
+                it.identity.source == source &&
+                it.identity.trackId == trackId &&
+                !it.cancelled &&
+                clock() < it.expiresAt
+        } ?: return null
+        val leaseId = leases.entries.firstOrNull { it.value === lease }?.key ?: return null
+        return CacheAuthorization(leaseId, requestId, lease.identity, lease.accountGeneration)
+    }
+
+    fun isCurrentCacheAuthorization(value: CacheAuthorization): Boolean =
+        validate(value.leaseId, value.identity, value.accountGeneration) == LeaseStatus.ACTIVE
 
     fun cancel(requestId: String) { leases.values.filter { it.requestId == requestId }.forEach { it.cancelled = true } }
     fun invalidateAccount(accountGeneration: Long) { leases.values.filter { it.accountGeneration != accountGeneration }.forEach { it.cancelled = true } }

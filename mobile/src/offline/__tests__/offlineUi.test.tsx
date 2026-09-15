@@ -3,6 +3,8 @@ const mockNativeModule = {
   cacheSnapshot: jest.fn(),
   requestExplicitCache: jest.fn(),
   promoteCache: jest.fn(),
+  markCachePlayed: jest.fn(),
+  authorizeResolvedCache: jest.fn(),
   cacheAction: jest.fn(),
   invalidate: jest.fn(),
   setCacheQuota: jest.fn(),
@@ -84,6 +86,7 @@ describe('offline cache adapter and native catalog projection', () => {
   it('uses explicit native cache methods with semantic metadata only', async () => {
     await offlineAudio.requestExplicit(track('netease', 'netrack_1'));
     await offlineAudio.promote('netease', 'netrack_1');
+    await offlineAudio.markPlayed('netease', 'netrack_1');
     await offlineAudio.action('retry', 'operation');
     await offlineAudio.setQuota(2 * 1024 ** 3);
     expect(mockNativeModule.requestExplicitCache).toHaveBeenCalledWith({
@@ -93,6 +96,10 @@ describe('offline cache adapter and native catalog projection', () => {
       artist: '艺人',
     });
     expect(mockNativeModule.promoteCache).toHaveBeenCalledWith(
+      'netease',
+      'netrack_1',
+    );
+    expect(mockNativeModule.markCachePlayed).toHaveBeenCalledWith(
       'netease',
       'netrack_1',
     );

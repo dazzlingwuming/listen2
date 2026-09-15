@@ -225,15 +225,6 @@ async function resolveTrackMedia(
     if (Object.keys(receipt).length !== 5 || Object.keys(receipt).some(key => !['recordId', 'playbackRequestId', 'status', 'privatePlaybackUri', 'seekable'].includes(key)) || receipt.recordId !== track.id || receipt.playbackRequestId !== playbackRequestId || receipt.status !== 'success' || typeof privateUri !== 'string' || !new RegExp(`^content://${APP_MEDIA_AUTHORITY}\\.local-media/play/[A-Za-z0-9_-]{32,128}$`).test(privateUri) || typeof receipt.seekable !== 'boolean') throw Object.assign(new Error('local-unavailable'), { code: 'local-media-unavailable' });
     return { playableUri: privateUri, durationMs: track.durationMs };
   }
-  if (isOfflineDownloadEligible(track)) {
-    const cached = await offlineAudio.resolveReady(track.source, track.id);
-    if (cached.status === 'hit' && safeOwnedPlaybackUri(cached.uri))
-      return {
-        playableUri: cached.uri,
-        durationMs: track.durationMs,
-        mimeType: cached.mimeType,
-      };
-  }
   let candidate: MediaDescriptor;
   try {
     candidate = await resolveMediaWithSignal(track, signal);
@@ -243,6 +234,26 @@ async function resolveTrackMedia(
     // failures are terminal and never alter the RNTP queue.
     if (!isRetryableBilibiliResolution(track, error)) throw error;
     candidate = await resolveMediaWithSignal(track, signal);
+  }
+  // A cache URI is considered only after the source's current native resolver
+  // has returned an allowed descriptor.  The native cache provider rechecks the
+  // resulting lease/account generation at open time, so logout/entitlement
+  // changes cannot be bypassed by a retained file.
+  if (
+    isOfflineDownloadEligible(track) &&
+    (await offlineAudio.authorizeResolvedCache(
+      track.source,
+      track.id,
+      candidate.requestId,
+    ))
+  ) {
+    const cached = await offlineAudio.resolveReady(track.source, track.id);
+    if (cached.status === 'hit' && safeOwnedPlaybackUri(cached.uri))
+      return {
+        playableUri: cached.uri,
+        durationMs: track.durationMs,
+        mimeType: cached.mimeType,
+      };
   }
   return candidate;
 }
@@ -502,6 +513,12 @@ async function loadAndPlay(
     }
     assertNativeOperationCurrent(context);
     await TrackPlayer.play();
+    if (
+      !isLocalTrack(track) &&
+      resolvedMedia?.playableUri.startsWith('content://') &&
+      isOfflineDownloadEligible(track)
+    )
+      void offlineAudio.markPlayed(track.source, track.id);
     emit(dispatch, 'player/setPlaying', true);
     return true;
   } catch (error) {

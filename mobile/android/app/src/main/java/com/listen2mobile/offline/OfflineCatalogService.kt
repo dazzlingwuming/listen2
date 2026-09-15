@@ -4,6 +4,8 @@ import android.content.Context
 import com.listen2mobile.library.CacheQuotaEntity
 import com.listen2mobile.library.LibraryDatabaseRegistry
 import com.listen2mobile.audiofx.LoudnessAnalyzer
+import com.listen2mobile.media.CacheAuthorization
+import com.listen2mobile.media.MediaLeaseRegistryHolder
 import java.util.concurrent.Executors
 import java.io.File
 
@@ -16,10 +18,17 @@ internal class OfflineCatalogService private constructor(context: Context) {
     private val app = context.applicationContext
     private val root = File(app.noBackupFilesDir, "offline-cache-02")
     private val repository = OfflineCatalogRepository(LibraryDatabaseRegistry.get(app), root)
-    private val transfer = OfflineCoordinator(File(root, "transfers"))
+    private val transfer = OfflineCoordinator(
+        File(root, "transfers"),
+        // Room owns the user-visible quota.  The transfer engine retains only
+        // its per-file safety cap and delegates every total reservation here.
+        limits = OfflineLimits(128L * 1024 * 1024, Long.MAX_VALUE, 64 * 1024),
+        reserveAdmission = ::admitReservation,
+    )
     private val legacy = OfflineRegistry.get(app)
     private val analysis = Executors.newSingleThreadExecutor()
     private val listeners = mutableSetOf<(CatalogCacheSnapshot) -> Unit>()
+    private val cacheAuthorizations = mutableMapOf<String, CacheAuthorization>()
 
     init {
         migrateLegacyReadyEntries()
@@ -75,6 +84,12 @@ internal class OfflineCatalogService private constructor(context: Context) {
         return snapshot()
     }
 
+    /** Called only after RNTP accepted a cached item; it never starts a download. */
+    fun markPlayed(source: String, trackId: String): CatalogCacheSnapshot {
+        readyBlob(source, trackId)?.let { repository.addOwner(it.blobKey, OfflineOwnerKind.TEMPORARY) }
+        return snapshot()
+    }
+
     fun setQuota(value: Long?): CatalogCacheSnapshot {
         if (value != null && OfflineQuota.parse(value) == null) return snapshot()
         val parsed = value
@@ -88,7 +103,8 @@ internal class OfflineCatalogService private constructor(context: Context) {
         val active = transfer.snapshot().firstOrNull { it.operationId == operationId }
         when (action) {
             "cancel" -> active?.let { transfer.cancel(it.operationId) }
-            "retry", "repair" -> active?.let { transfer.retry(it.source, it.trackId) }
+            "retry" -> active?.let { transfer.retry(it.source, it.trackId) }
+            "repair" -> if (active != null) transfer.retry(active.source, active.trackId) else repairReadyEntries()
             "remove" -> removeOperation(active, operationId)
             "clearEligible" -> clearEligible()
         }
@@ -103,7 +119,8 @@ internal class OfflineCatalogService private constructor(context: Context) {
 
     fun resolve(source: String, trackId: String): CatalogReady? {
         val blob = readyBlob(source, trackId) ?: return null
-        val file = repository.readyFile(blob.blobKey, accountGeneration = 0L, authorized = true) ?: return null
+        if (!isAuthorized(blob.blobKey)) return null
+        val file = repository.readyFile(blob.blobKey) ?: return null
         return CatalogReady(blob.blobKey, blob.mimeType, file)
     }
 
@@ -112,7 +129,16 @@ internal class OfflineCatalogService private constructor(context: Context) {
 
     fun file(blobKey: String?): File? {
         val safe = blobKey?.takeIf { OfflinePolicy.validKey(it) } ?: return null
-        return repository.readyFile(safe, accountGeneration = 0L, authorized = true)
+        if (!isAuthorized(safe)) return null
+        return repository.readyFile(safe)
+    }
+
+    /** Cache access inherits the authoritative source descriptor; no JS value can manufacture it. */
+    fun authorize(source: String, trackId: String, requestId: String): Boolean {
+        val blob = readyBlob(source, trackId) ?: return false
+        val grant = MediaLeaseRegistryHolder.current()?.cacheAuthorization(requestId, source, trackId) ?: return false
+        synchronized(cacheAuthorizations) { cacheAuthorizations[blob.blobKey] = grant }
+        return true
     }
 
     fun snapshot(): CatalogCacheSnapshot {
@@ -165,7 +191,7 @@ internal class OfflineCatalogService private constructor(context: Context) {
     }
 
     private fun scheduleAnalysis(blobKey: String) {
-        val file = repository.readyFile(blobKey, accountGeneration = 0L, authorized = true) ?: return
+        val file = repository.readyFile(blobKey) ?: return
         analysis.execute {
             val result = LoudnessAnalyzer().analyzeCompleteFile(file, blobKey)
             if (result == null) return@execute
@@ -182,6 +208,20 @@ internal class OfflineCatalogService private constructor(context: Context) {
         .filter { it.status == OfflineStatus.QUEUED || it.status == OfflineStatus.DOWNLOADING }
         .sumOf { maxOf(it.totalBytes, it.downloadedBytes) }
 
+    /** Reservation uses committed Room bytes plus other in-flight semantic transfers. */
+    private fun admitReservation(identityKey: String, requestedBytes: Long): Boolean {
+        if (requestedBytes < 0) return false
+        val dao = LibraryDatabaseRegistry.get(app).libraryDao()
+        val stored = dao.cacheQuota()
+        val quota = stored?.quotaBytes ?: if (stored == null) OfflineQuota.defaultBytes else null
+        if (quota == null) return true
+        val otherReservations = transfer.snapshot()
+            .filter { OfflinePolicy.key(it.source, it.trackId) != identityKey }
+            .filter { it.status == OfflineStatus.QUEUED || it.status == OfflineStatus.DOWNLOADING }
+            .sumOf { maxOf(it.totalBytes, it.downloadedBytes) }
+        return OfflineQuota.admits(quota, dao.readyCacheBlobs().sumOf { it.byteLength }, otherReservations, requestedBytes)
+    }
+
     private fun removeOperation(active: OfflineEntry?, operationId: String) {
         if (active != null) {
             transfer.remove(active.source, active.trackId)
@@ -194,6 +234,14 @@ internal class OfflineCatalogService private constructor(context: Context) {
         val dao = LibraryDatabaseRegistry.get(app).libraryDao()
         dao.readyCacheBlobs().forEach { blob ->
             if (dao.cacheOwners(blob.blobKey).none { it.kind == OfflineOwnerKind.EXPLICIT }) removeBlob(blob)
+        }
+    }
+
+    /** A corrupt/missing ready file is never kept as a false cache hit. */
+    private fun repairReadyEntries() {
+        val dao = LibraryDatabaseRegistry.get(app).libraryDao()
+        dao.readyCacheBlobs().forEach { blob ->
+            if (repository.readyFile(blob.blobKey) == null) removeBlob(blob)
         }
     }
 
@@ -224,6 +272,14 @@ internal class OfflineCatalogService private constructor(context: Context) {
         }
         owners.forEach { File(root, it.aliasRelativeKey).delete() }
         File(root, blob.privateRelativeKey).delete()
+        synchronized(cacheAuthorizations) { cacheAuthorizations.remove(blob.blobKey) }
+    }
+
+    private fun isAuthorized(blobKey: String): Boolean {
+        val grant = synchronized(cacheAuthorizations) { cacheAuthorizations[blobKey] } ?: return false
+        val current = MediaLeaseRegistryHolder.current()?.isCurrentCacheAuthorization(grant) == true
+        if (!current) synchronized(cacheAuthorizations) { cacheAuthorizations.remove(blobKey) }
+        return current
     }
 
     private fun publish() {

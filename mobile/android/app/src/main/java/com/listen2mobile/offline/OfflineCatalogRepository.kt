@@ -72,8 +72,8 @@ internal class OfflineCatalogRepository(private val database: Listen2Database, p
         return OfflineCatalogResult("REMOVED", blobKey)
     }
 
-    fun readyFile(blobKey: String, accountGeneration: Long, authorized: Boolean): File? {
-        if (!authorized || accountGeneration < 0) return null
+    /** Integrity/owner check only; current entitlement is enforced by the catalog service. */
+    fun readyFile(blobKey: String): File? {
         val blob = database.libraryDao().cacheBlob(blobKey) ?: return null
         if (blob.state != "ready" || database.libraryDao().cacheOwners(blobKey).isEmpty()) return null
         val file = File(root, blob.privateRelativeKey)
