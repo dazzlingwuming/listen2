@@ -79,7 +79,7 @@ internal class QqPlaybackModule(
     fun cancel(request: ReadableMap, promise: Promise) {
         val requestId = try {
             requireKeys(request, setOf("version", "requestId"))
-            require(request.getType("version") == ReadableType.Number && request.getDouble("version").toInt() == CONTRACT_VERSION)
+            require(request.getType("version") == ReadableType.Number && QqPlaybackPolicy.isContractVersion(request.getDouble("version")))
             requireRequestId(request, "requestId")
         } catch (_: Exception) { return promise.resolve(error(QqPlaybackPolicy.ErrorCode.INVALID_REQUEST)) }
         if (ledger.cancel(requestId) != null) gateway.cancel(requestId)
@@ -96,7 +96,7 @@ internal class QqPlaybackModule(
     private data class Request(val requestId: String, val track: QqPlaybackPolicy.SemanticTrack)
     private fun parseRequest(request: ReadableMap): Request {
         requireKeys(request, setOf("version", "requestId", "trackId"))
-        require(request.getType("version") == ReadableType.Number && request.getDouble("version").toInt() == CONTRACT_VERSION)
+        require(request.getType("version") == ReadableType.Number && QqPlaybackPolicy.isContractVersion(request.getDouble("version")))
         return Request(
             requireRequestId(request, "requestId"),
             QqPlaybackPolicy.parseSemanticTrack(requireTrackId(request, "trackId")) ?: throw IllegalArgumentException(),

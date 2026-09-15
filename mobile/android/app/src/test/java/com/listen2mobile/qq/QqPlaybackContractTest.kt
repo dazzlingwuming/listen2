@@ -99,6 +99,14 @@ class QqPlaybackContractTest {
     }
 
     @Test
+    fun `fractional bridge versions fail before QQ resolver transport can start`() {
+        assertTrue(QqPlaybackPolicy.isContractVersion(1.0))
+        assertFalse(QqPlaybackPolicy.isContractVersion(1.5))
+        assertFalse(QqPlaybackPolicy.isContractVersion(1.999))
+        assertFalse(QqPlaybackPolicy.isContractVersion(Double.NaN))
+    }
+
+    @Test
     fun `cancelled resolver disconnects and suppresses late success`() {
         val transport = FixtureTransport().apply { cancelDuringMetadata = true }
         val gateway = QqPlaybackGateway(transport, clock = { NOW })

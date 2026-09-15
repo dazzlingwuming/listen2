@@ -86,6 +86,14 @@ class KuwoPlaybackContractTest {
     }
 
     @Test
+    fun `fractional bridge versions fail before Kuwo resolver transport can start`() {
+        assertTrue(KuwoPlaybackPolicy.isContractVersion(1.0))
+        assertFalse(KuwoPlaybackPolicy.isContractVersion(1.5))
+        assertFalse(KuwoPlaybackPolicy.isContractVersion(1.999))
+        assertFalse(KuwoPlaybackPolicy.isContractVersion(Double.NaN))
+    }
+
+    @Test
     fun ledgerRejectsDuplicateIdsAndCancellationMakesLateCompletionStale() {
         val ledger = KuwoPlaybackPolicy.RequestLedger()
         val first = requireNotNull(ledger.claim(REQUEST_ID))

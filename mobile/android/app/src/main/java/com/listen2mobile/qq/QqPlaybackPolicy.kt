@@ -55,6 +55,9 @@ internal object QqPlaybackPolicy {
 
     fun isRequestId(value: String?) = value != null && requestId.matches(value)
 
+    /** Bridge versions are numbers, but must exactly match the versioned contract. */
+    fun isContractVersion(value: Double): Boolean = value == CONTRACT_VERSION.toDouble()
+
     fun policyReady(hosts: Set<String> = fixtureHosts): Boolean = hosts.isNotEmpty() &&
         hosts.all { it == "isure.stream.qqmusic.qq.com" }
 

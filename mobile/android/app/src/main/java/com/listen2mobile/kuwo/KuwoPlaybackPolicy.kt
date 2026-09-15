@@ -42,6 +42,9 @@ internal object KuwoPlaybackPolicy {
 
     fun isRequestId(value: String?): Boolean = value != null && requestPattern.matches(value)
 
+    /** Reject fractional bridge values before a request can reach the resolver. */
+    fun isContractVersion(value: Double): Boolean = value == CONTRACT_VERSION.toDouble()
+
     fun policyReady(hosts: Set<String> = fixtureHosts): Boolean =
         hosts.isNotEmpty() && hosts.all { it == "er-sycdn.kuwo.cn" } &&
             secret("fixture-token", COOKIE_NAME, 1_234_567L) == "452fda90010b117cb165a7af6d0012d687"
