@@ -9,6 +9,14 @@ import * as playerActions from '../../store/playerSlice';
 const mockNavigate = jest.fn();
 const mockDispatch = jest.fn();
 let mockRoute: { params?: Record<string, unknown> } = {};
+let mockLibraryState: any = {
+  favorites: [],
+  recentTracks: [],
+  playlists: [],
+  localTracks: [],
+  revision: 0,
+};
+const mockApplyLibraryMutation = jest.fn();
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -33,20 +41,16 @@ jest.mock('../../api/client', () => ({
 jest.mock('react-redux', () => ({
   useDispatch: () => mockDispatch,
   useSelector: (selector: (state: unknown) => unknown) =>
-    selector({
-      library: {
-        favorites: [],
-        recentTracks: [],
-        playlists: [],
-        localTracks: [],
-      },
-    }),
+    selector({ library: mockLibraryState }),
 }));
 
 jest.mock('../../store/playerSlice', () => ({ playTracks: jest.fn() }));
 jest.mock('../../store/librarySlice', () => ({
   addTrackToPlaylist: jest.fn(),
   deletePlaylist: jest.fn(),
+  hydrationSucceeded: jest.fn(),
+  mutationPending: jest.fn(),
+  mutationReceived: jest.fn(),
   removeLocalTrack: jest.fn(),
   removeTrackFromPlaylist: jest.fn(),
   toggleFavorite: jest.fn(),
@@ -71,11 +75,37 @@ jest.mock('../../components/Sheet', () => ({
 jest.mock('../../localAudio/access', () => ({
   releaseLocalAudioAccess: jest.fn(),
 }));
+jest.mock('../../library/libraryClient', () => ({
+  libraryClient: {
+    applyMutation: (...args: unknown[]) => mockApplyLibraryMutation(...args),
+    getSnapshot: jest.fn().mockResolvedValue({
+      revision: 0,
+      remoteCollections: [],
+    }),
+    replaceRemoteCollections: jest.fn().mockResolvedValue({
+      revision: 1,
+      remoteCollections: [],
+    }),
+  },
+}));
 
 describe('Discover flow', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockRoute = {};
+    mockLibraryState = {
+      favorites: [],
+      recentTracks: [],
+      playlists: [],
+      localTracks: [],
+      revision: 0,
+    };
+    mockApplyLibraryMutation.mockResolvedValue({
+      requestId: 'addTrack-1',
+      status: 'accepted',
+      revision: 1,
+      errorCode: null,
+    });
   });
 
   it('loads NetEase featured collections and opens semantic detail', async () => {
@@ -283,6 +313,63 @@ describe('Discover flow', () => {
     expect(mockDispatch).toHaveBeenCalledWith('play-all-action');
     expect(mockNavigate).toHaveBeenCalledTimes(1);
     expect(mockNavigate).toHaveBeenCalledWith('Player');
+  });
+
+  it('routes a confirmed personal playlist save through the native mutation with source and playlist identity', async () => {
+    mockLibraryState = {
+      favorites: [],
+      recentTracks: [],
+      playlists: [
+        { id: 'road-trip', title: 'Road trip', tracks: [] },
+      ],
+      localTracks: [],
+      revision: 7,
+    };
+    mockRoute = {
+      params: {
+        sourceId: 'netease',
+        title: '待收录歌曲',
+        tracks: [
+          {
+            id: 'netrack_saved',
+            source: 'netease',
+            title: '已缓存歌曲',
+            artist: 'Listen2',
+          },
+        ],
+      },
+    };
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<PlaylistDetailScreen />);
+    });
+
+    await act(async () => {
+      tree.root
+        .findByProps({ accessibilityLabel: '将已缓存歌曲加入歌单' })
+        .props.onPress();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      tree.root
+        .findByProps({ accessibilityLabel: '加入Road trip' })
+        .props.onPress();
+      await Promise.resolve();
+    });
+
+    expect(mockApplyLibraryMutation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        revision: 7,
+        kind: 'addTrack',
+        payload: {
+          playlistId: 'road-trip',
+          source: 'netease',
+          trackId: 'netrack_saved',
+          title: '已缓存歌曲',
+          artist: 'Listen2',
+        },
+      }),
+    );
   });
 
   it.each([

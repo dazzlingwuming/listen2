@@ -16,6 +16,8 @@ const mockNativePlayer = {
 const mockResolveMedia = jest.fn();
 const SAFE_MEDIA_URI =
   'content://com.dazzlingwuming.listen2.media/lease/' + 'a'.repeat(48);
+const SAFE_CACHE_URI =
+  'content://com.dazzlingwuming.listen2.offline-cache/' + 'b'.repeat(64);
 const nativeMediaFixture = (value: unknown) => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
   const result = { ...(value as Record<string, unknown>) };
@@ -29,6 +31,9 @@ const nativeMediaFixture = (value: unknown) => {
 };
 const mockResolveReady = jest.fn().mockResolvedValue({ status: 'miss' });
 const mockInvalidate = jest.fn().mockResolvedValue({});
+const mockAuthorizeResolvedCache = jest.fn().mockResolvedValue(true);
+const mockMarkPlayed = jest.fn().mockResolvedValue({});
+const mockNormalizationGain = jest.fn().mockResolvedValue(1);
 const mockPrepareLocalPlayback = jest.fn();
 
 jest.mock('react-native-track-player', () => ({
@@ -76,6 +81,10 @@ jest.mock('../../offline/offlineAudio', () => ({
   offlineAudio: {
     resolveReady: (...args: unknown[]) => mockResolveReady(...args),
     invalidate: (...args: unknown[]) => mockInvalidate(...args),
+    authorizeResolvedCache: (...args: unknown[]) =>
+      mockAuthorizeResolvedCache(...args),
+    markPlayed: (...args: unknown[]) => mockMarkPlayed(...args),
+    normalizationGain: (...args: unknown[]) => mockNormalizationGain(...args),
   },
 }));
 
@@ -131,7 +140,10 @@ describe('PlayerController queue transitions', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockResolveMedia.mockReset();
+    mockResolveMedia.mockReset().mockResolvedValue({
+      playableUri: SAFE_MEDIA_URI,
+      requestId: 'player_test_12345678',
+    });
     mockNativePlayer.add.mockReset().mockResolvedValue(undefined);
     mockNativePlayer.reset.mockReset().mockResolvedValue(undefined);
     mockNativePlayer.play.mockReset().mockResolvedValue(undefined);
@@ -147,6 +159,9 @@ describe('PlayerController queue transitions', () => {
       .mockReset()
       .mockResolvedValue({ state: 'playing' });
     mockResolveReady.mockResolvedValue({ status: 'miss' });
+    mockAuthorizeResolvedCache.mockResolvedValue(true);
+    mockMarkPlayed.mockResolvedValue({});
+    mockNormalizationGain.mockResolvedValue(1);
     mockPrepareLocalPlayback.mockReset();
     Object.defineProperty(NativeModules, 'Listen2LocalAudio', {
       configurable: true,
@@ -310,7 +325,7 @@ describe('PlayerController queue transitions', () => {
     expect(mockNativePlayer.add).not.toHaveBeenCalled();
   });
 
-  it('uses a verified cache hit before provider bootstrap', async () => {
+  it('uses a verified cache hit after the current provider descriptor is accepted', async () => {
     const queued = track('netrack_2');
     state = reducer(
       state,
@@ -319,13 +334,16 @@ describe('PlayerController queue transitions', () => {
     state = reducer(state, playerActions.enqueueNext(queued));
     mockResolveReady.mockResolvedValueOnce({
       status: 'hit',
-      uri: SAFE_MEDIA_URI,
+      uri: SAFE_CACHE_URI,
       mimeType: 'audio/mpeg',
     });
     await playerController.next(dispatch);
-    expect(mockResolveMedia).not.toHaveBeenCalled();
+    expect(mockResolveMedia).toHaveBeenCalledWith(
+      queued,
+      expect.any(AbortSignal),
+    );
     expect(mockNativePlayer.add).toHaveBeenCalledWith(
-      expect.objectContaining({ url: SAFE_MEDIA_URI }),
+      expect.objectContaining({ url: SAFE_CACHE_URI }),
     );
   });
 
@@ -406,7 +424,7 @@ describe('PlayerController queue transitions', () => {
     );
     state = reducer(state, playerActions.enqueueNext(queued));
     mockResolveReady.mockResolvedValueOnce({ status: 'corrupt' });
-    mockResolveMedia.mockResolvedValueOnce({
+    mockResolveMedia.mockResolvedValue({
       url: SAFE_MEDIA_URI,
     });
 
@@ -426,7 +444,7 @@ describe('PlayerController queue transitions', () => {
     state = reducer(state, playerActions.enqueueNext(queued));
     mockResolveReady.mockResolvedValueOnce({
       status: 'hit',
-      uri: SAFE_MEDIA_URI,
+      uri: SAFE_CACHE_URI,
       mimeType: 'audio/mpeg',
     });
     mockNativePlayer.add.mockRejectedValueOnce(new Error('cache-load-failed'));
@@ -435,7 +453,9 @@ describe('PlayerController queue transitions', () => {
     });
     await playerController.next(dispatch);
     expect(mockInvalidate).toHaveBeenCalledWith('netease', queued.id);
-    expect(mockResolveMedia).toHaveBeenCalledTimes(1);
+    // The cache is admitted only after a fresh descriptor, then a failed
+    // cache load receives one distinct online replacement descriptor.
+    expect(mockResolveMedia).toHaveBeenCalledTimes(2);
     expect(state.playNextQueue).toEqual([]);
   });
 
@@ -450,18 +470,61 @@ describe('PlayerController queue transitions', () => {
     state = reducer(state, playerActions.enqueueNext(queued));
     mockResolveReady.mockResolvedValueOnce({
       status: 'hit',
-      uri: SAFE_MEDIA_URI,
+      uri: SAFE_CACHE_URI,
       mimeType: 'audio/mpeg',
     });
     mockNativePlayer.add.mockRejectedValueOnce(new Error('cache-load-failed'));
-    mockResolveMedia.mockRejectedValueOnce(new Error('online-failed'));
+    mockResolveMedia
+      .mockResolvedValueOnce({ url: SAFE_MEDIA_URI })
+      .mockRejectedValueOnce(new Error('online-failed'));
 
     await playerController.next(dispatch);
 
     expect(mockInvalidate).toHaveBeenCalledWith('netease', queued.id);
-    expect(mockResolveMedia).toHaveBeenCalledTimes(1);
+    expect(mockResolveMedia).toHaveBeenCalledTimes(2);
     expect(state.currentTrack?.id).toBe(current.id);
     expect(state.playNextQueue.map(item => item.track.id)).toEqual([queued.id]);
+  });
+
+  it('marks a temporary owner only after ordinary cached playback actually starts', async () => {
+    const cached =
+      'content://com.dazzlingwuming.listen2.offline-cache/' +
+      'b'.repeat(64);
+    mockResolveMedia.mockResolvedValueOnce({
+      playableUri: SAFE_MEDIA_URI,
+      requestId: 'cacheplay_12345678',
+    });
+    mockResolveReady.mockResolvedValueOnce({
+      status: 'hit',
+      uri: cached,
+      mimeType: 'audio/mpeg',
+    });
+
+    await expect(playerController.playTrack(dispatch, track('netrack_cache'))).resolves.toBe(true);
+
+    expect(mockNativePlayer.play).toHaveBeenCalledTimes(1);
+    expect(mockMarkPlayed).toHaveBeenCalledWith('netease', 'netrack_cache');
+  });
+
+  it('does not mark a temporary owner when cached playback is rejected before play succeeds', async () => {
+    const cached =
+      'content://com.dazzlingwuming.listen2.offline-cache/' +
+      'c'.repeat(64);
+    mockResolveMedia.mockResolvedValue({
+      playableUri: SAFE_MEDIA_URI,
+      requestId: 'cachefail_12345678',
+    });
+    mockResolveReady.mockResolvedValueOnce({
+      status: 'hit',
+      uri: cached,
+      mimeType: 'audio/mpeg',
+    });
+    mockNativePlayer.play.mockRejectedValueOnce(new Error('native-play-failed'));
+
+    await expect(playerController.playTrack(dispatch, track('netrack_cache_fail'))).resolves.toBe(true);
+
+    expect(mockInvalidate).toHaveBeenCalledWith('netease', 'netrack_cache_fail');
+    expect(mockMarkPlayed).not.toHaveBeenCalled();
   });
 
   it('never stores content or provider locations from rejected playback errors', async () => {
@@ -945,7 +1008,7 @@ describe('PlayerController queue transitions', () => {
     );
     mockNativePlayer.add.mockRejectedValueOnce(new Error('load failed'));
     await expect(playerController.playTrack(dispatch, next)).resolves.toBe(
-      true,
+      false,
     );
   });
 

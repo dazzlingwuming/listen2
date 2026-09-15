@@ -116,6 +116,20 @@ function safeOwnedPlaybackUri(value: unknown): value is string {
   return typeof value === 'string' && OWNED_PLAYBACK_URI.test(value);
 }
 
+/** A retained cache blob is distinct from a freshly resolved provider lease. */
+function isAcceptedOfflineCacheMedia(
+  track: PlayableTrack,
+  media: NativePlayableMedia | null | undefined,
+) {
+  return (
+    !isLocalTrack(track) &&
+    isOfflineDownloadEligible(track) &&
+    media?.playableUri.startsWith(
+      `content://${APP_MEDIA_AUTHORITY}.offline-cache/`,
+    )
+  );
+}
+
 function assertNativeOperationCurrent(context?: NativeOperationContext) {
   if (context && (!context.isCurrent() || !context.isTargetAvailable()))
     throw STALE_NATIVE_COMMAND;
@@ -491,15 +505,17 @@ async function loadAndPlay(
   resolvedMedia?: NativePlayableMedia,
   context?: NativeOperationContext,
 ): Promise<boolean> {
+  let media: NativePlayableMedia | null = null;
   try {
     assertNativeOperationCurrent(context);
     await ensurePlayer();
     assertNativeOperationCurrent(context);
-    const media =
+    const acceptedMedia =
       resolvedMedia ?? (await resolveTrackMedia(track, context?.signal));
+    media = acceptedMedia;
     assertNativeOperationCurrent(context);
     const state = playerState();
-    const nativeTrack = asNativeTrack(track, media);
+    const nativeTrack = asNativeTrack(track, acceptedMedia);
     context?.markMutation();
     await TrackPlayer.reset();
     assertNativeOperationCurrent(context);
@@ -514,9 +530,7 @@ async function loadAndPlay(
     assertNativeOperationCurrent(context);
     await TrackPlayer.play();
     if (
-      !isLocalTrack(track) &&
-      resolvedMedia?.playableUri.startsWith('content://') &&
-      isOfflineDownloadEligible(track)
+      isAcceptedOfflineCacheMedia(track, acceptedMedia)
     )
       void offlineAudio.markPlayed(track.source, track.id);
     emit(dispatch, 'player/setPlaying', true);
@@ -525,9 +539,7 @@ async function loadAndPlay(
     if (error === STALE_NATIVE_COMMAND) return false;
     if (!isNativeOperationCurrent(context)) return false;
     if (
-      !isLocalTrack(track) &&
-      resolvedMedia?.playableUri.startsWith('content://') &&
-      isOfflineDownloadEligible(track)
+      isAcceptedOfflineCacheMedia(track, media)
     ) {
       await offlineAudio.invalidate(track.source, track.id);
       try {
@@ -577,7 +589,7 @@ async function loadAndPlay(
         error,
         isLocalTrack(track)
           ? 'local-media-unavailable'
-          : resolvedMedia?.playableUri.startsWith('content://')
+          : isAcceptedOfflineCacheMedia(track, media)
           ? 'offline-media-unavailable'
           : 'playback-unavailable',
       ),

@@ -201,9 +201,7 @@ internal class LibraryRepository internal constructor(private val database: List
                 val source = payload["source"]!!; val trackId = payload["trackId"]!!
                 if (dao.membership(playlistId, source, trackId) != null) return@runInTransaction rejected("DUPLICATE_TRACK")
                 dao.insertMembership(PlaylistMembershipEntity(playlistId, source, trackId, dao.memberships(playlistId).size, payload["title"]!!, payload["artist"]!!))
-                dao.cacheBlobsForTrack(source, trackId).forEach { blob ->
-                    dao.putCacheOwner(CacheOwnerEntity.playlist(blob.blobKey, playlistId, System.currentTimeMillis()))
-                }
+                linkReadyCacheToPlaylist(dao, source, trackId, playlistId)
             }
             "removeTrack" -> {
                 val source = payload["source"]!!; val trackId = payload["trackId"]!!
@@ -265,7 +263,10 @@ internal class LibraryRepository internal constructor(private val database: List
             if (playlist.playlistId in existingIds)
                 return@runInTransaction LibraryReceipt(token, "rejected", current.revision, "DUPLICATE_PLAYLIST", snapshotLocked())
             dao.insertPlaylist(PersonalPlaylistEntity(playlist.playlistId, playlist.title, dao.playlists(LibraryLimits.MAX_PLAYLISTS).size))
-            playlist.tracks.forEachIndexed { position, track -> dao.putMembership(PlaylistMembershipEntity(playlist.playlistId, track.source, track.trackId, position, track.title, track.artist)) }
+            playlist.tracks.forEachIndexed { position, track ->
+                dao.putMembership(PlaylistMembershipEntity(playlist.playlistId, track.source, track.trackId, position, track.title, track.artist))
+                linkReadyCacheToPlaylist(dao, track.source, track.trackId, playlist.playlistId)
+            }
             existingIds += playlist.playlistId
         }
         dao.playlists(LibraryLimits.MAX_PLAYLISTS).forEachIndexed { position, playlist -> dao.putPlaylist(playlist.copy(position = position)) }
@@ -277,6 +278,25 @@ internal class LibraryRepository internal constructor(private val database: List
     private fun validBackup(input: BackupInput): Boolean = input.expectedRevision >= 0 && input.mode in setOf("merge", "overwrite") && input.playlists.size <= LibraryLimits.MAX_PLAYLISTS && input.playlists.map { it.playlistId }.distinct().size == input.playlists.size && input.favorites.size <= 50_000 &&
         (input.favorites + input.playlists.flatMap { it.tracks }).all { it.source in setOf("netease", "kugou", "kuwo", "qq", "bilibili") && it.trackId.matches(Regex("^[A-Za-z0-9._:-]{1,128}$")) && it.title.isNotBlank() && it.title.length <= LibraryLimits.MAX_TITLE && it.artist.isNotBlank() && it.artist.length <= LibraryLimits.MAX_TITLE } &&
         input.playlists.all { it.playlistId.matches(Regex("^[A-Za-z0-9_-]{1,64}$")) && it.title.isNotBlank() && it.title.length <= LibraryLimits.MAX_TITLE && it.tracks.size <= 5_000 && it.tracks.distinctBy { track -> "${track.source}:${track.trackId}" }.size == it.tracks.size }
+
+    /**
+     * This is reached from the accepted personal-playlist mutation and from a
+     * confirmed library restore/sync.  It only links a verified Room blob that
+     * already has the exact source/track identity; it never starts transport
+     * work or changes the blob's active provider/account authorization.
+     */
+    private fun linkReadyCacheToPlaylist(
+        dao: LibraryDao,
+        source: String,
+        trackId: String,
+        playlistId: String,
+    ) {
+        dao.cacheBlobsForTrack(source, trackId).forEach { blob ->
+            dao.putCacheOwner(
+                CacheOwnerEntity.playlist(blob.blobKey, playlistId, System.currentTimeMillis()),
+            )
+        }
+    }
 
     private fun planBackup(input: BackupInput): PlannedBackup {
         if (input.mode == "overwrite") return PlannedBackup(input, input.favorites.size, input.playlists.size, 0, 0)
