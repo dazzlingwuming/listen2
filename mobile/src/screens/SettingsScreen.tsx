@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
+import { useNavigation } from '@react-navigation/native';
 import { ScreenLayout, sectionStyles } from './ScreenLayout';
 import { colors, spacing, text } from '../theme';
 import { PROVIDER_CAPABILITIES } from '../api/client';
@@ -42,6 +43,7 @@ import { deepSeekClient } from '../deepseek/client';
 import type { DeepSeekStatus } from '../deepseek/types';
 
 export function SettingsScreen() {
+  const navigation = useNavigation();
   const dispatch = useDispatch<AppDispatch>();
   const library = useSelector((state: RootState) => state.library);
   const downloads = useSelector((state: RootState) => state.downloads);
@@ -376,6 +378,15 @@ export function SettingsScreen() {
 
   return (
     <ScreenLayout subtitle="能力与本地数据" title="设置">
+      <View style={sectionStyles.section}>
+        <Pressable
+          accessibilityLabel="打开账号与来源"
+          onPress={() => navigation.navigate('AccountSources' as never)}
+          style={sectionStyles.button}
+        >
+          <Text style={sectionStyles.buttonText}>账号与来源</Text>
+        </Pressable>
+      </View>
       <View style={sectionStyles.section}>
         <Text style={text.heading}>来源状态</Text>
         <View style={styles.list}>
@@ -719,6 +730,109 @@ export function SettingsScreen() {
           </View>
         </View>
       </Modal>
+    </ScreenLayout>
+  );
+}
+
+export type AccountProviderId =
+  | 'qq'
+  | 'kugou'
+  | 'kuwo'
+  | 'migu'
+  | 'taihe'
+  | 'bilibili'
+  | 'netease';
+
+const accountProviders: ReadonlyArray<{ id: AccountProviderId; label: string }> = [
+  { id: 'qq', label: 'QQ音乐' },
+  { id: 'kugou', label: '酷狗音乐' },
+  { id: 'kuwo', label: '酷我音乐' },
+  { id: 'migu', label: '咪咕音乐' },
+  { id: 'taihe', label: 'Taihe' },
+  { id: 'bilibili', label: '哔哩哔哩' },
+  { id: 'netease', label: '网易云音乐' },
+];
+
+/** Account UI intentionally exposes authentication only where a native public contract exists. */
+export function AccountSourcesScreen() {
+  const navigation = useNavigation();
+  const [bilibili, setBilibili] = useState<BilibiliPublicState | null>(null);
+  const activeAttempt = React.useRef('');
+  const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mounted = React.useRef(true);
+  const stop = () => {
+    const attempt = activeAttempt.current;
+    activeAttempt.current = '';
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+    return attempt;
+  };
+  const terminal = (value: BilibiliPublicState): BilibiliPublicState => ({ ...value, attemptId: '', expiresAt: 0, qrPngDataUri: '' });
+  const poll = async (attempt: string, count = 0): Promise<void> => {
+    if (!mounted.current || activeAttempt.current !== attempt) return;
+    if (count >= 90) {
+      stop();
+      setBilibili(current => current ? terminal({ ...current, status: 'error', retryable: true, nextAction: 'begin', errorCode: 'REQUEST_TIMEOUT' }) : current);
+      return;
+    }
+    try {
+      const next = await bilibiliClient.qrPoll(attempt);
+      if (!mounted.current || activeAttempt.current !== attempt) return;
+      if (next.status === 'waiting' || next.status === 'scanned') {
+        setBilibili(next);
+        timer.current = setTimeout(() => void poll(attempt, count + 1), 2000);
+      } else {
+        stop();
+        setBilibili(terminal(next));
+      }
+    } catch {
+      if (activeAttempt.current === attempt) {
+        stop();
+        setBilibili(current => current ? terminal({ ...current, status: 'error', retryable: true, nextAction: 'begin', errorCode: 'PROVIDER_ERROR' }) : current);
+      }
+    }
+  };
+  const begin = async () => {
+    const previous = stop();
+    if (previous) void bilibiliClient.qrCancel(previous).catch(() => undefined);
+    try {
+      const next = await bilibiliClient.qrBegin();
+      if (!mounted.current) return;
+      setBilibili(next);
+      if (next.attemptId) { activeAttempt.current = next.attemptId; void poll(next.attemptId); }
+    } catch {
+      setBilibili({ status: 'error', attemptId: '', expiresAt: 0, qrPngDataUri: '', retryable: true, nextAction: 'begin', errorCode: 'PROVIDER_ERROR' });
+    }
+  };
+  const cancel = async () => {
+    const attempt = stop();
+    if (!attempt) return;
+    try { setBilibili(terminal(await bilibiliClient.qrCancel(attempt))); }
+    catch { setBilibili(current => current ? terminal({ ...current, status: 'cancelled', retryable: false, nextAction: 'begin' }) : current); }
+  };
+  React.useEffect(() => {
+    bilibiliClient.status().then(value => mounted.current && setBilibili(terminal(value))).catch(() => mounted.current && setBilibili({ status: 'unavailable', attemptId: '', expiresAt: 0, qrPngDataUri: '', retryable: false, nextAction: 'begin' }));
+    return () => { mounted.current = false; const attempt = stop(); if (attempt) void bilibiliClient.qrCancel(attempt).catch(() => undefined); };
+  }, []);
+  const logout = () => Alert.alert('退出 Bilibili 登录？', '仅清除本机 Bilibili 会话；歌单、收藏、本地音频和历史不会删除。', [
+    { text: '取消', style: 'cancel' },
+    { text: '确认退出', style: 'destructive', onPress: () => { void bilibiliClient.logout().then(value => setBilibili(terminal(value))).catch(() => setBilibili(current => current ? terminal({ ...current, status: 'error', retryable: true, nextAction: 'begin', errorCode: 'PROVIDER_ERROR' }) : current)); } },
+  ]);
+  const statusCopy = bilibili?.status === 'authenticated' ? `已登录${bilibili.displayName ? `：${bilibili.displayName}` : ''}` : bilibili?.status === 'scanned' ? '已扫码，请在 Bilibili 中确认。' : bilibili?.status === 'waiting' ? '请使用 Bilibili 扫码登录。' : bilibili?.status === 'expired' ? '二维码已过期，请重新获取。' : bilibili?.status === 'cancelled' ? '登录已取消。' : bilibili?.status === 'unavailable' ? '本机暂不支持安全登录。' : bilibili?.status === 'error' ? '登录暂未完成，请重试。' : '可选择扫码登录以使用账号可用的音质。';
+  return (
+    <ScreenLayout subtitle="账号状态与可用能力" title="账号与来源">
+      <Pressable accessibilityLabel="返回设置" onPress={() => navigation.goBack()} style={sectionStyles.secondaryButton}><Text style={sectionStyles.secondaryText}>返回设置</Text></Pressable>
+      <View style={sectionStyles.section}>
+        {accountProviders.map(provider => provider.id !== 'bilibili' ? (
+          <View key={provider.id} style={styles.row}><Text style={text.body}>{provider.label}</Text><Text style={styles.status}>当前没有可验证的手机端登录能力</Text></View>
+        ) : (
+          <View key={provider.id} style={sectionStyles.card}>
+            <Text style={text.body}>哔哩哔哩</Text><Text style={text.meta}>{statusCopy}</Text>
+            {bilibili?.qrPngDataUri ? <Image accessibilityLabel="Bilibili 登录二维码" source={{ uri: bilibili.qrPngDataUri }} style={styles.qrCode} /> : null}
+            {bilibili?.status === 'authenticated' ? <Pressable accessibilityLabel="退出 Bilibili 登录" onPress={logout} style={sectionStyles.secondaryButton}><Text style={sectionStyles.secondaryText}>退出登录</Text></Pressable> : bilibili?.status === 'waiting' || bilibili?.status === 'scanned' ? <Pressable accessibilityLabel="取消 Bilibili 扫码登录" onPress={() => void cancel()} style={sectionStyles.secondaryButton}><Text style={sectionStyles.secondaryText}>取消登录</Text></Pressable> : <Pressable accessibilityLabel="开始 Bilibili 扫码登录" disabled={bilibili?.status === 'unavailable'} onPress={() => void begin()} style={sectionStyles.button}><Text style={sectionStyles.buttonText}>{bilibili?.retryable ? '重新获取二维码' : '扫码登录'}</Text></Pressable>}
+          </View>
+        ))}
+      </View>
     </ScreenLayout>
   );
 }
