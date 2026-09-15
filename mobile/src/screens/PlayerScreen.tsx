@@ -30,6 +30,7 @@ import {
 import { providerLabels } from '../components/SourceTabs';
 import { Sheet } from '../components/Sheet';
 import { PROVIDER_CAPABILITIES, providerClient } from '../api/client';
+import { ProviderClientError } from '../api/errors';
 import { parseExactBilibiliTrackId } from '../api/ids';
 import { findBilibiliLyricCandidates } from '../bilibili/lyrics';
 import type {
@@ -42,6 +43,7 @@ import { isLocalTrack } from '../types/music';
 import type { Lyric, SourceId, Track } from '../types/provider';
 import {
   findActiveLyricIndex,
+  MAX_LYRIC_OFFSET_MS,
   parseLyricTimeline,
   type LyricTimelineLine,
 } from '../lyrics/timeline';
@@ -64,6 +66,68 @@ import {
 } from '../deepseek/client';
 import type { DeepSeekConsent } from '../deepseek/types';
 import { bilibiliMvClient } from '../bilibili/mvClient';
+
+export type LyricFailurePresentation = Readonly<{
+  code:
+    | 'cancelled'
+    | 'timeout'
+    | 'mismatch'
+    | 'missing'
+    | 'unsupported'
+    | 'provider';
+  title: string;
+  message: string;
+  action: 'retry' | 'choose-source';
+}>;
+
+/** Stable lyric failures are product states, never a rendered provider error. */
+export function lyricFailurePresentation(
+  error: unknown,
+): LyricFailurePresentation {
+  const code =
+    error instanceof ProviderClientError ? error.code : 'PROVIDER_ERROR';
+  if (code === 'CANCELLED')
+    return {
+      code: 'cancelled',
+      title: '歌词请求已取消',
+      message: '可重新加载歌词。',
+      action: 'retry',
+    };
+  if (code === 'REQUEST_TIMEOUT')
+    return {
+      code: 'timeout',
+      title: '歌词请求超时',
+      message: '请稍后重试。',
+      action: 'retry',
+    };
+  if (code === 'INVALID_RESPONSE' || code === 'UNKNOWN_TRACK')
+    return {
+      code: 'mismatch',
+      title: '歌词信息不匹配',
+      message: '请选择其他歌曲或歌词来源。',
+      action: 'choose-source',
+    };
+  if (code === 'LYRIC_UNAVAILABLE')
+    return {
+      code: 'missing',
+      title: '未找到可用歌词',
+      message: '可重试或选择其他歌词来源。',
+      action: 'choose-source',
+    };
+  if (code === 'ROUTE_UNAVAILABLE')
+    return {
+      code: 'unsupported',
+      title: '此来源暂不支持歌词',
+      message: '请选择其他歌曲或歌词来源。',
+      action: 'choose-source',
+    };
+  return {
+    code: 'provider',
+    title: '歌词来源暂时不可用',
+    message: '请稍后重试。',
+    action: 'retry',
+  };
+}
 
 export function PlayerScreen() {
   const navigation = useNavigation<any>();
@@ -91,6 +155,8 @@ export function PlayerScreen() {
   const [lyrics, setLyrics] = useState<Lyric | null>(null);
   const [lyricsLoading, setLyricsLoading] = useState(false);
   const [lyricsUnavailable, setLyricsUnavailable] = useState(false);
+  const [lyricFailure, setLyricFailure] =
+    useState<LyricFailurePresentation | null>(null);
   const [pickerVisible, setPickerVisible] = useState(false);
   const [candidates, setCandidates] = useState<BilibiliLyricCandidate[]>([]);
   const [candidateLoading, setCandidateLoading] = useState(false);
@@ -106,6 +172,8 @@ export function PlayerScreen() {
   const [selectionRevision, setSelectionRevision] = useState<
     number | undefined
   >();
+  const [offsetSaving, setOffsetSaving] = useState(false);
+  const [offsetNotice, setOffsetNotice] = useState<string | null>(null);
   const [machineTranslation, setMachineTranslation] = useState<string | null>(
     null,
   );
@@ -118,6 +186,7 @@ export function PlayerScreen() {
   const candidateRequest = useRef<AbortController | null>(null);
   const candidateEpoch = useRef(0);
   const selectionEpoch = useRef(0);
+  const offsetEpoch = useRef(0);
   const translationEpoch = useRef(0);
   const translationOperation = useRef<string | null>(null);
   const favorite = current
@@ -195,6 +264,7 @@ export function PlayerScreen() {
     lyricEpoch.current += 1;
     candidateEpoch.current += 1;
     selectionEpoch.current += 1;
+    offsetEpoch.current += 1;
   };
   const invalidateTranslationWork = (settleUi: boolean) => {
     // Clear the operation before cancelling it so a close followed by an
@@ -215,6 +285,7 @@ export function PlayerScreen() {
     setLyrics(null);
     setLyricsLoading(false);
     setLyricsUnavailable(false);
+    setLyricFailure(null);
     setPickerVisible(false);
     setCandidates([]);
     setCandidateLoading(false);
@@ -224,6 +295,8 @@ export function PlayerScreen() {
     setBilibiliCacheRevision(undefined);
     setLyricOffsetMs(0);
     setSelectionRevision(undefined);
+    setOffsetSaving(false);
+    setOffsetNotice(null);
     setMachineTranslation(null);
     setTranslationError(null);
     invalidateTranslationWork(true);
@@ -239,6 +312,12 @@ export function PlayerScreen() {
     if (!current || (!force && (lyrics || lyricsLoading))) return;
     if (isLocalTrack(current)) {
       setLyricsUnavailable(true);
+      setLyricFailure({
+        code: 'unsupported',
+        title: '本地音频暂不提供网络歌词',
+        message: '为保护本地文件信息，应用不会请求网络歌词。',
+        action: 'choose-source',
+      });
       return;
     }
     lyricRequest.current?.abort();
@@ -249,6 +328,8 @@ export function PlayerScreen() {
     if (!requestSession) return;
     setLyricsLoading(true);
     setLyricsUnavailable(false);
+    setLyricFailure(null);
+    if (force) setPickerVisible(false);
     try {
       const bilibiliIdentity =
         trackSource(current) === 'bilibili'
@@ -281,11 +362,12 @@ export function PlayerScreen() {
             setBilibiliCacheRevision(saved.record.revision);
         }
       }
-    } catch {
+    } catch (caught) {
       if (epoch === lyricEpoch.current && !controller.signal.aborted) {
+        setLyricFailure(lyricFailurePresentation(caught));
+        setLyricsUnavailable(true);
         if (trackSource(current) === 'bilibili' && manualLyricsAvailable)
           setPickerVisible(true);
-        else setLyricsUnavailable(true);
       }
     } finally {
       if (epoch === lyricEpoch.current && !controller.signal.aborted)
@@ -355,6 +437,7 @@ export function PlayerScreen() {
       return;
     const identity = parseExactBilibiliTrackId(current.id);
     const token = ++selectionEpoch.current;
+    offsetEpoch.current += 1;
     const candidateGeneration = candidateEpoch.current;
     if (!identity) return;
     const requestSession = lyricSession;
@@ -428,6 +511,7 @@ export function PlayerScreen() {
     const identity = parseExactBilibiliTrackId(current.id);
     if (!identity) return;
     const token = ++selectionEpoch.current;
+    offsetEpoch.current += 1;
     const requestSession = lyricSession;
     if (!requestSession) return;
     lyricRequest.current?.abort();
@@ -440,7 +524,7 @@ export function PlayerScreen() {
       selectionRevision,
     );
     if (
-      selection.status !== 'ok' ||
+      (selection.status !== 'ok' && selection.status !== 'not-found') ||
       token !== selectionEpoch.current ||
       !isCurrentLyricSession(requestSession)
     )
@@ -451,13 +535,63 @@ export function PlayerScreen() {
       !isCurrentLyricSession(requestSession)
     )
       return;
-    setSelectionRevision(selection.record.revision);
+    if (selection.status === 'ok')
+      setSelectionRevision(selection.record.revision);
+    else setSelectionRevision(undefined);
     setLyrics(null);
+    setLyricsUnavailable(false);
+    setLyricFailure(null);
     setMachineTranslation(null);
     setTranslationError(null);
     setBilibiliCacheRevision(undefined);
     setPickerVisible(false);
     await openLyrics(true);
+  };
+  const updateLyricOffset = async (deltaMs: number) => {
+    if (!selectionKey || !offsetAvailable || !Number.isFinite(deltaMs)) return;
+    const nextOffset = Math.max(
+      -MAX_LYRIC_OFFSET_MS,
+      Math.min(MAX_LYRIC_OFFSET_MS, lyricOffsetMs + deltaMs),
+    );
+    if (nextOffset === lyricOffsetMs) return;
+    const token = ++selectionEpoch.current;
+    const offsetToken = ++offsetEpoch.current;
+    const requestSession = lyricSession;
+    if (!requestSession) return;
+    setOffsetSaving(true);
+    setOffsetNotice(null);
+    try {
+      const saved = await lyricSelectionStore.setOffset(
+        selectionKey,
+        nextOffset,
+        selectionRevision ?? 0,
+      );
+      if (
+        token !== selectionEpoch.current ||
+        offsetToken !== offsetEpoch.current ||
+        !isCurrentLyricSession(requestSession)
+      )
+        return;
+      if (saved.status === 'ok') {
+        setLyricOffsetMs(saved.record.offsetMs);
+        setSelectionRevision(saved.record.revision);
+        setOffsetNotice(
+          `已保存 ${saved.record.offsetMs >= 0 ? '+' : ''}${
+            saved.record.offsetMs
+          }毫秒`,
+        );
+      } else if (saved.status === 'stale') {
+        setOffsetNotice('歌词校正已在其他操作更新，请重新调整。');
+      } else {
+        setOffsetNotice('歌词校正未保存，请重试。');
+      }
+    } finally {
+      if (
+        offsetToken === offsetEpoch.current &&
+        isCurrentLyricSession(requestSession)
+      )
+        setOffsetSaving(false);
+    }
   };
   const closeLyrics = () => {
     invalidateLyricWork();
@@ -822,11 +956,14 @@ export function PlayerScreen() {
         position={currentPosition}
         userOffsetMs={lyricOffsetMs}
         offsetAvailable={offsetAvailable}
+        offsetNotice={offsetNotice}
         offsetReason={
           operations?.offset?.status === 'available'
             ? undefined
             : '当前来源尚未验证歌词偏移校正'
         }
+        offsetSaving={offsetSaving}
+        lyricFailure={lyricFailure}
         translationBusy={translationBusy}
         translationEligible={translationEligible}
         translationError={translationError}
@@ -838,6 +975,13 @@ export function PlayerScreen() {
         onRestoreSource={() => {
           setMachineTranslation(null);
           setTranslationError(null);
+        }}
+        onAdjustOffset={deltaMs => {
+          updateLyricOffset(deltaMs).catch(() => undefined);
+        }}
+        onChooseAnotherSource={closeLyrics}
+        onRetryLyrics={() => {
+          openLyrics(true).catch(() => undefined);
         }}
         onClose={closeLyrics}
       />
@@ -857,10 +1001,15 @@ export function PlayerScreen() {
       <BilibiliLyricPicker
         candidates={candidates}
         error={candidateError}
+        failureMessage={lyricFailure?.message}
+        failureTitle={lyricFailure?.title}
         loading={candidateLoading}
         onClose={closePicker}
         onRestore={() => {
           restoreBilibiliAutomatic().catch(() => undefined);
+        }}
+        onRetryAutomatic={() => {
+          openLyrics(true).catch(() => undefined);
         }}
         onSearch={query => {
           searchBilibiliCandidates(query).catch(() => undefined);
@@ -1142,13 +1291,19 @@ function LyricsSheet({
   position,
   userOffsetMs,
   offsetAvailable,
+  offsetNotice,
   offsetReason,
+  offsetSaving,
+  lyricFailure,
   translationBusy,
   translationEligible,
   translationError,
   onLookupTranslation,
   onRetranslate,
   onRestoreSource,
+  onAdjustOffset,
+  onChooseAnotherSource,
+  onRetryLyrics,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -1161,13 +1316,19 @@ function LyricsSheet({
   position: number;
   userOffsetMs: number;
   offsetAvailable: boolean;
+  offsetNotice: string | null;
   offsetReason?: string;
+  offsetSaving: boolean;
+  lyricFailure: LyricFailurePresentation | null;
   translationBusy: boolean;
   translationEligible: boolean;
   translationError: string | null;
   onLookupTranslation: () => void;
   onRetranslate: () => void;
   onRestoreSource: () => void;
+  onAdjustOffset: (deltaMs: number) => void;
+  onChooseAnotherSource: () => void;
+  onRetryLyrics: () => void;
 }) {
   const lines = useMemo(
     () =>
@@ -1249,10 +1410,55 @@ function LyricsSheet({
           </View>
         ) : null}
         {offsetAvailable ? (
-          <Text style={text.meta}>
-            歌词校正：{userOffsetMs >= 0 ? '+' : ''}
-            {userOffsetMs}毫秒
-          </Text>
+          <View style={styles.offsetControls}>
+            <Text
+              accessibilityLabel={`本地歌词校正，当前${
+                userOffsetMs >= 0 ? '+' : ''
+              }${userOffsetMs}毫秒${
+                offsetSaving
+                  ? '，正在保存'
+                  : offsetNotice
+                  ? `，${offsetNotice}`
+                  : '，已保存'
+              }`}
+              style={text.meta}
+            >
+              歌词校正：{userOffsetMs >= 0 ? '+' : ''}
+              {userOffsetMs}毫秒
+            </Text>
+            <View style={styles.offsetActions}>
+              <Pressable
+                accessibilityLabel="减少歌词校正250毫秒"
+                accessibilityRole="button"
+                accessibilityState={{
+                  disabled:
+                    offsetSaving || userOffsetMs <= -MAX_LYRIC_OFFSET_MS,
+                }}
+                disabled={offsetSaving || userOffsetMs <= -MAX_LYRIC_OFFSET_MS}
+                onPress={() => onAdjustOffset(-250)}
+                style={styles.translationButton}
+              >
+                <Text style={styles.actionText}>-250毫秒</Text>
+              </Pressable>
+              <Pressable
+                accessibilityLabel="增加歌词校正250毫秒"
+                accessibilityRole="button"
+                accessibilityState={{
+                  disabled: offsetSaving || userOffsetMs >= MAX_LYRIC_OFFSET_MS,
+                }}
+                disabled={offsetSaving || userOffsetMs >= MAX_LYRIC_OFFSET_MS}
+                onPress={() => onAdjustOffset(250)}
+                style={styles.translationButton}
+              >
+                <Text style={styles.actionText}>+250毫秒</Text>
+              </Pressable>
+            </View>
+            {offsetNotice ? (
+              <Text accessibilityLiveRegion="polite" style={text.meta}>
+                {offsetNotice}
+              </Text>
+            ) : null}
+          </View>
         ) : offsetReason ? (
           <Text style={text.meta}>{offsetReason}</Text>
         ) : null}
@@ -1266,6 +1472,34 @@ function LyricsSheet({
           <Text style={styles.translationError}>
             翻译未应用：{translationError}
           </Text>
+        ) : null}
+        {lyricFailure ? (
+          <View accessibilityLiveRegion="polite" style={styles.lyricFailure}>
+            <Text
+              accessibilityLabel={`歌词状态：${lyricFailure.title}。${lyricFailure.message}`}
+              style={styles.translationError}
+            >
+              {lyricFailure.title}：{lyricFailure.message}
+            </Text>
+            <Pressable
+              accessibilityLabel={
+                lyricFailure.action === 'retry'
+                  ? '重试加载歌词'
+                  : '选择其他歌曲'
+              }
+              accessibilityRole="button"
+              onPress={
+                lyricFailure.action === 'retry'
+                  ? onRetryLyrics
+                  : onChooseAnotherSource
+              }
+              style={styles.translationButton}
+            >
+              <Text style={styles.actionText}>
+                {lyricFailure.action === 'retry' ? '重试歌词' : '选择其他歌曲'}
+              </Text>
+            </Pressable>
+          </View>
         ) : null}
         {loading ? (
           <Text style={text.meta}>正在加载歌词…</Text>
@@ -1460,6 +1694,8 @@ const styles = StyleSheet.create({
   queueTools: { gap: spacing.sm, paddingBottom: spacing.md },
   lyrics: { gap: spacing.lg, alignItems: 'center', padding: spacing.lg },
   translationActions: { flexDirection: 'row', gap: spacing.sm },
+  offsetControls: { alignItems: 'center', gap: spacing.xs },
+  offsetActions: { flexDirection: 'row', gap: spacing.sm },
   translationButton: {
     borderColor: colors.border,
     borderRadius: 10,
@@ -1470,6 +1706,7 @@ const styles = StyleSheet.create({
   },
   machineBadge: { color: colors.accent, fontSize: 12, fontWeight: '700' },
   translationError: { color: '#ff9aa9', fontSize: 13 },
+  lyricFailure: { alignItems: 'center', gap: spacing.sm },
   lyricMeta: text.meta,
   lyricRow: { width: '100%', alignItems: 'center', gap: spacing.xs },
   lyricLine: { ...text.body, textAlign: 'center' },

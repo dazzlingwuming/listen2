@@ -7,6 +7,10 @@ const mockCacheClear = jest.fn();
 const mockCachePut = jest.fn();
 const mockFindCandidates = jest.fn();
 const mockDispatch = jest.fn();
+const mockSelectionGet = jest.fn();
+const mockSelectionPut = jest.fn();
+const mockSelectionClearManual = jest.fn();
+const mockSelectionSetOffset = jest.fn();
 let mockPlayerState: any;
 
 jest.mock('@react-navigation/native', () => ({
@@ -23,7 +27,7 @@ jest.mock('../../api/client', () => ({
     bilibili: {
       operations: {
         'manual-lyrics': { status: 'available' },
-        offset: { status: 'unverified', reason: 'unverified-route', action: 'return' },
+        offset: { status: 'available' },
       },
     },
   },
@@ -41,9 +45,10 @@ jest.mock('../../lyrics/cache', () => ({
 }));
 jest.mock('../../lyrics/selectionStore', () => ({
   lyricSelectionStore: {
-    get: jest.fn(() => Promise.resolve(null)),
-    put: jest.fn(() => Promise.resolve({ status: 'ok', record: { revision: 1 } })),
-    clearManual: jest.fn(() => Promise.resolve({ status: 'ok', record: { revision: 1 } })),
+    get: (...args: unknown[]) => mockSelectionGet(...args),
+    put: (...args: unknown[]) => mockSelectionPut(...args),
+    clearManual: (...args: unknown[]) => mockSelectionClearManual(...args),
+    setOffset: (...args: unknown[]) => mockSelectionSetOffset(...args),
   },
 }));
 jest.mock('../../deepseek/client', () => ({
@@ -91,6 +96,20 @@ describe('Bilibili lyric player flow', () => {
     };
     mockCacheGet.mockResolvedValue(null);
     mockCacheClear.mockResolvedValue({ status: 'ok' });
+    mockCachePut.mockResolvedValue({ status: 'ok', record: { revision: 1 } });
+    mockSelectionGet.mockResolvedValue(null);
+    mockSelectionPut.mockResolvedValue({
+      status: 'ok',
+      record: { revision: 1 },
+    });
+    mockSelectionClearManual.mockResolvedValue({
+      status: 'ok',
+      record: { revision: 1 },
+    });
+    mockSelectionSetOffset.mockResolvedValue({
+      status: 'ok',
+      record: { revision: 1, offsetMs: 250 },
+    });
     mockGetLyric.mockRejectedValue(new Error('LYRIC_UNAVAILABLE'));
     mockFindCandidates.mockResolvedValue({
       candidates: [],
@@ -119,6 +138,88 @@ describe('Bilibili lyric player flow', () => {
       await Promise.resolve();
     });
     expect(mockCacheClear).toHaveBeenCalledWith('bitrack_v_BV1xx411c7mD-12');
+  });
+
+  it('retries automatic Bilibili lyrics after a miss with no manual record', async () => {
+    mockSelectionClearManual.mockResolvedValueOnce({ status: 'not-found' });
+    mockGetLyric
+      .mockRejectedValueOnce(new Error('missing lyric'))
+      .mockResolvedValueOnce({
+        trackId: 'bitrack_v_BV1xx411c7mD-12',
+        source: 'bilibili',
+        text: '[00:01.00]retried',
+        provenance: {
+          mode: 'auto',
+          matchedProvider: 'netease',
+          matchedCandidateId: 'netrack_1',
+          matchScore: 1,
+        },
+      });
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<PlayerScreen />);
+    });
+    await act(async () => {
+      tree.root.findByProps({ accessibilityLabel: '查看歌词' }).props.onPress();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      tree.root
+        .findByProps({ accessibilityLabel: '恢复自动歌词' })
+        .props.onPress();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockSelectionClearManual).toHaveBeenCalledWith(
+      expect.objectContaining({
+        trackId: 'bitrack_v_BV1xx411c7mD-12',
+        partId: '12',
+      }),
+      undefined,
+    );
+    expect(mockCacheClear).toHaveBeenCalledWith('bitrack_v_BV1xx411c7mD-12');
+    expect(mockGetLyric).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(tree.toJSON())).toContain('retried');
+  });
+
+  it('persists a confirmed local offset for the active exact part', async () => {
+    mockGetLyric.mockResolvedValue({
+      trackId: 'bitrack_v_BV1xx411c7mD-12',
+      source: 'bilibili',
+      text: '[00:01.00]line',
+      provenance: {
+        mode: 'auto',
+        matchedProvider: 'qq',
+        matchedCandidateId: 'qqtrack_1',
+        matchScore: 1,
+      },
+    });
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<PlayerScreen />);
+    });
+    await act(async () => {
+      tree.root.findByProps({ accessibilityLabel: '查看歌词' }).props.onPress();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      tree.root
+        .findByProps({ accessibilityLabel: '增加歌词校正250毫秒' })
+        .props.onPress();
+      await Promise.resolve();
+    });
+
+    expect(mockSelectionSetOffset).toHaveBeenCalledWith(
+      expect.objectContaining({
+        trackId: 'bitrack_v_BV1xx411c7mD-12',
+        partId: '12',
+      }),
+      250,
+      0,
+    );
+    expect(JSON.stringify(tree.toJSON())).toContain('已保存 +250毫秒');
   });
 
   it('drops a late lyric response after the current Bilibili part changes', async () => {

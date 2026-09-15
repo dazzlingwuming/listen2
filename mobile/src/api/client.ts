@@ -139,6 +139,9 @@ export const PROVIDER_CAPABILITIES: Readonly<
       playback: available,
       lyrics: available,
       'manual-lyrics': available,
+      // This is an app-local, bounded timeline correction for the exact
+      // Bilibili part. It does not authorize or alter provider transport.
+      offset: available,
       login: available,
       mv: available,
       bootstrap: available,

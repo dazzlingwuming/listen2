@@ -21,9 +21,12 @@ export function BilibiliLyricPicker({
   partial,
   providerErrors,
   error,
+  failureTitle,
+  failureMessage,
   onSearch,
   onSelect,
   onRestore,
+  onRetryAutomatic,
   onClose,
 }: {
   visible: boolean;
@@ -32,9 +35,12 @@ export function BilibiliLyricPicker({
   partial: boolean;
   providerErrors: BilibiliLyricCandidateResult['providerErrors'];
   error: boolean;
+  failureTitle?: string;
+  failureMessage?: string;
   onSearch: (query: string) => void;
   onSelect: (candidate: BilibiliLyricCandidate) => void;
   onRestore: () => void;
+  onRetryAutomatic: () => void;
   onClose: () => void;
 }) {
   const [query, setQuery] = useState('');
@@ -80,7 +86,27 @@ export function BilibiliLyricPicker({
           </Text>
         ) : null}
         {error ? (
-          <Text accessibilityLiveRegion="polite" style={styles.notice}>歌词候选加载失败，可重试。</Text>
+          <Text accessibilityLiveRegion="polite" style={styles.notice}>
+            歌词候选加载失败，可重试。
+          </Text>
+        ) : null}
+        {failureTitle && failureMessage ? (
+          <View accessibilityLiveRegion="polite" style={styles.failure}>
+            <Text
+              accessibilityLabel={`歌词状态：${failureTitle}。${failureMessage}`}
+              style={styles.notice}
+            >
+              {failureTitle}：{failureMessage}
+            </Text>
+            <Pressable
+              accessibilityLabel="重试自动歌词"
+              accessibilityRole="button"
+              onPress={onRetryAutomatic}
+              style={styles.restore}
+            >
+              <Text style={styles.buttonText}>重试自动歌词</Text>
+            </Pressable>
+          </View>
         ) : null}
         {candidates.map(candidate => (
           <Pressable
@@ -155,6 +181,7 @@ const styles = StyleSheet.create({
   },
   badge: { color: colors.accent, fontSize: 12, fontWeight: '700' },
   notice: { color: '#ffbc70', fontSize: 13 },
+  failure: { gap: spacing.sm },
   restore: {
     alignItems: 'center',
     borderColor: colors.border,
