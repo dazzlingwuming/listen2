@@ -8,6 +8,7 @@ import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
 import android.util.Log;
 import android.view.accessibility.AccessibilityNodeInfo;
+import android.os.Bundle;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -71,9 +72,21 @@ public final class AccessibilityDriver {
     }
 
     void enterText(String label, String value) {
-        tapLabel(label);
-        shell("input text " + shellText(value));
+        require("青花瓷".equals(value), "only the fixed sanitized fixture query is allowed");
+        AccessibilityNodeInfo editable = findEditableNode(label);
+        if (editable == null) {
+            throw new AssertionError("missing editable search field: " + label);
+        }
+        try {
+            require(editable.performAction(AccessibilityNodeInfo.ACTION_FOCUS), "search field refused accessibility focus");
+            Bundle arguments = new Bundle();
+            arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value);
+            require(editable.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments), "search field refused Unicode accessibility text");
+        } finally {
+            editable.recycle();
+        }
         instrumentation.waitForIdleSync();
+        require(waitForExactEditableText(label, value, 5_000L), "search field did not retain exact Unicode text");
     }
 
     void assertFiveSourceTabs() {
@@ -163,6 +176,73 @@ public final class AccessibilityDriver {
         return match.group(1) + "," + match.group(2) + "," + match.group(3) + "," + match.group(4);
     }
 
+    /**
+     * The API 35 shell `input text` route cannot type the fixed CJK fixture.
+     * Set text through the visible editable accessibility node instead; this
+     * has no access to application state or storage and fails closed when the
+     * field becomes unavailable.
+     */
+    private AccessibilityNodeInfo findEditableNode(String label) {
+        AccessibilityNodeInfo root = instrumentation.getUiAutomation().getRootInActiveWindow();
+        if (root == null) {
+            return null;
+        }
+        try {
+            return findEditableNode(root, label, 0, new int[] { 0 });
+        } finally {
+            root.recycle();
+        }
+    }
+
+    private AccessibilityNodeInfo findEditableNode(AccessibilityNodeInfo node, String label, int depth, int[] visited) {
+        if (visited[0] >= MAX_NODES_PER_DUMP || depth > MAX_DUMP_DEPTH) {
+            return null;
+        }
+        visited[0] += 1;
+        if (node.isEditable() && labelMatches(node, label)) {
+            return AccessibilityNodeInfo.obtain(node);
+        }
+        for (int index = 0; index < node.getChildCount(); index += 1) {
+            AccessibilityNodeInfo child = node.getChild(index);
+            if (child == null) {
+                continue;
+            }
+            try {
+                AccessibilityNodeInfo found = findEditableNode(child, label, depth + 1, visited);
+                if (found != null) {
+                    return found;
+                }
+            } finally {
+                child.recycle();
+            }
+        }
+        return null;
+    }
+
+    private boolean waitForExactEditableText(String label, String expected, long timeoutMillis) {
+        long deadline = SystemClock.elapsedRealtime() + timeoutMillis;
+        while (SystemClock.elapsedRealtime() < deadline) {
+            AccessibilityNodeInfo refreshed = findEditableNode(label);
+            if (refreshed != null) {
+                try {
+                    if (expected.contentEquals(refreshed.getText())) {
+                        return true;
+                    }
+                } finally {
+                    refreshed.recycle();
+                }
+            }
+            SystemClock.sleep(100L);
+        }
+        return false;
+    }
+
+    private static boolean labelMatches(AccessibilityNodeInfo node, String label) {
+        return label.contentEquals(stringValue(node.getText())) ||
+            label.contentEquals(stringValue(node.getContentDescription())) ||
+            label.contentEquals(stringValue(node.getHintText()));
+    }
+
     private String dumpWindow() {
         AccessibilityNodeInfo root = instrumentation.getUiAutomation().getRootInActiveWindow();
         if (root == null) {
@@ -223,11 +303,6 @@ public final class AccessibilityDriver {
                 // The command result was already consumed; close is best-effort.
             }
         }
-    }
-
-    private String shellText(String value) {
-        require("青花瓷".equals(value), "only fixed sanitized fixture text is allowed");
-        return "'青花瓷'";
     }
 
     private static String stringValue(CharSequence value) {

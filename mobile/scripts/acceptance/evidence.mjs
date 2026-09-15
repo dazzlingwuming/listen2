@@ -78,6 +78,12 @@ function ensureContained(root, candidate, label) {
   return candidateReal;
 }
 
+function isContainedPath(root, candidate) {
+  const rootReal = realpathSync(root);
+  const candidateReal = realpathSync(candidate);
+  return candidateReal === rootReal || candidateReal.startsWith(`${rootReal}${sep}`);
+}
+
 function runRootFor(runDir) {
   const phase = resolve(REPO_ROOT, '.planning/phases', PHASE_SLUG);
   const evidence = resolve(phase, 'evidence');
@@ -103,6 +109,14 @@ function pathWithinRun(runRoot, relativePath) {
   }
   if (!existsSync(candidate) || !lstatSync(candidate).isFile()) fail('artifact file is missing');
   return ensureContained(runRoot, candidate, 'artifact');
+}
+
+function canonicalExistingFile(runRoot, value, label) {
+  if (typeof value !== 'string' || !value) fail(`${label} path is required`);
+  const candidate = resolve(value);
+  if (!existsSync(candidate) || !lstatSync(candidate).isFile()) fail(`${label} file is missing`);
+  if (lstatSync(candidate).isSymbolicLink()) fail(`${label} file may not be a symlink`);
+  return ensureContained(runRoot, candidate, label);
 }
 
 function assertSafeValue(value, label) {
@@ -242,6 +256,10 @@ function selfTestContainment() {
     let rejected = false;
     try { pathWithinRun(run, '../escape.txt'); } catch { rejected = true; }
     if (!rejected) fail('parent traversal self-test failed');
+    const escape = resolve(root, 'escape.txt');
+    writeFileSync(escape, 'escape\n');
+    if (isContainedPath(run, escape)) fail('run escape containment self-test failed');
+    if (!isContainedPath(root, artifact)) fail('derived run artifact containment self-test failed');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -264,8 +282,12 @@ function main() {
   if (values.has('--validate')) {
     const recordFile = values.get('--validate');
     if (!recordFile) fail('missing record for validation');
-    const run = runRootFor(dirname(resolve(process.cwd(), recordFile)));
-    assertRecord(JSON.parse(readFileSync(recordFile, 'utf8')), run);
+    const candidate = resolve(process.cwd(), recordFile);
+    const run = runRootFor(dirname(candidate));
+    const canonicalRecord = canonicalExistingFile(run, candidate, 'evidence record');
+    if (!/^08-(?:prerequisites|build|journey|api35-performance|performance|evidence-index)\.json$/.test(basename(canonicalRecord)))
+      fail('evidence record filename is not permitted');
+    assertRecord(JSON.parse(readFileSync(canonicalRecord, 'utf8')), run);
     console.log('Phase 8 evidence record is valid.');
     return;
   }
@@ -274,7 +296,8 @@ function main() {
     const input = values.get('--input');
     const name = values.get('--name');
     if (!input || !name) fail('write requires --input and --name');
-    writeRecord(run, name, JSON.parse(readFileSync(input, 'utf8')));
+    const canonicalInput = canonicalExistingFile(run, input, 'evidence input');
+    writeRecord(run, name, JSON.parse(readFileSync(canonicalInput, 'utf8')));
     return;
   }
   if (flags.has('--write-prerequisites')) return makePrerequisitesRecord(run);

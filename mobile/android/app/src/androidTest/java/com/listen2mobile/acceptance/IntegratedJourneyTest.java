@@ -22,9 +22,9 @@ public final class IntegratedJourneyTest {
         driver.tapLabel("搜索音乐");
         progress.step("journey-netease-terminal");
         driver.assertSearchTerminal("网易");
-        driver.tapLabel("Bilibili");
+        driver.tapLabel("哔哩哔哩");
         progress.step("journey-bilibili-terminal");
-        driver.assertSearchTerminal("Bilibili");
+        driver.assertSearchTerminal("哔哩哔哩");
         driver.exerciseVisibleSafeDomains();
         progress.step("journey-capture");
         driver.captureForegroundEvidence();

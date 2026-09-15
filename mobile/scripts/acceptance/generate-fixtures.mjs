@@ -39,8 +39,16 @@ if (args.includes('--self-test')) {
     if (result.bytes <= 44 || result.durationSeconds !== 600) throw new Error('fixture self-test failed');
     const driver = readFileSync(resolve(scriptDir, '../../android/app/src/androidTest/java/com/listen2mobile/acceptance/AccessibilityDriver.java'), 'utf8');
     if (driver.includes('uiautomator dump')) throw new Error('instrumentation must not start a nested uiautomator service');
+    if (driver.includes('input text ')) throw new Error('instrumentation must not use shell text input for CJK fixtures');
     if (!driver.includes('getRootInActiveWindow') || !driver.includes('getExternalFilesDir')) {
       throw new Error('accessibility evidence must use runner-owned UI automation and target external files');
+    }
+    for (const required of ['ACTION_SET_TEXT', 'ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE', 'waitForExactEditableText', 'performAction(AccessibilityNodeInfo.ACTION_FOCUS)']) {
+      if (!driver.includes(required)) throw new Error(`accessibility Unicode entry contract is missing: ${required}`);
+    }
+    const journey = readFileSync(resolve(scriptDir, '../../android/app/src/androidTest/java/com/listen2mobile/acceptance/IntegratedJourneyTest.java'), 'utf8');
+    if (!journey.includes('tapLabel("哔哩哔哩")') || journey.includes('tapLabel("Bilibili")')) {
+      throw new Error('journey must use the exact visible Bilibili label');
     }
     console.log('Phase 8 fixture self-test passed.');
   }
