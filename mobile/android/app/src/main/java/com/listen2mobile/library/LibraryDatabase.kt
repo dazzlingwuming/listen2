@@ -10,6 +10,7 @@ import androidx.room.Query
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.listen2mobile.offline.OfflineOwnerKind
 
 /**
  * Version one is intentionally exported. New versions must add an explicit migration; this
@@ -33,8 +34,14 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MutationReceiptEntity::class,
         MigrationJournalEntity::class,
         CacheCatalogEntity::class,
+        CacheBlobEntity::class,
+        CacheOwnerEntity::class,
+        CacheAttemptEntity::class,
+        CacheRangeEntity::class,
+        CacheQuotaEntity::class,
+        CacheAnalysisEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class Listen2Database : RoomDatabase() {
@@ -163,9 +170,76 @@ data class MutationReceiptEntity(@PrimaryKey val requestId: String, val status: 
 @Entity(tableName = "migration_journal")
 data class MigrationJournalEntity(@PrimaryKey val attemptId: String, val phase: String, val checksum: String?, val sourceRetained: Boolean)
 
-/** Schema only in Phase 6; media bytes, quota, download, eviction and offline behavior are Phase 7. */
+/** Identity rows retain semantic metadata only; paths, URLs and handles never enter Room. */
 @Entity(tableName = "cache_catalog")
-data class CacheCatalogEntity(@PrimaryKey val cacheId: String, val source: String, val semanticTrackId: String, val state: String)
+data class CacheCatalogEntity(
+    @PrimaryKey val cacheId: String,
+    val source: String,
+    val semanticTrackId: String,
+    val partId: String?,
+    val renditionId: String,
+    val mediaRevision: String,
+    val state: String,
+    val updatedAt: Long,
+)
+
+@Entity(tableName = "cache_blobs")
+data class CacheBlobEntity(
+    @PrimaryKey val blobKey: String,
+    val cacheId: String,
+    val contentHash: String,
+    val byteLength: Long,
+    val mimeType: String,
+    val codec: String,
+    val state: String,
+    val privateRelativeKey: String,
+    val verifiedAt: Long,
+    val lastUsedAt: Long,
+) {
+    companion object {
+        fun ready(identity: com.listen2mobile.offline.OfflineCatalogIdentity, contentHash: String, byteLength: Long, mimeType: String, codec: String) =
+            CacheBlobEntity(contentHash, identity.cacheId(), contentHash, byteLength, mimeType, codec, "ready", "blobs/$contentHash", 0L, 0L)
+    }
+}
+
+@Entity(tableName = "cache_owners", primaryKeys = ["blobKey", "ownerKey"])
+data class CacheOwnerEntity(
+    val blobKey: String,
+    val ownerKey: String,
+    val kind: OfflineOwnerKind,
+    val aliasRelativeKey: String,
+    val createdAt: Long,
+    val updatedAt: Long,
+) {
+    companion object {
+        fun temporary(blobKey: String, now: Long) = CacheOwnerEntity(blobKey, "temporary", OfflineOwnerKind.TEMPORARY, "owners/temporary/$blobKey", now, now)
+        fun explicit(blobKey: String, now: Long) = CacheOwnerEntity(blobKey, "explicit", OfflineOwnerKind.EXPLICIT, "owners/explicit/$blobKey", now, now)
+        fun playlist(blobKey: String, playlistId: String, now: Long) = CacheOwnerEntity(blobKey, "playlist:$playlistId", OfflineOwnerKind.PLAYLIST, "owners/playlist/$playlistId/$blobKey", now, now)
+    }
+}
+
+@Entity(tableName = "cache_attempts")
+data class CacheAttemptEntity(
+    @PrimaryKey val attemptId: String,
+    val cacheId: String,
+    val state: String,
+    val expectedLength: Long?,
+    val validator: String?,
+    val accountGeneration: Long,
+    val privateRelativeKey: String,
+    val reservedBytes: Long,
+    val cancellationGeneration: Long,
+    val updatedAt: Long,
+)
+
+@Entity(tableName = "cache_ranges", primaryKeys = ["attemptId", "rangeStart"])
+data class CacheRangeEntity(val attemptId: String, val rangeStart: Long, val rangeEndExclusive: Long, val verified: Boolean)
+
+@Entity(tableName = "cache_quota")
+data class CacheQuotaEntity(@PrimaryKey val id: Int = 1, val quotaBytes: Long?, val reservedBytes: Long, val updatedAt: Long)
+
+@Entity(tableName = "cache_analysis", primaryKeys = ["contentHash", "analyzerVersion"])
+data class CacheAnalysisEntity(val contentHash: String, val analyzerVersion: Int, val sampleRate: Int, val codec: String, val lufs: Double?, val dbtp: Double?, val gainDb: Double?, val status: String, val updatedAt: Long)
 
 @Dao
 interface LibraryDao {
@@ -234,6 +308,15 @@ interface LibraryDao {
     @Query("DELETE FROM history_sessions") fun clearHistorySessions()
     @Query("DELETE FROM history_events") fun clearHistoryEvents()
     @Query("DELETE FROM history_aggregates") fun clearHistoryAggregates()
+    @Insert(onConflict = OnConflictStrategy.REPLACE) fun putCacheCatalog(value: CacheCatalogEntity)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) fun putCacheBlob(value: CacheBlobEntity)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) fun putCacheOwner(value: CacheOwnerEntity)
+    @Query("SELECT * FROM cache_blobs WHERE blobKey = :blobKey") fun cacheBlob(blobKey: String): CacheBlobEntity?
+    @Query("SELECT * FROM cache_owners WHERE blobKey = :blobKey ORDER BY ownerKey ASC") fun cacheOwners(blobKey: String): List<CacheOwnerEntity>
+    @Query("SELECT b.* FROM cache_blobs b INNER JOIN cache_catalog c ON b.cacheId = c.cacheId WHERE c.source = :source AND c.semanticTrackId = :trackId AND b.state = 'ready'") fun cacheBlobsForTrack(source: String, trackId: String): List<CacheBlobEntity>
+    @Query("SELECT o.* FROM cache_owners o WHERE o.ownerKey = :ownerKey") fun cacheOwnersByOwnerKey(ownerKey: String): List<CacheOwnerEntity>
+    @Query("DELETE FROM cache_owners WHERE blobKey = :blobKey AND ownerKey = :ownerKey") fun deleteCacheOwner(blobKey: String, ownerKey: String)
+    @Query("DELETE FROM cache_owners WHERE ownerKey = :ownerKey") fun deleteCacheOwnersByOwnerKey(ownerKey: String)
 }
 
 internal val LIBRARY_MIGRATION_1_2 = object : Migration(1, 2) {
@@ -252,5 +335,22 @@ internal val LIBRARY_MIGRATION_2_3 = object : Migration(2, 3) {
         database.execSQL("CREATE TABLE IF NOT EXISTS history_state (id INTEGER NOT NULL, clearGeneration INTEGER NOT NULL, revision INTEGER NOT NULL, PRIMARY KEY(id))")
         database.execSQL("CREATE TABLE IF NOT EXISTS history_sessions (playbackInstanceId TEXT NOT NULL, clearGeneration INTEGER NOT NULL, source TEXT NOT NULL, semanticTrackId TEXT NOT NULL, title TEXT NOT NULL, artist TEXT NOT NULL, durationMs INTEGER NOT NULL, startedElapsedMs INTEGER NOT NULL, lastSequence INTEGER NOT NULL, lastPositionMs INTEGER NOT NULL, lastElapsedMs INTEGER NOT NULL, listenedForwardMs INTEGER NOT NULL, tracking INTEGER NOT NULL, PRIMARY KEY(playbackInstanceId, clearGeneration))")
         database.execSQL("CREATE TABLE IF NOT EXISTS history_events (eventId TEXT NOT NULL, playbackInstanceId TEXT NOT NULL, clearGeneration INTEGER NOT NULL, source TEXT NOT NULL, semanticTrackId TEXT NOT NULL, title TEXT NOT NULL, artist TEXT NOT NULL, committedLocalDate TEXT NOT NULL, committedLocalYear INTEGER NOT NULL, committedLocalMonth INTEGER NOT NULL, listenedForwardMs INTEGER NOT NULL, thresholdMs INTEGER NOT NULL, PRIMARY KEY(eventId))")
+    }
+}
+
+/** v4 keeps every v3 table and normalizes cache state into identity/blob/owner/attempt records. */
+internal val LIBRARY_MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE cache_catalog ADD COLUMN partId TEXT")
+        database.execSQL("ALTER TABLE cache_catalog ADD COLUMN renditionId TEXT NOT NULL DEFAULT 'default'")
+        database.execSQL("ALTER TABLE cache_catalog ADD COLUMN mediaRevision TEXT NOT NULL DEFAULT 'legacy'")
+        database.execSQL("ALTER TABLE cache_catalog ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
+        database.execSQL("CREATE TABLE IF NOT EXISTS cache_blobs (blobKey TEXT NOT NULL, cacheId TEXT NOT NULL, contentHash TEXT NOT NULL, byteLength INTEGER NOT NULL, mimeType TEXT NOT NULL, codec TEXT NOT NULL, state TEXT NOT NULL, privateRelativeKey TEXT NOT NULL, verifiedAt INTEGER NOT NULL, lastUsedAt INTEGER NOT NULL, PRIMARY KEY(blobKey))")
+        database.execSQL("CREATE TABLE IF NOT EXISTS cache_owners (blobKey TEXT NOT NULL, ownerKey TEXT NOT NULL, kind TEXT NOT NULL, aliasRelativeKey TEXT NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, PRIMARY KEY(blobKey, ownerKey))")
+        database.execSQL("CREATE TABLE IF NOT EXISTS cache_attempts (attemptId TEXT NOT NULL, cacheId TEXT NOT NULL, state TEXT NOT NULL, expectedLength INTEGER, validator TEXT, accountGeneration INTEGER NOT NULL, privateRelativeKey TEXT NOT NULL, reservedBytes INTEGER NOT NULL, cancellationGeneration INTEGER NOT NULL, updatedAt INTEGER NOT NULL, PRIMARY KEY(attemptId))")
+        database.execSQL("CREATE TABLE IF NOT EXISTS cache_ranges (attemptId TEXT NOT NULL, rangeStart INTEGER NOT NULL, rangeEndExclusive INTEGER NOT NULL, verified INTEGER NOT NULL, PRIMARY KEY(attemptId, rangeStart))")
+        database.execSQL("CREATE TABLE IF NOT EXISTS cache_quota (id INTEGER NOT NULL, quotaBytes INTEGER, reservedBytes INTEGER NOT NULL, updatedAt INTEGER NOT NULL, PRIMARY KEY(id))")
+        database.execSQL("CREATE TABLE IF NOT EXISTS cache_analysis (contentHash TEXT NOT NULL, analyzerVersion INTEGER NOT NULL, sampleRate INTEGER NOT NULL, codec TEXT NOT NULL, lufs REAL, dbtp REAL, gainDb REAL, status TEXT NOT NULL, updatedAt INTEGER NOT NULL, PRIMARY KEY(contentHash, analyzerVersion))")
+        database.execSQL("INSERT OR IGNORE INTO cache_quota(id, quotaBytes, reservedBytes, updatedAt) VALUES(1, 2147483648, 0, 0)")
     }
 }

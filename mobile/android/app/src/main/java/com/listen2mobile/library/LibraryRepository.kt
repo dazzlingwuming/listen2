@@ -183,6 +183,7 @@ internal class LibraryRepository internal constructor(private val database: List
             "deletePlaylist" -> {
                 if (dao.playlist(playlistId) == null) return@runInTransaction rejected("NOT_FOUND")
                 dao.deleteMemberships(playlistId)
+                dao.deleteCacheOwnersByOwnerKey("playlist:$playlistId")
                 dao.deletePlaylist(playlistId)
                 dao.playlists(LibraryLimits.MAX_PLAYLISTS).forEachIndexed { position, playlist -> dao.putPlaylist(playlist.copy(position = position)) }
             }
@@ -200,11 +201,15 @@ internal class LibraryRepository internal constructor(private val database: List
                 val source = payload["source"]!!; val trackId = payload["trackId"]!!
                 if (dao.membership(playlistId, source, trackId) != null) return@runInTransaction rejected("DUPLICATE_TRACK")
                 dao.insertMembership(PlaylistMembershipEntity(playlistId, source, trackId, dao.memberships(playlistId).size, payload["title"]!!, payload["artist"]!!))
+                dao.cacheBlobsForTrack(source, trackId).forEach { blob ->
+                    dao.putCacheOwner(CacheOwnerEntity.playlist(blob.blobKey, playlistId, System.currentTimeMillis()))
+                }
             }
             "removeTrack" -> {
                 val source = payload["source"]!!; val trackId = payload["trackId"]!!
                 if (dao.membership(playlistId, source, trackId) == null) return@runInTransaction rejected("NOT_FOUND")
                 dao.deleteMembership(playlistId, source, trackId)
+                dao.cacheBlobsForTrack(source, trackId).forEach { blob -> dao.deleteCacheOwner(blob.blobKey, "playlist:$playlistId") }
                 dao.memberships(playlistId).forEachIndexed { position, membership ->
                     dao.putMembership(membership.copy(position = position))
                 }
@@ -370,7 +375,7 @@ internal class LibraryRepository internal constructor(private val database: List
 
     companion object {
         fun open(context: Context): LibraryRepository = LibraryRepository(
-            Room.databaseBuilder(context.applicationContext, Listen2Database::class.java, "listen2-library-01.db").addMigrations(LIBRARY_MIGRATION_1_2, LIBRARY_MIGRATION_2_3).build(),
+            Room.databaseBuilder(context.applicationContext, Listen2Database::class.java, "listen2-library-01.db").addMigrations(LIBRARY_MIGRATION_1_2, LIBRARY_MIGRATION_2_3, LIBRARY_MIGRATION_3_4).build(),
         )
     }
 }
