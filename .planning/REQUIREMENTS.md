@@ -47,7 +47,7 @@ Android 保留共享前端，但 native 只提供窄的、版本化、可取消�
 ### 播放/队列（PLAY）
 
 - [ ] **PLAY-001** [T][P][E] Media3 ExoPlayer、MediaSession 和队列由一个 native playback owner 持有；WebView/Howler 只发送 track/part 意图和渲染 snapshot，页面、mini-player 和通知共享同一 PlaybackState。
-- [ ] **PLAY-002** [T][P][E] native 根据受控 track/part 标识解析真实 MIME、容器、codec、时长和 rendition，按账号权限选择音质/画质并执行有上限的 CDN 候选恢复；MV 在设备/授权/codec 支持时可切分 P、画质、全屏和画中画，不支持时回退音频或显示可操作错误。
+- [x] **PLAY-002** [T][P][E] native 根据受控 track/part 标识解析真实 MIME、容器、codec、时长和 rendition，按账号权限选择音质/画质并执行有上限的 CDN 候选恢复；MV 在设备/授权/codec 支持时可切分 P、画质、全屏和画中画，不支持时回退音频或显示可操作错误。
 - [ ] **PLAY-003** [T][P][E] 我能使用播放/暂停、seek、进度、时长、音量、静音、上一首和下一首；媒体 URL 失败保留当前曲目上下文并可重试，不错误切歌。
 - [ ] **PLAY-004** [P][E] 我能把曲目加入独立 FIFO play-next 队列并查看来源顺序；队列支持重复项、上移、下移、删除、清空、重启恢复，消费完成后回到原歌单或播放模式。
 - [ ] **PLAY-005** [P][E] shuffle 每轮采用 Fisher–Yates 且不重复可播放曲目，repeat 与上一首真实历史指针在重启后保持；自然结束、快速 next、失败重试不会跳过或重复消费。
@@ -104,9 +104,9 @@ Android 保留共享前端，但 native 只提供窄的、版本化、可取消�
 
 ### DeepSeek（AI）
 
-- [ ] **AI-001** [P][E][S] 我可以在设置中输入、测试和清除 DeepSeek API key；页面只显示已配置/未配置和测试结果，key 只由 Keystore 保护且不回显。
-- [ ] **AI-002** [P][E] 只有我在确认面板明确同意后，应用才发送当前整首歌词、歌名和艺人；面板说明数据范围、可能费用、取消和失败影响，未确认或取消不发请求。
-- [ ] **AI-003** [P][E][S] 翻译响应必须校验 schema、整曲行数、顺序、时间轴/行对应关系和文本完整性后才缓存；旧 revision 失效，key、整曲歌词和模型响应不出现在日志、页面状态、APK、WebView storage 或备份中。
+- [x] **AI-001** [P][E][S] 我可以在设置中输入、测试和清除 DeepSeek API key；页面只显示已配置/未配置和测试结果，key 只由 Keystore 保护且不回显。
+- [x] **AI-002** [P][E] 只有我在确认面板明确同意后，应用才发送当前整首歌词、歌名和艺人；面板说明数据范围、可能费用、取消和失败影响，未确认或取消不发请求。
+- [x] **AI-003** [P][E][S] 翻译响应必须校验 schema、整曲行数、顺序、时间轴/行对应关系和文本完整性后才缓存；旧 revision 失效，key、整曲歌词和模型响应不出现在日志、页面状态、APK、WebView storage 或备份中。
 
 ### 安全（SEC）
 
@@ -186,7 +186,7 @@ Android 保留共享前端，但 native 只提供窄的、版本化、可取消�
 | SRCH-002 | Phase 5 | Complete | five-source directory/detail E2E |
 | SRCH-003 | Phase 5 | Complete | negative/partial result fixture |
 | PLAY-001 | Phase 5 | Foundation present; Pending acceptance | sole Media3 owner test plus five-source E2E |
-| PLAY-002 | Phase 7 | Pending | rendition/CDN/MV fixture |
+| PLAY-002 | Phase 7 | Complete | rendition/CDN/MV fixture |
 | PLAY-003 | Phase 5 | Foundation present; Pending acceptance | unified PlaybackState and device-control E2E |
 | PLAY-004 | Phase 5 | Foundation present; Pending acceptance | FIFO queue persistence and journey E2E |
 | PLAY-005 | Phase 5 | Foundation present; Pending acceptance | shuffle/repeat transition and journey E2E |
@@ -216,9 +216,9 @@ Android 保留共享前端，但 native 只提供窄的、版本化、可取消�
 | FX-001 | Phase 7 | Complete | effect preset device test |
 | FX-002 | Phase 7 | Complete | spectrum/degradation test |
 | FX-003 | Phase 7 | Complete | LUFS/hash/background analysis |
-| AI-001 | Phase 7 | Pending | key settings/Keystore |
-| AI-002 | Phase 7 | Pending | confirmation/no-call test |
-| AI-003 | Phase 7 | Pending | alignment/cache/secret scan |
+| AI-001 | Phase 7 | Complete | key settings/Keystore |
+| AI-002 | Phase 7 | Complete | confirmation/no-call test |
+| AI-003 | Phase 7 | Complete | alignment/cache/secret scan |
 | SEC-001 | Phase 4 | Complete | origin/navigation policy |
 | SEC-002 | Phase 4 | Complete | cleartext/WebView config scan |
 | SEC-003 | Phase 4 | Complete | schema/sink negative test |
