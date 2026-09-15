@@ -12,7 +12,7 @@ export const PLAY_MODE = Object.freeze({
   REPEAT_ONE: 2,
 } as const);
 
-export type PlayMode = (typeof PLAY_MODE)[keyof typeof PLAY_MODE];
+export type PlayMode = typeof PLAY_MODE[keyof typeof PLAY_MODE];
 export type PlaybackSource = 'playlist' | 'play-next';
 
 /**
@@ -146,7 +146,8 @@ function isPermutation(value: unknown, length: number): value is number[] {
 }
 
 function invalidateTransition(state: PlayerState) {
-  const next = Math.max(state.transitionToken, state.acceptedTransitionToken) + 1;
+  const next =
+    Math.max(state.transitionToken, state.acceptedTransitionToken) + 1;
   state.transitionToken = next;
 }
 
@@ -263,7 +264,10 @@ const playerSlice = createSlice({
       const index = state.playNextQueue.findIndex(
         item => item.occurrenceId === action.payload,
       );
-      if (index >= 0) state.playNextQueue.splice(index, 1);
+      if (index >= 0) {
+        invalidateTransition(state);
+        state.playNextQueue.splice(index, 1);
+      }
     },
     moveQueuedNext(
       state,
@@ -285,6 +289,9 @@ const playerSlice = createSlice({
     },
     removeTrackReferences(state, action: PayloadAction<string>) {
       const id = action.payload;
+      // Removal is a destructive semantic boundary. A transition that has
+      // resolved the old item but has not yet touched RNTP must become stale.
+      invalidateTransition(state);
       const removedCurrent = state.nowPlaying?.id === id;
       state.playlist = state.playlist.filter(track => track.id !== id);
       state.tracks = state.playlist;
@@ -316,7 +323,10 @@ const playerSlice = createSlice({
       state.playNextQueue = [];
     },
     beginTransition(state, action: PayloadAction<number>) {
-      if (Number.isInteger(action.payload) && action.payload > state.transitionToken)
+      if (
+        Number.isInteger(action.payload) &&
+        action.payload > state.transitionToken
+      )
         state.transitionToken = action.payload;
     },
     consumeQueuedNext(
@@ -379,7 +389,10 @@ const playerSlice = createSlice({
     ) {
       state.position = finitePosition(action.payload.position, state.position);
       if (action.payload.duration !== undefined)
-        state.duration = finitePosition(action.payload.duration, state.duration);
+        state.duration = finitePosition(
+          action.payload.duration,
+          state.duration,
+        );
       if (action.payload.bufferedPosition !== undefined) {
         state.bufferedPosition = finitePosition(
           action.payload.bufferedPosition,
@@ -412,9 +425,10 @@ const playerSlice = createSlice({
       }
     },
     setError(state, action: PayloadAction<string | null>) {
-      state.error = typeof action.payload === 'string' || action.payload === null
-        ? action.payload
-        : state.error;
+      state.error =
+        typeof action.payload === 'string' || action.payload === null
+          ? action.payload
+          : state.error;
     },
     clearPlayer(state) {
       invalidateTransition(state);
@@ -478,6 +492,10 @@ export const playTracks =
   (tracks: Track[], startIndex = 0) =>
   (dispatch: Dispatch) =>
     playerController.playTracks(dispatch, tracks, startIndex);
+/** Native-owned destructive replacement used by backup overwrite only. */
+export const replacePlaylistForImport =
+  (tracks: Track[]) => (dispatch: Dispatch) =>
+    playerController.replacePlaylistForImport(dispatch, tracks);
 export const playTrackInPlaylist =
   (track: Track, tracks: Track[]) => (dispatch: Dispatch) => {
     const index = tracks.indexOf(track);

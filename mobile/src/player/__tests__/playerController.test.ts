@@ -479,8 +479,148 @@ describe('PlayerController queue transitions', () => {
     expect(state.playNextQueue).toEqual([]);
   });
 
+  it('does not load an ordinary playlist next item after replacement invalidates it', async () => {
+    const current = track('netrack_1');
+    const staleNext = track('netrack_2');
+    const replacement = track('netrack_replacement');
+    state = reducer(
+      state,
+      playerActions.replacePlaylist({ tracks: [current, staleNext] }),
+    );
+    let resolveBootstrap!: (value: { url: string }) => void;
+    mockBootstrapTrack.mockImplementationOnce(
+      () =>
+        new Promise<{ url: string }>(resolve => {
+          resolveBootstrap = resolve;
+        }),
+    );
+
+    const pending = playerController.next(dispatch);
+    await Promise.resolve();
+    dispatch(playerActions.replacePlaylist({ tracks: [replacement] }));
+    resolveBootstrap({ url: 'https://music.example/stale-next.mp3' });
+    await pending;
+
+    expect(state.currentTrack?.id).toBe(replacement.id);
+    expect(mockNativePlayer.add).not.toHaveBeenCalled();
+  });
+
+  it('invalidates and serializes a removal while its queued item is resolving', async () => {
+    const current = track('netrack_1');
+    const removed = track('netrack_2');
+    state = reducer(
+      state,
+      playerActions.replacePlaylist({ tracks: [current] }),
+    );
+    state = reducer(state, playerActions.enqueueNext(removed));
+    let resolveBootstrap!: (value: { url: string }) => void;
+    mockBootstrapTrack.mockImplementationOnce(
+      () =>
+        new Promise<{ url: string }>(resolve => {
+          resolveBootstrap = resolve;
+        }),
+    );
+
+    const pending = playerController.next(dispatch);
+    await Promise.resolve();
+    const forgetting = playerController.forgetTrack(dispatch, removed);
+    expect(state.playNextQueue).toEqual([]);
+    resolveBootstrap({ url: 'https://music.example/removed.mp3' });
+    await Promise.all([pending, forgetting]);
+
+    expect(state.playlist.map(item => item.id)).toEqual([current.id]);
+    expect(state.currentTrack?.id).toBe(current.id);
+    expect(mockNativePlayer.add).not.toHaveBeenCalled();
+  });
+
+  it('reloads the semantic current item after a native stop resets the queue', async () => {
+    const current = track('netrack_1');
+    state = reducer(
+      state,
+      playerActions.replacePlaylist({ tracks: [current] }),
+    );
+    state = reducer(state, playerActions.setPlaying(true));
+    mockBootstrapTrack.mockResolvedValueOnce({
+      url: 'https://music.example/reloaded.mp3',
+    });
+
+    await expect(playerController.stop(dispatch)).resolves.toBe(true);
+    await expect(playerController.play(dispatch)).resolves.toBe(true);
+
+    expect(mockNativePlayer.add).toHaveBeenCalledWith(
+      expect.objectContaining({ id: expect.stringContaining(current.id) }),
+    );
+    expect(mockNativePlayer.play).toHaveBeenCalled();
+    expect(state.currentTrack?.id).toBe(current.id);
+    expect(state.isPlaying).toBe(true);
+  });
+
+  it('overwrites a backup queue through one paused native transaction', async () => {
+    const current = track('netrack_old');
+    const imported = track('netrack_imported');
+    state = reducer(
+      state,
+      playerActions.replacePlaylist({ tracks: [current] }),
+    );
+    state = reducer(state, playerActions.setPlaying(true));
+    mockBootstrapTrack.mockResolvedValueOnce({
+      url: 'https://music.example/imported.mp3',
+    });
+
+    await expect(
+      playerController.replacePlaylistForImport(dispatch, [imported]),
+    ).resolves.toBe(true);
+
+    expect(mockNativePlayer.stop).toHaveBeenCalledTimes(1);
+    expect(mockNativePlayer.reset).toHaveBeenCalledTimes(1);
+    expect(mockNativePlayer.add).toHaveBeenCalledWith(
+      expect.objectContaining({ id: expect.stringContaining(imported.id) }),
+    );
+    expect(mockNativePlayer.pause).toHaveBeenCalledTimes(1);
+    expect(state.playlist.map(item => item.id)).toEqual([imported.id]);
+    expect(state.currentTrack?.id).toBe(imported.id);
+    expect(state.isPlaying).toBe(false);
+  });
+
+  it('cancels an in-flight ordinary transition before backup overwrite owns RNTP', async () => {
+    const current = track('netrack_old');
+    const staleNext = track('netrack_stale');
+    const imported = track('netrack_imported');
+    state = reducer(
+      state,
+      playerActions.replacePlaylist({ tracks: [current, staleNext] }),
+    );
+    let resolveStale!: (value: { url: string }) => void;
+    mockBootstrapTrack.mockImplementationOnce(
+      () =>
+        new Promise<{ url: string }>(resolve => {
+          resolveStale = resolve;
+        }),
+    );
+    mockBootstrapTrack.mockResolvedValueOnce({
+      url: 'https://music.example/imported.mp3',
+    });
+
+    const staleTransition = playerController.next(dispatch);
+    await Promise.resolve();
+    const overwrite = playerController.replacePlaylistForImport(dispatch, [
+      imported,
+    ]);
+    resolveStale({ url: 'https://music.example/stale.mp3' });
+    await Promise.all([staleTransition, overwrite]);
+
+    expect(state.currentTrack?.id).toBe(imported.id);
+    expect(mockNativePlayer.add).toHaveBeenCalledTimes(1);
+    expect(mockNativePlayer.add).toHaveBeenCalledWith(
+      expect.objectContaining({ id: expect.stringContaining(imported.id) }),
+    );
+  });
+
   it('serializes seek and volume mutations through the same native command boundary', async () => {
-    state = reducer(state, playerActions.replacePlaylist({ tracks: [track('ne_1')] }));
+    state = reducer(
+      state,
+      playerActions.replacePlaylist({ tracks: [track('ne_1')] }),
+    );
     let resolveSeek!: () => void;
     mockNativePlayer.seekTo.mockImplementationOnce(
       () =>
@@ -501,9 +641,14 @@ describe('PlayerController queue transitions', () => {
 
   it('clears a latched playback error after the current track is recovered', async () => {
     const current = track('netrack_1');
-    state = reducer(state, playerActions.replacePlaylist({ tracks: [current] }));
+    state = reducer(
+      state,
+      playerActions.replacePlaylist({ tracks: [current] }),
+    );
     state = reducer(state, playerActions.setError('native-playback-error'));
-    mockBootstrapTrack.mockResolvedValueOnce({ url: 'https://music.example/current.mp3' });
+    mockBootstrapTrack.mockResolvedValueOnce({
+      url: 'https://music.example/current.mp3',
+    });
 
     await expect(playerController.play(dispatch)).resolves.toBe(true);
 
@@ -512,7 +657,10 @@ describe('PlayerController queue transitions', () => {
   });
 
   it('keeps the previous playing snapshot when native pause rejects', async () => {
-    state = reducer(state, playerActions.replacePlaylist({ tracks: [track('ne_1')] }));
+    state = reducer(
+      state,
+      playerActions.replacePlaylist({ tracks: [track('ne_1')] }),
+    );
     state = reducer(state, playerActions.setPlaying(true));
     mockNativePlayer.pause.mockRejectedValueOnce(new Error('pause failed'));
 
@@ -525,20 +673,33 @@ describe('PlayerController queue transitions', () => {
   it('returns the native transition result from playTrack', async () => {
     const current = track('netrack_1');
     const next = track('netrack_2');
-    mockBootstrapTrack.mockResolvedValue({ url: 'https://music.example/current.mp3' });
+    mockBootstrapTrack.mockResolvedValue({
+      url: 'https://music.example/current.mp3',
+    });
 
-    await expect(playerController.playTrack(dispatch, current)).resolves.toBe(true);
+    await expect(playerController.playTrack(dispatch, current)).resolves.toBe(
+      true,
+    );
     mockNativePlayer.add.mockRejectedValueOnce(new Error('load failed'));
-    await expect(playerController.playTrack(dispatch, next)).resolves.toBe(false);
+    await expect(playerController.playTrack(dispatch, next)).resolves.toBe(
+      false,
+    );
   });
 
   it('rejects invalid seek and mode inputs without mutating native state', async () => {
-    state = reducer(state, playerActions.replacePlaylist({ tracks: [track('ne_1')] }));
+    state = reducer(
+      state,
+      playerActions.replacePlaylist({ tracks: [track('ne_1')] }),
+    );
     const seekBefore = mockNativePlayer.seekTo.mock.calls.length;
     const modeBefore = mockNativePlayer.setRepeatMode.mock.calls.length;
 
-    await expect(playerController.seek(dispatch, Number.NaN)).resolves.toBe(false);
-    await expect(playerController.setMode(dispatch, 99 as any)).resolves.toBe(false);
+    await expect(playerController.seek(dispatch, Number.NaN)).resolves.toBe(
+      false,
+    );
+    await expect(playerController.setMode(dispatch, 99 as any)).resolves.toBe(
+      false,
+    );
 
     expect(mockNativePlayer.seekTo.mock.calls.length).toBe(seekBefore);
     expect(mockNativePlayer.setRepeatMode.mock.calls.length).toBe(modeBefore);
@@ -548,7 +709,9 @@ describe('PlayerController queue transitions', () => {
   it('ignores a progress callback identified as belonging to an older native track', async () => {
     const first = track('netrack_1');
     const second = track('netrack_2');
-    mockBootstrapTrack.mockResolvedValue({ url: 'https://music.example/current.mp3' });
+    mockBootstrapTrack.mockResolvedValue({
+      url: 'https://music.example/current.mp3',
+    });
     await playerController.playTrack(dispatch, first);
     const firstNativeId = mockNativePlayer.add.mock.calls.at(-1)?.[0]?.id;
     await playerController.playTrack(dispatch, second);
@@ -559,5 +722,33 @@ describe('PlayerController queue transitions', () => {
     });
 
     expect(state.position).toBe(before);
+  });
+
+  it('ignores stale state, error, and queue-ended callbacks from an older native item', async () => {
+    const first = track('netrack_1');
+    const second = track('netrack_2');
+    mockBootstrapTrack.mockResolvedValue({
+      url: 'https://music.example/current.mp3',
+    });
+    await playerController.playTrack(dispatch, first);
+    const firstNativeId = mockNativePlayer.add.mock.calls.at(-1)?.[0]?.id;
+    const firstIdentity = playerController.onNativeActiveTrackChanged(
+      { id: firstNativeId },
+      0,
+    );
+    await playerController.playTrack(dispatch, second);
+    state = reducer(state, playerActions.setPlaying(false));
+    const addsBefore = mockNativePlayer.add.mock.calls.length;
+
+    playerController.onPlaybackState(
+      'playing' as any,
+      firstIdentity ?? undefined,
+    );
+    playerController.onPlaybackError(firstIdentity ?? undefined);
+    await playerController.onPlaybackQueueEnded(firstIdentity ?? undefined);
+
+    expect(state.isPlaying).toBe(false);
+    expect(state.error).toBeNull();
+    expect(mockNativePlayer.add).toHaveBeenCalledTimes(addsBefore);
   });
 });

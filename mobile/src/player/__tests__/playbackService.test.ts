@@ -1,11 +1,13 @@
-import { Event } from 'react-native-track-player';
+import { Event, State } from 'react-native-track-player';
 
-const mockListeners = new Map<string, () => unknown>();
+const mockListeners = new Map<string, (...args: any[]) => unknown>();
 const mockNative = {
-  addEventListener: jest.fn((event: string, listener: () => unknown) => {
-    mockListeners.set(event, listener);
-    return { remove: jest.fn() };
-  }),
+  addEventListener: jest.fn(
+    (event: string, listener: (...args: any[]) => unknown) => {
+      mockListeners.set(event, listener);
+      return { remove: jest.fn() };
+    },
+  ),
 };
 const mockController = {
   play: jest.fn().mockResolvedValue(true),
@@ -18,6 +20,8 @@ const mockController = {
   onPlaybackState: jest.fn(),
   onPlaybackError: jest.fn(),
   onPlaybackQueueEnded: jest.fn().mockResolvedValue(true),
+  onNativeActiveTrackChanged: jest.fn(),
+  nativeCallbackIdentity: jest.fn(),
 };
 
 jest.mock('react-native-track-player', () => ({
@@ -54,9 +58,14 @@ jest.mock('../playerController', () => ({
     onProgress: (...args: unknown[]) => mockController.onProgress(...args),
     onPlaybackState: (...args: unknown[]) =>
       mockController.onPlaybackState(...args),
-    onPlaybackError: (...args: unknown[]) => mockController.onPlaybackError(...args),
+    onPlaybackError: (...args: unknown[]) =>
+      mockController.onPlaybackError(...args),
     onPlaybackQueueEnded: (...args: unknown[]) =>
       mockController.onPlaybackQueueEnded(...args),
+    onNativeActiveTrackChanged: (...args: unknown[]) =>
+      mockController.onNativeActiveTrackChanged(...args),
+    nativeCallbackIdentity: (...args: unknown[]) =>
+      mockController.nativeCallbackIdentity(...args),
   },
 }));
 
@@ -80,9 +89,55 @@ describe('playbackService delegation', () => {
   });
 
   it('captures rejected remote commands instead of creating an unhandled callback rejection', async () => {
-    mockController.pause.mockRejectedValueOnce(new Error('native pause failed'));
+    mockController.pause.mockRejectedValueOnce(
+      new Error('native pause failed'),
+    );
     await playbackService();
 
-    await expect(mockListeners.get(Event.RemotePause)?.()).resolves.toBeUndefined();
+    await expect(
+      mockListeners.get(Event.RemotePause)?.(),
+    ).resolves.toBeUndefined();
+  });
+
+  it('binds generated active-track identity to progress and terminal callbacks', async () => {
+    const identity = {
+      nativeTrackId: 'listen2:netrack_2:generated',
+      generation: 7,
+      nativeTrackIndex: 0,
+    };
+    mockController.onNativeActiveTrackChanged.mockReturnValue(identity);
+    mockController.nativeCallbackIdentity.mockReturnValue(identity);
+    await playbackService();
+
+    mockListeners.get(Event.PlaybackActiveTrackChanged)?.({
+      index: 0,
+      track: { id: identity.nativeTrackId },
+    });
+    mockListeners.get(Event.PlaybackProgressUpdated)?.({
+      position: 12,
+      duration: 120,
+      buffered: 24,
+      track: 0,
+    });
+    mockListeners.get(Event.PlaybackState)?.({ state: State.Playing });
+    mockListeners.get(Event.PlaybackError)?.({});
+    await mockListeners.get(Event.PlaybackQueueEnded)?.({ track: 0 });
+
+    expect(mockController.onNativeActiveTrackChanged).toHaveBeenCalledWith(
+      { id: identity.nativeTrackId },
+      0,
+    );
+    expect(mockController.onProgress).toHaveBeenCalledWith(
+      12,
+      120,
+      24,
+      identity,
+    );
+    expect(mockController.onPlaybackState).toHaveBeenCalledWith(
+      State.Playing,
+      identity,
+    );
+    expect(mockController.onPlaybackError).toHaveBeenCalledWith(identity);
+    expect(mockController.onPlaybackQueueEnded).toHaveBeenCalledWith(identity);
   });
 });

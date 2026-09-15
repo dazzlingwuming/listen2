@@ -45,7 +45,9 @@ jest.mock('react-native-track-player', () => ({
   State: { Playing: 'playing' },
 }));
 jest.mock('../../api/client', () => ({
-  providerClient: { bootstrapTrack: (...args: unknown[]) => mockBootstrap(...args) },
+  providerClient: {
+    bootstrapTrack: (...args: unknown[]) => mockBootstrap(...args),
+  },
 }));
 jest.mock('../../offline/offlineAudio', () => ({
   isOfflineDownloadEligible: () => false,
@@ -83,7 +85,9 @@ describe('PlayerController lifecycle recovery', () => {
       if ('mockResolvedValue' in mock)
         (mock as jest.Mock).mockResolvedValue(undefined);
     });
-    mockBootstrap.mockResolvedValue({ url: 'https://music.example/lifecycle.mp3' });
+    mockBootstrap.mockResolvedValue({
+      url: 'https://music.example/lifecycle.mp3',
+    });
     state = reducer(undefined, { type: 'init' });
     configurePlayerController({ dispatch, getPlayerState: () => state });
   });
@@ -93,18 +97,35 @@ describe('PlayerController lifecycle recovery', () => {
       .mockRejectedValueOnce(new Error('setup unavailable'))
       .mockResolvedValueOnce(undefined);
 
-    await expect(playerController.playTrack(dispatch, track)).resolves.toBe(false);
-    await expect(playerController.playTrack(dispatch, track)).resolves.toBe(true);
+    await expect(playerController.playTrack(dispatch, track)).resolves.toBe(
+      false,
+    );
+    await expect(playerController.playTrack(dispatch, track)).resolves.toBe(
+      true,
+    );
 
     expect(mockNative.setupPlayer).toHaveBeenCalledTimes(2);
   });
 
   it('settles restore failure as a safe error without hiding the rejection in store setup', async () => {
     state = reducer(state, playerActions.replacePlaylist({ tracks: [track] }));
-    mockNative.setupPlayer.mockRejectedValueOnce(new Error('restore setup failed'));
+    mockNative.setupPlayer.mockRejectedValueOnce(
+      new Error('restore setup failed'),
+    );
 
     await expect(playerController.restore()).resolves.toBe(false);
 
+    expect(state.isPlaying).toBe(false);
+    expect(state.error).toBe('playback-unavailable');
+  });
+
+  it('best-effort pauses native playback when restore configuration rejects', async () => {
+    state = reducer(state, playerActions.replacePlaylist({ tracks: [track] }));
+    mockNative.setVolume.mockRejectedValueOnce(new Error('volume unavailable'));
+
+    await expect(playerController.restore()).resolves.toBe(false);
+
+    expect(mockNative.pause).toHaveBeenCalledTimes(2);
     expect(state.isPlaying).toBe(false);
     expect(state.error).toBe('playback-unavailable');
   });

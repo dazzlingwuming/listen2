@@ -31,6 +31,7 @@ const MAX_SEEK_SECONDS = 86_400;
 
 type NativeOperationContext = {
   isCurrent: () => boolean;
+  isTargetAvailable: () => boolean;
   markMutation: () => void;
   markLoaded: (nativeTrackId: string, track: PlayableTrack) => void;
   didMutate: () => boolean;
@@ -43,7 +44,12 @@ type NativeCallbackIdentity = {
 };
 
 function assertNativeOperationCurrent(context?: NativeOperationContext) {
-  if (context && !context.isCurrent()) throw STALE_NATIVE_COMMAND;
+  if (context && (!context.isCurrent() || !context.isTargetAvailable()))
+    throw STALE_NATIVE_COMMAND;
+}
+
+function isNativeOperationCurrent(context?: NativeOperationContext) {
+  return !context || (context.isCurrent() && context.isTargetAvailable());
 }
 
 export function configurePlayerController(nextRuntime: ControllerRuntime) {
@@ -426,6 +432,7 @@ async function loadAndPlay(
     return true;
   } catch (error) {
     if (error === STALE_NATIVE_COMMAND) return false;
+    if (!isNativeOperationCurrent(context)) return false;
     if (
       !isLocalTrack(track) &&
       resolvedMedia?.url.startsWith('content://') &&
@@ -468,6 +475,7 @@ async function loadAndPlay(
         // One bounded replacement only; the stable error below preserves the queue snapshot.
       }
     }
+    if (!isNativeOperationCurrent(context)) return false;
     emit(dispatch, 'player/setPlaying', false);
     if (isLocalTrack(track))
       emit(dispatch, 'library/markLocalTrackNeedsRepair', track.id);
@@ -517,12 +525,12 @@ async function transition(
       return false;
     }
   }
-  if (context && !context.isCurrent()) return false;
+  if (!isNativeOperationCurrent(context)) return false;
   let media: { url: string; headers?: Readonly<Record<string, string>> };
   try {
     media = await resolveTrackUrl(payload.track);
   } catch (error) {
-    if (context && !context.isCurrent()) return false;
+    if (!isNativeOperationCurrent(context)) return false;
     emit(
       dispatch,
       'player/setError',
@@ -530,7 +538,7 @@ async function transition(
     );
     return false;
   }
-  if (context && !context.isCurrent()) return false;
+  if (!isNativeOperationCurrent(context)) return false;
   const started = await loadAndPlay(
     dispatch,
     payload.track,
@@ -538,9 +546,14 @@ async function transition(
     media,
     context,
   );
-  if (!started && rollback && context?.didMutate()) {
+  if (
+    !started &&
+    rollback &&
+    context?.didMutate() &&
+    isNativeOperationCurrent(context)
+  ) {
     try {
-      await restoreRollbackSnapshot(rollback);
+      await restoreRollbackSnapshot(rollback, context);
       playerController.markNativeTrackLoaded();
       emit(dispatch, 'player/setPlaying', rollback.playing);
     } catch {
@@ -554,20 +567,20 @@ async function transition(
     }
     return false;
   }
-  if (context && !context.isCurrent()) {
-    if (rollback && context.didMutate()) {
+  if (!isNativeOperationCurrent(context)) {
+    // A stale load may already have reset RNTP.  Do not restore the old item:
+    // the newer semantic transaction owns the next native queue.  Leaving a
+    // reload-required semantic snapshot is safer than reviving either stale
+    // media item.
+    if (context?.didMutate()) {
       try {
-        await restoreRollbackSnapshot(rollback);
-        playerController.markNativeTrackLoaded();
-        emit(dispatch, 'player/setPlaying', rollback.playing);
+        await TrackPlayer.pause();
+        await TrackPlayer.reset();
       } catch {
-        try {
-          await TrackPlayer.pause();
-        } catch {
-          // Recovery is bounded to a single best-effort native pause.
-        }
-        emit(dispatch, 'player/setPlaying', false);
+        // The newer command can still reload the authoritative semantic item.
       }
+      playerController.markNativeQueueCleared();
+      emit(dispatch, 'player/setPlaying', false);
     }
     return false;
   }
@@ -624,6 +637,7 @@ class PlayerController {
   private nativeGeneration = 0;
   private activeNativeTrackId: string | null = null;
   private activeNativeGeneration = 0;
+  private activeNativeTrackIndex: number | null = null;
 
   /**
    * RNTP has one mutable queue.  Running each user command through this gate
@@ -643,10 +657,14 @@ class PlayerController {
     return running;
   }
 
-  private createTransitionContext(transitionToken: number): NativeOperationContext {
+  private createTransitionContext(
+    transitionToken: number,
+    isTargetAvailable: () => boolean = () => true,
+  ): NativeOperationContext {
     let mutated = false;
     return {
       isCurrent: () => playerState().transitionToken === transitionToken,
+      isTargetAvailable,
       markMutation: () => {
         mutated = true;
         this.nativeGeneration += 1;
@@ -654,6 +672,7 @@ class PlayerController {
       markLoaded: (nativeTrackId: string) => {
         this.activeNativeTrackId = nativeTrackId;
         this.activeNativeGeneration = this.nativeGeneration;
+        this.activeNativeTrackIndex = 0;
       },
       didMutate: () => mutated,
     };
@@ -663,6 +682,52 @@ class PlayerController {
     if (nativeTrackId) this.activeNativeTrackId = nativeTrackId;
     this.activeNativeGeneration = this.nativeGeneration;
     this.restoredNeedsLoad = false;
+  }
+
+  markNativeQueueCleared() {
+    this.activeNativeTrackId = null;
+    this.nativeGeneration += 1;
+    this.activeNativeGeneration = this.nativeGeneration;
+    this.activeNativeTrackIndex = null;
+    this.restoredNeedsLoad = Boolean(playerState().nowPlaying);
+  }
+
+  private beginTransition(
+    dispatch: Dispatch | undefined,
+    isTargetAvailable?: () => boolean,
+  ) {
+    const state = playerState();
+    const transitionToken = Math.max(
+      state.transitionToken + 1,
+      this.transitionSequence + 1,
+    );
+    this.transitionSequence = transitionToken;
+    emit(dispatch, 'player/beginTransition', transitionToken);
+    return {
+      transitionToken,
+      context: this.createTransitionContext(transitionToken, isTargetAvailable),
+    };
+  }
+
+  private hasPlaylistTrack(track: PlayableTrack) {
+    return playerState().playlist.some(
+      item => trackId(item) === trackId(track),
+    );
+  }
+
+  private hasQueuedOccurrence(occurrenceId: string) {
+    return playerState().playNextQueue.some(
+      item => item.occurrenceId === occurrenceId,
+    );
+  }
+
+  private hasHistoryEntry(entry: HistoryEntry) {
+    return playerState().history.some(
+      item =>
+        trackId(item.track) === trackId(entry.track) &&
+        item.position === entry.position &&
+        item.occurrenceId === entry.occurrenceId,
+    );
   }
 
   private runQueueTransition(operation: () => Promise<boolean | void>) {
@@ -683,12 +748,18 @@ class PlayerController {
     const state = playerState();
     if (!state.nowPlaying) return false;
     if (state.error || this.restoredNeedsLoad) {
+      const { context } = this.beginTransition(
+        dispatch,
+        () => playerState().nowPlaying?.id === state.nowPlaying?.id,
+      );
       const started = await loadAndPlay(
         dispatch,
         state.nowPlaying,
         state.position,
+        undefined,
+        context,
       );
-      if (started) {
+      if (started && isNativeOperationCurrent(context)) {
         this.restoredNeedsLoad = false;
         this.markNativeTrackLoaded();
         emit(dispatch, 'player/setError', null);
@@ -739,7 +810,9 @@ class PlayerController {
   }
 
   async playTrack(dispatch: Dispatch | undefined, track: PlayableTrack) {
-    return this.runNativeMutation(() => this.playTrackInternal(dispatch, track));
+    return this.runNativeMutation(() =>
+      this.playTrackInternal(dispatch, track),
+    );
   }
 
   private async playTrackInternal(
@@ -755,14 +828,25 @@ class PlayerController {
     if (playlistIndex < 0) {
       playlistIndex = state.playlist.length;
     }
-    return transition(dispatch, {
-      track,
-      playlistIndex,
-      source: 'playlist',
-      rememberCurrent: Boolean(state.nowPlaying),
-      shuffleCursor: state.shuffleOrder.indexOf(playlistIndex),
-      appendToPlaylist: playlistIndex === state.playlist.length,
-    });
+    const { transitionToken, context } = this.beginTransition(
+      dispatch,
+      playlistIndex === state.playlist.length
+        ? undefined
+        : () => this.hasPlaylistTrack(track),
+    );
+    return transition(
+      dispatch,
+      {
+        track,
+        playlistIndex,
+        source: 'playlist',
+        rememberCurrent: Boolean(state.nowPlaying),
+        shuffleCursor: state.shuffleOrder.indexOf(playlistIndex),
+        appendToPlaylist: playlistIndex === state.playlist.length,
+        transitionToken,
+      },
+      context,
+    );
   }
 
   async playTracks(
@@ -782,10 +866,13 @@ class PlayerController {
   ): Promise<boolean> {
     const target = tracks[startIndex];
     if (!target) return false;
+    const { context } = this.beginTransition(dispatch);
     let media: { url: string; headers?: Readonly<Record<string, string>> };
     try {
       media = await resolveTrackUrl(target);
+      assertNativeOperationCurrent(context);
     } catch (error) {
+      if (!isNativeOperationCurrent(context)) return false;
       emit(
         dispatch,
         'player/setError',
@@ -799,21 +886,24 @@ class PlayerController {
     try {
       await ensurePlayer();
       snapshot = await captureRollbackSnapshot(state);
+      assertNativeOperationCurrent(context);
     } catch {
+      if (!isNativeOperationCurrent(context)) return false;
       emit(dispatch, 'player/setError', 'playback-transition-unavailable');
       return false;
     }
 
     try {
-      await replaceNativeTrack(target, media, state);
+      await replaceNativeTrack(target, media, state, context);
     } catch {
+      if (!isNativeOperationCurrent(context)) return false;
       if (!snapshot) {
         emit(dispatch, 'player/setPlaying', false);
         emit(dispatch, 'player/setError', 'playback-unavailable');
         return false;
       }
       try {
-        await restoreRollbackSnapshot(snapshot);
+        await restoreRollbackSnapshot(snapshot, context);
         emit(dispatch, 'player/setPlaying', snapshot.playing);
         emit(dispatch, 'player/setError', 'playback-unavailable');
       } catch {
@@ -827,11 +917,97 @@ class PlayerController {
       }
       return false;
     }
+    if (!isNativeOperationCurrent(context)) {
+      if (context.didMutate()) {
+        try {
+          await TrackPlayer.pause();
+          await TrackPlayer.reset();
+        } catch {
+          // The authoritative transaction will reload the semantic item.
+        }
+        this.markNativeQueueCleared();
+        emit(dispatch, 'player/setPlaying', false);
+      }
+      return false;
+    }
     this.restoredNeedsLoad = false;
     emit(dispatch, 'player/setPlaying', true);
     emit(dispatch, 'player/replacePlaylist', { tracks, startIndex });
     emit(dispatch, 'library/recordRecent', target);
     return true;
+  }
+
+  /**
+   * Backup overwrite is a native transaction, not a reducer-only queue edit.
+   * It either installs the imported first item paused or clears both native and
+   * semantic current-item state while retaining the imported playlist.
+   */
+  async replacePlaylistForImport(
+    dispatch: Dispatch | undefined,
+    tracks: PlayableTrack[],
+  ): Promise<boolean> {
+    // Allocate before entering the native queue so a deferred old bootstrap is
+    // stale immediately, rather than being allowed to commit ahead of import.
+    const { context } = this.beginTransition(dispatch);
+    return this.runNativeMutation(() =>
+      this.replacePlaylistForImportInternal(dispatch, tracks, context),
+    );
+  }
+
+  private async replacePlaylistForImportInternal(
+    dispatch: Dispatch | undefined,
+    tracks: PlayableTrack[],
+    context: NativeOperationContext,
+  ): Promise<boolean> {
+    const target = tracks[0];
+    let media: {
+      url: string;
+      headers?: Readonly<Record<string, string>>;
+    } | null = null;
+    if (target) {
+      try {
+        media = await resolveTrackUrl(target);
+        assertNativeOperationCurrent(context);
+      } catch {
+        if (!isNativeOperationCurrent(context)) return false;
+        // A backup remains useful when its first provider item has expired.
+        // Commit it with no active item after clearing the old native queue.
+        media = null;
+      }
+    }
+    try {
+      await ensurePlayer();
+      assertNativeOperationCurrent(context);
+      context.markMutation();
+      await TrackPlayer.stop();
+      assertNativeOperationCurrent(context);
+      await TrackPlayer.reset();
+      assertNativeOperationCurrent(context);
+      if (target && media) {
+        const nativeTrack = asNativeTrack(target, media);
+        await TrackPlayer.add(nativeTrack as any);
+        context.markLoaded(nativeTrack.id, target);
+        await configureNativeSnapshot(playerState(), context);
+        assertNativeOperationCurrent(context);
+        await TrackPlayer.pause();
+        emit(dispatch, 'player/replacePlaylist', { tracks, startIndex: 0 });
+        emit(dispatch, 'player/setPlaying', false);
+        this.restoredNeedsLoad = false;
+        return true;
+      }
+      this.markNativeQueueCleared();
+      emit(dispatch, 'player/replacePlaylist', { tracks, startIndex: -1 });
+      emit(dispatch, 'player/setPlaying', false);
+      return true;
+    } catch (error) {
+      if (!isNativeOperationCurrent(context)) return false;
+      emit(
+        dispatch,
+        'player/setError',
+        safePlayerError(error, 'playback-unavailable'),
+      );
+      return false;
+    }
   }
 
   async next(dispatch?: Dispatch) {
@@ -844,36 +1020,44 @@ class PlayerController {
     const state = playerState();
     if (state.playNextQueue.length) {
       const occurrence = state.playNextQueue[0];
-      const transitionToken = Math.max(
-        state.transitionToken + 1,
-        this.transitionSequence + 1,
+      const { transitionToken, context } = this.beginTransition(dispatch, () =>
+        this.hasQueuedOccurrence(occurrence.occurrenceId),
       );
-      this.transitionSequence = transitionToken;
-      emit(dispatch, 'player/beginTransition', transitionToken);
-      const context = this.createTransitionContext(transitionToken);
-      return transition(dispatch, {
-        track: occurrence.track,
-        playlistIndex: state.currentIndex,
-        source: 'play-next',
-        rememberCurrent: Boolean(state.nowPlaying),
-        currentOccurrenceId: occurrence.occurrenceId,
-        transitionToken,
-        consumePlayNext: {
-          occurrenceId: occurrence.occurrenceId,
+      return transition(
+        dispatch,
+        {
+          track: occurrence.track,
+          playlistIndex: state.currentIndex,
+          source: 'play-next',
+          rememberCurrent: Boolean(state.nowPlaying),
+          currentOccurrenceId: occurrence.occurrenceId,
           transitionToken,
+          consumePlayNext: {
+            occurrenceId: occurrence.occurrenceId,
+            transitionToken,
+          },
         },
-      }, context);
+        context,
+      );
     }
     const target = nextPlaylistTarget(state);
     if (!target) return this.pause(dispatch);
-    return transition(dispatch, {
-      track: state.playlist[target.index],
-      playlistIndex: target.index,
-      source: 'playlist',
-      rememberCurrent: Boolean(state.nowPlaying),
-      shuffleOrder: target.shuffleOrder,
-      shuffleCursor: target.shuffleCursor,
-    });
+    const { transitionToken, context } = this.beginTransition(dispatch, () =>
+      this.hasPlaylistTrack(state.playlist[target.index]),
+    );
+    return transition(
+      dispatch,
+      {
+        track: state.playlist[target.index],
+        playlistIndex: target.index,
+        source: 'playlist',
+        rememberCurrent: Boolean(state.nowPlaying),
+        shuffleOrder: target.shuffleOrder,
+        shuffleCursor: target.shuffleCursor,
+        transitionToken,
+      },
+      context,
+    );
   }
 
   async playQueuedAt(dispatch: Dispatch | undefined, occurrenceId: string) {
@@ -893,25 +1077,25 @@ class PlayerController {
       item => item.occurrenceId === occurrenceId,
     );
     if (!occurrence) return false;
-    const transitionToken = Math.max(
-      state.transitionToken + 1,
-      this.transitionSequence + 1,
+    const { transitionToken, context } = this.beginTransition(dispatch, () =>
+      this.hasQueuedOccurrence(occurrence.occurrenceId),
     );
-    this.transitionSequence = transitionToken;
-    emit(dispatch, 'player/beginTransition', transitionToken);
-    const context = this.createTransitionContext(transitionToken);
-    return transition(dispatch, {
-      track: occurrence.track,
-      playlistIndex: state.currentIndex,
-      source: 'play-next',
-      rememberCurrent: Boolean(state.nowPlaying),
-      currentOccurrenceId: occurrence.occurrenceId,
-      transitionToken,
-      consumePlayNext: {
-        occurrenceId: occurrence.occurrenceId,
+    return transition(
+      dispatch,
+      {
+        track: occurrence.track,
+        playlistIndex: state.currentIndex,
+        source: 'play-next',
+        rememberCurrent: Boolean(state.nowPlaying),
+        currentOccurrenceId: occurrence.occurrenceId,
         transitionToken,
+        consumePlayNext: {
+          occurrenceId: occurrence.occurrenceId,
+          transitionToken,
+        },
       },
-    }, context);
+      context,
+    );
   }
 
   async previous(dispatch?: Dispatch) {
@@ -922,11 +1106,16 @@ class PlayerController {
     const state = playerState();
     const entry = state.history[state.history.length - 1];
     if (!entry) return false;
+    const { context } = this.beginTransition(dispatch, () =>
+      this.hasHistoryEntry(entry),
+    );
     const remaining = state.history.slice(0, -1);
     let media: { url: string; headers?: Readonly<Record<string, string>> };
     try {
       media = await resolveTrackUrl(entry.track);
+      assertNativeOperationCurrent(context);
     } catch (error) {
+      if (!isNativeOperationCurrent(context)) return false;
       emit(
         dispatch,
         'player/setError',
@@ -939,20 +1128,29 @@ class PlayerController {
       entry.track,
       entry.position,
       media,
+      context,
     );
-    if (started) emit(dispatch, 'player/restoreHistory', { entry, remaining });
+    if (started && isNativeOperationCurrent(context))
+      emit(dispatch, 'player/restoreHistory', { entry, remaining });
     return started;
   }
 
   async seek(dispatch: Dispatch | undefined, position: number) {
-    if (!Number.isFinite(position) || position < 0 || position > MAX_SEEK_SECONDS) {
+    if (
+      !Number.isFinite(position) ||
+      position < 0 ||
+      position > MAX_SEEK_SECONDS
+    ) {
       emit(dispatch, 'player/setError', 'seek-unavailable');
       return false;
     }
     return this.runNativeMutation(() => this.seekInternal(dispatch, position));
   }
 
-  private async seekInternal(dispatch: Dispatch | undefined, target: number): Promise<boolean> {
+  private async seekInternal(
+    dispatch: Dispatch | undefined,
+    target: number,
+  ): Promise<boolean> {
     try {
       await ensurePlayer();
       await TrackPlayer.seekTo(target);
@@ -973,10 +1171,15 @@ class PlayerController {
       emit(dispatch, 'player/setError', 'volume-unavailable');
       return false;
     }
-    return this.runNativeMutation(() => this.setVolumeInternal(dispatch, volume));
+    return this.runNativeMutation(() =>
+      this.setVolumeInternal(dispatch, volume),
+    );
   }
 
-  private async setVolumeInternal(dispatch: Dispatch | undefined, target: number): Promise<boolean> {
+  private async setVolumeInternal(
+    dispatch: Dispatch | undefined,
+    target: number,
+  ): Promise<boolean> {
     try {
       await ensurePlayer();
       await TrackPlayer.setVolume(playerState().muted ? 0 : target);
@@ -997,7 +1200,10 @@ class PlayerController {
     return this.runNativeMutation(() => this.setMutedInternal(dispatch, muted));
   }
 
-  private async setMutedInternal(dispatch: Dispatch | undefined, muted: boolean): Promise<boolean> {
+  private async setMutedInternal(
+    dispatch: Dispatch | undefined,
+    muted: boolean,
+  ): Promise<boolean> {
     try {
       await ensurePlayer();
       await TrackPlayer.setVolume(muted ? 0 : playerState().volume);
@@ -1047,13 +1253,16 @@ class PlayerController {
   }
 
   async stop(dispatch?: Dispatch): Promise<boolean> {
+    // Stop is semantic cancellation as well as a native reset. Do this before
+    // queueing behind a provider resolution so RemoteStop cannot briefly load
+    // and announce the stale item.
+    this.beginTransition(dispatch);
     return this.runNativeMutation(async () => {
       try {
         await ensurePlayer();
         await TrackPlayer.stop();
         await TrackPlayer.reset();
-        this.activeNativeTrackId = null;
-        this.nativeGeneration += 1;
+        this.markNativeQueueCleared();
         emit(dispatch, 'player/setPlaying', false);
         emit(dispatch, 'player/setProgress', { position: 0 });
         return true;
@@ -1069,16 +1278,25 @@ class PlayerController {
   }
 
   async forgetTrack(dispatch: Dispatch | undefined, track: PlayableTrack) {
-    if (playerState().nowPlaying?.id === track.id) {
+    const removedCurrent = playerState().nowPlaying?.id === track.id;
+    // Invalidate before waiting behind a pending native command. Otherwise a
+    // deferred provider resolution can re-add an item that the catalog has
+    // already forgotten.
+    emit(dispatch, 'player/removeTrackReferences', track.id);
+    return this.runNativeMutation(async () => {
+      if (!removedCurrent || this.hasPlaylistTrack(track)) return;
       try {
         await ensurePlayer();
+        // A later import may have reintroduced this logical ID while this
+        // deletion waited for the native queue. Do not reset that new item.
+        if (this.hasPlaylistTrack(track)) return;
         await TrackPlayer.stop();
         await TrackPlayer.reset();
+        this.markNativeQueueCleared();
       } catch {
         // The catalog must still forget an item if native playback is gone.
       }
-    }
-    emit(dispatch, 'player/removeTrackReferences', track.id);
+    });
   }
 
   onProgress(
@@ -1087,13 +1305,7 @@ class PlayerController {
     bufferedPosition: number,
     identity?: NativeCallbackIdentity,
   ) {
-    if (
-      (identity?.nativeTrackId &&
-        identity.nativeTrackId !== this.activeNativeTrackId) ||
-      (identity?.generation !== undefined &&
-        identity.generation !== this.activeNativeGeneration)
-    )
-      return;
+    if (!this.isNativeCallbackCurrent(identity)) return;
     emit(undefined, 'player/setProgress', {
       position,
       duration,
@@ -1101,18 +1313,72 @@ class PlayerController {
     });
   }
 
-  onPlaybackState(nativeState: State) {
+  onPlaybackState(nativeState: State, identity?: NativeCallbackIdentity) {
+    if (!this.isNativeCallbackCurrent(identity)) return;
     emit(undefined, 'player/setPlaying', nativeState === State.Playing);
   }
 
-  onPlaybackError() {
+  onPlaybackError(identity?: NativeCallbackIdentity) {
+    if (!this.isNativeCallbackCurrent(identity)) return;
     this.restoredNeedsLoad = true;
     emit(undefined, 'player/setPlaying', false);
     emit(undefined, 'player/setError', 'native-playback-error');
   }
 
-  onPlaybackQueueEnded() {
+  onPlaybackQueueEnded(identity?: NativeCallbackIdentity) {
+    if (!this.isNativeCallbackCurrent(identity)) return false;
     return this.next();
+  }
+
+  onNativeActiveTrackChanged(
+    track: unknown,
+    nativeTrackIndex?: number,
+  ): NativeCallbackIdentity | null {
+    const nativeTrackId =
+      track && typeof track === 'object' && 'id' in track
+        ? (track as { id?: unknown }).id
+        : undefined;
+    if (
+      typeof nativeTrackId !== 'string' ||
+      nativeTrackId !== this.activeNativeTrackId
+    )
+      return null;
+    this.activeNativeTrackIndex =
+      typeof nativeTrackIndex === 'number' && nativeTrackIndex >= 0
+        ? nativeTrackIndex
+        : 0;
+    this.activeNativeGeneration = this.nativeGeneration;
+    return {
+      nativeTrackId: this.activeNativeTrackId,
+      generation: this.activeNativeGeneration,
+      nativeTrackIndex: this.activeNativeTrackIndex,
+    };
+  }
+
+  nativeCallbackIdentity(
+    nativeTrackIndex?: number,
+  ): NativeCallbackIdentity | null {
+    if (
+      !this.activeNativeTrackId ||
+      (nativeTrackIndex !== undefined &&
+        nativeTrackIndex !== this.activeNativeTrackIndex)
+    )
+      return null;
+    return {
+      nativeTrackId: this.activeNativeTrackId,
+      generation: this.activeNativeGeneration,
+      nativeTrackIndex: this.activeNativeTrackIndex ?? undefined,
+    };
+  }
+
+  private isNativeCallbackCurrent(identity?: NativeCallbackIdentity) {
+    if (!identity) return true;
+    return (
+      identity.nativeTrackId === this.activeNativeTrackId &&
+      identity.generation === this.activeNativeGeneration &&
+      (identity.nativeTrackIndex === undefined ||
+        identity.nativeTrackIndex === this.activeNativeTrackIndex)
+    );
   }
 
   snapshot(): PlayerState {
@@ -1127,6 +1393,7 @@ class PlayerController {
     this.nativeGeneration = 0;
     this.activeNativeTrackId = null;
     this.activeNativeGeneration = 0;
+    this.activeNativeTrackIndex = null;
   }
 
   async restore(): Promise<boolean> {
@@ -1141,11 +1408,16 @@ class PlayerController {
     // and native loading wait for an explicit user play command.
     try {
       await ensurePlayer();
-      await configureNativeSnapshot(state);
       await TrackPlayer.pause();
+      await configureNativeSnapshot(state);
       emit(undefined, 'player/setPlaying', false);
       return true;
     } catch (error) {
+      try {
+        await TrackPlayer.pause();
+      } catch {
+        // Configuration is nonessential; native silence remains the contract.
+      }
       emit(
         undefined,
         'player/setError',

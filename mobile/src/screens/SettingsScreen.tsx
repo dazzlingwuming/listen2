@@ -325,17 +325,21 @@ export function SettingsScreen() {
     }
   };
 
-  const applyImport = (mode: ImportMode) => {
+  const applyImport = async (mode: ImportMode) => {
     if (!importDocument) return;
     try {
       const plan = planImport(currentBackupState(), importDocument, mode);
+      const queueApplied = await applyQueuePlan(dispatch, plan);
+      if (!queueApplied) {
+        setBackupError('播放队列未能安全切换，请稍后重试。');
+        return;
+      }
       dispatch(
         restoreLibrary({
           favorites: plan.favorites,
           playlists: plan.playlists,
         }),
       );
-      applyQueuePlan(dispatch, plan);
       closeImport();
       Alert.alert(
         mode === 'merge' ? '合并导入完成' : '覆盖导入完成',
@@ -357,7 +361,9 @@ export function SettingsScreen() {
         {
           text: '确认覆盖',
           style: 'destructive',
-          onPress: () => applyImport('overwrite'),
+          onPress: () => {
+            void applyImport('overwrite');
+          },
         },
       ],
     );
@@ -699,7 +705,9 @@ export function SettingsScreen() {
                 <View style={styles.previewActions}>
                   <Pressable
                     accessibilityLabel="合并导入备份"
-                    onPress={() => applyImport('merge')}
+                    onPress={() => {
+                      void applyImport('merge');
+                    }}
                     style={sectionStyles.button}
                   >
                     <Text style={sectionStyles.buttonText}>合并导入</Text>
@@ -721,16 +729,19 @@ export function SettingsScreen() {
   );
 }
 
-function applyQueuePlan(dispatch: AppDispatch, plan: ImportPlan) {
+async function applyQueuePlan(dispatch: AppDispatch, plan: ImportPlan) {
   if (plan.mode === 'overwrite') {
     if (plan.queueMode === 'playlist') {
-      dispatch(playerActions.replacePlaylist({ tracks: plan.queue }));
+      const replaced = await dispatch(
+        playerActions.replacePlaylistForImport(plan.queue),
+      );
+      if (!replaced) return false;
       dispatch(playerActions.clearPlayNextQueue());
     } else {
       dispatch(playerActions.clearPlayNextQueue());
       plan.queue.forEach(track => dispatch(playerActions.enqueueNext(track)));
     }
-    return;
+    return true;
   }
   if (plan.queueMode === 'playlist') {
     plan.queueToAppend.forEach(track =>
@@ -741,6 +752,7 @@ function applyQueuePlan(dispatch: AppDispatch, plan: ImportPlan) {
       dispatch(playerActions.enqueueNext(track)),
     );
   }
+  return true;
 }
 
 const styles = StyleSheet.create({

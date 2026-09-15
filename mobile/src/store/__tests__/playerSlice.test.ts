@@ -127,6 +127,23 @@ describe('playerSlice', () => {
     expect(state.transitionToken).toBeGreaterThan(4);
   });
 
+  it('invalidates an in-flight transition when a track is removed everywhere', () => {
+    const removed = track('ne_remove');
+    let state = reducer(
+      undefined,
+      playerActions.replacePlaylist({ tracks: [track('ne_1'), removed] }),
+    );
+    state = reducer(state, playerActions.enqueueNext(removed));
+    state = reducer(state, playerActions.beginTransition(9));
+    state = reducer(state, playerActions.removeTrackReferences(removed.id));
+
+    expect(state.transitionToken).toBeGreaterThan(9);
+    expect(state.playlist.map(item => item.id)).not.toContain(removed.id);
+    expect(state.playNextQueue.map(item => item.track.id)).not.toContain(
+      removed.id,
+    );
+  });
+
   it('keeps the shuffle round and cursor valid when a playlist item is appended', () => {
     let state = reducer(
       undefined,
@@ -135,7 +152,10 @@ describe('playerSlice', () => {
         startIndex: 1,
       }),
     );
-    state = reducer(state, playerActions.setPlayModeSnapshot(PLAY_MODE.SHUFFLE));
+    state = reducer(
+      state,
+      playerActions.setPlayModeSnapshot(PLAY_MODE.SHUFFLE),
+    );
     const priorOrder = state.shuffleOrder;
     const priorCursor = state.shuffleCursor;
     state = reducer(state, playerActions.appendPlaylistTrack(track('ne_4')));
