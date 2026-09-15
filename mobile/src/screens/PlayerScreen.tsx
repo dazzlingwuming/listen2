@@ -78,6 +78,8 @@ import { bilibiliMvClient } from '../bilibili/mvClient';
 import {
   audioEffectsClient,
   audioEffectsLabel,
+  subscribeAudioAnalysis,
+  type AudioAnalysisFrame,
   type AudioEffectsSnapshot,
 } from '../audioFx/client';
 
@@ -240,6 +242,8 @@ export function PlayerScreen() {
   const [visualizerState, setVisualizerState] = useState(
     '可视化已隐藏（未启用）',
   );
+  const [audioFrame, setAudioFrame] = useState<AudioAnalysisFrame | null>(null);
+  const latestAudioFrame = useRef<AudioAnalysisFrame | null>(null);
   const lyricRequest = useRef<AbortController | null>(null);
   const lyricEpoch = useRef(0);
   const candidateRequest = useRef<AbortController | null>(null);
@@ -421,6 +425,21 @@ export function PlayerScreen() {
       invalidateLyricWork();
       invalidateTranslationWork(false);
     };
+  }, []);
+  useEffect(() => {
+    const subscription = subscribeAudioAnalysis(frame => {
+      const previous = latestAudioFrame.current;
+      if (
+        previous &&
+        (frame.generation < previous.generation ||
+          (frame.generation === previous.generation &&
+            frame.timestampMs <= previous.timestampMs))
+      ) return;
+      latestAudioFrame.current = frame;
+      setAudioFrame(frame);
+      setVisualizerState('可视化正在显示当前播放分析');
+    });
+    return () => subscription.remove();
   }, []);
   useEffect(() => {
     const previous = previousTranslationIdentity.current;
@@ -996,6 +1015,7 @@ export function PlayerScreen() {
         }
       }
       const snapshot = await audioEffectsClient.setVisualizationEnabled(true);
+      if (snapshot.status !== 'enabled') setAudioFrame(null);
       setVisualizerState(
         snapshot.status === 'enabled'
           ? '可视化已启用（当前播放）'
@@ -1168,6 +1188,16 @@ export function PlayerScreen() {
             <Text accessibilityLabel="可视化状态" style={text.meta}>
               {visualizerState}
             </Text>
+            {audioFrame ? (
+              <Text
+                accessibilityLabel={`当前播放可视化，第${audioFrame.generation}代`}
+                style={styles.visualizerFrame}
+              >
+                {audioFrame.bins
+                  .map(bin => (bin > 0.75 ? '█' : bin > 0.5 ? '▆' : bin > 0.25 ? '▄' : '▁'))
+                  .join('')}
+              </Text>
+            ) : null}
           </View>
           <View style={styles.controls}>
             <Pressable
@@ -2058,6 +2088,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: colors.surface,
   },
+  visualizerFrame: { color: colors.accent, fontSize: 18, letterSpacing: 2 },
   action: {
     flex: 1,
     minHeight: 48,

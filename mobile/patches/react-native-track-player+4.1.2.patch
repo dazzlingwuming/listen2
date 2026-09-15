@@ -1,3 +1,57 @@
+diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/kotlinaudio/players/Listen2AudioSessionBridge.java b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/kotlinaudio/players/Listen2AudioSessionBridge.java
+new file mode 100644
+index 0000000..c9beae3
+--- /dev/null
++++ b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/kotlinaudio/players/Listen2AudioSessionBridge.java
+@@ -0,0 +1,48 @@
++package com.doublesymmetry.kotlinaudio.players;
++
++import com.google.android.exoplayer2.ExoPlayer;
++import com.google.android.exoplayer2.analytics.AnalyticsListener;
++import java.util.concurrent.atomic.AtomicInteger;
++import java.util.concurrent.atomic.AtomicLong;
++
++/**
++ * Process-local bridge owned by the pinned RNTP service.  It never crosses the
++ * React boundary and it neither creates nor controls a player.  Package access
++ * is intentional: kotlin-audio keeps the actual ExoPlayer protected.
++ */
++public final class Listen2AudioSessionBridge {
++    private static final AtomicInteger SESSION_ID = new AtomicInteger(0);
++    private static final AtomicLong GENERATION = new AtomicLong(0L);
++    private static ExoPlayer player;
++    private static AnalyticsListener listener;
++
++    private Listen2AudioSessionBridge() {}
++
++    public static synchronized void bind(QueuedAudioPlayer queuedPlayer) {
++        unbind();
++        if (queuedPlayer == null) return;
++        final ExoPlayer actualPlayer = queuedPlayer.getExoPlayer();
++        listener = new AnalyticsListener() {
++            @Override public void onAudioSessionIdChanged(EventTime eventTime, int audioSessionId) {
++                SESSION_ID.set(audioSessionId > 0 ? audioSessionId : 0);
++                GENERATION.incrementAndGet();
++            }
++        };
++        player = actualPlayer;
++        actualPlayer.addAnalyticsListener(listener);
++        final int audioSessionId = actualPlayer.getAudioSessionId();
++        SESSION_ID.set(audioSessionId > 0 ? audioSessionId : 0);
++        GENERATION.incrementAndGet();
++    }
++
++    public static synchronized void unbind() {
++        if (player != null && listener != null) player.removeAnalyticsListener(listener);
++        player = null;
++        listener = null;
++        SESSION_ID.set(0);
++        GENERATION.incrementAndGet();
++    }
++
++    public static int sessionId() { return SESSION_ID.get(); }
++    public static long generation() { return GENERATION.get(); }
++}
 diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
 index b2409a0..f6b4fb8 100644
 --- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
@@ -22,4 +76,34 @@ index b2409a0..f6b4fb8 100644
 +                ?.let { Arguments.fromBundle(it) }
          )
      }
+ 
+diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
+index afa6b0f..3b9918d 100644
+--- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
++++ b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
+@@ -16,6 +16,7 @@ import androidx.core.app.NotificationCompat.PRIORITY_LOW
+ import com.doublesymmetry.kotlinaudio.models.*
+ import com.doublesymmetry.kotlinaudio.models.NotificationButton.*
+ import com.doublesymmetry.kotlinaudio.players.QueuedAudioPlayer
++import com.doublesymmetry.kotlinaudio.players.Listen2AudioSessionBridge
+ import com.doublesymmetry.trackplayer.R as TrackPlayerR
+ import com.doublesymmetry.trackplayer.extensions.NumberExt.Companion.toMilliseconds
+ import com.doublesymmetry.trackplayer.extensions.NumberExt.Companion.toSeconds
+@@ -157,6 +158,9 @@ class MusicService : HeadlessJsTaskService() {
+         val automaticallyUpdateNotificationMetadata = playerOptions?.getBoolean(AUTO_UPDATE_METADATA, true) ?: true
+ 
+         player = QueuedAudioPlayer(this@MusicService, playerConfig, bufferConfig, cacheConfig)
++        // A process-local consumer can attach effects to this actual RNTP
++        // session without exporting its numeric identifier to JavaScript.
++        Listen2AudioSessionBridge.bind(player)
+         player.automaticallyUpdateNotificationMetadata = automaticallyUpdateNotificationMetadata
+         observeEvents()
+         setupForegrounding()
+@@ -800,6 +804,7 @@ class MusicService : HeadlessJsTaskService() {
+     override fun onDestroy() {
+         super.onDestroy()
+         if (::player.isInitialized) {
++            Listen2AudioSessionBridge.unbind()
+             player.destroy()
+         }
  
