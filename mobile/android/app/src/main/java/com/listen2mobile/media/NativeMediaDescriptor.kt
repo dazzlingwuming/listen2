@@ -201,6 +201,7 @@ internal class MediaLeaseRegistry(
     fun register(requestId: String, identity: MediaIdentity, rendition: MediaRendition, transport: NativeTransport, accountGeneration: Long): MediaDescriptor {
         require(requestId.matches(REQUEST_ID) && identity.isValid() && rendition.isValid() && accountGeneration >= 0L)
         require(transport.localFile != null || isSafeNativeTransport(transport))
+        MediaLeaseRegistryHolder.updateAccountGeneration(accountGeneration)
         prune()
         require(leases.size < MAX_LEASES)
         val leaseId = randomLeaseId()
@@ -275,7 +276,10 @@ internal class MediaLeaseRegistry(
         validate(value.leaseId, value.identity, value.accountGeneration) == LeaseStatus.ACTIVE
 
     fun cancel(requestId: String) { leases.values.filter { it.requestId == requestId }.forEach { it.cancelled = true } }
-    fun invalidateAccount(accountGeneration: Long) { leases.values.filter { it.accountGeneration != accountGeneration }.forEach { it.cancelled = true } }
+    fun invalidateAccount(accountGeneration: Long) {
+        MediaLeaseRegistryHolder.updateAccountGeneration(accountGeneration)
+        leases.values.filter { it.accountGeneration != accountGeneration }.forEach { it.cancelled = true }
+    }
 
     private fun prune() { leases.entries.removeIf { (_, value) -> value.cancelled || clock() >= value.expiresAt } }
     private fun randomLeaseId(): String = ByteArray(24).also(SecureRandom()::nextBytes).joinToString("") { "%02x".format(it) }
@@ -297,6 +301,9 @@ internal class MediaLeaseRegistry(
 /** Provider singleton bridge; descriptor leases are deliberately not persisted. */
 internal object MediaLeaseRegistryHolder {
     @Volatile private var registry: MediaLeaseRegistry? = null
+    @Volatile private var accountGeneration: Long = 0L
     fun install(value: MediaLeaseRegistry) { registry = value }
     fun current(): MediaLeaseRegistry? = registry
+    fun updateAccountGeneration(value: Long) { if (value >= 0) accountGeneration = value }
+    fun currentAccountGeneration(): Long = accountGeneration
 }

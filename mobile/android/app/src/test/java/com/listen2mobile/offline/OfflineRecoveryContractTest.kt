@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.listen2mobile.library.CacheCatalogEntity
 
 class OfflineRecoveryContractTest {
     @Test
@@ -33,5 +34,15 @@ class OfflineRecoveryContractTest {
         assertFalse(OfflineRecoveryPolicy.playable("blobs/hash", true, false, true))
         assertFalse(OfflineRecoveryPolicy.playable("blobs/hash", true, true, false))
         assertTrue(OfflineRecoveryPolicy.playable("blobs/hash", true, true, true))
+    }
+
+    @Test
+    fun `durable authorization receipt survives reopen but expires and rejects switched account`() {
+        val receipt = CacheCatalogEntity("cache", "netease", "netrack_1", null, "default", "revision", "ready", 10L, 0L, "allowed", 10L, 100L)
+        // The entity is the Room-reopened projection: no URL, header, cookie or lease id is needed.
+        assertTrue(OfflineAuthorizationPolicy.permits(receipt, "netease", "netrack_1", 0L, 50L))
+        assertFalse(OfflineAuthorizationPolicy.permits(receipt, "netease", "netrack_1", 1L, 50L))
+        assertFalse(OfflineAuthorizationPolicy.permits(receipt, "netease", "netrack_1", 0L, 100L))
+        assertFalse(OfflineAuthorizationPolicy.permits(receipt.copy(entitlementStatus = "drm"), "netease", "netrack_1", 0L, 50L))
     }
 }

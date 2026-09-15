@@ -41,7 +41,7 @@ import com.listen2mobile.offline.OfflineOwnerKind
         CacheQuotaEntity::class,
         CacheAnalysisEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class Listen2Database : RoomDatabase() {
@@ -181,6 +181,10 @@ data class CacheCatalogEntity(
     val mediaRevision: String,
     val state: String,
     val updatedAt: Long,
+    val accountGeneration: Long = 0L,
+    val entitlementStatus: String = "allowed",
+    val authorizationIssuedAt: Long = 0L,
+    val authorizationExpiresAt: Long = 0L,
 )
 
 @Entity(tableName = "cache_blobs")
@@ -358,5 +362,15 @@ internal val LIBRARY_MIGRATION_3_4 = object : Migration(3, 4) {
         database.execSQL("CREATE TABLE IF NOT EXISTS cache_quota (id INTEGER NOT NULL, quotaBytes INTEGER, reservedBytes INTEGER NOT NULL, updatedAt INTEGER NOT NULL, PRIMARY KEY(id))")
         database.execSQL("CREATE TABLE IF NOT EXISTS cache_analysis (contentHash TEXT NOT NULL, analyzerVersion INTEGER NOT NULL, sampleRate INTEGER NOT NULL, codec TEXT NOT NULL, lufs REAL, dbtp REAL, gainDb REAL, status TEXT NOT NULL, updatedAt INTEGER NOT NULL, PRIMARY KEY(contentHash, analyzerVersion))")
         database.execSQL("INSERT OR IGNORE INTO cache_quota(id, quotaBytes, reservedBytes, updatedAt) VALUES(1, 2147483648, 0, 0)")
+    }
+}
+
+/** v5 stores only bounded entitlement metadata, never transport credentials or URLs. */
+internal val LIBRARY_MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE cache_catalog ADD COLUMN accountGeneration INTEGER NOT NULL DEFAULT 0")
+        database.execSQL("ALTER TABLE cache_catalog ADD COLUMN entitlementStatus TEXT NOT NULL DEFAULT 'allowed'")
+        database.execSQL("ALTER TABLE cache_catalog ADD COLUMN authorizationIssuedAt INTEGER NOT NULL DEFAULT 0")
+        database.execSQL("ALTER TABLE cache_catalog ADD COLUMN authorizationExpiresAt INTEGER NOT NULL DEFAULT 0")
     }
 }

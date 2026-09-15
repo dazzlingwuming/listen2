@@ -29,6 +29,7 @@ internal class OfflineCatalogService private constructor(context: Context) {
     private val analysis = Executors.newSingleThreadExecutor()
     private val listeners = mutableSetOf<(CatalogCacheSnapshot) -> Unit>()
     private val cacheAuthorizations = mutableMapOf<String, CacheAuthorization>()
+    private val localReceiptGrants = mutableMapOf<String, Long>()
 
     init {
         migrateLegacyReadyEntries()
@@ -157,6 +158,7 @@ internal class OfflineCatalogService private constructor(context: Context) {
     fun authorize(source: String, trackId: String, requestId: String): Boolean {
         val blob = readyBlob(source, trackId) ?: return false
         val grant = MediaLeaseRegistryHolder.current()?.cacheAuthorization(requestId, source, trackId) ?: return false
+        repository.recordAuthorization(blob.blobKey, grant.accountGeneration, System.currentTimeMillis() + RECEIPT_TTL_MILLIS)
         synchronized(cacheAuthorizations) { cacheAuthorizations[blob.blobKey] = grant }
         return true
     }
@@ -164,8 +166,11 @@ internal class OfflineCatalogService private constructor(context: Context) {
     /** Offline-first path: only a current locally-held native entitlement may admit a blob. */
     fun authorizeLocal(source: String, trackId: String): Boolean {
         val blob = readyBlob(source, trackId) ?: return false
-        val grant = MediaLeaseRegistryHolder.current()?.localCacheAuthorization(source, trackId) ?: return false
-        synchronized(cacheAuthorizations) { cacheAuthorizations[blob.blobKey] = grant }
+        val receipt = repository.authorization(blob.blobKey) ?: return false
+        val currentGeneration = MediaLeaseRegistryHolder.currentAccountGeneration()
+        val now = System.currentTimeMillis()
+        if (!OfflineAuthorizationPolicy.permits(receipt, source, trackId, currentGeneration, now) || repository.readyFile(blob.blobKey) == null) return false
+        synchronized(localReceiptGrants) { localReceiptGrants[blob.blobKey] = receipt.authorizationExpiresAt }
         return true
     }
 
@@ -300,9 +305,16 @@ internal class OfflineCatalogService private constructor(context: Context) {
         }
         File(root, blob.privateRelativeKey).delete()
         synchronized(cacheAuthorizations) { cacheAuthorizations.remove(blob.blobKey) }
+        synchronized(localReceiptGrants) { localReceiptGrants.remove(blob.blobKey) }
     }
 
     private fun isAuthorized(blobKey: String): Boolean {
+        val localExpiry = synchronized(localReceiptGrants) { localReceiptGrants[blobKey] }
+        if (localExpiry != null) {
+            val receipt = repository.authorization(blobKey)
+            if (receipt != null && receipt.entitlementStatus == "allowed" && receipt.accountGeneration == MediaLeaseRegistryHolder.currentAccountGeneration() && receipt.authorizationExpiresAt == localExpiry && localExpiry > System.currentTimeMillis()) return true
+            synchronized(localReceiptGrants) { localReceiptGrants.remove(blobKey) }
+        }
         val grant = synchronized(cacheAuthorizations) { cacheAuthorizations[blobKey] } ?: return false
         val current = MediaLeaseRegistryHolder.current()?.isCurrentCacheAuthorization(grant) == true
         if (!current) synchronized(cacheAuthorizations) { cacheAuthorizations.remove(blobKey) }
@@ -315,6 +327,7 @@ internal class OfflineCatalogService private constructor(context: Context) {
     }
 
     companion object {
+        private const val RECEIPT_TTL_MILLIS = 7L * 24 * 60 * 60 * 1000
         @Volatile private var instance: OfflineCatalogService? = null
         fun get(context: Context): OfflineCatalogService = instance ?: synchronized(this) {
             instance ?: OfflineCatalogService(context).also { instance = it }
@@ -329,3 +342,16 @@ internal data class CatalogCacheEntry(
     val errorCode: String?, val updatedAt: Long,
 )
 internal data class CatalogCacheSnapshot(val usedBytes: Long, val reservedBytes: Long, val quotaBytes: Long?, val entries: List<CatalogCacheEntry>)
+
+/** Durable receipt policy is pure so reopen/TTL/account fixtures do not need a transport. */
+internal object OfflineAuthorizationPolicy {
+    fun permits(
+        receipt: com.listen2mobile.library.CacheCatalogEntity,
+        source: String,
+        trackId: String,
+        currentGeneration: Long,
+        now: Long,
+    ) = receipt.source == source && receipt.semanticTrackId == trackId &&
+        receipt.entitlementStatus == "allowed" && receipt.accountGeneration == currentGeneration &&
+        receipt.authorizationIssuedAt <= now && receipt.authorizationExpiresAt > now
+}

@@ -52,7 +52,8 @@ internal class OfflineCatalogRepository(private val database: Listen2Database, p
         if (!destination.isFile || destination.length() != expectedLength || !canRead(destination)) return OfflineCatalogResult("VERIFY_FAILED")
         database.runInTransaction {
             val dao = database.libraryDao()
-            dao.putCacheCatalog(CacheCatalogEntity(identity.cacheId(), identity.source, identity.semanticTrackId, identity.partId, identity.renditionId, identity.mediaRevision, "ready", now()))
+            val issuedAt = now()
+            dao.putCacheCatalog(CacheCatalogEntity(identity.cacheId(), identity.source, identity.semanticTrackId, identity.partId, identity.renditionId, identity.mediaRevision, "ready", issuedAt, 0L, "allowed", issuedAt, issuedAt + ANONYMOUS_RECEIPT_TTL))
             dao.putCacheBlob(blob.copy(lastUsedAt = now(), verifiedAt = now()))
             val row = when (owner) { OfflineOwnerKind.TEMPORARY -> CacheOwnerEntity.temporary(blob.blobKey, now()); OfflineOwnerKind.EXPLICIT -> CacheOwnerEntity.explicit(blob.blobKey, now()); OfflineOwnerKind.PLAYLIST -> CacheOwnerEntity.playlist(blob.blobKey, playlistId ?: return@runInTransaction, now()) }
             dao.putCacheOwner(row)
@@ -85,12 +86,28 @@ internal class OfflineCatalogRepository(private val database: Listen2Database, p
         return file.takeIf { canRead(it) && it.length() == blob.byteLength && hash(it) == blob.contentHash }
     }
 
+    fun recordAuthorization(blobKey: String, generation: Long, expiresAt: Long) {
+        if (generation < 0 || expiresAt <= now()) return
+        database.runInTransaction {
+            val dao = database.libraryDao(); val blob = dao.cacheBlob(blobKey) ?: return@runInTransaction
+            val catalog = dao.cacheCatalog(blob.cacheId) ?: return@runInTransaction
+            dao.putCacheCatalog(catalog.copy(accountGeneration = generation, entitlementStatus = "allowed", authorizationIssuedAt = now(), authorizationExpiresAt = expiresAt))
+        }
+    }
+
+    fun authorization(blobKey: String): CacheCatalogEntity? {
+        val blob = database.libraryDao().cacheBlob(blobKey) ?: return null
+        return database.libraryDao().cacheCatalog(blob.cacheId)
+    }
+
     private fun purgeLegacyOwnerCopies() {
         val aliases = File(root, "owners")
         if (!aliases.isDirectory) return
         aliases.walkTopDown().filter { it.isFile }.forEach { it.delete() }
         aliases.walkBottomUp().filter { it.isDirectory && it != aliases }.forEach { it.delete() }
     }
+
+    private companion object { const val ANONYMOUS_RECEIPT_TTL = 7L * 24 * 60 * 60 * 1000 }
 
     /** A metric may cross the cache boundary only when every content identity component matches. */
     fun normalizationGain(blobKey: String, sampleRate: Int, codec: String): Double {
