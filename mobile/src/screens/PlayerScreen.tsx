@@ -523,6 +523,78 @@ export function PlayerScreen() {
               state.duration ?? current.duration ?? current.durationMs ?? 0
             }
           />
+          <View style={styles.actions}>
+            <Pressable
+              accessibilityLabel="后退15秒"
+              accessibilityRole="button"
+              onPress={() =>
+                invoke(dispatch, ['seekTo'], Math.max(0, currentPosition - 15))
+              }
+              style={styles.action}
+            >
+              <Text style={styles.actionText}>−15秒</Text>
+            </Pressable>
+            <Pressable
+              accessibilityLabel="前进15秒"
+              accessibilityRole="button"
+              onPress={() => invoke(dispatch, ['seekTo'], currentPosition + 15)}
+              style={styles.action}
+            >
+              <Text style={styles.actionText}>+15秒</Text>
+            </Pressable>
+            <Pressable
+              accessibilityLabel={state.muted ? '取消静音' : '静音'}
+              accessibilityRole="button"
+              onPress={() => invoke(dispatch, ['toggleMute'])}
+              style={styles.action}
+            >
+              <Text style={styles.actionText}>
+                {state.muted ? '取消静音' : '静音'}
+              </Text>
+            </Pressable>
+            <Pressable
+              accessibilityLabel={`降低音量，当前${Math.round(
+                (state.volume ?? 1) * 100,
+              )}%`}
+              accessibilityRole="button"
+              onPress={() =>
+                invoke(
+                  dispatch,
+                  ['setVolume'],
+                  Math.max(0, (state.volume ?? 1) - 0.1),
+                )
+              }
+              style={styles.action}
+            >
+              <Text style={styles.actionText}>音量−</Text>
+            </Pressable>
+            <Pressable
+              accessibilityLabel={`提高音量，当前${Math.round(
+                (state.volume ?? 1) * 100,
+              )}%`}
+              accessibilityRole="button"
+              onPress={() =>
+                invoke(
+                  dispatch,
+                  ['setVolume'],
+                  Math.min(1, (state.volume ?? 1) + 0.1),
+                )
+              }
+              style={styles.action}
+            >
+              <Text style={styles.actionText}>音量+</Text>
+            </Pressable>
+            <Pressable
+              accessibilityLabel="切换播放模式"
+              accessibilityRole="button"
+              onPress={() => invoke(dispatch, ['changePlayMode'])}
+              style={styles.action}
+            >
+              <Text style={styles.actionText}>
+                {['循环', '随机', '单曲'][state.playMode ?? 0]}
+              </Text>
+            </Pressable>
+          </View>
           <View style={styles.controls}>
             <Pressable
               accessibilityLabel="上一首"
@@ -944,11 +1016,11 @@ function playbackPositionMs(position: number): number {
   // Track Player and the Redux player state use seconds; the LRC axis uses ms.
   return Math.max(0, position * 1_000);
 }
-function invoke(dispatch: any, names: string[]) {
+function invoke(dispatch: any, names: string[], value?: unknown) {
   for (const name of names) {
     const action = (playerActions as any)[name];
     if (action) {
-      dispatch(action());
+      dispatch(value === undefined ? action() : action(value));
       return;
     }
   }

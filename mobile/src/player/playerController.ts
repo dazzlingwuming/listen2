@@ -688,10 +688,10 @@ class PlayerController {
       0,
       Math.min(1, Number.isFinite(volume) ? volume : 1),
     );
-    emit(dispatch, 'player/setVolumeSnapshot', target);
     try {
       await ensurePlayer();
       await TrackPlayer.setVolume(playerState().muted ? 0 : target);
+      emit(dispatch, 'player/setVolumeSnapshot', target);
     } catch (error) {
       emit(
         dispatch,
@@ -702,10 +702,10 @@ class PlayerController {
   }
 
   async setMuted(dispatch: Dispatch | undefined, muted: boolean) {
-    emit(dispatch, 'player/setMutedSnapshot', muted);
     try {
       await ensurePlayer();
       await TrackPlayer.setVolume(muted ? 0 : playerState().volume);
+      emit(dispatch, 'player/setMutedSnapshot', muted);
     } catch (error) {
       emit(
         dispatch,
@@ -716,11 +716,13 @@ class PlayerController {
   }
 
   async setMode(dispatch: Dispatch | undefined, mode: PlayerState['playMode']) {
-    emit(dispatch, 'player/setPlayModeSnapshot', mode);
+    const previousMode = playerState().playMode;
     try {
       await ensurePlayer();
-      await configureNativeSnapshot(playerState());
+      await configureNativeSnapshot({ ...playerState(), playMode: mode });
+      emit(dispatch, 'player/setPlayModeSnapshot', mode);
     } catch (error) {
+      emit(dispatch, 'player/setPlayModeSnapshot', previousMode);
       emit(
         dispatch,
         'player/setError',
