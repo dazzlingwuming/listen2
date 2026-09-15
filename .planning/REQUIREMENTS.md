@@ -63,7 +63,7 @@ Android 保留共享前端，但 native 只提供窄的、版本化、可取消�
 
 - [ ] **LIB-001** [P][E] 我的歌单、收藏歌单、provider 远端歌单和本地音乐在库中显示不同来源与同步状态；无网络时我仍能浏览/播放有效本地内容，远端失败不删除本地内容。
 - [ ] **LIB-002** [T][P][E] 我可以创建、改名、编辑、删除歌单，添加/移除/重排曲目和收藏/取消收藏；重复曲目规则与桌面一致，破坏性删除需要确认并在失败时保留原数据。
-- [ ] **LIB-003** [T][E] 快速连续编辑、旋转、重启和进程回收后，歌单排序、收藏和曲目标识保持事务一致；播放、下一首、歌词、下载和删除操作仅在对应 capability 可用时出现。
+- [x] **LIB-003** [T][E] 快速连续编辑、旋转、重启和进程回收后，歌单排序、收藏和曲目标识保持事务一致；播放、下一首、歌词、下载和删除操作仅在对应 capability 可用时出现。
 
 ### 登录/会话（AUTH）
 
@@ -79,7 +79,7 @@ Android 保留共享前端，但 native 只提供窄的、版本化、可取消�
 
 ### 备份数据（DATA）
 
-- [ ] **DATA-001** [T][E] Room migration 能持久化歌单、收藏、队列 checkpoint、歌词元数据、历史、cache catalog 和 SAF records；DataStore（或等价设置存储）只保存小型非敏感设置，不存大列表或 secret。
+- [x] **DATA-001** [T][E] Room migration 能持久化歌单、收藏、队列 checkpoint、歌词元数据、历史、cache catalog 和 SAF records；DataStore（或等价设置存储）只保存小型非敏感设置，不存大列表或 secret。
 - [ ] **DATA-002** [P][S] Android 版本化备份只含我的歌单和收藏歌单及必要非敏感元数据，明确排除 token、cookie、refresh token、API key、本地路径/URI grant、主题、歌词设置、媒体文件和缓存。
 - [ ] **DATA-003** [P][E] 我默认导入备份时保留当前歌单，完全相同跳过、同名独立、ID 冲突生成新 ID，并能预览摘要；覆盖只能二次确认，损坏、过大、旧版本或中断导入在有界时间内失败且可恢复。
 
@@ -196,14 +196,14 @@ Android 保留共享前端，但 native 只提供窄的、版本化、可取消�
 | LYR-003 | Phase 5 | Complete | stale/error/TalkBack test |
 | LIB-001 | Phase 6 | Pending | source/offline library E2E |
 | LIB-002 | Phase 6 | Pending | playlist CRUD/favorite test |
-| LIB-003 | Phase 6 | Pending | transactional/capability test |
+| LIB-003 | Phase 6 | Complete | transactional/capability test |
 | AUTH-001 | Phase 6 | Pending | session-state matrix UI |
 | AUTH-002 | Phase 6 | Pending | QR/login provider fixture |
 | AUTH-003 | Phase 6 | Pending | Keystore/refresh/logout test |
 | LOCAL-001 | Phase 6 | Pending | SAF import instrumentation |
 | LOCAL-002 | Phase 6 | Pending | tag/LRC/local playback |
 | LOCAL-003 | Phase 6 | Pending | revoke/path-boundary test |
-| DATA-001 | Phase 6 | Pending | Room/DataStore migration |
+| DATA-001 | Phase 6 | Complete | Room/DataStore migration |
 | DATA-002 | Phase 6 | Pending | backup allow-list scan |
 | DATA-003 | Phase 6 | Pending | merge/conflict/rollback |
 | HIST-001 | Phase 6 | Pending | threshold/dedup fixture |

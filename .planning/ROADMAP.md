@@ -83,7 +83,16 @@ Those facts reduce implementation work, but none proves that a user can complete
   4. A user can export eligible playlists/favorites, preview an import, safely merge it by default, and explicitly confirm overwrite; malformed, oversized, old-version, or interrupted backups fail without deleting existing data.
   5. A user can trust listening history and annual recap to count only genuine listening, survive restart/midnight/year boundaries, and support disable, export, and irreversible clear without history writes delaying playback.
 
-**Plans:** TBD
+**Plans:** 2/7 plans executed
+
+- [x] 06-01-PLAN.md
+- [x] 06-02-PLAN.md
+- [ ] 06-03-PLAN.md
+- [ ] 06-04-PLAN.md
+- [ ] 06-05-PLAN.md
+- [ ] 06-06-PLAN.md
+- [ ] 06-07-PLAN.md
+
 **UI hint:** yes
 
 ### Phase 7: Offline & Advanced Desktop-Equivalent Playback
@@ -125,6 +134,6 @@ Those facts reduce implementation work, but none proves that a user can complete
 | --- | --- | --- | --- |
 | 4. Official Mobile Shell & Unified Provider Registry | 3/3 | Complete    | 2026-09-10 |
 | 5. Five-Source Listen Journey | 3/3 | In Progress|  |
-| 6. Personal Library & Continuity | 0/TBD | Not started | - |
+| 6. Personal Library & Continuity | 2/7 | In Progress|  |
 | 7. Offline & Advanced Desktop-Equivalent Playback | 0/TBD | Not started | - |
 | 8. Integrated API 35 Acceptance & Release-Like Evidence | 0/TBD | Not started | - |
