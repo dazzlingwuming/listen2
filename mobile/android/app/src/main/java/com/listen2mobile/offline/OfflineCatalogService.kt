@@ -86,7 +86,7 @@ internal class OfflineCatalogService private constructor(context: Context) {
     }
 
     fun normalizationGain(source: String, trackId: String): Double =
-        readyBlob(source, trackId)?.let(repository::normalizationGain) ?: 1.0
+        readyBlob(source, trackId)?.let { repository.normalizationGain(it.blobKey) } ?: 1.0
 
     fun file(blobKey: String?): File? {
         val safe = blobKey?.takeIf { OfflinePolicy.validKey(it) } ?: return null
