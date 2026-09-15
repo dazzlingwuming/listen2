@@ -102,11 +102,12 @@ mkdir -p "$REPEAT_DIR"
 copy_unique_apk "$ANDROID_ROOT/app/build/outputs/apk/debug" "$REPEAT_DIR/debug.apk"
 copy_unique_apk "$ANDROID_ROOT/app/build/outputs/apk/releaseLike" "$REPEAT_DIR/releaseLike.apk"
 APKSIGNER="$ANDROID_SDK_ROOT/build-tools/37.0.0/apksigner"
+bash "$SCRIPT_DIR/verify-apk.sh" --apk "$ARTIFACT_DIR/releaseLike.apk" --variant releaseLike
+bash "$SCRIPT_DIR/verify-apk.sh" --apk "$REPEAT_DIR/releaseLike.apk" --variant releaseLike
 for variant in debug releaseLike; do
   phase8_compare_apks "$ARTIFACT_DIR/$variant.apk" "$REPEAT_DIR/$variant.apk" "$APKSIGNER" "$variant" || blocked "two clean ${variant} assemblies are not semantically reproducible."
 done
 
-bash "$SCRIPT_DIR/verify-apk.sh" --apk "$ARTIFACT_DIR/releaseLike.apk" --variant releaseLike
 node "$SCRIPT_DIR/evidence.mjs" --run-dir "$RUN_DIR" --write-build
 node "$SCRIPT_DIR/evidence.mjs" --validate "$RUN_DIR/08-build.json"
 printf 'Phase 8 candidate sealed at %s; no emulator was launched.\n' "${RUN_DIR#$REPO_ROOT/}"
