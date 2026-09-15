@@ -45,7 +45,10 @@ phase8_resolve_sdk() {
   [[ -x "$ANDROID_SDK_ROOT/platform-tools/adb" ]] || phase8_fail 'Android platform-tools adb is missing.'
   [[ -x "$ANDROID_SDK_ROOT/build-tools/37.0.0/zipalign" ]] || phase8_fail 'Android Build Tools 37.0.0 zipalign is missing.'
   [[ -x "$ANDROID_SDK_ROOT/build-tools/37.0.0/apksigner" ]] || phase8_fail 'Android Build Tools 37.0.0 apksigner is missing.'
-  [[ -d "$ANDROID_SDK_ROOT/platforms/android-37" ]] || phase8_fail 'Android platform android-37 is missing.'
+  # Recent official SDK manager channels name API 37 as android-37.0 while
+  # Gradle's integer compileSdk remains 37. Accept only those two canonical
+  # platform directory spellings; do not silently lower the compile SDK.
+  [[ -d "$ANDROID_SDK_ROOT/platforms/android-37" || -d "$ANDROID_SDK_ROOT/platforms/android-37.0" ]] || phase8_fail 'Android platform 37 is missing (install platforms;android-37.0).'
   export PHASE8_SDKMANAGER="$SDKMANAGER"
 }
 
