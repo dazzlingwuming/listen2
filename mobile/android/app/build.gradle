@@ -83,18 +83,21 @@ android {
     compileSdk rootProject.ext.compileSdkVersion
 
     namespace "com.listen2mobile"
-    // Keep the diagnostic AndroidTest/UnitTest compilation on debug. The
-    // Phase 8 releaseLike AndroidTest alias below has the same application ID
-    // and signer, so it can drive the in-place releaseLike journey without
-    // making the production candidate debuggable.
-    testBuildType "debug"
+    // Build AndroidTest against the actual releaseLike variant. A copied
+    // debug AndroidTest depends on classes that the minified target excludes.
+    // This changes test packaging only; acceptance still installs the sealed
+    // releaseLike product artifact rather than any Gradle product output.
+    testBuildType "releaseLike"
     defaultConfig {
         applicationId "com.dazzlingwuming.listen2"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "2.34.0-android"
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        // Phase 8's test-only runner lives inside the AndroidTest APK so an
+        // in-place upgrade to the sealed, minified releaseLike artifact never
+        // depends on a runner class that happened to be present in debug.
+        testInstrumentationRunner "com.listen2mobile.acceptance.Phase08Instrumentation"
         manifestPlaceholders = [usesCleartextTraffic: "false"]
     }
     signingConfigs {
@@ -122,6 +125,9 @@ android {
             debuggable false
             minifyEnabled true
             shrinkResources true
+            // Test-only R8 reachability. Product ProGuard inputs remain
+            // unchanged and acceptance installs the sealed product APK.
+            testProguardFiles 'proguard-android-test.pro'
             manifestPlaceholders = [usesCleartextTraffic: "false"]
             matchingFallbacks = ["release"]
         }
@@ -136,18 +142,6 @@ androidComponents {
             output.versionCode.set(phase8ReleaseLikeVersionCode)
         }
     }
-}
-
-tasks.register("compileReleaseLikeAndroidTestKotlin") {
-    dependsOn("compileDebugAndroidTestKotlin")
-}
-
-tasks.register("assembleReleaseLikeAndroidTest", Copy) {
-    dependsOn("assembleDebugAndroidTest")
-    from(layout.buildDirectory.dir("outputs/apk/androidTest/debug"))
-    include("app-debug-androidTest.apk")
-    into(layout.buildDirectory.dir("outputs/apk/androidTest/releaseLike"))
-    rename { "app-releaseLike-androidTest.apk" }
 }
 
 dependencies {

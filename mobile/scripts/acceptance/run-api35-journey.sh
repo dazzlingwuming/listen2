@@ -8,6 +8,10 @@ instrumentation_result_ok() {
   grep -Eq '^INSTRUMENTATION_CODE: (-1|0)[[:space:]]*$' "$output"
 }
 
+phase08_class_allowed() {
+  [[ "$1" == "com.listen2mobile.acceptance.UpgradeSeedTest" || "$1" == "com.listen2mobile.acceptance.IntegratedJourneyTest" ]]
+}
+
 sanitize_diagnostic_log() {
   local source="$1" destination="$2"
   node --input-type=module - "$source" "$destination" <<'NODE'
@@ -36,6 +40,9 @@ if [[ "${1:-}" == "--self-test" ]]; then
   instrumentation_result_ok "$self_test_dir/success.txt" || { echo 'instrumentation success fixture rejected' >&2; exit 1; }
   ! instrumentation_result_ok "$self_test_dir/assertion.txt" || { echo 'AssertionError fixture accepted' >&2; exit 1; }
   ! instrumentation_result_ok "$self_test_dir/failed.txt" || { echo 'INSTRUMENTATION_FAILED fixture accepted' >&2; exit 1; }
+  phase08_class_allowed com.listen2mobile.acceptance.UpgradeSeedTest || { echo 'approved seed class rejected' >&2; exit 1; }
+  phase08_class_allowed com.listen2mobile.acceptance.IntegratedJourneyTest || { echo 'approved journey class rejected' >&2; exit 1; }
+  ! phase08_class_allowed com.listen2mobile.acceptance.UnknownTest || { echo 'unknown instrumentation class accepted' >&2; exit 1; }
   printf '%s\n' 'token=forbidden-value https://example.invalid/path' > "$self_test_dir/raw-logcat.txt"
   sanitize_diagnostic_log "$self_test_dir/raw-logcat.txt" "$self_test_dir/sanitized-logcat.txt"
   ! grep -Eq 'forbidden-value|https?://' "$self_test_dir/sanitized-logcat.txt" || { echo 'diagnostic sanitizer leaked a fixture secret or URL' >&2; exit 1; }
@@ -47,6 +54,7 @@ if [[ "${1:-}" == "--self-test" ]]; then
   grep -Fq "assets/index.android.bundle" "$0" || { echo 'runner must reject an unbundled debug seed before reset' >&2; exit 1; }
   grep -Fq 'start_diagnostic_capture' "$0" || { echo 'runner must start bounded diagnostic capture around instrumentation' >&2; exit 1; }
   grep -Fq 'stop_diagnostic_capture' "$0" || { echo 'runner must stop and retain diagnostics around instrumentation' >&2; exit 1; }
+  grep -Fq 'Phase08Instrumentation' "$0" || { echo 'runner must require the self-contained Phase 8 runner' >&2; exit 1; }
   echo 'Instrumentation result self-test passed.'
   exit 0
 fi
@@ -66,8 +74,9 @@ while [[ "$#" -gt 0 ]]; do
   esac
 done
 [[ -n "$RUN_DIR" && -n "$SERIAL" ]] || { echo "run directory and explicit serial are required" >&2; exit 2; }
-[[ "$SEED_CLASS" == "com.listen2mobile.acceptance.UpgradeSeedTest" ]] || { echo "unexpected seed class" >&2; exit 2; }
-[[ "$JOURNEY_CLASS" == "com.listen2mobile.acceptance.IntegratedJourneyTest" ]] || { echo "unexpected journey class" >&2; exit 2; }
+phase08_class_allowed "$SEED_CLASS" || { echo "unexpected seed class" >&2; exit 2; }
+phase08_class_allowed "$JOURNEY_CLASS" || { echo "unexpected journey class" >&2; exit 2; }
+[[ "$SEED_CLASS" != "$JOURNEY_CLASS" ]] || { echo "seed and journey classes must be distinct" >&2; exit 2; }
 [[ -n "$JOURNEY_TEST_APK" && -f "$JOURNEY_TEST_APK" ]] || { echo "a sealed journey AndroidTest APK is required" >&2; exit 2; }
 [[ "$JOURNEY_TEST_BUILD_HEAD" =~ ^[a-f0-9]{7,40}$ ]] || { echo "a sealed journey AndroidTest build head is required" >&2; exit 2; }
 for name in $(env | cut -d= -f1); do
@@ -111,6 +120,12 @@ sha_file() { shasum -a 256 "$1" | awk '{print $1}'; }
 APKANALYZER="$SDK/cmdline-tools/latest/bin/apkanalyzer"; [[ -x "$APKANALYZER" ]] || APKANALYZER="$(command -v apkanalyzer)"
 "$APKANALYZER" dex packages "$TEST_APK" | grep -Fq 'com.listen2mobile.acceptance.UpgradeSeedTest' || { echo "BLOCKED: sealed test payload lacks UpgradeSeedTest" >&2; exit 3; }
 "$APKANALYZER" dex packages "$TEST_APK" | grep -Fq 'com.listen2mobile.acceptance.IntegratedJourneyTest' || { echo "BLOCKED: sealed test payload lacks IntegratedJourneyTest" >&2; exit 3; }
+TEST_MANIFEST="$($SDK/build-tools/37.0.0/aapt dump xmltree "$TEST_APK" AndroidManifest.xml)"
+TEST_RUNNER="$(printf '%s\n' "$TEST_MANIFEST" | sed -n '/E: instrumentation/,/E: application/p' | awk -F'"' '/android:name/ { print $2; exit }')"
+TEST_TARGET_PACKAGE="$(printf '%s\n' "$TEST_MANIFEST" | sed -n '/E: instrumentation/,/E: application/p' | awk -F'"' '/android:targetPackage/ { print $2; exit }')"
+[[ "$TEST_RUNNER" == "com.listen2mobile.acceptance.Phase08Instrumentation" ]] || { echo "BLOCKED: AndroidTest manifest must use the self-contained Phase08Instrumentation runner" >&2; exit 3; }
+[[ "$TEST_TARGET_PACKAGE" == "$PACKAGE" ]] || { echo "BLOCKED: AndroidTest manifest target package differs" >&2; exit 3; }
+"$APKANALYZER" dex packages "$TEST_APK" | grep -Fq "$TEST_RUNNER" || { echo "BLOCKED: AndroidTest APK does not package manifest runner $TEST_RUNNER" >&2; exit 3; }
 APKSIGNER="$SDK/build-tools/37.0.0/apksigner"
 [[ -x "$APKSIGNER" ]] || { echo "BLOCKED: Android Build Tools 37.0.0 apksigner is unavailable" >&2; exit 3; }
 TEST_SIGNER="$($APKSIGNER verify --verbose --print-certs "$TEST_APK" | awk -F': ' '/(Signer #1|V[0-9.]+ Signer): certificate SHA-256 digest/ { print $NF; exit }')"
@@ -128,7 +143,7 @@ cp "$TEST_APK" "$RUN_DIR/artifacts/releaseLikeAndroidTest-journey.apk"
 node --input-type=module - "$RUN_DIR" "$TEST_SHA" "$TEST_SIGNER" "$BUILD_HEAD" "$JOURNEY_TEST_BUILD_HEAD" <<'NODE' > "$RUN_DIR/journey-test-payload.json"
 import { createHash } from 'node:crypto'; import { readFileSync } from 'node:fs';
 const [run, sha, signerSha256, candidateBuildHead, testPayloadBuildHead] = process.argv.slice(2);
-console.log(JSON.stringify({ kind: 'AndroidTest-only', sha256: sha, signerSha256, candidateBuildHead, testPayloadBuildHead, targetPackage: 'com.dazzlingwuming.listen2', targetVersionCode: 1000001, testPackage: 'com.dazzlingwuming.listen2.test', runner: 'androidx.test.runner.AndroidJUnitRunner', contains: ['UpgradeSeedTest', 'IntegratedJourneyTest'], reason: 'AndroidTest-only payload is separately sealed; releaseLike product hash is unchanged.' }, null, 2));
+console.log(JSON.stringify({ kind: 'AndroidTest-only', sha256: sha, signerSha256, candidateBuildHead, testPayloadBuildHead, targetPackage: 'com.dazzlingwuming.listen2', targetVersionCode: 1000001, testPackage: 'com.dazzlingwuming.listen2.test', runner: 'com.listen2mobile.acceptance.Phase08Instrumentation', contains: ['Phase08Instrumentation', 'UpgradeSeedTest', 'IntegratedJourneyTest'], reason: 'AndroidTest-only payload is separately sealed; releaseLike product hash is unchanged.' }, null, 2));
 NODE
 node mobile/scripts/acceptance/generate-fixtures.mjs --out "$FIXTURE_DIR" > "$RUN_DIR/fixture.json"
 FIXTURE_SHA="$(node --input-type=module - "$RUN_DIR/fixture.json" <<'NODE'
@@ -188,7 +203,7 @@ run_instrumentation() {
   local test_class="$1" output="$2"
   local command_status=0 capture_status=0
   start_diagnostic_capture "$(basename "$output" .txt)"
-  "$ADB" -s "$SERIAL" shell am instrument -w -r -e class "$test_class" "$TEST_PACKAGE/androidx.test.runner.AndroidJUnitRunner" > "$output" 2>&1 || command_status=$?
+  "$ADB" -s "$SERIAL" shell am instrument -w -r -e class "$test_class" "$TEST_PACKAGE/$TEST_RUNNER" > "$output" 2>&1 || command_status=$?
   stop_diagnostic_capture || capture_status=$?
   if [[ "$capture_status" != 0 ]]; then
     printf '%s\n' "diagnostic-capture-status=$capture_status" >> "$output"
