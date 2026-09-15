@@ -1,8 +1,8 @@
 ---
 phase: 05-five-source-listen-journey
-reviewed: 2026-09-15T02:39:29Z
+reviewed: 2026-09-15T04:37:44Z
 depth: deep
-files_reviewed: 31
+files_reviewed: 36
 files_reviewed_list:
   - mobile/src/api/client.ts
   - mobile/src/api/errors.ts
@@ -15,6 +15,10 @@ files_reviewed_list:
   - mobile/src/lyrics/selectionStore.ts
   - mobile/src/lyrics/session.ts
   - mobile/src/lyrics/timeline.ts
+  - mobile/src/player/__tests__/playbackService.test.ts
+  - mobile/src/player/__tests__/playerController.bilibiliRetry.test.ts
+  - mobile/src/player/__tests__/playerController.lifecycle.test.ts
+  - mobile/src/player/__tests__/playerController.rollback.test.ts
   - mobile/src/player/__tests__/playerController.test.ts
   - mobile/src/player/playbackService.ts
   - mobile/src/player/playerController.ts
@@ -22,6 +26,7 @@ files_reviewed_list:
   - mobile/src/screens/PlayerScreen.tsx
   - mobile/src/screens/PlaylistDetailScreen.tsx
   - mobile/src/screens/SearchScreen.tsx
+  - mobile/src/screens/SettingsScreen.tsx
   - mobile/src/screens/__tests__/bilibiliFlow.test.tsx
   - mobile/src/screens/__tests__/bilibiliLyricsFlow.test.tsx
   - mobile/src/screens/__tests__/lyricAccessibility.test.tsx
@@ -36,120 +41,52 @@ files_reviewed_list:
   - mobile/src/store/playerSlice.ts
   - mobile/src/types/provider.ts
 findings:
-  critical: 5
-  warning: 4
+  critical: 2
+  warning: 0
   info: 0
-  total: 9
+  total: 2
 status: issues_found
 ---
 
-# Phase 05: Code Review Report
+# Phase 05: Code Review Final Re-review
 
-**Reviewed:** 2026-09-15T02:39:29Z
+**Reviewed:** 2026-09-15T04:37:44Z
 **Depth:** deep
-**Files Reviewed:** 31
+**Files Reviewed:** 36
 **Status:** issues_found
 
 ## Summary
 
-The Phase 05 mobile changes were reviewed at the search/detail, player/RNTP, persistence, lyric/session, and screen boundaries. The implementation has five ship-blocking correctness/security defects: retained search pages are hidden after cancellation/failure, queued transition failure destroys active native audio, rehydration loses an active play-next occurrence, a successful Bilibili lyric cache read can stay permanently loading, and native/bridge exception text is rendered to the user. Detail retry, restoration, accessibility, and persistence-conflict paths also fall short of the stated contracts.
+This fourth deep re-review covers `66f8e4d` and `5455585` against the complete Phase 05 mobile scope. Third-round CR-01 is closed: Bilibili detail now passes the exact part array to the real player thunk, and the expanded rendered integration test reaches bootstrap/RNTP. CR-02 is closed: overwrite snapshots the existing native item, restores it after post-reset failures, and marks reload-required if recovery also fails. CR-03 is closed: a successful FIFO reorder invalidates the deferred transition and the transition requires the same occurrence to remain queue head. CR-04's unsafe fabricated-current identity is removed.
+
+However, the CR-04 replacement drops every identifier-less native state/error event, including the current track's real failure; playback UI/error recovery can remain stale indefinitely. The existing QQ/Kuwo authorized-playback gap (third-round CR-05) is unchanged. `npx tsc --noEmit` and four focused current suites passed (58 tests), but the new tests expressly assert that identifier-less terminal callbacks are ignored rather than proving user-visible native-error recovery.
+
+## Narrative Findings (AI reviewer)
 
 ## Critical Issues
 
-### CR-01: Later-page cancellation or failure erases the visible successful result set
+### CR-05: QQ and Kuwo still cannot complete the phase's required authorized playback journey
 
 **Classification:** BLOCKER
 
-**File:** `/Users/fluenteng/个人相关/listen1/listen1_desktop/mobile/src/screens/SearchScreen.tsx:148-164,205-209,434-453`
+**File:** `/Users/fluenteng/个人相关/listen1/listen1_desktop/mobile/src/api/client.ts:125-133,241-245`
 
-**Issue:** A later-page request starts with the prior rows retained, but `cancel()` increments `requestEpoch` before the aborted request's catch can reduce it, so the catch is ignored. It then forces `status` to `cancelled`; any non-abort rejection forces `status` to `error`. `SearchSurface` renders either terminal card exclusively for both states, hiding all prior rows and providing no retry control. This directly violates the non-destructive pagination/cancellation contract.
+**Issue:** The capability matrix exposes QQ and Kuwo search (and QQ lyrics), but neither has available playback/bootstrap. `bootstrapTrack` deliberately rejects both with `PLAYBACK_UNAVAILABLE`. Thus users can search those visible sources but cannot reach authorized playback, which fails the Phase 05 five-source search-to-detail-to-listen requirement.
 
-**Fix:** Keep a page-scoped pending/error state in `SearchJourneyState`. Abort/reduce the outgoing request before invalidating its epoch, and for `nextPage > 1` leave `status` renderable as ready, show an inline `cancelled-more`/error notice plus a retry action that reuses the same source/query/kind/page scope.
+**Fix:** Implement bounded, source-specific authorized QQ and Kuwo media/bootstrap contracts with route/schema tests and only then enable their playback capabilities; alternatively obtain an explicit approved requirement change that narrows the five-source playback promise.
 
-### CR-02: Failed play-next transition resets the native player and does not restore current audio
-
-**Classification:** BLOCKER
-
-**File:** `/Users/fluenteng/个人相关/listen1/listen1_desktop/mobile/src/player/playerController.ts:344-408,412-454,635-656`
-
-**Issue:** Queue transitions call `transition()`, which calls `loadAndPlay()`. `loadAndPlay()` invokes `TrackPlayer.reset()` before adding the next item. On `add`, seek, or play failure it only updates Redux to not-playing and returns false; it never uses the defined rollback helpers. The Redux current occurrence/queue can remain unchanged while the native player has been emptied and the prior audio has stopped. The controller tests assert the Redux queue but do not exercise this native rollback path.
-
-**Fix:** Capture the active native snapshot before a queued transition and, on any destructive native-load failure, restore its track, position, repeat mode, volume/mute, and play/pause state before returning false. Commit `activateTrack`/`consumeQueuedNext` only after that transaction succeeds. Add a native-mocked regression asserting the old track is re-added and resumes after queued `add()`/`play()` rejection.
-
-### CR-03: A current play-next occurrence is discarded by persistence rehydration
+### CR-06: The stale-event fix permanently suppresses real native error and state handling
 
 **Classification:** BLOCKER
 
-**File:** `/Users/fluenteng/个人相关/listen1/listen1_desktop/mobile/src/store/playerPersistence.ts:197-208,219-229`
+**File:** `/Users/fluenteng/个人相关/listen1/listen1_desktop/mobile/src/player/playbackService.ts:66-70`; `/Users/fluenteng/个人相关/listen1/listen1_desktop/mobile/src/player/playerController.ts:1360-1369,1403-1414`
 
-**Issue:** Successful queue transitions activate the occurrence and then remove it from `playNextQueue`. On restore, `sanitizePlayerState()` accepts a play-next current track only if it can find the occurrence still in that FIFO. Since accepted occurrences are deliberately consumed, `currentFromOccurrence` is null and the persisted `currentTrack`, position, and current occurrence are replaced by null/-1. Restarting after playing a queued item loses the current track despite the persisted-player contract.
+**Issue:** RNTP `PlaybackState` and `PlaybackError` events have no track identity. The service now unconditionally forwards `undefined`, and `isNativeCallbackCurrent()` unconditionally rejects an absent identity. These are the only production callers of `onPlaybackState`/`onPlaybackError`, so a current track's real native pause, stop, or playback error never sets `isPlaying: false`, `native-playback-error`, or `restoredNeedsLoad`. For example, after `loadAndPlay()` sets `isPlaying` true, an asynchronous RNTP media failure leaves the screen claiming it is playing and offers no recovery.
 
-**Fix:** Persist and validate a dedicated current-occurrence semantic record, or accept the sanitized `currentTrack` when its source is `play-next` and its persisted occurrence is syntactically valid but no longer queued. Preserve it independently of the one-shot FIFO and add a rehydration test for an accepted, already-consumed queue occurrence.
-
-### CR-04: Bilibili lyric cache success can leave the lyric sheet permanently loading
-
-**Classification:** BLOCKER
-
-**File:** `/Users/fluenteng/个人相关/listen1/listen1_desktop/mobile/src/screens/PlayerScreen.tsx:251-260,272-280,293-295`
-
-**Issue:** `requestSession` is created with `bilibiliCacheRevision` (initially 0). Both cache-hit and cache-write paths set a new revision before returning. That changes `lyricSession`, so the `finally` condition no longer recognizes the request session and never clears `lyricsLoading`. `LyricsSheet` prioritizes `loading` over parsed lines, so a successfully loaded/cached Bilibili lyric remains hidden behind “正在加载歌词…”.
-
-**Fix:** Separate the request identity/revision from cache metadata, or settle `lyricsLoading` using the immutable request epoch/current occurrence identity rather than a session key that the operation itself mutates. Add rendered cache-hit and cache-write tests that assert loading clears and the lyric text is visible.
-
-### CR-05: Raw native/bridge exception messages are exposed in the lyric UI
-
-**Classification:** BLOCKER
-
-**File:** `/Users/fluenteng/个人相关/listen1/listen1_desktop/mobile/src/screens/PlayerScreen.tsx:531-535,1214-1217`
-
-**Issue:** The translation catch copies `caught.message` into `translationError`, and the sheet renders that value verbatim. Promise rejections at the JS/native boundary are not guaranteed to be the closed `DeepSeekErrorCode` DTO; this can disclose provider response text, request identifiers, lyrics, URLs, or implementation details. It contradicts the safe-error boundary used elsewhere in the phase.
-
-**Fix:** Map only an allow-list of typed `DeepSeekClientError`/result error codes to fixed product copy; map every unknown rejection to a generic safe code such as `PROVIDER_ERROR`. Never render `Error.message`, and add a test rejecting with a URL/token-shaped message that verifies it is absent from the rendered tree and persisted state.
-
-## Warnings
-
-### WR-01: Detail retry responses race and an older retry can overwrite newer detail
-
-**Classification:** WARNING
-
-**File:** `/Users/fluenteng/个人相关/listen1/listen1_desktop/mobile/src/screens/PlaylistDetailScreen.tsx:72-102`
-
-**Issue:** The initial effect owns an abort controller, but `retryRemotePlaylist()` creates an untracked controller. Repeated retries run concurrently; there is no generation check, and an old success/error can overwrite the newest response/status or set state after navigation.
-
-**Fix:** Keep the active controller and a monotonically increasing detail generation in refs. Abort/invalidate the prior request on every retry and only commit a response/error if its generation and semantic playlist/source identity are current.
-
-### WR-02: Search restoration state is implemented but never restored or updated by the screen
-
-**Classification:** WARNING
-
-**File:** `/Users/fluenteng/个人相关/listen1/listen1_desktop/mobile/src/screens/SearchScreen.tsx:53-60,170-189,225-233,354-361`
-
-**Issue:** `SearchJourneyState` has rows, cursor, selected identity, and scroll anchor, but the screen only initializes a blank state or reissues a route query. It never writes selected identity/scroll anchor, and passes only `journey.scope` (not the state) to detail routes. Thus recreation/re-entry cannot restore rows, cursor, selected selection, or scroll location as specified; the reducer-only restoration test does not exercise the screen integration.
-
-**Fix:** Define a bounded navigation restoration DTO containing the sanitized journey state, update selection/scroll events into it, and hydrate it before issuing a request. Add an integration test that unmounts/recreates SearchScreen from the DTO and verifies no second request and restored row/scroll selection.
-
-### WR-03: Restore-automatic deletes the lyric cache before resolving the selection CAS conflict
-
-**Classification:** WARNING
-
-**File:** `/Users/fluenteng/个人相关/listen1/listen1_desktop/mobile/src/screens/PlayerScreen.tsx:416-444`
-
-**Issue:** `restoreBilibiliAutomatic()` clears the exact-part cache at line 428, then performs `clearManual()` with a potentially stale selection revision. If the CAS rejects, it still has destroyed the manual cache and reloads automatic lyrics, so a revision conflict is not non-destructive.
-
-**Fix:** First clear the selection record using its expected revision; on `stale`, preserve both cache and UI and report conflict. Only clear the cache and reload automatic lyrics after that CAS succeeds.
-
-### WR-04: The advertised player seek surface is not an accessible seek control
-
-**Classification:** WARNING
-
-**File:** `/Users/fluenteng/个人相关/listen1/listen1_desktop/mobile/src/screens/PlayerScreen.tsx:922-950`
-
-**Issue:** `Progress` is a non-interactive `View` with an accessibility label. It has no slider role, value, increment/decrement actions, or handler. The adjacent ±15-second buttons offer only coarse steps and do not meet the phase's promised accessible seek/target feedback contract.
-
-**Fix:** Replace it with a controlled accessible slider (role, min/max/current value, value text and adjustable actions) that dispatches the controller seek thunk and reflects only the confirmed snapshot; retain the step buttons as optional shortcuts.
+**Fix:** Retain stale-event safety while restoring a trusted current-event path: introduce a controller-owned native epoch/settlement protocol that accepts identifier-less events only when no ownership transition is pending and their native state is corroborated, while quarantining them across reset/load transitions. Add an integration test that emits a current-track native failure after its active-track hand-off and asserts safe error/reload state, alongside the existing late-A-after-B test.
 
 ---
 
-_Reviewed: 2026-09-15T02:39:29Z_
+_Reviewed: 2026-09-15T04:37:44Z_
 _Reviewer: the agent (gsd-code-reviewer)_
 _Depth: deep_
