@@ -20,6 +20,11 @@ export type PresentableTrack = PlayableTrack & {
   kind?: string;
 };
 
+export type TrackRowAction =
+  | { kind: 'play'; label: string; onPress: () => void }
+  | { kind: 'detail'; label: string; onPress: () => void }
+  | { kind: 'unavailable'; label: string; explanation: string };
+
 export function trackTitle(track: PresentableTrack) {
   return track.title || track.name || '未知歌曲';
 }
@@ -39,12 +44,14 @@ export function TrackRow({
   onPlay,
   onDownload,
   downloadStatus,
+  action,
 }: {
   track: PresentableTrack;
   onPress?: () => void;
   onPlay?: () => void;
   onDownload?: () => void;
   downloadStatus?: string;
+  action?: TrackRowAction;
 }) {
   const source = trackSource(track);
   return (
@@ -79,7 +86,23 @@ export function TrackRow({
             : ' · 时长未知'}
         </Text>
       </View>
-      {onPlay ? (
+      {action?.kind === 'unavailable' ? (
+        <Text accessibilityRole="text" style={styles.unavailable}>
+          {action.explanation}
+        </Text>
+      ) : action ? (
+        <Pressable
+          accessibilityLabel={action.label}
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={action.onPress}
+          style={styles.play}
+        >
+          <Text style={styles.playText}>
+            {action.kind === 'play' ? '播放' : '详情'}
+          </Text>
+        </Pressable>
+      ) : onPlay ? (
         <Pressable
           accessibilityLabel={`播放${trackTitle(track)}`}
           accessibilityRole="button"

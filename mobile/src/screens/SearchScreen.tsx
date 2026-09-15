@@ -17,6 +17,7 @@ import type {
   Track,
 } from '../types/music';
 import { PROVIDER_CAPABILITIES, providerClient } from '../api/client';
+import { presentProviderError } from '../api/errors';
 import * as playerActions from '../store/playerSlice';
 import { colors, spacing, text } from '../theme';
 import { SourceTabs, providerLabels } from '../components/SourceTabs';
@@ -59,6 +60,9 @@ export function SearchScreen() {
     }),
   );
   const [status, setStatus] = useState<SearchStatus>('guide');
+  const [errorCopy, setErrorCopy] = useState<ReturnType<
+    typeof presentProviderError
+  > | null>(null);
   const requestEpoch = useRef(0);
   const requestController = useRef<AbortController | null>(null);
   const handledRouteRequest = useRef<string | null>(null);
@@ -105,6 +109,7 @@ export function SearchScreen() {
         }),
       );
       setStatus(nextPage === 1 ? 'loading' : 'loadingMore');
+      setErrorCopy(null);
       try {
         const response = await searchProvider(
           requestedSource,
@@ -140,7 +145,7 @@ export function SearchScreen() {
           setStatus(next.terminal === 'empty' ? 'empty' : 'ready');
           return next;
         });
-      } catch {
+      } catch (error) {
         if (epoch === requestEpoch.current) {
           if (controller.signal.aborted) {
             setJourney(previous =>
@@ -152,6 +157,9 @@ export function SearchScreen() {
               }),
             );
           }
+          setErrorCopy(
+            controller.signal.aborted ? null : presentProviderError(error),
+          );
           setStatus(controller.signal.aborted ? 'cancelled' : 'error');
         }
       }
@@ -352,6 +360,7 @@ export function SearchScreen() {
         searchKind={searchKind}
         sourceId={sourceId}
         status={status}
+        errorCopy={errorCopy}
       />
       {status === 'ready' && journey.hasMore ? (
         <Pressable
@@ -375,6 +384,7 @@ function SearchSurface({
   onPlay,
   downloads,
   onDownload,
+  errorCopy,
 }: {
   status: SearchStatus;
   sourceId: SourceId;
@@ -386,6 +396,7 @@ function SearchSurface({
   onPlay: (track: PresentableTrack) => void;
   downloads: RootState['downloads']['entries'];
   onDownload: (track: PresentableTrack) => void;
+  errorCopy: ReturnType<typeof presentProviderError> | null;
 }) {
   if (status === 'guide')
     return (
@@ -419,11 +430,16 @@ function SearchSurface({
     );
   if (status === 'error')
     return (
-      <View style={[sectionStyles.card, styles.state]}>
+      <View
+        accessibilityRole="alert"
+        style={[sectionStyles.card, styles.state]}
+      >
         <Text style={text.heading}>
-          {providerLabels[sourceId]}暂时无法完成此操作
+          {errorCopy?.title || `${providerLabels[sourceId]}暂时无法完成此操作`}
         </Text>
-        <Text style={text.meta}>请检查网络后重试，或选择其他来源。</Text>
+        <Text style={text.meta}>
+          {errorCopy?.message || '请检查网络后重试，或选择其他来源。'}
+        </Text>
       </View>
     );
   if (status === 'cancelled')

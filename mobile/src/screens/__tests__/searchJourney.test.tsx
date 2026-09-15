@@ -3,6 +3,7 @@ import {
   createSearchJourneyState,
   reduceSearchJourney,
 } from '../../search/searchJourneyState';
+import { ProviderClientError, presentProviderError } from '../../api/errors';
 
 const track = (id: string): SearchResult => ({
   kind: 'track',
@@ -133,5 +134,28 @@ describe('search journey state', () => {
       scrollAnchor: 96,
     });
     expect(state.rows).toHaveLength(1);
+  });
+
+  it('projects provider failures to safe, distinct recovery copy', () => {
+    const timeout = presentProviderError(
+      new ProviderClientError('REQUEST_TIMEOUT', 'bilibili', 'search'),
+    );
+    const login = presentProviderError(
+      new ProviderClientError('LOGIN_REQUIRED', 'bilibili', 'bootstrap'),
+    );
+    const unavailable = presentProviderError(
+      new ProviderClientError('ROUTE_UNAVAILABLE', 'qq', 'detail'),
+    );
+
+    expect(timeout).toMatchObject({ terminal: 'timeout', action: 'retry' });
+    expect(login).toMatchObject({
+      terminal: 'login-required',
+      action: 'sign-in',
+    });
+    expect(unavailable).toMatchObject({
+      terminal: 'unavailable',
+      action: 'choose-another-source',
+    });
+    expect(JSON.stringify(timeout)).not.toMatch(/cookie|token|https?:\/\//i);
   });
 });
