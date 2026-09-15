@@ -32,16 +32,17 @@ internal object LibraryBridgeContract {
     }
 
     fun parseLegacyMigration(value: Map<String, Any?>): Pair<LegacyLibraryInput, Pair<String, String>>? {
-        if (value.keys != setOf("schemaVersion", "attemptId", "checksum", "playlists", "favorites", "queueCheckpoint", "lyricMetadata", "localEntries") || hasPrivateTree(value)) return null
+        if (value.keys != setOf("schemaVersion", "attemptId", "checksum", "playlists", "favorites", "remoteCollections", "queueCheckpoint", "lyricMetadata", "localEntries") || hasPrivateTree(value)) return null
         val schemaVersion = (value["schemaVersion"] as? Number)?.let(::exactInt) ?: return null
         val attemptId = value["attemptId"] as? String ?: return null
         val checksum = value["checksum"] as? String ?: return null
         val playlists = value["playlists"] as? List<*> ?: return null
         val favorites = value["favorites"] as? List<*> ?: return null
+        val remoteCollections = value["remoteCollections"] as? List<*> ?: return null
         val queue = value["queueCheckpoint"] as? List<*> ?: return null
         val lyrics = value["lyricMetadata"] as? List<*> ?: return null
         val localEntries = value["localEntries"] as? List<*> ?: return null
-        if (schemaVersion != SCHEMA_VERSION || attemptId.length !in 1..64 || !attemptId.matches(Regex("^[A-Za-z0-9_-]+$")) || !checksum.matches(Regex("^[0-9a-f]{64}$")) || playlists.size > LibraryLimits.MAX_PLAYLISTS || localEntries.size > LibraryLimits.MAX_PLAYLISTS) return null
+        if (schemaVersion != SCHEMA_VERSION || attemptId.length !in 1..64 || !attemptId.matches(Regex("^[A-Za-z0-9_-]+$")) || !checksum.matches(Regex("^[0-9a-f]{64}$")) || playlists.size > LibraryLimits.MAX_PLAYLISTS || remoteCollections.size > LibraryLimits.MAX_PLAYLISTS || localEntries.size > LibraryLimits.MAX_PLAYLISTS || favorites.size > 50_000 || queue.size > 50_000 || lyrics.size > 50_000) return null
         val safePlaylists = playlists.map { item ->
             val entry = item as? Map<*, *> ?: return null
             if (entry.keys != setOf("playlistId", "title", "position", "tracks")) return null
@@ -49,6 +50,11 @@ internal object LibraryBridgeContract {
             LegacyPlaylist(entry["playlistId"] as? String ?: return null, entry["title"] as? String ?: return null, (entry["position"] as? Number)?.let(::exactInt) ?: return null, tracks)
         }
         val safeFavorites = favorites.map { parseLegacyTrack(it) ?: return null }
+        val safeRemoteCollections = remoteCollections.map { item ->
+            val entry = item as? Map<*, *> ?: return null
+            if (entry.keys != setOf("collectionId", "source", "title", "syncState")) return null
+            SafeRemoteCollection(entry["collectionId"] as? String ?: return null, entry["source"] as? String ?: return null, entry["title"] as? String ?: return null, entry["syncState"] as? String ?: return null)
+        }
         val safeQueue = queue.map { item ->
             val entry = item as? Map<*, *> ?: return null
             if (entry.keys != setOf("occurrenceId", "position", "source", "trackId")) return null
@@ -64,7 +70,15 @@ internal object LibraryBridgeContract {
             if (entry.keys != setOf("title", "artist")) return null
             LegacyLocalEntry(entry["title"] as? String ?: return null, entry["artist"] as? String ?: return null)
         }
-        return LegacyLibraryInput(schemaVersion, safePlaylists, safeFavorites, safeQueue, safeLyrics, safeLocalEntries) to (attemptId to checksum)
+        return LegacyLibraryInput(
+            schemaVersion = schemaVersion,
+            playlists = safePlaylists,
+            favorites = safeFavorites,
+            queueCheckpoint = safeQueue,
+            lyricMetadata = safeLyrics,
+            localEntries = safeLocalEntries,
+            remoteCollections = safeRemoteCollections,
+        ) to (attemptId to checksum)
     }
 
     private fun parseLegacyTrack(raw: Any?): LegacyTrack? {
@@ -90,17 +104,21 @@ internal object LibraryBridgeContract {
         return BackupInput(revision, mode, favorites, playlists)
     }
 
-    fun parseRemoteRefresh(value: Map<String, Any?>): List<SafeRemoteCollection>? {
-        if (value.keys != setOf("schemaVersion", "collections") || hasPrivateTree(value) || (value["schemaVersion"] as? Number)?.let(::exactInt) != SCHEMA_VERSION) return null
+    fun parseRemoteRefresh(value: Map<String, Any?>): Pair<Long, List<SafeRemoteCollection>>? {
+        if (value.keys != setOf("schemaVersion", "expectedRevision", "collections") || hasPrivateTree(value) || (value["schemaVersion"] as? Number)?.let(::exactInt) != SCHEMA_VERSION) return null
+        val expectedRevision = (value["expectedRevision"] as? Number)?.let(::exactLong) ?: return null
+        if (expectedRevision < 0) return null
         return (value["collections"] as? List<*>)?.map { raw ->
             val item = raw as? Map<*, *> ?: return null
             if (item.keys != setOf("collectionId", "source", "title", "syncState")) return null
             SafeRemoteCollection(item["collectionId"] as? String ?: return null, item["source"] as? String ?: return null, item["title"] as? String ?: return null, item["syncState"] as? String ?: return null)
-        }
+        }?.let { expectedRevision to it }
     }
 
-    fun parseContinuity(value: Map<String, Any?>): Pair<List<SafeQueueCheckpoint>, List<SafeLyricMetadata>>? {
-        if (value.keys != setOf("schemaVersion", "queueCheckpoint", "lyricMetadata") || hasPrivateTree(value) || (value["schemaVersion"] as? Number)?.let(::exactInt) != SCHEMA_VERSION) return null
+    fun parseContinuity(value: Map<String, Any?>): Triple<Long, List<SafeQueueCheckpoint>, List<SafeLyricMetadata>>? {
+        if (value.keys != setOf("schemaVersion", "expectedRevision", "queueCheckpoint", "lyricMetadata") || hasPrivateTree(value) || (value["schemaVersion"] as? Number)?.let(::exactInt) != SCHEMA_VERSION) return null
+        val expectedRevision = (value["expectedRevision"] as? Number)?.let(::exactLong) ?: return null
+        if (expectedRevision < 0) return null
         val queue = (value["queueCheckpoint"] as? List<*>)?.map { raw ->
             val item = raw as? Map<*, *> ?: return null
             if (item.keys != setOf("occurrenceId", "position", "source", "trackId")) return null
@@ -111,7 +129,7 @@ internal object LibraryBridgeContract {
             if (item.keys != setOf("source", "trackId", "selectedVariantId", "offsetMillis")) return null
             SafeLyricMetadata(item["source"] as? String ?: return null, item["trackId"] as? String ?: return null, item["selectedVariantId"] as? String, (item["offsetMillis"] as? Number)?.let(::exactLong) ?: return null)
         } ?: return null
-        return queue to lyrics
+        return Triple(expectedRevision, queue, lyrics)
     }
 
     private fun parseTrack(raw: Any?): SafeTrack? {
@@ -213,12 +231,12 @@ class LibraryBridge internal constructor(
     /** A provider refresh submits only a bounded semantic collection projection. Invalid refreshes retain prior rows. */
     @ReactMethod fun replaceRemoteCollections(request: ReadableMap, promise: Promise) = execute(promise) {
         val parsed = LibraryBridgeContract.parseRemoteRefresh(readMap(request)) ?: return@execute error("INVALID_REMOTE_COLLECTIONS")
-        repository.replaceRemoteCollections(parsed)?.let(::snapshot) ?: error("INVALID_REMOTE_COLLECTIONS")
+        repository.replaceRemoteCollections(parsed.second, parsed.first)?.let(::snapshot) ?: error("INVALID_REMOTE_COLLECTIONS")
     }
 
     @ReactMethod fun replaceContinuityMetadata(request: ReadableMap, promise: Promise) = execute(promise) {
         val parsed = LibraryBridgeContract.parseContinuity(readMap(request)) ?: return@execute error("INVALID_CONTINUITY_METADATA")
-        repository.replaceContinuityMetadata(parsed.first, parsed.second)?.let(::snapshot) ?: error("INVALID_CONTINUITY_METADATA")
+        repository.replaceContinuityMetadata(parsed.second, parsed.third, parsed.first)?.let(::snapshot) ?: error("INVALID_CONTINUITY_METADATA")
     }
 
     /** This remains native-owned; callers cannot provide a legacy payload or storage endpoint. */

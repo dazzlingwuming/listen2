@@ -30,6 +30,7 @@ internal class ListeningLedger(
     private val zone: () -> ZoneId = ZoneId::systemDefault,
 ) {
     fun generation(): Long = database.runInTransaction<Long> { state().clearGeneration }
+    fun revision(): Long = database.runInTransaction<Long> { state().revision }
 
     fun begin(value: PlaybackStart): Boolean = database.runInTransaction<Boolean> {
         if (!validStart(value) || value.clearGeneration != state().clearGeneration) return@runInTransaction false
@@ -75,27 +76,30 @@ internal class ListeningLedger(
         if (year == null) database.libraryDao().historyEvents(safeLimit) else database.libraryDao().historyEventsForYear(year, safeLimit)
     }
 
-    /** Bounded, semantic-only annual aggregate. An empty year is a real zero result, not an error. */
+    /**
+     * Annual recap is calculated by Room projections instead of the bounded event/export query.
+     * The UI event list remains capped, but totals and rankings must include every event in the
+     * selected year.
+     */
     fun recap(year: Int): HistoryRecap = database.runInTransaction<HistoryRecap> {
-        val events = database.libraryDao().historyEventsForYear(year, 500)
-        val byTrack = events.groupBy { "${it.source}:${it.semanticTrackId}" }
-        val byArtist = events.groupBy { it.artist }
+        val dao = database.libraryDao()
+        val totals = dao.historyTotalsForYear(year)
+        val monthly = dao.historyMonthsForYear(year).associateBy { it.month }
         val monthRows = (1..12).map { month ->
-            val rows = events.filter { it.committedLocalMonth == month }
-            mapOf("month" to month, "playCount" to rows.size, "listenedForwardMs" to rows.sumOf { it.listenedForwardMs })
+            val row = monthly[month]
+            mapOf("month" to month, "playCount" to (row?.playCount ?: 0L).toInt(), "listenedForwardMs" to (row?.listenedForwardMs ?: 0L))
         }
         HistoryRecap(
             year = year,
-            totalListenedMs = events.sumOf { it.listenedForwardMs },
-            playCount = events.size,
-            distinctTracks = byTrack.size,
-            distinctArtists = byArtist.size,
-            topTracks = byTrack.values.sortedWith(compareByDescending<List<HistoryEventEntity>> { it.size }.thenBy { it.first().title }).take(5).map { rows ->
-                val row = rows.first()
-                mapOf("source" to row.source, "trackId" to row.semanticTrackId, "title" to row.title, "artist" to row.artist, "playCount" to rows.size)
+            totalListenedMs = totals.totalListenedMs,
+            playCount = totals.playCount.toInt(),
+            distinctTracks = totals.distinctTracks.toInt(),
+            distinctArtists = totals.distinctArtists.toInt(),
+            topTracks = dao.historyTopTracksForYear(year).map { row ->
+                mapOf("source" to row.source, "trackId" to row.semanticTrackId, "title" to row.title, "artist" to row.artist, "playCount" to row.playCount.toInt())
             },
-            topArtists = byArtist.values.sortedWith(compareByDescending<List<HistoryEventEntity>> { it.size }.thenBy { it.first().artist }).take(5).map { rows ->
-                mapOf("artist" to rows.first().artist, "playCount" to rows.size)
+            topArtists = dao.historyTopArtistsForYear(year).map { row ->
+                mapOf("artist" to row.artist, "playCount" to row.playCount.toInt())
             },
             monthly = monthRows,
         )

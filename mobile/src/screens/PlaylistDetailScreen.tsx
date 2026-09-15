@@ -24,6 +24,7 @@ import { Sheet } from '../components/Sheet';
 import { removeLocalAudio } from '../localAudio/picker';
 import { isLocalTrack } from '../types/music';
 import { libraryClient } from '../library/libraryClient';
+import { persistRemoteCollectionRefresh } from '../library/remoteCollectionCoordinator';
 
 type RemotePlaylistStatus = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -94,12 +95,21 @@ export function PlaylistDetailScreen() {
         }
         setRemoteDetail(detail);
         setRemoteStatus('ready');
+        void persistRemoteCollectionRefresh([{
+          collectionId: detail.id,
+          source: detail.source,
+          title: detail.title,
+          syncState: 'ready',
+        }]).then(snapshot => {
+          if (snapshot && generation === remoteGeneration.current && !signal.aborted)
+            dispatch(hydrationSucceeded(snapshot));
+        });
       } catch {
         if (signal.aborted || generation !== remoteGeneration.current) return;
         setRemoteStatus('error');
       }
     },
-    [remotePlaylistId, sourceId],
+    [dispatch, remotePlaylistId, sourceId],
   );
   useEffect(() => {
     if (!remotePlaylistId || sourceId === 'local') return;

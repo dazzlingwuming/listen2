@@ -57,7 +57,7 @@ jest.mock('../../deepseek/client', () => ({
   hashTrack: () => 'b'.repeat(64),
 }));
 jest.mock('../../store/playerSlice', () => ({ togglePlayback: jest.fn() }));
-jest.mock('../../store/librarySlice', () => ({ toggleFavorite: jest.fn() }));
+jest.mock('../../store/librarySlice', () => ({ toggleFavorite: jest.fn(), continuityLyricMetadataObserved: jest.fn(() => ({ type: 'library/continuityLyricMetadataObserved' })), continuityLyricMetadataRemoved: jest.fn(() => ({ type: 'library/continuityLyricMetadataRemoved' })) }));
 jest.mock('../../types/music', () => ({ isLocalTrack: () => false }));
 jest.mock('../../components/TrackRow', () => ({
   artwork: () => undefined,

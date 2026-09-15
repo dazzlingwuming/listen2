@@ -3,7 +3,7 @@ import renderer, { act } from 'react-test-renderer';
 
 jest.mock('@react-navigation/native', () => ({ useNavigation: () => ({ navigate: jest.fn() }) }));
 jest.mock('../ScreenLayout', () => ({ ScreenLayout: ({ children }: any) => <>{children}</>, sectionStyles: { card: {}, section: {}, button: {}, buttonText: {}, secondaryButton: {}, secondaryText: {} } }));
-jest.mock('../../history/history', () => ({ history: { getHistory: jest.fn().mockResolvedValue({ status: 'success', data: [{ eventId: 'one', title: '青花瓷', artist: '周杰伦', date: '2026-01-01' }] }), recap: jest.fn().mockResolvedValue({ status: 'success', data: { year: 2026, totalListenedMs: 0, playCount: 1, distinctTracks: 1, distinctArtists: 1, topTracks: [], monthly: [] } }), recordingEnabled: jest.fn().mockResolvedValue({ status: 'success', data: { recordingEnabled: true } }), setRecordingEnabled: jest.fn().mockResolvedValue({ status: 'busy' }), clear: jest.fn(), exportSafe: jest.fn() } }));
+jest.mock('../../history/history', () => ({ history: { getHistory: jest.fn().mockResolvedValue({ status: 'success', data: [{ eventId: 'one', title: '青花瓷', artist: '周杰伦', date: '2026-01-01' }] }), recap: jest.fn().mockResolvedValue({ status: 'success', data: { year: 2026, totalListenedMs: 0, playCount: 1, distinctTracks: 1, distinctArtists: 1, topTracks: [], topArtists: [], monthly: [] } }), recordingEnabled: jest.fn().mockResolvedValue({ status: 'success', data: { recordingEnabled: true } }), setRecordingEnabled: jest.fn().mockResolvedValue({ status: 'busy' }), clear: jest.fn(), exportSafe: jest.fn() } }));
 import { HistoryScreen } from '../HistoryScreen';
 
 test('history screen renders durable history and does not claim a busy privacy toggle succeeded', async () => {

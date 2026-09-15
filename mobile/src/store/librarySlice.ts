@@ -85,6 +85,16 @@ const librarySlice = createSlice({
         return true;
       }).slice(0, 100);
     },
+    continuityLyricMetadataObserved(state, action: PayloadAction<NonNullable<LibrarySnapshot['lyricMetadata']>[number]>) {
+      const current = state.lyricMetadata || [];
+      state.lyricMetadata = [
+        ...current.filter(item => !(item.source === action.payload.source && item.trackId === action.payload.trackId)),
+        action.payload,
+      ];
+    },
+    continuityLyricMetadataRemoved(state, action: PayloadAction<{ source: string; trackId: string }>) {
+      state.lyricMetadata = (state.lyricMetadata || []).filter(item => !(item.source === action.payload.source && item.trackId === action.payload.trackId));
+    },
     toggleFavorite(_state, _action: PayloadAction<PlayableTrack>) {},
     recordRecent(_state, _action: PayloadAction<PlayableTrack>) {},
     clearRecent() {},
@@ -103,6 +113,8 @@ export const {
   addTrackToPlaylist,
   clearRecent,
   createPlaylist,
+  continuityLyricMetadataObserved,
+  continuityLyricMetadataRemoved,
   deletePlaylist,
   hydrationFailed,
   historyProjectionReceived,

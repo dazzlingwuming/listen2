@@ -38,7 +38,12 @@ import type {
   BilibiliLyricCandidateResult,
 } from '../bilibili/types';
 import { BilibiliLyricPicker } from '../components/BilibiliLyricPicker';
-import { mutationPending, mutationReceived } from '../store/librarySlice';
+import {
+  continuityLyricMetadataObserved,
+  continuityLyricMetadataRemoved,
+  mutationPending,
+  mutationReceived,
+} from '../store/librarySlice';
 import { libraryClient } from '../library/libraryClient';
 import { isLocalTrack } from '../types/music';
 import type { Lyric, SourceId, Track } from '../types/provider';
@@ -224,6 +229,11 @@ export function PlayerScreen() {
       ? { source: 'bilibili', trackId: exact.trackId, partId: exact.cid }
       : null;
   }, [currentBilibiliTrackId]);
+  const nativeLyricMetadata = useSelector((root: RootState) =>
+    selectionKey
+      ? root.library.lyricMetadata?.find(item => item.source === selectionKey.source && item.trackId === selectionKey.trackId)
+      : undefined,
+  );
   const operations = current
     ? PROVIDER_CAPABILITIES?.[trackSource(current) as SourceId]?.operations
     : undefined;
@@ -245,9 +255,18 @@ export function PlayerScreen() {
       if (record) {
         setLyricOffsetMs(record.offsetMs);
         setSelectionRevision(record.revision);
+        dispatch(continuityLyricMetadataObserved({
+          source: selectionKey.source,
+          trackId: selectionKey.trackId,
+          selectedVariantId: record.manual?.candidateId || null,
+          offsetMillis: record.offsetMs,
+        }));
+      } else if (nativeLyricMetadata) {
+        setLyricOffsetMs(nativeLyricMetadata.offsetMillis);
+        setSelectionRevision(undefined);
       }
     });
-  }, [lyricSession, selectionKey]);
+  }, [dispatch, lyricSession, nativeLyricMetadata, selectionKey]);
   useEffect(() => {
     const identity = parseExactBilibiliTrackId(currentBilibiliTrackId);
     if (!identity) return;
@@ -498,6 +517,13 @@ export function PlayerScreen() {
       );
       if (selection.status === 'ok' && isCurrentLyricSession(requestSession))
         setSelectionRevision(selection.record.revision);
+      if (selection.status === 'ok' && isCurrentLyricSession(requestSession))
+        dispatch(continuityLyricMetadataObserved({
+          source: selectionKey.source,
+          trackId: selectionKey.trackId,
+          selectedVariantId: candidate.id,
+          offsetMillis: selection.record.offsetMs,
+        }));
     }
     setMachineTranslation(null);
     setTranslationError(null);
@@ -537,9 +563,18 @@ export function PlayerScreen() {
       !isCurrentLyricSession(requestSession)
     )
       return;
-    if (selection.status === 'ok')
+    if (selection.status === 'ok') {
       setSelectionRevision(selection.record.revision);
-    else setSelectionRevision(undefined);
+      dispatch(continuityLyricMetadataObserved({
+        source: selectionKey.source,
+        trackId: selectionKey.trackId,
+        selectedVariantId: null,
+        offsetMillis: selection.record.offsetMs,
+      }));
+    } else {
+      setSelectionRevision(undefined);
+      dispatch(continuityLyricMetadataRemoved({ source: selectionKey.source, trackId: selectionKey.trackId }));
+    }
     setLyrics(null);
     setLyricsUnavailable(false);
     setLyricFailure(null);
@@ -577,6 +612,12 @@ export function PlayerScreen() {
       if (saved.status === 'ok') {
         setLyricOffsetMs(saved.record.offsetMs);
         setSelectionRevision(saved.record.revision);
+        dispatch(continuityLyricMetadataObserved({
+          source: selectionKey.source,
+          trackId: selectionKey.trackId,
+          selectedVariantId: saved.record.manual?.candidateId || null,
+          offsetMillis: saved.record.offsetMs,
+        }));
         setOffsetNotice(
           `已保存 ${saved.record.offsetMs >= 0 ? '+' : ''}${
             saved.record.offsetMs

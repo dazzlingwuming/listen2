@@ -102,6 +102,8 @@ export type LegacyMigrationRequest = {
   checksum: string;
   playlists: Array<{ playlistId: string; title: string; position: number; tracks: LibraryTrackRecord[] }>;
   favorites: LibraryTrackRecord[];
+  /** Safe remote collection metadata from the former library projection. */
+  remoteCollections: LibraryRemoteCollection[];
   queueCheckpoint: LibraryQueueCheckpoint[];
   lyricMetadata: LibraryLyricMetadata[];
   localEntries: Array<{ title: string; artist: string }>;

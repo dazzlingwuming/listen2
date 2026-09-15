@@ -40,6 +40,7 @@ class LibraryBridgeContractTest {
                 "checksum" to "a".repeat(64),
                 "playlists" to listOf(mapOf("playlistId" to "road", "title" to "旧歌单", "position" to 0, "tracks" to listOf(mapOf("source" to "netease", "trackId" to "42", "title" to "歌", "artist" to "手")))),
                 "favorites" to listOf(mapOf("source" to "netease", "trackId" to "42", "title" to "歌", "artist" to "手")),
+                "remoteCollections" to emptyList<Map<String, String>>(),
                 "queueCheckpoint" to listOf(mapOf("occurrenceId" to "q1", "position" to 0, "source" to "netease", "trackId" to "42")),
                 "lyricMetadata" to listOf(mapOf("source" to "netease", "trackId" to "42", "selectedVariantId" to "main", "offsetMillis" to 0)),
                 "localEntries" to listOf(mapOf("title" to "本地音乐", "artist" to "歌手")),
@@ -50,7 +51,7 @@ class LibraryBridgeContractTest {
             LibraryBridgeContract.parseLegacyMigration(
                 mapOf(
                     "schemaVersion" to 1, "attemptId" to "attempt_2", "checksum" to "a".repeat(64),
-                    "playlists" to listOf(mapOf("playlistId" to "road", "title" to "x", "position" to 0, "tracks" to listOf(mapOf("source" to "netease", "trackId" to "42", "title" to "x", "artist" to "y", "contentUri" to "content://private")))), "favorites" to emptyList<Map<String, String>>(), "queueCheckpoint" to emptyList<Map<String, String>>(), "lyricMetadata" to emptyList<Map<String, String>>(), "localEntries" to emptyList<Map<String, String>>(),
+                    "playlists" to listOf(mapOf("playlistId" to "road", "title" to "x", "position" to 0, "tracks" to listOf(mapOf("source" to "netease", "trackId" to "42", "title" to "x", "artist" to "y", "contentUri" to "content://private")))), "favorites" to emptyList<Map<String, String>>(), "remoteCollections" to emptyList<Map<String, String>>(), "queueCheckpoint" to emptyList<Map<String, String>>(), "lyricMetadata" to emptyList<Map<String, String>>(), "localEntries" to emptyList<Map<String, String>>(),
                 ),
             ) == null,
         )

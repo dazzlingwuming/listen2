@@ -137,6 +137,26 @@ data class HistoryEventEntity(
     val thresholdMs: Long,
 )
 
+/** Projection rows used by the annual recap; they never materialize the event history. */
+data class HistoryTotalsRow(
+    val totalListenedMs: Long,
+    val playCount: Long,
+    val distinctTracks: Long,
+    val distinctArtists: Long,
+)
+
+data class HistoryTrackAggregateRow(
+    val source: String,
+    val semanticTrackId: String,
+    val title: String,
+    val artist: String,
+    val playCount: Long,
+)
+
+data class HistoryArtistAggregateRow(val artist: String, val playCount: Long)
+
+data class HistoryMonthAggregateRow(val month: Int, val listenedForwardMs: Long, val playCount: Long)
+
 @Entity(tableName = "mutation_receipts")
 data class MutationReceiptEntity(@PrimaryKey val requestId: String, val status: String, val revision: Long, val errorCode: String?)
 
@@ -204,6 +224,10 @@ interface LibraryDao {
     @Query("SELECT * FROM history_events WHERE playbackInstanceId = :instanceId AND clearGeneration = :generation LIMIT 1") fun historyEventForSession(instanceId: String, generation: Long): HistoryEventEntity?
     @Query("SELECT * FROM history_events WHERE committedLocalYear = :year ORDER BY committedLocalDate ASC, eventId ASC LIMIT :limit") fun historyEventsForYear(year: Int, limit: Int): List<HistoryEventEntity>
     @Query("SELECT * FROM history_events ORDER BY committedLocalDate DESC, eventId DESC LIMIT :limit") fun historyEvents(limit: Int): List<HistoryEventEntity>
+    @Query("SELECT COALESCE(SUM(listenedForwardMs), 0) AS totalListenedMs, COUNT(*) AS playCount, COUNT(DISTINCT source || ':' || semanticTrackId) AS distinctTracks, COUNT(DISTINCT artist) AS distinctArtists FROM history_events WHERE committedLocalYear = :year") fun historyTotalsForYear(year: Int): HistoryTotalsRow
+    @Query("SELECT source, semanticTrackId, MAX(title) AS title, MAX(artist) AS artist, COUNT(*) AS playCount FROM history_events WHERE committedLocalYear = :year GROUP BY source, semanticTrackId ORDER BY playCount DESC, title ASC, artist ASC, source ASC, semanticTrackId ASC LIMIT 5") fun historyTopTracksForYear(year: Int): List<HistoryTrackAggregateRow>
+    @Query("SELECT artist, COUNT(*) AS playCount FROM history_events WHERE committedLocalYear = :year GROUP BY artist ORDER BY playCount DESC, artist ASC LIMIT 5") fun historyTopArtistsForYear(year: Int): List<HistoryArtistAggregateRow>
+    @Query("SELECT committedLocalMonth AS month, COALESCE(SUM(listenedForwardMs), 0) AS listenedForwardMs, COUNT(*) AS playCount FROM history_events WHERE committedLocalYear = :year GROUP BY committedLocalMonth") fun historyMonthsForYear(year: Int): List<HistoryMonthAggregateRow>
     @Insert(onConflict = OnConflictStrategy.ABORT) fun insertHistoryEvent(value: HistoryEventEntity)
     @Query("SELECT * FROM history_aggregates WHERE year = :year AND source = :source AND semanticTrackId = :trackId") fun historyAggregate(year: Int, source: String, trackId: String): HistoryAggregateEntity?
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putHistoryAggregate(value: HistoryAggregateEntity)

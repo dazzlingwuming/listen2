@@ -30,13 +30,13 @@ class HistoryModule internal constructor(app: ReactApplicationContext, private v
         if (!runBlocking { preferences.recordingEnabled() }) return@submit
         parseStart(value)?.let(ledger::begin)
     }
-    @ReactMethod fun observePlayback(value: ReadableMap, promise: Promise) = submit(promise) {
-        if (!runBlocking { preferences.recordingEnabled() }) return@submit
-        parseObservation(value)?.let(ledger::observe)
-    }
+    @ReactMethod fun observePlayback(value: ReadableMap, promise: Promise) = submitObservation(value, promise)
     @ReactMethod fun getRecordingPreference(promise: Promise) = submitResult(promise) { mapOf("recordingEnabled" to runBlocking { preferences.recordingEnabled() }) }
     @ReactMethod fun setRecordingPreference(enabled: Boolean, promise: Promise) = submitResult(promise) { runBlocking { preferences.setRecordingEnabled(enabled) }; mapOf("recordingEnabled" to enabled) }
-    @ReactMethod fun clearHistory(promise: Promise) = submitResult(promise) { mapOf("clearGeneration" to ledger.clear()) }
+    @ReactMethod fun clearHistory(promise: Promise) = submitResult(promise) {
+        val clearGeneration = ledger.clear()
+        mapOf("clearGeneration" to clearGeneration, "revision" to ledger.revision())
+    }
     @ReactMethod fun getHistory(limit: Int, promise: Promise) = submitResult(promise) { safeEvents(null, limit) }
     @ReactMethod fun getRecap(year: Int, promise: Promise) = submitResult(promise) {
         val safeYear = year.takeIf { it in 1970..9999 } ?: java.time.Year.now().value
@@ -63,9 +63,40 @@ class HistoryModule internal constructor(app: ReactApplicationContext, private v
             promise.resolve(status("accepted"))
         } catch (_: Exception) { promise.resolve(status("busy")) }
     }
+
+    /** Observation resolves only after Room has accepted/ignored the sequence. */
+    private fun submitObservation(value: ReadableMap, promise: Promise) {
+        if (closed) { promise.resolve(status("unavailable")); return }
+        try {
+            executor.execute {
+                runCatching {
+                    if (!runBlocking { preferences.recordingEnabled() }) {
+                        promise.resolve(status("disabled"))
+                        return@runCatching
+                    }
+                    val commit = parseObservation(value)?.let(ledger::observe)
+                    val data = Arguments.createMap().apply {
+                        putBoolean("committed", commit != null)
+                        putDouble("revision", ledger.revision().toDouble())
+                        commit?.let { putString("eventId", it.eventId) }
+                    }
+                    promise.resolve(Arguments.createMap().apply {
+                        putString("status", "success")
+                        putMap("data", data)
+                    })
+                }.onFailure { promise.resolve(status("failed")) }
+            }
+        } catch (_: Exception) { promise.resolve(status("busy")) }
+    }
     private fun submitResult(promise: Promise, work: () -> Any) {
         if (closed) { promise.resolve(status("unavailable")); return }
-        try { executor.execute { promise.resolve(Arguments.makeNativeMap(mapOf("status" to "success", "data" to work()))) } } catch (_: Exception) { promise.resolve(status("busy")) }
+        try {
+            executor.execute {
+                runCatching { work() }
+                    .onSuccess { result -> promise.resolve(Arguments.makeNativeMap(mapOf("status" to "success", "data" to result))) }
+                    .onFailure { promise.resolve(status("failed")) }
+            }
+        } catch (_: Exception) { promise.resolve(status("busy")) }
     }
     private fun status(value: String) = Arguments.createMap().apply { putString("status", value) }
     private fun safeEvents(year: Int?, limit: Int) = ledger.events(year, limit.coerceIn(1, 500)).map { event -> mapOf("eventId" to event.eventId, "source" to event.source, "trackId" to event.semanticTrackId, "title" to event.title, "artist" to event.artist, "date" to event.committedLocalDate, "year" to event.committedLocalYear, "month" to event.committedLocalMonth, "listenedForwardMs" to event.listenedForwardMs) }

@@ -36,8 +36,8 @@ type NativeLibraryModule = {
   beginLegacyMigration?(request: LegacyMigrationRequest): Promise<unknown>;
   previewBackup?(request: unknown): Promise<unknown>;
   applyBackup?(token: string, checksum: string, expectedRevision: number): Promise<unknown>;
-  replaceRemoteCollections?(request: { schemaVersion: number; collections: LibraryRemoteCollection[] }): Promise<unknown>;
-  replaceContinuityMetadata?(request: { schemaVersion: number; queueCheckpoint: LibraryQueueCheckpoint[]; lyricMetadata: LibraryLyricMetadata[] }): Promise<unknown>;
+  replaceRemoteCollections?(request: { schemaVersion: number; expectedRevision: number; collections: LibraryRemoteCollection[] }): Promise<unknown>;
+  replaceContinuityMetadata?(request: { schemaVersion: number; expectedRevision: number; queueCheckpoint: LibraryQueueCheckpoint[]; lyricMetadata: LibraryLyricMetadata[] }): Promise<unknown>;
 };
 
 export type LibraryBackupPreview = {
@@ -359,10 +359,12 @@ export const libraryClient = {
       request.playlists.length > MAX_LIBRARY_PLAYLISTS ||
       request.localEntries.length > MAX_LIBRARY_PLAYLISTS ||
       request.favorites.length > 50_000 || request.queueCheckpoint.length > 50_000 || request.lyricMetadata.length > 50_000 ||
+      request.remoteCollections.length > MAX_LIBRARY_PLAYLISTS ||
       request.playlists.some(item => !object(item) || !exactKeys(item, ['playlistId', 'title', 'position', 'tracks']) || !boundedString(item.playlistId, MAX_ID_LENGTH, SAFE_ID) || !boundedString(item.title, MAX_LIBRARY_TITLE_LENGTH) || revision(item.position) === null || !Array.isArray(item.tracks) || item.tracks.some(track => !parseTrackSafe(track))) ||
       request.favorites.some(track => !parseTrackSafe(track, false)) ||
       request.queueCheckpoint.some(item => !object(item) || !exactKeys(item, ['occurrenceId', 'position', 'source', 'trackId']) || !boundedString(item.occurrenceId, MAX_ID_LENGTH, SAFE_ID) || revision(item.position) === null || !['netease', 'kugou', 'kuwo', 'qq', 'bilibili', 'local'].includes(item.source) || !boundedString(item.trackId, MAX_ID_LENGTH, SAFE_ID)) ||
       request.lyricMetadata.some(item => !object(item) || !exactKeys(item, ['source', 'trackId', 'selectedVariantId', 'offsetMillis']) || !['netease', 'kugou', 'kuwo', 'qq', 'bilibili', 'local'].includes(item.source) || !boundedString(item.trackId, MAX_ID_LENGTH, SAFE_ID) || !(item.selectedVariantId === null || boundedString(item.selectedVariantId, MAX_ID_LENGTH, SAFE_ID)) || !Number.isSafeInteger(item.offsetMillis) || Math.abs(item.offsetMillis) > 86_400_000) ||
+      request.remoteCollections.some(item => !object(item) || !exactKeys(item, ['collectionId', 'source', 'title', 'syncState']) || !boundedString(item.collectionId, MAX_ID_LENGTH, SAFE_ID) || !['netease', 'kugou', 'kuwo', 'qq', 'bilibili'].includes(item.source) || !boundedString(item.title, MAX_LIBRARY_TITLE_LENGTH) || !['ready', 'refreshing', 'error', 'unavailable'].includes(item.syncState)) ||
       request.localEntries.some(item => !object(item) || !exactKeys(item, ['title', 'artist']) || !boundedString(item.title, MAX_LIBRARY_TITLE_LENGTH) || !boundedString(item.artist, MAX_LIBRARY_TITLE_LENGTH))
     )
       throw new LibraryClientError('INVALID_REQUEST');
@@ -379,17 +381,37 @@ export const libraryClient = {
     if (typeof module.applyBackup !== 'function') throw new LibraryClientError('NATIVE_UNAVAILABLE');
     return parseReceipt(await withTimeout(module.applyBackup(preview.token, preview.checksum, preview.baseRevision)));
   },
-  async replaceRemoteCollections(collections: LibraryRemoteCollection[]): Promise<LibrarySnapshot> {
+  async replaceRemoteCollections(collections: LibraryRemoteCollection[], expectedRevision?: number): Promise<LibrarySnapshot> {
     const module = nativeModule();
     if (typeof module.replaceRemoteCollections !== 'function') throw new LibraryClientError('NATIVE_UNAVAILABLE');
-    return parseLibrarySnapshot(await withTimeout(module.replaceRemoteCollections({ schemaVersion: LIBRARY_SCHEMA_VERSION, collections })));
+    if (!validRemoteCollections(collections)) throw new LibraryClientError('INVALID_REQUEST');
+    const revisionToUse = expectedRevision === undefined ? (await this.getSnapshot()).revision : expectedRevision;
+    if (revision(revisionToUse) === null) throw new LibraryClientError('INVALID_REQUEST');
+    return parseLibrarySnapshot(await withTimeout(module.replaceRemoteCollections({ schemaVersion: LIBRARY_SCHEMA_VERSION, expectedRevision: revisionToUse as number, collections })));
   },
-  async replaceContinuityMetadata(queueCheckpoint: LibraryQueueCheckpoint[], lyricMetadata: LibraryLyricMetadata[]): Promise<LibrarySnapshot> {
+  async replaceContinuityMetadata(queueCheckpoint: LibraryQueueCheckpoint[], lyricMetadata: LibraryLyricMetadata[], expectedRevision?: number): Promise<LibrarySnapshot> {
     const module = nativeModule();
     if (typeof module.replaceContinuityMetadata !== 'function') throw new LibraryClientError('NATIVE_UNAVAILABLE');
-    return parseLibrarySnapshot(await withTimeout(module.replaceContinuityMetadata({ schemaVersion: LIBRARY_SCHEMA_VERSION, queueCheckpoint, lyricMetadata })));
+    if (!validContinuityMetadata(queueCheckpoint, lyricMetadata)) throw new LibraryClientError('INVALID_REQUEST');
+    const revisionToUse = expectedRevision === undefined ? (await this.getSnapshot()).revision : expectedRevision;
+    if (revision(revisionToUse) === null) throw new LibraryClientError('INVALID_REQUEST');
+    return parseLibrarySnapshot(await withTimeout(module.replaceContinuityMetadata({ schemaVersion: LIBRARY_SCHEMA_VERSION, expectedRevision: revisionToUse as number, queueCheckpoint, lyricMetadata })));
   },
 };
+
+function validRemoteCollections(collections: LibraryRemoteCollection[]) {
+  return Array.isArray(collections) && collections.length <= MAX_LIBRARY_PLAYLISTS &&
+    collections.every(item => object(item) !== null && exactKeys(item as UnknownRecord, ['collectionId', 'source', 'title', 'syncState']) && boundedString(item.collectionId, MAX_ID_LENGTH, SAFE_ID) !== null && ['netease', 'kugou', 'kuwo', 'qq', 'bilibili'].includes(item.source) && boundedString(item.title, MAX_LIBRARY_TITLE_LENGTH) !== null && ['ready', 'refreshing', 'error', 'unavailable'].includes(item.syncState)) &&
+    new Set(collections.map(item => item.collectionId)).size === collections.length;
+}
+
+function validContinuityMetadata(queueCheckpoint: LibraryQueueCheckpoint[], lyricMetadata: LibraryLyricMetadata[]) {
+  return Array.isArray(queueCheckpoint) && queueCheckpoint.length <= 50_000 &&
+    Array.isArray(lyricMetadata) && lyricMetadata.length <= 50_000 &&
+    new Set(queueCheckpoint.map(item => item.occurrenceId)).size === queueCheckpoint.length &&
+    queueCheckpoint.every(item => object(item) !== null && exactKeys(item as UnknownRecord, ['occurrenceId', 'position', 'source', 'trackId']) && boundedString(item.occurrenceId, MAX_ID_LENGTH, SAFE_ID) !== null && revision(item.position) !== null && ['netease', 'kugou', 'kuwo', 'qq', 'bilibili', 'local'].includes(item.source) && boundedString(item.trackId, MAX_ID_LENGTH, SAFE_ID) !== null) &&
+    lyricMetadata.every(item => object(item) !== null && exactKeys(item as UnknownRecord, ['source', 'trackId', 'selectedVariantId', 'offsetMillis']) && ['netease', 'kugou', 'kuwo', 'qq', 'bilibili', 'local'].includes(item.source) && boundedString(item.trackId, MAX_ID_LENGTH, SAFE_ID) !== null && (item.selectedVariantId === null || boundedString(item.selectedVariantId, MAX_ID_LENGTH, SAFE_ID) !== null) && Number.isSafeInteger(item.offsetMillis) && Math.abs(item.offsetMillis) <= 86_400_000);
+}
 
 function parseTrackSafe(value: unknown, localAllowed = true) {
   const parsed = (() => { try { return parseTrack(value); } catch { return null; } })();

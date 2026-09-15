@@ -18,7 +18,7 @@ import { colors, spacing, text } from '../theme';
 import { PROVIDER_CAPABILITIES } from '../api/client';
 import { providerLabels, providerOrder } from '../components/SourceTabs';
 import type { AppDispatch, RootState } from '../store';
-import { historyProjectionReceived, mutationReceived } from '../store/librarySlice';
+import { mutationReceived } from '../store/librarySlice';
 import { history } from '../history/history';
 import {
   BACKUP_LIMITS,
@@ -374,7 +374,7 @@ export function SettingsScreen() {
         text: '清空',
         style: 'destructive',
         onPress: () => {
-          void history.clear().then(() => history.recentTracks()).then(tracks => dispatch(historyProjectionReceived(tracks))).catch(() => undefined);
+          void history.clear().catch(() => undefined);
         },
       },
     ]);

@@ -1,6 +1,7 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 import type { PlayableTrack as Track } from '../types/music';
 import { playerController } from '../player/playerController';
+import type { LibraryQueueCheckpoint } from '../library/types';
 
 /**
  * Keep these numeric values compatible with listen1_mobile.  They are stored,
@@ -326,6 +327,38 @@ const playerSlice = createSlice({
       invalidateTransition(state);
       state.playNextQueue = [];
     },
+    restorePlayNextCheckpoint(state, action: PayloadAction<LibraryQueueCheckpoint[]>) {
+      if (!action.payload.length) return;
+      const available = state.playNextQueue.slice();
+      const used = new Set<string>();
+      const restored = action.payload.flatMap(checkpoint => {
+        const match = available.find(item =>
+          !used.has(item.occurrenceId) &&
+          (item.occurrenceId === checkpoint.occurrenceId ||
+            (item.track.source === checkpoint.source && item.track.id === checkpoint.trackId)),
+        );
+        if (match) {
+          used.add(match.occurrenceId);
+          return [{ ...match, occurrenceId: checkpoint.occurrenceId, track: match.track }];
+        }
+        // The native checkpoint intentionally stores only semantic identity.
+        // Recreate a bounded remote occurrence when the old player reducer is
+        // unavailable; the provider bootstrap can fill richer metadata later.
+        // Local rows cannot be invented without the native document record.
+        if (checkpoint.source === 'local') return [];
+        const track = {
+          id: checkpoint.trackId,
+          source: checkpoint.source,
+          title: '未知歌曲',
+          artist: '未知艺人',
+        } as Track;
+        return [{ ...track, occurrenceId: checkpoint.occurrenceId, track }];
+      });
+      if (restored.length) {
+        invalidateTransition(state);
+        state.playNextQueue = restored;
+      }
+    },
     beginTransition(state, action: PayloadAction<number>) {
       if (
         Number.isInteger(action.payload) &&
@@ -453,6 +486,7 @@ export const {
   removeQueuedNext,
   removeTrackReferences,
   replacePlaylist,
+  restorePlayNextCheckpoint,
   restoreHistory,
   setError,
   setPlaying,

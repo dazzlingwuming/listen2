@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { useDispatch } from 'react-redux';
 import { ScreenLayout, sectionStyles } from './ScreenLayout';
 import { colors, spacing, text } from '../theme';
 import { providerClient } from '../api/client';
@@ -9,6 +10,8 @@ import type {
   DiscoverSection,
   DiscoverSource,
 } from '../types/provider';
+import { hydrationSucceeded } from '../store/librarySlice';
+import { persistRemoteCollectionRefresh } from '../library/remoteCollectionCoordinator';
 
 const SOURCE_LABELS: Record<DiscoverSource, string> = {
   netease: '网易云音乐',
@@ -30,6 +33,7 @@ function safeStatusCopy(section: DiscoverSection): string | null {
 
 export function DiscoverScreen() {
   const navigation = useNavigation<any>();
+  const dispatch = useDispatch<any>();
   const [source, setSource] = useState<DiscoverSource>('netease');
   const [page, setPage] = useState<DiscoverPage | null>(null);
   const [loading, setLoading] = useState(true);
@@ -52,7 +56,15 @@ export function DiscoverScreen() {
         const nextPage = await providerClient.getDiscover(nextSource, {
           signal: nextController.signal,
         });
-        if (requestEpoch === epoch.current) setPage(nextPage);
+        if (requestEpoch === epoch.current) {
+          setPage(nextPage);
+          const collections = nextPage.sections.flatMap(section => section.status === 'ready'
+            ? section.items.map(item => ({ collectionId: item.id, source: nextSource, title: item.title, syncState: 'ready' as const }))
+            : []);
+          if (collections.length) void persistRemoteCollectionRefresh(collections).then(snapshot => {
+            if (snapshot && requestEpoch === epoch.current) dispatch(hydrationSucceeded(snapshot));
+          });
+        }
       } catch {
         if (requestEpoch === epoch.current && !nextController.signal.aborted) {
           setPage({
@@ -80,7 +92,7 @@ export function DiscoverScreen() {
         }
       }
     },
-    [],
+    [dispatch],
   );
 
   useEffect(() => {
