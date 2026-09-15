@@ -11,7 +11,7 @@ const mockSearch = jest.fn();
 let mockRoute: any = { params: { bvid: 'BV1xx411c7mD', title: '搜索结果' } };
 
 jest.mock('@react-navigation/native', () => ({
-  useNavigation: () => ({ navigate: mockNavigate }),
+  useNavigation: () => ({ navigate: mockNavigate, setParams: jest.fn() }),
   useRoute: () => mockRoute,
 }));
 jest.mock('../../bilibili/client', () => ({

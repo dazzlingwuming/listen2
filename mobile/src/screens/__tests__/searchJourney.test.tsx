@@ -1,5 +1,6 @@
 import React from 'react';
 import renderer, { act } from 'react-test-renderer';
+import { ScrollView } from 'react-native';
 import type { SearchResult } from '../../types';
 import {
   createSearchJourneyState,
@@ -12,12 +13,17 @@ import { SearchScreen } from '../SearchScreen';
 import { TrackRow } from '../../components/TrackRow';
 
 const mockNavigate = jest.fn();
+const mockSetParams = jest.fn();
 const mockDispatch = jest.fn();
 const mockSearch = jest.fn();
 let mockRoute: { params?: Record<string, unknown> } = {};
 
 jest.mock('@react-navigation/native', () => ({
-  useNavigation: () => ({ navigate: mockNavigate, goBack: jest.fn() }),
+  useNavigation: () => ({
+    navigate: mockNavigate,
+    setParams: mockSetParams,
+    goBack: jest.fn(),
+  }),
   useRoute: () => mockRoute,
 }));
 jest.mock('react-redux', () => ({
@@ -477,6 +483,86 @@ describe('search journey state', () => {
         rows: expect.any(Array),
         page: 2,
         cursor: '3',
+        selectedIdentity: 'track:bilibili:bitrack_v_BV1xx411c7mD',
+        scrollAnchor: 192,
+      }),
+    });
+  });
+
+  it('persists the restoration DTO on the search route across stack recreation', async () => {
+    mockRoute = { params: { sourceId: 'bilibili', query: '视频' } };
+    mockSearch.mockResolvedValueOnce({
+      source: 'bilibili',
+      query: '视频',
+      page: 1,
+      kind: 'track',
+      total: 1,
+      nextCursor: 'cursor-2',
+      hasMore: true,
+      results: [
+        {
+          kind: 'track',
+          track: {
+            id: 'bitrack_v_BV1xx411c7mD',
+            source: 'bilibili',
+            title: '视频',
+            artist: '作者',
+          },
+        },
+      ],
+    });
+
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<SearchScreen />);
+      await Promise.resolve();
+    });
+    const scroll = tree.root.findByType(ScrollView);
+    act(() => {
+      scroll.props.onScroll({
+        nativeEvent: { contentOffset: { y: 192 } },
+      });
+    });
+    await act(async () => {
+      tree.root.findByProps({ accessibilityLabel: '播放视频' }).props.onPress();
+    });
+
+    expect(mockSetParams).toHaveBeenCalledWith({
+      restorationScope: expect.objectContaining({
+        source: 'bilibili',
+        query: '视频',
+        rows: expect.any(Array),
+        page: 1,
+        cursor: 'cursor-2',
+        selectedIdentity: 'track:bilibili:bitrack_v_BV1xx411c7mD',
+        scrollAnchor: 192,
+      }),
+    });
+    const persistedRouteParams =
+      mockSetParams.mock.calls[mockSetParams.mock.calls.length - 1][0];
+
+    act(() => {
+      tree.unmount();
+    });
+    mockSetParams.mockClear();
+    mockRoute = { params: persistedRouteParams };
+
+    await act(async () => {
+      tree = renderer.create(<SearchScreen />);
+      await Promise.resolve();
+    });
+
+    expect(mockSearch).toHaveBeenCalledTimes(1);
+    expect(
+      tree.root.findByProps({ accessibilityLabel: '播放视频' }),
+    ).toBeTruthy();
+    await act(async () => {
+      tree.root.findByProps({ accessibilityLabel: '播放视频' }).props.onPress();
+    });
+    expect(mockSetParams).toHaveBeenCalledWith({
+      restorationScope: expect.objectContaining({
+        rows: expect.any(Array),
+        cursor: 'cursor-2',
         selectedIdentity: 'track:bilibili:bitrack_v_BV1xx411c7mD',
         scrollAnchor: 192,
       }),

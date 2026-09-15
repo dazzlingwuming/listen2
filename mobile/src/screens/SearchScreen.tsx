@@ -359,8 +359,12 @@ export function SearchScreen() {
       scrollAnchorRef.current,
     );
     const next = setSearchJourneySelection(withScroll, selectedIdentity);
+    const restorationScope = createSearchJourneyRestoration(next);
+    // Persist the bounded DTO on this tab route before pushing detail. The
+    // tab may be rebuilt while detail is on top during Android recreation.
+    navigation.setParams({ restorationScope });
     setJourney(next);
-    return createSearchJourneyRestoration(next);
+    return restorationScope;
   };
   const play = (track: PresentableTrack, selectedIdentity?: string) => {
     const restorationScope = updateJourneyForNavigation(selectedIdentity);
