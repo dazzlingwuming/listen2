@@ -1,0 +1,13 @@
+{
+  "id": "phase08",
+  "revision": "1",
+  "query": "青花瓷",
+  "sources": ["netease", "kugou", "kuwo", "qq", "bilibili"],
+  "localFixture": {
+    "file": "synthetic-phase08.wav",
+    "lyrics": "synthetic-phase08.lrc",
+    "durationSeconds": 600,
+    "copyright": "generated-local-test-signal-only"
+  },
+  "accountLane": "none"
+}
