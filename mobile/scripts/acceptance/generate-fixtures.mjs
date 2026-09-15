@@ -37,9 +37,9 @@ if (args.includes('--self-test')) {
   try {
     const result = generate(dir);
     if (result.bytes <= 44 || result.durationSeconds !== 600) throw new Error('fixture self-test failed');
-    const driver = readFileSync(resolve(scriptDir, '../../android/app/src/androidTest/java/com/listen2mobile/acceptance/AccessibilityDriver.kt'), 'utf8');
-    if (driver.includes('shell("uiautomator dump')) throw new Error('instrumentation must not start a nested uiautomator service');
-    if (!driver.includes('rootInActiveWindow ?: return ""') || !driver.includes('getExternalFilesDir')) {
+    const driver = readFileSync(resolve(scriptDir, '../../android/app/src/androidTest/java/com/listen2mobile/acceptance/AccessibilityDriver.java'), 'utf8');
+    if (driver.includes('uiautomator dump')) throw new Error('instrumentation must not start a nested uiautomator service');
+    if (!driver.includes('getRootInActiveWindow') || !driver.includes('getExternalFilesDir')) {
       throw new Error('accessibility evidence must use runner-owned UI automation and target external files');
     }
     console.log('Phase 8 fixture self-test passed.');

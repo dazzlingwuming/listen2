@@ -56,6 +56,10 @@ if [[ "${1:-}" == "--self-test" ]]; then
   grep -Fq 'start_diagnostic_capture' "$0" || { echo 'runner must start bounded diagnostic capture around instrumentation' >&2; exit 1; }
   grep -Fq 'stop_diagnostic_capture' "$0" || { echo 'runner must stop and retain diagnostics around instrumentation' >&2; exit 1; }
   grep -Fq 'Phase08Instrumentation' "$0" || { echo 'runner must require the self-contained Phase 8 runner' >&2; exit 1; }
+  for source in mobile/android/app/src/androidTest/java/com/listen2mobile/acceptance/{Phase08Instrumentation,AccessibilityDriver,UpgradeSeedTest,IntegratedJourneyTest}.java; do
+    [[ -f "$source" ]] || { echo "missing pure-Java acceptance source: $source" >&2; exit 1; }
+    ! grep -Eqi 'kotlin|androidx\.test|InstrumentationRegistry|ActivityScenario' "$source" || { echo "acceptance source has a forbidden runtime dependency: $source" >&2; exit 1; }
+  done
   echo 'Instrumentation result self-test passed.'
   exit 0
 fi
@@ -127,6 +131,10 @@ TEST_TARGET_PACKAGE="$(printf '%s\n' "$TEST_MANIFEST" | sed -n '/E: instrumentat
 [[ "$TEST_RUNNER" == "com.listen2mobile.acceptance.Phase08Instrumentation" ]] || { echo "BLOCKED: AndroidTest manifest must use the self-contained Phase08Instrumentation runner" >&2; exit 3; }
 [[ "$TEST_TARGET_PACKAGE" == "$PACKAGE" ]] || { echo "BLOCKED: AndroidTest manifest target package differs" >&2; exit 3; }
 "$APKANALYZER" dex packages "$TEST_APK" | grep -Fq "$TEST_RUNNER" || { echo "BLOCKED: AndroidTest APK does not package manifest runner $TEST_RUNNER" >&2; exit 3; }
+if "$APKANALYZER" dex references "$TEST_APK" | grep -Eqi '(^|[./])kotlin([./]|$)|androidx\.test\.runner|InstrumentationRegistry|ActivityScenario'; then
+  echo "BLOCKED: AndroidTest APK retains a forbidden Kotlin or AndroidX runner dependency" >&2
+  exit 3
+fi
 APKSIGNER="$SDK/build-tools/37.0.0/apksigner"
 [[ -x "$APKSIGNER" ]] || { echo "BLOCKED: Android Build Tools 37.0.0 apksigner is unavailable" >&2; exit 3; }
 TEST_SIGNER="$($APKSIGNER verify --verbose --print-certs "$TEST_APK" | awk -F': ' '/(Signer #1|V[0-9.]+ Signer): certificate SHA-256 digest/ { print $NF; exit }')"
