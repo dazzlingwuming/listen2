@@ -27,7 +27,7 @@ internal object LibraryBridgeContract {
         if (rawPayload.any { it.key !is String || it.value !is String }) return LibraryValidation.Rejected("INVALID_REQUEST")
         val payload = rawPayload.entries.associate { (key, item) -> key as String to item as String }
         if (schema.toInt() != SCHEMA_VERSION || schema.toDouble() != SCHEMA_VERSION.toDouble()) return LibraryValidation.Rejected("UNSUPPORTED_SCHEMA")
-        if (payload.size > 4 || payload.any { it.key.length > 64 || it.value.length > LibraryLimits.MAX_TITLE }) return LibraryValidation.Rejected("INVALID_REQUEST")
+        if (payload.size > 5 || payload.any { it.key.length > 64 || it.value.length > LibraryLimits.MAX_TITLE }) return LibraryValidation.Rejected("INVALID_REQUEST")
         return LibraryMutationValidator.validate(requestId, revision, operation, payload)
     }
 
@@ -190,8 +190,17 @@ class LibraryBridge internal constructor(
                 putString("playlistId", playlist.playlistId)
                 putString("title", playlist.title)
                 putInt("position", playlist.position)
+                putArray("tracks", Arguments.fromList(playlist.tracks.map(::track)))
             }
         }))
+        putArray("favorites", Arguments.fromList(value.favorites.map(::track)))
+    }
+
+    private fun track(value: SafeTrack) = Arguments.createMap().apply {
+        putString("source", value.source)
+        putString("trackId", value.trackId)
+        putString("title", value.title)
+        putString("artist", value.artist)
     }
 
     private fun receipt(value: LibraryReceipt) = Arguments.createMap().apply {

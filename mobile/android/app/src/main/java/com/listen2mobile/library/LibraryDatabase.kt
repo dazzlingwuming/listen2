@@ -100,8 +100,17 @@ interface LibraryDao {
     @Insert(onConflict = OnConflictStrategy.ABORT) fun insertPlaylist(value: PersonalPlaylistEntity)
     @Query("SELECT * FROM personal_playlists ORDER BY position ASC, playlistId ASC LIMIT :limit") fun playlists(limit: Int): List<PersonalPlaylistEntity>
     @Insert(onConflict = OnConflictStrategy.ABORT) fun insertMembership(value: PlaylistMembershipEntity)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) fun putMembership(value: PlaylistMembershipEntity)
+    @Query("SELECT * FROM playlist_memberships WHERE playlistId = :playlistId ORDER BY position ASC, semanticTrackId ASC") fun memberships(playlistId: String): List<PlaylistMembershipEntity>
+    @Query("SELECT * FROM playlist_memberships WHERE playlistId = :playlistId AND source = :source AND semanticTrackId = :trackId") fun membership(playlistId: String, source: String, trackId: String): PlaylistMembershipEntity?
+    @Query("DELETE FROM playlist_memberships WHERE playlistId = :playlistId AND source = :source AND semanticTrackId = :trackId") fun deleteMembership(playlistId: String, source: String, trackId: String)
+    @Query("DELETE FROM playlist_memberships WHERE playlistId = :playlistId") fun deleteMemberships(playlistId: String)
+    @Query("DELETE FROM personal_playlists WHERE playlistId = :playlistId") fun deletePlaylist(playlistId: String)
     @Insert(onConflict = OnConflictStrategy.ABORT) fun insertQueue(value: QueueCheckpointEntity)
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putFavorite(value: FavoriteEntity)
+    @Query("SELECT * FROM favorites ORDER BY source ASC, semanticTrackId ASC") fun favorites(): List<FavoriteEntity>
+    @Query("SELECT * FROM favorites WHERE source = :source AND semanticTrackId = :trackId") fun favorite(source: String, trackId: String): FavoriteEntity?
+    @Query("DELETE FROM favorites WHERE source = :source AND semanticTrackId = :trackId") fun deleteFavorite(source: String, trackId: String)
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putRemoteCollection(value: RemoteCollectionEntity)
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putLocalRecord(value: LocalRecordEntity)
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putLyricMetadata(value: LyricMetadataEntity)

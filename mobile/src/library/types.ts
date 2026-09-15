@@ -6,12 +6,21 @@ export type LibraryPlaylistRecord = {
   playlistId: string;
   title: string;
   position: number;
+  tracks: LibraryTrackRecord[];
+};
+
+export type LibraryTrackRecord = {
+  source: 'netease' | 'kugou' | 'kuwo' | 'qq' | 'bilibili';
+  trackId: string;
+  title: string;
+  artist: string;
 };
 
 export type LibrarySnapshot = {
   schemaVersion: typeof LIBRARY_SCHEMA_VERSION;
   revision: number;
   personalPlaylists: LibraryPlaylistRecord[];
+  favorites: LibraryTrackRecord[];
 };
 
 export type CreatePlaylistMutation = {
@@ -21,7 +30,15 @@ export type CreatePlaylistMutation = {
   payload: { playlistId: string; title: string };
 };
 
-export type LibraryMutation = CreatePlaylistMutation;
+export type LibraryMutation =
+  | CreatePlaylistMutation
+  | { requestId: string; revision: number; kind: 'renamePlaylist'; payload: { playlistId: string; title: string } }
+  | { requestId: string; revision: number; kind: 'deletePlaylist'; payload: { playlistId: string } }
+  | { requestId: string; revision: number; kind: 'movePlaylist'; payload: { playlistId: string; direction: 'up' | 'down' } }
+  | { requestId: string; revision: number; kind: 'addTrack'; payload: { playlistId: string; source: LibraryTrackRecord['source']; trackId: string; title: string; artist: string } }
+  | { requestId: string; revision: number; kind: 'removeTrack'; payload: { playlistId: string; source: LibraryTrackRecord['source']; trackId: string } }
+  | { requestId: string; revision: number; kind: 'favorite'; payload: { playlistId: 'favorites'; source: LibraryTrackRecord['source']; trackId: string; title: string; artist: string } }
+  | { requestId: string; revision: number; kind: 'unfavorite'; payload: { playlistId: 'favorites'; source: LibraryTrackRecord['source']; trackId: string } };
 
 export type LibraryMutationReceipt = {
   requestId: string;

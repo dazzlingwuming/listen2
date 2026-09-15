@@ -9,13 +9,7 @@ import {
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import type { RootState } from '../store';
-import {
-  addTrackToPlaylist,
-  deletePlaylist,
-  removeTrackFromPlaylist,
-  removeLocalTrack,
-  toggleFavorite,
-} from '../store/librarySlice';
+import { hydrationSucceeded, mutationPending, mutationReceived } from '../store/librarySlice';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { PlayableTrack, PlaylistDetail } from '../types/music';
 import * as playerActions from '../store/playerSlice';
@@ -27,6 +21,7 @@ import { PROVIDER_CAPABILITIES, providerClient } from '../api/client';
 import { Sheet } from '../components/Sheet';
 import { releaseLocalAudioAccess } from '../localAudio/access';
 import { isLocalTrack } from '../types/music';
+import { libraryClient } from '../library/libraryClient';
 
 type RemotePlaylistStatus = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -50,6 +45,7 @@ export function PlaylistDetailScreen() {
   const localTracks = useSelector(
     (state: RootState) => state.library.localTracks,
   );
+  const libraryRevision = useSelector((state: RootState) => state.library.revision || 0);
   const [remoteDetail, setRemoteDetail] = useState<PlaylistDetail | null>(null);
   const [remoteStatus, setRemoteStatus] = useState<RemotePlaylistStatus>(
     remotePlaylistId ? 'loading' : 'idle',
@@ -71,6 +67,14 @@ export function PlaylistDetailScreen() {
   const [startingPlayback, setStartingPlayback] = useState(false);
   const remoteRequest = useRef<AbortController | null>(null);
   const remoteGeneration = useRef(0);
+  const commitLibrary = async (kind: any, payload: any) => {
+    const requestId = `${kind}-${Date.now().toString(36)}`;
+    dispatch(mutationPending({ requestId }));
+    const receipt = await libraryClient.applyMutation({ requestId, revision: libraryRevision, kind, payload });
+    dispatch(mutationReceived(receipt));
+    if (receipt.status === 'stale-revision') dispatch(hydrationSucceeded(await libraryClient.getSnapshot()));
+    return receipt;
+  };
   const loadRemotePlaylist = useCallback(
     async (signal: AbortSignal, generation: number) => {
       if (!remotePlaylistId || sourceId === 'local') return;
@@ -204,8 +208,7 @@ export function PlaylistDetailScreen() {
                 text: '删除',
                 style: 'destructive',
                 onPress: () => {
-                  dispatch(deletePlaylist(libraryPlaylistId));
-                  navigation.goBack();
+                  void commitLibrary('deletePlaylist', { playlistId: libraryPlaylistId }).then(receipt => { if (receipt.status === 'accepted') navigation.goBack(); });
                 },
               },
             ])
@@ -269,7 +272,12 @@ export function PlaylistDetailScreen() {
                     accessibilityLabel={
                       favorite ? `取消收藏${track.title}` : `收藏${track.title}`
                     }
-                    onPress={() => dispatch(toggleFavorite(track))}
+                    onPress={() => {
+                      if (track.source === 'local') return;
+                      void commitLibrary(favorite ? 'unfavorite' : 'favorite', favorite
+                        ? { playlistId: 'favorites', source: track.source, trackId: track.id }
+                        : { playlistId: 'favorites', source: track.source, trackId: track.id, title: track.title, artist: track.artist });
+                    }}
                     style={styles.favorite}
                   >
                     <Text style={styles.favoriteText}>
@@ -279,14 +287,9 @@ export function PlaylistDetailScreen() {
                   {libraryPlaylistId ? (
                     <Pressable
                       accessibilityLabel={`从歌单移除${track.title}`}
-                      onPress={() =>
-                        dispatch(
-                          removeTrackFromPlaylist({
-                            playlistId: libraryPlaylistId,
-                            track,
-                          }),
-                        )
-                      }
+                      onPress={() => {
+                        if (track.source !== 'local') void commitLibrary('removeTrack', { playlistId: libraryPlaylistId, source: track.source, trackId: track.id });
+                      }}
                       style={styles.favorite}
                     >
                       <Text style={styles.deleteText}>移除</Text>
@@ -316,7 +319,6 @@ export function PlaylistDetailScreen() {
                                 const forget = (playerActions as any)
                                   .forgetTrack;
                                 if (forget) await dispatch(forget(track));
-                                dispatch(removeLocalTrack(track.id));
                                 await releaseLocalAudioAccess(track);
                               },
                             },
@@ -354,12 +356,7 @@ export function PlaylistDetailScreen() {
                 key={playlist.id}
                 onPress={() => {
                   if (addTarget)
-                    dispatch(
-                      addTrackToPlaylist({
-                        playlistId: playlist.id,
-                        track: addTarget,
-                      }),
-                    );
+                    if (addTarget.source !== 'local') void commitLibrary('addTrack', { playlistId: playlist.id, source: addTarget.source, trackId: addTarget.id, title: addTarget.title, artist: addTarget.artist });
                   setAddTarget(null);
                 }}
                 style={styles.playlistChoice}

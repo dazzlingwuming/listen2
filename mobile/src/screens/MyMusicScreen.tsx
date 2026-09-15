@@ -12,19 +12,21 @@ import { useDispatch, useSelector } from 'react-redux';
 import type { RootState } from '../store';
 import { ScreenLayout, sectionStyles } from './ScreenLayout';
 import { colors, spacing, text } from '../theme';
-import { createPlaylist } from '../store/librarySlice';
+import { hydrationSucceeded, mutationPending, mutationReceived } from '../store/librarySlice';
 import { importLocalTracks } from '../store/librarySlice';
 import { pickLocalAudio } from '../localAudio/picker';
+import { libraryClient } from '../library/libraryClient';
 
 export function MyMusicScreen() {
   const navigation = useNavigation<any>();
-  const dispatch = useDispatch();
+  const dispatch = useDispatch<any>();
   const [creating, setCreating] = useState(false);
   const [playlistTitle, setPlaylistTitle] = useState('');
   const [localImportStatus, setLocalImportStatus] = useState<string | null>(
     null,
   );
   const [importingLocalAudio, setImportingLocalAudio] = useState(false);
+  const [creatingRequest, setCreatingRequest] = useState(false);
   const favorites = useSelector((state: RootState) => state.library.favorites);
   const recentTracks = useSelector(
     (state: RootState) => state.library.recentTracks,
@@ -33,6 +35,7 @@ export function MyMusicScreen() {
   const localTracks = useSelector(
     (state: RootState) => state.library.localTracks,
   );
+  const library = useSelector((state: RootState) => state.library);
   const importAudio = async () => {
     if (importingLocalAudio) return;
     setImportingLocalAudio(true);
@@ -55,17 +58,22 @@ export function MyMusicScreen() {
         : `已导入 ${result.tracks.length} 首本地音频。`,
     );
   };
-  const submitPlaylist = () => {
+  const submitPlaylist = async () => {
     const title = playlistTitle.trim();
-    if (!title) return;
-    dispatch(
-      createPlaylist({
-        id: `myplaylist_${Date.now().toString(36)}`,
-        title,
-      }),
-    );
-    setPlaylistTitle('');
-    setCreating(false);
+    if (!title || creatingRequest) return;
+    const requestId = `create-${Date.now().toString(36)}`;
+    setCreatingRequest(true);
+    dispatch(mutationPending({ requestId }));
+    try {
+      const receipt = await libraryClient.applyMutation({ requestId, revision: library.revision || 0, kind: 'createPlaylist', payload: { playlistId: `myplaylist_${Date.now().toString(36)}`, title } });
+      dispatch(mutationReceived(receipt));
+      if (receipt.snapshot) {
+        setPlaylistTitle('');
+        setCreating(false);
+      } else if (receipt.status === 'stale-revision') {
+        dispatch(hydrationSucceeded(await libraryClient.getSnapshot()));
+      }
+    } finally { setCreatingRequest(false); }
   };
   return (
     <ScreenLayout subtitle="你的收藏、最近播放和歌单" title="我的">
@@ -217,7 +225,7 @@ export function MyMusicScreen() {
               autoFocus
               maxLength={80}
               onChangeText={setPlaylistTitle}
-              onSubmitEditing={submitPlaylist}
+              onSubmitEditing={() => { void submitPlaylist(); }}
               placeholder="输入歌单名称"
               placeholderTextColor={colors.muted}
               returnKeyType="done"
@@ -233,10 +241,10 @@ export function MyMusicScreen() {
               </Pressable>
               <Pressable
                 disabled={!playlistTitle.trim()}
-                onPress={submitPlaylist}
+                onPress={() => { void submitPlaylist(); }}
                 style={sectionStyles.button}
               >
-                <Text style={sectionStyles.buttonText}>创建</Text>
+                <Text style={sectionStyles.buttonText}>{creatingRequest ? '创建中…' : '创建'}</Text>
               </Pressable>
             </View>
           </View>

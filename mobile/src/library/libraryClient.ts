@@ -25,7 +25,7 @@ type NativeLibraryModule = {
     requestId: string;
     expectedRevision: number;
     operation: string;
-    payload: { playlistId: string; title: string };
+    payload: Record<string, string>;
   }): Promise<unknown>;
   getMigrationStatus(): Promise<unknown>;
   beginLegacyMigration?(request: LegacyMigrationRequest): Promise<unknown>;
@@ -101,10 +101,10 @@ export function parseLibrarySnapshot(value: unknown): LibrarySnapshot {
   const candidate = object(value);
   if (
     !candidate ||
-    !exactKeys(candidate, ['schemaVersion', 'revision', 'personalPlaylists']) ||
+    !exactKeys(candidate, ['schemaVersion', 'revision', 'personalPlaylists', 'favorites']) ||
     candidate.schemaVersion !== LIBRARY_SCHEMA_VERSION ||
     revision(candidate.revision) === null ||
-    !Array.isArray(candidate.personalPlaylists) ||
+    !Array.isArray(candidate.personalPlaylists) || !Array.isArray(candidate.favorites) ||
     candidate.personalPlaylists.length > MAX_LIBRARY_PLAYLISTS
   )
     throw new LibraryClientError('INVALID_RESPONSE');
@@ -116,13 +116,13 @@ export function parseLibrarySnapshot(value: unknown): LibrarySnapshot {
     const position = playlist && revision(playlist.position);
     if (
       !playlist ||
-      !exactKeys(playlist, ['playlistId', 'title', 'position']) ||
+      !exactKeys(playlist, ['playlistId', 'title', 'position', 'tracks']) ||
       !playlistId ||
       !title ||
-      position === null
+      position === null || !Array.isArray(playlist.tracks)
     )
       throw new LibraryClientError('INVALID_RESPONSE');
-    return { playlistId, title, position };
+    return { playlistId, title, position, tracks: playlist.tracks.map(parseTrack) };
   });
   personalPlaylists.sort((left, right) => left.position - right.position);
   if (personalPlaylists.some((playlist, index) => playlist.position !== index))
@@ -131,7 +131,19 @@ export function parseLibrarySnapshot(value: unknown): LibrarySnapshot {
     schemaVersion: LIBRARY_SCHEMA_VERSION,
     revision: revision(candidate.revision) as number,
     personalPlaylists,
+    favorites: candidate.favorites.map(parseTrack),
   };
+}
+
+function parseTrack(value: unknown) {
+  const candidate = object(value);
+  const source = candidate?.source;
+  const trackId = candidate && boundedString(candidate.trackId, MAX_ID_LENGTH, SAFE_ID);
+  const title = candidate && boundedString(candidate.title, MAX_LIBRARY_TITLE_LENGTH);
+  const artist = candidate && boundedString(candidate.artist, MAX_LIBRARY_TITLE_LENGTH);
+  if (!candidate || !exactKeys(candidate, ['source', 'trackId', 'title', 'artist']) || !['netease', 'kugou', 'kuwo', 'qq', 'bilibili'].includes(String(source)) || !trackId || !title || !artist)
+    throw new LibraryClientError('INVALID_RESPONSE');
+  return { source: source as 'netease' | 'kugou' | 'kuwo' | 'qq' | 'bilibili', trackId, title, artist };
 }
 
 function parseReceipt(value: unknown): LibraryMutationReceipt {
@@ -172,14 +184,13 @@ function validateMutation(mutation: LibraryMutation) {
     !candidate ||
     !payload ||
     !exactKeys(candidate, ['requestId', 'revision', 'kind', 'payload']) ||
-    !exactKeys(payload, ['playlistId', 'title']) ||
-    candidate.kind !== 'createPlaylist'
+    !Object.keys(payload).every(key => ['playlistId', 'title', 'direction', 'source', 'trackId', 'artist'].includes(key)) ||
+    !['createPlaylist', 'renamePlaylist', 'deletePlaylist', 'movePlaylist', 'addTrack', 'removeTrack', 'favorite', 'unfavorite'].includes(String(candidate.kind))
   )
     throw new LibraryClientError('INVALID_REQUEST');
   const requestId = boundedString(mutation.requestId, MAX_ID_LENGTH, SAFE_ID);
-  const playlistId = boundedString(mutation.payload.playlistId, MAX_ID_LENGTH, SAFE_ID);
-  const title = boundedString(mutation.payload.title, MAX_LIBRARY_TITLE_LENGTH);
-  if (!requestId || !playlistId || !title || revision(mutation.revision) === null)
+  const values = Object.values(mutation.payload);
+  if (!requestId || !values.every(value => boundedString(value, MAX_LIBRARY_TITLE_LENGTH)) || revision(mutation.revision) === null)
     throw new LibraryClientError('INVALID_REQUEST');
 }
 

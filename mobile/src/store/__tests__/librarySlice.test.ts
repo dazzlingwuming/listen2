@@ -11,8 +11,9 @@ const snapshot = (revision: number) => ({
   schemaVersion: 1 as const,
   revision,
   personalPlaylists: [
-    { playlistId: 'myplaylist_one', title: 'Road trip', position: 0 },
+    { playlistId: 'myplaylist_one', title: 'Road trip', position: 0, tracks: [] },
   ],
+  favorites: [],
 });
 
 describe('librarySlice', () => {

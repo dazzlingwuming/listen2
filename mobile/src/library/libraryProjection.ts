@@ -18,12 +18,12 @@ export function projectLibrarySnapshot(snapshot: LibrarySnapshot): LibraryProjec
   return {
     revision: snapshot.revision,
     hydrated: true,
-    favorites: [],
+    favorites: snapshot.favorites.map(track => ({ id: track.trackId, source: track.source, title: track.title, artist: track.artist })),
     recentTracks: [],
     playlists: snapshot.personalPlaylists.map(playlist => ({
       id: playlist.playlistId,
       title: playlist.title,
-      tracks: [],
+      tracks: playlist.tracks.map(track => ({ id: track.trackId, source: track.source, title: track.title, artist: track.artist })),
     })),
     localTracks: [],
   };
