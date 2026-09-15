@@ -108,7 +108,14 @@ Those facts reduce implementation work, but none proves that a user can complete
   4. A user can turn effects, real-time visualization, or fixed loudness normalization on/off only when the device and complete media support them; effect/analysis failure preserves audio, first playback does not wait, and static/hidden visual fallback is labelled honestly.
   5. A user can configure or remove a protected DeepSeek key and explicitly consent to the title, artist, lyrics, possible cost, cancellation, and failure consequences before translation; only schema- and alignment-valid translations persist, and no secret or lyric payload leaks to UI state, artifacts, logs, or backups.
 
-**Plans:** TBD
+**Plans:** 5 plans
+
+Plans:
+- [ ] 07-01-PLAN.md — Unify five-source native media descriptors, entitlement, Bilibili parts/renditions and MV fallback.
+- [ ] 07-02-PLAN.md — Deliver owner-aware durable offline cache, recovery/quota policies and the complete cache library UI.
+- [ ] 07-03-PLAN.md — Add actual-session effects, real visualization and asynchronous loudness normalization.
+- [ ] 07-04-PLAN.md — Make DeepSeek Keystore-only, explicitly consented and native-private through validated persistence.
+- [ ] 07-05-PLAN.md — Close SEC-004 and run the single integrated deterministic Phase 7 gate.
 **UI hint:** yes
 
 ### Phase 8: Integrated API 35 Acceptance & Release-Like Evidence
