@@ -13,11 +13,9 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            target: mac
-          - os: ubuntu-latest
-            target: linux
+            args: --mac dmg --x64 --arm64 --universal
           - os: windows-latest
-            target: win
+            args: --win nsis 7z --x64
     steps:
       - name: Check out Git repository
         uses: actions/checkout@v4
@@ -35,13 +33,13 @@ jobs:
 
       - name: Build Electron app
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-        run: npx --no-install electron-builder --${{ matrix.target }} --publish never
+        run: npx --no-install electron-builder ${{ matrix.args }} --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
       - name: Build and publish Electron release
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
-        run: npx --no-install electron-builder --${{ matrix.target }} --publish always
+        run: npx --no-install electron-builder ${{ matrix.args }} --publish always
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
           GH_TOKEN: ${{ github.token }}

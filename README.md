@@ -5,7 +5,7 @@
 ### 把 Bilibili 与多平台音乐内容，整理成更好用的桌面播放器
 
 [![License](https://img.shields.io/badge/license-MIT-7c5cff.svg)](./LICENSE.md)
-[![Version](https://img.shields.io/badge/version-2.34.0-8b5cf6.svg)](https://github.com/dazzlingwuming/listen2/releases/tag/v2.34.0)
+[![Version](https://img.shields.io/badge/version-2.35.0-8b5cf6.svg)](https://github.com/dazzlingwuming/listen2/releases/tag/v2.35.0)
 [![Electron](https://img.shields.io/badge/Electron-32-38bdf8.svg)](https://www.electronjs.org/)
 [![Windows](https://img.shields.io/badge/Windows-x64-2563eb.svg)](https://github.com/dazzlingwuming/listen2/releases/latest)
 [![macOS](https://img.shields.io/badge/macOS-Universal-111827.svg)](#平台支持)
@@ -19,14 +19,13 @@ Listen2 是 [Listen1](https://github.com/listen1/listen1) 的社区增强版本�
 
 > Listen2 只整理和播放用户本来就有权访问的内容，不解锁会员、付费、DRM、地区限制或其他受限资源。
 
-## v2.34.0 更新
+## v2.35.0 更新
 
-- 新增桌面端 Bilibili 完整音频缓存：首次播放后在后台校验并保存，缓存命中时支持离线播放，并提供容量、清理与单曲数据管理。
-- 新增曲目响度标准化：按 `-14 LUFS` 与 `-1 dBTP` 测量整曲并应用固定增益，兼容解码器支持的不同来源采样率，不修改原始音频。
-- 响度分析进度会在有任务时每 2 秒自动更新，任务完成后停止轮询；无法安全分析的歌曲继续保持原音量。
-- 自动匹配歌词、手动选择歌词和对应翻译均可持久化；手动选择始终覆盖旧的自动结果。
-- 新增用户确认后才调用的 DeepSeek 整曲歌词翻译，并对逐行对应关系、缓存和密钥存储进行严格校验。
-- 歌单备份默认采用合并导入，保留目标设备已有歌单；同时改进 Bilibili CDN 恢复、随机播放、桌面歌词控制和现代黑/白界面。
+- 新增“年度回响”：基于本机有效播放记录汇总年度听歌时间、歌曲、歌手和月度趋势；“添加到下一首播放”使用可恢复的 FIFO 队列。
+- 新增八种桌面音效预设，可按偏好选择播放效果。
+- DeepSeek 歌词翻译支持自定义翻译风格，并继续要求用户主动确认后才发送请求。
+- 新增“缓存与下载”音乐库，集中管理临时缓存、歌单缓存和永久离线下载。
+- 补全曲目时长持久化，并修复播放器底部停靠控件的重叠问题。
 
 ## 界面预览
 
@@ -41,6 +40,7 @@ Listen2 是 [Listen1](https://github.com/listen1/listen1) 的社区增强版本�
 - 现代黑、现代白两套主题，覆盖音乐库、播放详情、弹窗与底部播放栏。
 - 沉浸式播放详情页，包含圆形封面、环形进度、背景氛围光和分层信息布局。
 - 由真实音频分析驱动的频谱与动态效果，而不是与音乐无关的预设动画。
+- 提供八种桌面音效预设、原音对比与失败回退；实际听感取决于播放设备和系统音频链路。
 - 重新设计播放进度、音量、状态反馈和高频操作区域。
 - 可选的曲目响度标准化会在播放时减少歌曲间的音量跳变，不修改原始音频，也不使用动态压缩冒充归一化。
 
@@ -123,22 +123,24 @@ Listen2 是 [Listen1](https://github.com/listen1/listen1) 的社区增强版本�
 
 ### Windows
 
-下载文件名包含 `win_x64.exe` 的 NSIS 安装包并运行。目前安装包未使用商业代码签名证书，Windows SmartScreen 可能显示“未知发布者”；请核对下载来源和 Release 页面提供的 SHA-256。
+下载 Windows 10/11 x64 的 NSIS 安装包或 7z 压缩包。目前安装包未使用商业代码签名证书，Windows SmartScreen 可能显示“未知发布者”；请核对下载来源和 Release 页面。
 
 ### macOS
 
-下载 DMG 后拖入“应用程序”。当前 macOS 构建未使用 Apple Developer ID 签名或公证，首次打开时可能出现系统安全提示。
+下载 x64、arm64 或 Universal DMG 后拖入“应用程序”。当前 macOS 构建未使用 Apple Developer ID 签名或公证，首次打开时可能出现系统安全提示。
+
+本版本只发布 Windows x64 的 NSIS 与 7z，以及 macOS x64、arm64 和 Universal DMG；不发布 Linux、Windows ia32 或 Windows arm64 制品。
 
 ## 平台支持
 
-核心播放器界面、Bilibili 适配、频谱和歌词逻辑由 Windows、macOS 与 Linux 共用。操作系统原生窗口行为会有少量差异。
+核心播放器界面、Bilibili 适配、频谱和歌词逻辑由 Windows 与 macOS 共享。操作系统原生窗口行为会有少量差异。
 
 | 平台                        | 状态         | 说明                                                                  |
 | --------------------------- | ------------ | --------------------------------------------------------------------- |
-| Windows 10/11 x64           | 已构建并验证 | 提供 NSIS 安装包；包含现代 UI、Bilibili、MV、桌面歌词与 DeepSeek 翻译 |
-| macOS Intel / Apple Silicon | 已构建并验证 | 支持 x64、arm64 与 Universal DMG；当前未签名或公证                    |
-| Windows ia32 / arm64        | 保留构建能力 | 尚未在对应设备上完成系统性回归                                        |
-| Linux                       | 保留构建能力 | 不是当前版本的主要测试平台                                            |
+| Windows 10/11 x64           | 发布目标     | 提供 NSIS 安装包与 7z；包含现代 UI、Bilibili、MV、桌面歌词与 DeepSeek 翻译 |
+| macOS Intel / Apple Silicon | 发布目标     | 提供 x64、arm64 与 Universal DMG；当前未签名或公证                    |
+| Windows ia32 / arm64        | 不发布       | 本版本不提供对应制品                                                  |
+| Linux                       | 不发布       | 本版本不提供 Linux 制品                                               |
 
 ## 使用提示
 
@@ -161,7 +163,7 @@ Listen2 是 [Listen1](https://github.com/listen1/listen1) 的社区增强版本�
 
 - Node.js 18 或更高版本
 - npm
-- Windows、macOS 或 Linux 桌面系统
+- Windows 或 macOS 桌面系统
 
 ### 运行开发版
 
@@ -177,14 +179,11 @@ npm run start
 ### 构建安装包
 
 ```bash
-# Windows x64 NSIS 安装包
-npx electron-builder --win nsis --x64
+# Windows x64 NSIS 安装包与 7z 压缩包
+npm run dist:win
 
-# macOS：按项目配置构建 x64、arm64 和 Universal DMG
+# macOS x64、arm64 和 Universal DMG
 npm run dist:mac
-
-# Linux
-npm run dist:linux
 ```
 
 构建产物位于 `dist/`。公开分发前，请在目标系统实机测试并按平台要求完成代码签名。

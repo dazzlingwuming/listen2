@@ -1,20 +1,20 @@
 {
   "name": "listen1",
-  "version": "2.34.0",
+  "version": "2.35.0",
   "description": "A modern Listen1 desktop experience with enhanced Bilibili, lyrics, and visualizations",
   "main": "app/main.js",
   "scripts": {
     "postinstall": "electron-builder install-app-deps",
     "start": "electron ./app --enable-logging",
     "dev": "NODE_ENV='development' npm run start",
-    "dist:mac": "CSC_IDENTITY_AUTO_DISCOVERY=false DEBUG=electron-builder electron-builder --mac",
+    "dist:mac": "CSC_IDENTITY_AUTO_DISCOVERY=false DEBUG=electron-builder electron-builder --mac dmg --x64 --arm64 --universal",
     "dist": "electron-builder .",
     "dist:linux": "electron-builder --linux --ia32 --x64",
     "dist:linux32": "electron-builder --linux --ia32",
     "dist:linux64": "electron-builder --linux --x64",
     "dist:linuxArm64": "electron-builder --linux --arm64",
     "dist:linuxArmv7l": "electron-builder --linux --armv7l",
-    "dist:win": "electron-builder --win",
+    "dist:win": "electron-builder --win nsis 7z --x64",
     "test:bilibili": "node --test app/test/bilibiliService.test.js app/test/bilibiliFailureContract.test.js",
     "test:desktop-cache": "node --test app/test/audioCache.test.js app/test/lyricCacheStore.test.js app/test/mainLocalDataCache.test.js",
     "test:loudness": "node --test app/test/loudnessAnalyzer.test.js app/test/loudnessAudioCache.test.js",
@@ -95,17 +95,13 @@
         {
           "target": "nsis",
           "arch": [
-            "x64",
-            "ia32",
-            "arm64"
+            "x64"
           ]
         },
         {
           "target": "7z",
           "arch": [
-            "x64",
-            "ia32",
-            "arm64"
+            "x64"
           ]
         }
       ],
