@@ -462,6 +462,15 @@ const netease: ProviderAdapter = {
         options,
       ),
     );
+    // NetEase returns HTTP 200 with -462 when anonymous search is gated by a
+    // human-verification challenge. Treat it as a terminal provider route
+    // limitation; retrying the same request only makes the search feel hung.
+    if (data?.code === -462) {
+      throw new ProviderClientError('ROUTE_UNAVAILABLE', 'netease', 'search', {
+        retryable: false,
+        action: 'not-available',
+      });
+    }
     const result = asObject(data?.result);
     if (kind === 'playlist') {
       const rows = result?.playlists;
@@ -906,11 +915,20 @@ const bilibili: ProviderAdapter = {
     const value = checkedSearchInput('bilibili', query, pageNumber);
     requestedSearchKind('bilibili', options);
     const params = new URLSearchParams({
+      __refresh__: 'true',
+      _extra: '',
+      context: '',
+      category_id: '',
       search_type: 'video',
       page: String(pageNumber),
-      page_size: String(PAGE_SIZE),
+      page_size: '42',
       keyword: value,
       platform: 'pc',
+      highlight: '1',
+      single_column: '0',
+      dynamic_offset: '0',
+      preload: 'true',
+      com2co: 'true',
     });
     const root = asObject(
       await requestJson(

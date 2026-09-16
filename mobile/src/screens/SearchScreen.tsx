@@ -651,13 +651,15 @@ function SearchSurface({
         <Text style={text.meta}>
           {errorCopy?.message || '请检查网络后重试，或选择其他来源。'}
         </Text>
-        <Pressable
-          accessibilityLabel="重试搜索"
-          onPress={onRetry}
-          style={sectionStyles.button}
-        >
-          <Text style={sectionStyles.buttonText}>重试</Text>
-        </Pressable>
+        {errorCopy?.action === 'retry' ? (
+          <Pressable
+            accessibilityLabel="重试搜索"
+            onPress={onRetry}
+            style={sectionStyles.button}
+          >
+            <Text style={sectionStyles.buttonText}>重试</Text>
+          </Pressable>
+        ) : null}
       </View>
     );
   if (status === 'cancelled' && !items.length)
@@ -686,13 +688,15 @@ function SearchSurface({
               ? '已取消加载更多，已显示的结果仍可使用。'
               : errorCopy?.message || '加载更多失败，已显示的结果仍可使用。'}
           </Text>
-          <Pressable
-            accessibilityLabel="重试加载更多搜索结果"
-            onPress={onRetry}
-            style={sectionStyles.secondaryButton}
-          >
-            <Text style={sectionStyles.secondaryText}>重试加载更多</Text>
-          </Pressable>
+          {status === 'cancelledMore' || errorCopy?.action === 'retry' ? (
+            <Pressable
+              accessibilityLabel="重试加载更多搜索结果"
+              onPress={onRetry}
+              style={sectionStyles.secondaryButton}
+            >
+              <Text style={sectionStyles.secondaryText}>重试加载更多</Text>
+            </Pressable>
+          ) : null}
         </View>
       ) : null}
       {items.map((item, index) =>

@@ -82,7 +82,9 @@ node "$MOBILE_ROOT/scripts/verify-phase7-security.mjs"
 tracked_clean
 (
   cd "$ANDROID_ROOT"
-  ./gradlew --offline --no-daemon :app:testDebugUnitTest :app:compileReleaseLikeAndroidTestKotlin :app:assembleDebug :app:assembleReleaseLike :app:assembleReleaseLikeAndroidTest
+  # testBuildType is intentionally releaseLike, so Gradle registers only the
+  # release-like JVM unit-test task for the configured target variant.
+  ./gradlew --offline --no-daemon :app:testReleaseLikeUnitTest :app:compileReleaseLikeAndroidTestKotlin :app:assembleDebug :app:assembleReleaseLike :app:assembleReleaseLikeAndroidTest
 )
 
 ARTIFACT_DIR="$RUN_DIR/artifacts"

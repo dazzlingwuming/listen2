@@ -231,6 +231,18 @@ describe('search journey state', () => {
     const unavailable = presentProviderError(
       new ProviderClientError('ROUTE_UNAVAILABLE', 'qq', 'detail'),
     );
+    const neteaseVerification = presentProviderError(
+      new ProviderClientError('ROUTE_UNAVAILABLE', 'netease', 'search', {
+        retryable: false,
+        action: 'not-available',
+      }),
+    );
+    const bilibiliSecurityPolicy = presentProviderError(
+      new ProviderClientError('PROVIDER_ERROR', 'bilibili', 'search', {
+        retryable: false,
+        action: 'not-available',
+      }),
+    );
 
     expect(timeout).toMatchObject({ terminal: 'timeout', action: 'retry' });
     expect(login).toMatchObject({
@@ -239,6 +251,16 @@ describe('search journey state', () => {
     });
     expect(unavailable).toMatchObject({
       terminal: 'unavailable',
+      action: 'choose-another-source',
+    });
+    expect(neteaseVerification).toMatchObject({
+      terminal: 'unavailable',
+      title: '网易云要求完成验证',
+      action: 'choose-another-source',
+    });
+    expect(bilibiliSecurityPolicy).toMatchObject({
+      terminal: 'provider-error',
+      title: '来源安全策略拒绝了请求',
       action: 'choose-another-source',
     });
     expect(JSON.stringify(timeout)).not.toMatch(/cookie|token|https?:\/\//i);
@@ -332,6 +354,39 @@ describe('search journey state', () => {
       }
     },
   );
+
+  it('does not offer a pointless retry for the NetEase verification gate', async () => {
+    mockSearch.mockRejectedValue(
+      new ProviderClientError('ROUTE_UNAVAILABLE', 'netease', 'search', {
+        retryable: false,
+        action: 'not-available',
+      }),
+    );
+
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<SearchScreen />);
+      await Promise.resolve();
+    });
+    const input = tree.root.findByProps({
+      accessibilityLabel: '搜索歌曲、歌手或歌单',
+    });
+    await act(async () => {
+      input.props.onChangeText('青花瓷');
+    });
+    await act(async () => {
+      tree.root.findByProps({ accessibilityLabel: '搜索音乐' }).props.onPress();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(
+      tree.root.findByProps({ children: '网易云要求完成验证' }),
+    ).toBeTruthy();
+    expect(
+      tree.root.findAllByProps({ accessibilityLabel: '重试搜索' }),
+    ).toHaveLength(0);
+  });
 
   it('keeps rows after a later-page error and records a retryable page', () => {
     const ready = reduceSearchJourney(

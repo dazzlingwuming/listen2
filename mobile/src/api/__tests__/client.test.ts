@@ -122,6 +122,27 @@ describe('providerClient', () => {
     expect(url).toContain('limit=20');
   });
 
+  it('classifies the NetEase human-verification gate without retrying', async () => {
+    globalThis.fetch = jest.fn().mockResolvedValue(
+      jsonResponse({
+        code: -462,
+        message: '请完成验证操作',
+        data: { verifyType: 40 },
+      }),
+    );
+
+    await expect(
+      providerClient.search('netease', '青花瓷', 1),
+    ).rejects.toMatchObject({
+      code: 'ROUTE_UNAVAILABLE',
+      source: 'netease',
+      operation: 'search',
+      retryable: false,
+      action: 'not-available',
+    });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
   it('uses the Android-proven Bilibili search query and removes display markup', async () => {
     globalThis.fetch = jest.fn().mockResolvedValue(
       jsonResponse({
@@ -161,13 +182,19 @@ describe('providerClient', () => {
       'https://api.bilibili.com/x/web-interface/search/type?',
     );
     expect(url).toContain('search_type=video');
-    expect(url).toContain('page_size=20');
+    expect(url).toContain('__refresh__=true');
+    expect(url).toContain('page_size=42');
+    expect(url).toContain('highlight=1');
+    expect(url).toContain('single_column=0');
+    expect(url).toContain('dynamic_offset=0');
+    expect(url).toContain('preload=true');
+    expect(url).toContain('com2co=true');
   });
 
-  it('retries one transient Bilibili search rejection on the same fixed route', async () => {
+  it('retries one transient Bilibili rate limit on the same fixed route', async () => {
     globalThis.fetch = jest
       .fn()
-      .mockResolvedValueOnce(new Response(null, { status: 412 }))
+      .mockResolvedValueOnce(new Response(null, { status: 429 }))
       .mockResolvedValueOnce(
         jsonResponse({
           code: 0,
@@ -200,7 +227,7 @@ describe('providerClient', () => {
     );
   });
 
-  it('keeps a repeated Bilibili rejection bounded and typed', async () => {
+  it('does not repeat a Bilibili security-policy rejection', async () => {
     globalThis.fetch = jest
       .fn()
       .mockResolvedValue(new Response(null, { status: 412 }));
@@ -211,9 +238,9 @@ describe('providerClient', () => {
       code: 'PROVIDER_ERROR',
       source: 'bilibili',
       operation: 'search',
-      retryable: true,
+      retryable: false,
     });
-    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 
   it('rejects oversized or malformed provider payloads with a safe typed error', async () => {

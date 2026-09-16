@@ -63,6 +63,18 @@ export function presentProviderError(
 ): ProviderErrorPresentation {
   const code =
     error instanceof ProviderClientError ? error.code : 'PROVIDER_ERROR';
+  if (
+    error instanceof ProviderClientError &&
+    error.source === 'netease' &&
+    error.operation === 'search' &&
+    code === 'ROUTE_UNAVAILABLE'
+  )
+    return {
+      terminal: 'unavailable',
+      title: '网易云要求完成验证',
+      message: '当前匿名搜索被来源拦截，请先选择其他音乐来源。',
+      action: 'choose-another-source',
+    };
   if (code === 'REQUEST_TIMEOUT')
     return {
       terminal: 'timeout',
@@ -139,6 +151,17 @@ export function presentProviderError(
       terminal: 'unavailable',
       title: '该操作暂不可用',
       message: '此来源尚无已验证的授权路径。',
+      action: 'choose-another-source',
+    };
+  if (
+    error instanceof ProviderClientError &&
+    code === 'PROVIDER_ERROR' &&
+    !error.retryable
+  )
+    return {
+      terminal: 'provider-error',
+      title: '来源安全策略拒绝了请求',
+      message: '请选择其他来源，或稍后再试。',
       action: 'choose-another-source',
     };
   return {

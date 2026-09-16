@@ -50,7 +50,9 @@ function providerErrorForStatus(
       ? 'REGION_RESTRICTED'
       : 'PROVIDER_ERROR';
   return new ProviderClientError(code, source, operation, {
-    retryable: status === 412 || status === 429 || status >= 500,
+    // Bilibili uses 412 for a security-policy rejection. Repeating the exact
+    // same request only doubles the visible wait and cannot clear that state.
+    retryable: status === 429 || status >= 500,
   });
 }
 
