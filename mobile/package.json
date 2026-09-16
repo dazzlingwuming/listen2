@@ -9,7 +9,7 @@
     "start": "react-native start",
     "test": "jest",
     "verify:phase7-security": "node scripts/verify-phase7-security.mjs",
-    "acceptance:build-release-like": "bash scripts/acceptance/build-release-like.sh --phase-dir ../.planning/phases/08-integrated-api-35-acceptance-release-like-evidence --untracked-manifest scripts/acceptance/untracked-allowlist.json --repeat-app-variants 2"
+    "acceptance:build-release-like": "bash scripts/acceptance/build-release-like.sh --phase-dir .planning/phases/08-integrated-api-35-acceptance-release-like-evidence --untracked-manifest mobile/scripts/acceptance/untracked-allowlist.json --repeat-app-variants 2"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "3.1.1",
