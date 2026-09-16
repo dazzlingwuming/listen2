@@ -103,11 +103,23 @@ function track(value: unknown, localAllowed = true): SafeTrack | null {
   } as SafeTrack;
 }
 
-function strictTracks(values: unknown[], localAllowed = true): SafeTrack[] | null {
-  const parsed = values.map(item => track(item, localAllowed));
-  return parsed.every((item): item is SafeTrack => item !== null)
-    ? parsed.filter((item): item is SafeTrack => item !== null)
-    : null;
+function uniqueBy<T>(values: T[], key: (value: T) => string): T[] {
+  const seen = new Set<string>();
+  return values.filter(value => {
+    const identity = key(value);
+    if (seen.has(identity)) return false;
+    seen.add(identity);
+    return true;
+  });
+}
+
+function safeTracks(values: unknown[], localAllowed = true): SafeTrack[] {
+  return uniqueBy(
+    values
+      .map(item => track(item, localAllowed))
+      .filter((item): item is SafeTrack => item !== null),
+    item => `${item.source}:${item.trackId}`,
+  );
 }
 
 function remoteCollection(value: unknown): LibraryRemoteCollection | null {
@@ -251,11 +263,13 @@ function exportFromRoots(libraryRoot: UnknownRecord, playerRoot: UnknownRecord |
   const playlists: LegacyMigrationRequest['playlists'] = [];
   for (const [position, raw] of playlistValues.entries()) {
     const item = object(raw);
-    if (!item) return null;
+    // A malformed playlist row is isolated, but its tracks field is a
+    // container: a missing, non-array, or oversized tracks list is partial
+    // source data and must fail the migration rather than look empty.
+    if (!item) continue;
     const rawTracks = Array.isArray(item.tracks) && item.tracks.length <= MAX_ENTRIES ? item.tracks : null;
     if (!rawTracks) return null;
-    const parsedTracks = strictTracks(rawTracks);
-    if (!parsedTracks) return null;
+    const parsedTracks = safeTracks(rawTracks);
     const rawId = typeof item.playlistId === 'string' ? item.playlistId : item.id;
     const playlistId = typeof rawId === 'string' && SAFE_PLAYLIST_ID.test(rawId)
       ? rawId
@@ -264,51 +278,56 @@ function exportFromRoots(libraryRoot: UnknownRecord, playerRoot: UnknownRecord |
       playlistId,
       title: text(item.title, '未命名歌单'),
       position,
-      tracks: parsedTracks.filter((value, index, all) => all.findIndex(candidate => candidate.source === value.source && candidate.trackId === value.trackId) === index),
+      tracks: parsedTracks,
     });
   }
-  if (new Set(playlists.map(item => item.playlistId)).size !== playlists.length) return null;
-  const normalizedPlaylists = playlists.map((item, position) => ({ ...item, position }));
+  const normalizedPlaylists = uniqueBy(playlists, item => item.playlistId)
+    .map((item, position) => ({ ...item, position }));
   // Favorites are row-level legacy data. Keep every independently safe remote
   // row, while isolating unsupported/local/malformed rows and collapsing
   // duplicates before the native primary-key write.
-  const favorites = favoriteValues
-    .map(value => track(value, false))
-    .filter((item): item is SafeTrack => item !== null)
-    .filter((item, index, all) => all.findIndex(candidate => candidate.source === item.source && candidate.trackId === item.trackId) === index);
+  const favorites = safeTracks(favoriteValues, false);
 
   const remoteValues = decodeOptionalArrayField(libraryRoot, 'remoteCollections');
   if (remoteValues === null) return null;
-  const remoteCollections = (remoteValues || []).map(remoteCollection);
-  if (remoteCollections.some(item => item === null)) return null;
-  const safeRemoteCollections = remoteCollections.filter((item): item is LibraryRemoteCollection => item !== null);
-  if (new Set(safeRemoteCollections.map(item => item.collectionId)).size !== safeRemoteCollections.length) return null;
+  const safeRemoteCollections = uniqueBy(
+    (remoteValues ?? [])
+      .map(remoteCollection)
+      .filter((item): item is LibraryRemoteCollection => item !== null),
+    item => item.collectionId,
+  );
 
   const libraryQueueValues = decodeOptionalArrayField(libraryRoot, 'queueCheckpoint');
-  const playerQueueValues = playerRoot ? playerRoot.playNextQueue : undefined;
-  if (libraryQueueValues === null || (playerQueueValues !== undefined && !Array.isArray(playerQueueValues))) return null;
-  const queueValues = libraryQueueValues ?? (Array.isArray(playerQueueValues) ? playerQueueValues : []);
-  const queue = queueValues.map(queueCheckpoint);
-  if (queue.some(item => item === null)) return null;
-  const safeQueue = queue.filter((item): item is LibraryQueueCheckpoint => item !== null)
-    .map((item, position) => ({ ...item, position }));
-  if (new Set(safeQueue.map(item => item.occurrenceId)).size !== safeQueue.length) return null;
+  const playerQueueValues = playerRoot ? decodeOptionalArrayField(playerRoot, 'playNextQueue') : undefined;
+  if (libraryQueueValues === null) return null;
+  const queueValues = libraryQueueValues ?? (playerQueueValues ?? []);
+  const safeQueue = uniqueBy(
+    queueValues
+      .map(queueCheckpoint)
+      .filter((item): item is LibraryQueueCheckpoint => item !== null),
+    item => item.occurrenceId,
+  ).map((item, position) => ({ ...item, position }));
 
   const libraryLyricValues = decodeOptionalArrayField(libraryRoot, 'lyricMetadata');
-  const playerLyricValues = playerRoot ? playerRoot.lyricMetadata : undefined;
-  if (libraryLyricValues === null || (playerLyricValues !== undefined && !Array.isArray(playerLyricValues))) return null;
-  const lyricValues = libraryLyricValues ?? (Array.isArray(playerLyricValues) ? playerLyricValues : []);
-  const lyrics = lyricValues.map(lyricMetadata);
-  if (lyrics.some(item => item === null)) return null;
-  const safeLyrics = lyrics.filter((item): item is LibraryLyricMetadata => item !== null);
-  if (new Set(safeLyrics.map(item => `${item.source}:${item.trackId}`)).size !== safeLyrics.length) return null;
+  const playerLyricValues = playerRoot ? decodeOptionalArrayField(playerRoot, 'lyricMetadata') : undefined;
+  if (libraryLyricValues === null) return null;
+  const lyricValues = libraryLyricValues ?? (playerLyricValues ?? []);
+  const safeLyrics = uniqueBy(
+    lyricValues
+      .map(lyricMetadata)
+      .filter((item): item is LibraryLyricMetadata => item !== null),
+    item => `${item.source}:${item.trackId}`,
+  );
 
-  const localEntries = (localValues ?? []).map(value => {
-    const item = object(value);
-    return item ? { title: text(item.title, '未知本地音乐'), artist: text(item.artist, '未知艺人') } : null;
-  });
-  if (localEntries.some(item => item === null)) return null;
-  const safeLocalEntries = localEntries.filter((item): item is { title: string; artist: string } => item !== null);
+  const safeLocalEntries = uniqueBy(
+    (localValues ?? [])
+      .map(value => {
+        const item = object(value);
+        return item ? { title: text(item.title, '未知本地音乐'), artist: text(item.artist, '未知艺人') } : null;
+      })
+      .filter((item): item is { title: string; artist: string } => item !== null),
+    item => JSON.stringify([item.title, item.artist]),
+  );
   const exportedWithoutPlayer = {
     playlists: normalizedPlaylists,
     favorites,

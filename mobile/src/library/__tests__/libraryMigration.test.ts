@@ -81,6 +81,78 @@ describe('legacy library migration', () => {
     ]);
   });
 
+  it('skips bad rows inside playlists, remote collections, queue, lyrics, and local entries', () => {
+    const legacyLibrary = JSON.stringify({
+      playlists: JSON.stringify([
+        null,
+        {
+          id: 'road',
+          title: 'Road trip',
+          tracks: [
+            { source: 'netease', id: '42', title: 'Song', artist: 'Artist' },
+            { source: 'unsupported', id: 'bad-provider', title: 'Unknown', artist: 'Provider' },
+            null,
+            { source: 'netease', id: '42', title: 'Duplicate', artist: 'Other' },
+          ],
+        },
+        { id: 'road', title: 'Duplicate playlist', tracks: [] },
+      ]),
+      favorites: '[]',
+      remoteCollections: JSON.stringify([
+        { id: 'charts', source: 'netease', title: '排行榜', syncState: 'ready' },
+        { id: 'charts', source: 'netease', title: 'Duplicate', syncState: 'ready' },
+        { id: 'broken', source: 'unsupported', title: 'Unknown', syncState: 'ready' },
+        null,
+      ]),
+      queueCheckpoint: JSON.stringify([
+        { occurrenceId: 'q1', source: 'netease', id: '42' },
+        { occurrenceId: 'q1', source: 'netease', id: '43' },
+        { occurrenceId: 'bad/id', source: 'netease', id: '44' },
+        null,
+      ]),
+      lyricMetadata: JSON.stringify([
+        { source: 'netease', id: '42', offsetMillis: 120, selectedVariantId: 'main' },
+        { source: 'netease', id: '42', offsetMillis: 240, selectedVariantId: 'other' },
+        { source: 'netease', id: 'bad/id', offsetMillis: 120 },
+        null,
+      ]),
+      localTracks: JSON.stringify([
+        { title: 'Private', artist: 'Me' },
+        null,
+        { title: 'Private', artist: 'Me' },
+        { title: 'Another', artist: 'Artist' },
+      ]),
+    });
+
+    const exported = exportLegacyMigration(legacyLibrary, 'mixed_rows');
+    expect(exported).toMatchObject({
+      playlists: [{ playlistId: 'road', position: 0, tracks: [{ source: 'netease', trackId: '42', title: 'Song', artist: 'Artist' }] }],
+      remoteCollections: [{ collectionId: 'charts', source: 'netease', title: '排行榜', syncState: 'ready' }],
+      queueCheckpoint: [{ occurrenceId: 'q1', position: 0, source: 'netease', trackId: '42' }],
+      lyricMetadata: [{ source: 'netease', trackId: '42', selectedVariantId: 'main', offsetMillis: 120 }],
+      localEntries: [{ title: 'Private', artist: 'Me' }, { title: 'Another', artist: 'Artist' }],
+    });
+  });
+
+  it('rejects damaged or oversized collection containers', () => {
+    const valid = { playlists: '[]', favorites: '[]', localTracks: '[]' };
+    const fields = ['playlists', 'favorites', 'remoteCollections', 'queueCheckpoint', 'lyricMetadata', 'localTracks'] as const;
+    fields.forEach((field, index) => {
+      expect(exportLegacyMigration(JSON.stringify({ ...valid, [field]: '{}' }), `broken_${index}`)).toBeNull();
+    });
+
+    const oversizedFavorites = JSON.stringify(Array.from({ length: 2_001 }, (_, index) => ({ source: 'netease', id: `track_${index}` })));
+    expect(exportLegacyMigration(JSON.stringify({ ...valid, favorites: oversizedFavorites }), 'oversized_favorites')).toBeNull();
+
+    const oversizedPlaylistTracks = JSON.stringify([{
+      id: 'road',
+      title: 'Road trip',
+      tracks: Array.from({ length: 2_001 }, (_, index) => ({ source: 'netease', id: `track_${index}` })),
+    }]);
+    expect(exportLegacyMigration(JSON.stringify({ ...valid, playlists: oversizedPlaylistTracks }), 'oversized_tracks')).toBeNull();
+    expect(exportLegacyMigration(JSON.stringify({ ...valid, playlists: JSON.stringify([{ id: 'road', tracks: '{}' }]) }), 'broken_tracks')).toBeNull();
+  });
+
   it('falls back to a safe empty player when the auxiliary player record is corrupted', () => {
     const legacyLibrary = JSON.stringify({
       playlists: '[]',
