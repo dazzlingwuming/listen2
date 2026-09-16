@@ -34,6 +34,21 @@ export type BilibiliVideoDetail = {
   parts: BilibiliPart[];
 };
 
+export type BilibiliSearchTrack = Readonly<{
+  bvid: string;
+  title: string;
+  artist: string;
+  durationMs?: number;
+  artworkUrl?: string;
+}>;
+
+export type BilibiliSearchPage = Readonly<{
+  query: string;
+  page: number;
+  total?: number;
+  results: readonly BilibiliSearchTrack[];
+}>;
+
 export type BilibiliAudioRequest = { bvid: string; cid: string };
 
 export type BilibiliMvQualityId =

@@ -74,6 +74,10 @@ internal class BilibiliModule(
         revokeAccountAuthority()
         complete(promise) { state(session.logout()) }
     }
+    @ReactMethod fun search(request: ReadableMap, promise: Promise) = complete(promise) {
+        requireKeys(request, setOf("query", "page"))
+        searchResult(gateway.search(requireText(request, "query", BilibiliPolicy.MAX_TEXT), requireSearchPage(request, "page")))
+    }
     @ReactMethod fun videoDetail(request: ReadableMap, promise: Promise) = complete(promise) {
         requireKeys(request, setOf("bvid")); detail(gateway.videoDetail(requireBvid(request, "bvid")))
     }
@@ -239,6 +243,22 @@ internal class BilibiliModule(
         putString("bvid", value.bvid); putString("title", value.title); value.owner?.let { putString("owner", it) }
         putArray("parts", Arguments.createArray().apply { value.parts.forEach { part -> pushMap(Arguments.createMap().apply { putString("cid", part.cid.toString()); putString("page", part.page.toString()); putString("title", part.title); part.durationMs?.let { putDouble("durationMs", it.toDouble()) } }) } })
     }
+    private fun searchResult(value: BilibiliGateway.SearchPage): WritableMap = Arguments.createMap().apply {
+        putString("query", value.query)
+        putInt("page", value.page.toInt())
+        value.total?.let { putDouble("total", it.toDouble()) }
+        putArray("results", Arguments.createArray().apply {
+            value.results.forEach { result ->
+                pushMap(Arguments.createMap().apply {
+                    putString("bvid", result.bvid)
+                    putString("title", result.title)
+                    putString("artist", result.artist)
+                    result.durationMs?.let { putDouble("durationMs", it.toDouble()) }
+                    result.artworkUrl?.let { putString("artworkUrl", it) }
+                })
+            }
+        })
+    }
     private fun mvState(value: BilibiliMvController.PublicState): WritableMap = Arguments.createMap().apply {
         putString("state", value.state.name.lowercase())
         if (value.handle.isNotBlank()) putString("handle", value.handle)
@@ -269,6 +289,12 @@ internal class BilibiliModule(
     private fun requireText(map: ReadableMap, key: String, limit: Int): String { if (!map.hasKey(key) || map.getType(key) != ReadableType.String) throw IllegalArgumentException(); return BilibiliPolicy.safeText(map.getString(key), limit) ?: throw IllegalArgumentException() }
     private fun requireBvid(map: ReadableMap, key: String): String = requireText(map, key, 40).also { if (!BilibiliPolicy.isCanonicalBvid(it)) throw IllegalArgumentException() }
     private fun requirePositive(map: ReadableMap, key: String): Long { val value = requireText(map, key, 18); if (!BilibiliPolicy.isPositiveText(value)) throw IllegalArgumentException(); return value.toLong() }
+    private fun requireSearchPage(map: ReadableMap, key: String): Long {
+        if (!map.hasKey(key) || map.getType(key) != ReadableType.Number) throw IllegalArgumentException()
+        val value = map.getDouble(key)
+        if (!value.isFinite() || value != value.toLong().toDouble()) throw IllegalArgumentException()
+        return value.toLong().takeIf(BilibiliPolicy::isSearchPage) ?: throw IllegalArgumentException()
+    }
     private fun requirePositiveOrZero(map: ReadableMap, key: String): Long { if (!map.hasKey(key) || map.getType(key) != ReadableType.Number) throw IllegalArgumentException(); return map.getDouble(key).toLong().takeIf { it >= 0L && it <= 24L * 60L * 60L * 1000L } ?: throw IllegalArgumentException() }
     private fun requireHandle(map: ReadableMap): String = requireText(map, "handle", 96).takeIf(BilibiliMvPolicy::isOpaqueHandle) ?: throw IllegalArgumentException()
     private fun requireQuality(map: ReadableMap, key: String): String = requireText(map, key, 8)

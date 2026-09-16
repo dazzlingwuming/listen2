@@ -4,6 +4,7 @@ import type {
   Lyric,
   PlaylistDetail,
   PlaylistSummary,
+  ProviderErrorCode,
   ProviderRequestOptions,
   SearchPage,
   SearchKind,
@@ -11,12 +12,10 @@ import type {
   SourceId,
   Track,
 } from '../types';
+import { bilibiliClient } from '../bilibili/client';
 import { ProviderClientError, unavailable } from './errors';
 import { isCanonicalPositiveSafeIntegerText } from './ids';
-import {
-  requestFixedText,
-  requestJson,
-} from './http';
+import { requestFixedText, requestJson } from './http';
 
 const PAGE_SIZE = 20;
 const MAX_PAGE = 1_000;
@@ -442,6 +441,36 @@ function playlistPage(
 
 function invalidResponse(source: SourceId): never {
   throw new ProviderClientError('INVALID_RESPONSE', source, 'search');
+}
+
+const BILIBILI_SEARCH_ERROR_CODES = new Set<ProviderErrorCode>([
+  'INVALID_REQUEST',
+  'REQUEST_TIMEOUT',
+  'CANCELLED',
+  'NETWORK_ERROR',
+  'PROVIDER_ERROR',
+  'INVALID_RESPONSE',
+  'LOGIN_REQUIRED',
+  'MEMBERSHIP_REQUIRED',
+  'DRM_RESTRICTED',
+  'REGION_RESTRICTED',
+]);
+
+function bilibiliSearchError(error: unknown): never {
+  const candidate =
+    error && typeof error === 'object' && 'code' in error
+      ? (error as { code?: unknown }).code
+      : undefined;
+  const code: ProviderErrorCode =
+    candidate === 'UNAVAILABLE'
+      ? 'ROUTE_UNAVAILABLE'
+      : typeof candidate === 'string' &&
+        BILIBILI_SEARCH_ERROR_CODES.has(candidate as ProviderErrorCode)
+      ? (candidate as ProviderErrorCode)
+      : 'PROVIDER_ERROR';
+  throw new ProviderClientError(code, 'bilibili', 'search', {
+    retryable: code === 'REQUEST_TIMEOUT' || code === 'NETWORK_ERROR',
+  });
 }
 
 const netease: ProviderAdapter = {
@@ -914,57 +943,24 @@ const bilibili: ProviderAdapter = {
   async search(query, pageNumber, options) {
     const value = checkedSearchInput('bilibili', query, pageNumber);
     requestedSearchKind('bilibili', options);
-    const params = new URLSearchParams({
-      __refresh__: 'true',
-      _extra: '',
-      context: '',
-      category_id: '',
-      search_type: 'video',
-      page: String(pageNumber),
-      page_size: '42',
-      keyword: value,
-      platform: 'pc',
-      highlight: '1',
-      single_column: '0',
-      dynamic_offset: '0',
-      preload: 'true',
-      com2co: 'true',
-    });
-    const root = asObject(
-      await requestJson(
-        {
-          url: `https://api.bilibili.com/x/web-interface/search/type?${params}`,
-          profile: 'bilibili',
-        },
-        'bilibili',
-        'search',
-        options,
-      ),
-    );
-    if (root?.code !== 0) invalidResponse('bilibili');
-    const data = asObject(root.data);
-    const rows = data?.result;
-    if (!Array.isArray(rows) || rows.length > MAX_ROWS)
-      invalidResponse('bilibili');
-    const tracks = rows.flatMap((song): Track[] => {
-      const row = asObject(song);
-      const bvid = text(row?.bvid, 64);
-      const title = cleanTitle(row?.title);
-      const artist = cleanTitle(row?.author) ?? 'Bilibili';
-      if (!bvid || !/^BV[0-9A-Za-z]{6,32}$/.test(bvid) || !title) return [];
-      const duration = text(row?.duration, 16);
-      return [
-        {
-          id: `bitrack_v_${bvid}`,
-          source: 'bilibili',
-          title,
-          artist,
-          durationMs: durationToMs(duration),
-          artworkUrl: safeArtwork(row?.pic),
-        },
-      ];
-    });
-    return trackPage('bilibili', value, pageNumber, data?.numResults, tracks);
+    try {
+      const page = options?.signal
+        ? await bilibiliClient.search(value, pageNumber, {
+            signal: options.signal,
+          })
+        : await bilibiliClient.search(value, pageNumber);
+      const tracks: Track[] = page.results.map(result => ({
+        id: `bitrack_v_${result.bvid}`,
+        source: 'bilibili',
+        title: result.title,
+        artist: result.artist,
+        durationMs: result.durationMs,
+        artworkUrl: result.artworkUrl,
+      }));
+      return trackPage('bilibili', value, pageNumber, page.total, tracks);
+    } catch (error) {
+      return bilibiliSearchError(error);
+    }
   },
 };
 
@@ -1135,14 +1131,4 @@ export const PROVIDER_ADAPTERS: Readonly<Record<SourceId, ProviderAdapter>> = {
 
 export function providerFor(source: SourceId): ProviderAdapter {
   return PROVIDER_ADAPTERS[source];
-}
-
-function durationToMs(value: string | null): number | undefined {
-  if (!value || !/^\d{1,2}:\d{2}(?::\d{2})?$/.test(value)) return undefined;
-  const units = value.split(':').map(Number);
-  const seconds =
-    units.length === 3
-      ? units[0] * 3600 + units[1] * 60 + units[2]
-      : units[0] * 60 + units[1];
-  return seconds > 0 && seconds <= 8 * 60 * 60 ? seconds * 1000 : undefined;
 }

@@ -25,6 +25,9 @@ class BilibiliContractTest {
     @Test fun `closed routes and WBI query reject unknown input`() {
         assertTrue(BilibiliPolicy.isApprovedApiRoute("https://passport.bilibili.com/x/passport-login/web/qrcode/generate"))
         assertTrue(BilibiliPolicy.isApprovedApiRoute("https://api.bilibili.com/x/web-interface/view?bvid=BV1xx411c7mD"))
+        assertTrue(BilibiliPolicy.isApprovedApiRoute("https://api.bilibili.com/x/web-interface/wbi/search/type?keyword=x"))
+        assertFalse(BilibiliPolicy.isApprovedApiRoute("https://api.bilibili.com/x/web-interface/search/type?keyword=x"))
+        assertFalse(BilibiliPolicy.isApprovedApiRoute("https://account.bilibili.com/h5/account-h5/auth/scan-web?qrcode_key=provider-key"))
         assertFalse(BilibiliPolicy.isApprovedApiRoute("http://api.bilibili.com/x/web-interface/view"))
         assertFalse(BilibiliPolicy.isApprovedApiRoute("https://api.bilibili.com/x/web-interface/view/extra"))
         val query = BilibiliPolicy.buildWbiQuery(mapOf("bvid" to "BV1xx411c7mD", "cid" to "12", "qn" to "30280"), "0123456789abcdef0123456789abcdef", 1_700_000_000L)
@@ -32,6 +35,30 @@ class BilibiliContractTest {
         assertTrue(query.contains("wts=1700000000"))
         assertTrue(query.matches(Regex(".*&w_rid=[0-9a-f]{32}")))
         assertNull(BilibiliPolicy.buildWbiQuery(mapOf("bvid" to "BV1xx411c7mD", "unknown" to "x"), "0123456789abcdef0123456789abcdef", 1L))
+        val searchQuery = BilibiliPolicy.buildWbiSearchQuery("青花瓷", 2L, "0123456789abcdef0123456789abcdef", 1_700_000_000L)
+        assertTrue(searchQuery!!.contains("keyword=%E9%9D%92%E8%8A%B1%E7%93%B7"))
+        assertTrue(searchQuery.contains("page=2"))
+        assertTrue(searchQuery.contains("page_size=42"))
+        assertTrue(searchQuery.matches(Regex(".*&w_rid=[0-9a-f]{32}")))
+        assertNull(BilibiliPolicy.buildWbiSearchQuery("x".repeat(BilibiliPolicy.MAX_SEARCH_QUERY_BYTES + 1), 1L, "0123456789abcdef0123456789abcdef", 1L))
+        assertNull(BilibiliPolicy.buildWbiSearchQuery("x", 0L, "0123456789abcdef0123456789abcdef", 1L))
+    }
+
+    @Test fun `qr urls accept current and exact legacy routes`() {
+        val current = "https://account.bilibili.com/h5/account-h5/auth/scan-web?navhide=1&callback=login&qrcode_key=provider-key&from="
+        val legacy = "https://passport.bilibili.com/h5-app/passport/login/scan?qrcode_key=provider-key"
+        assertTrue(BilibiliPolicy.isApprovedQrUrl(current, "provider-key"))
+        assertTrue(BilibiliPolicy.isApprovedQrUrl(legacy, "provider-key"))
+    }
+
+    @Test fun `qr url validation rejects route and query mismatches`() {
+        val current = "https://account.bilibili.com/h5/account-h5/auth/scan-web?navhide=1&callback=login&qrcode_key=provider-key&from="
+        assertFalse(BilibiliPolicy.isApprovedQrUrl(current.replace("https://", "http://"), "provider-key"))
+        assertFalse(BilibiliPolicy.isApprovedQrUrl(current.replace("account.bilibili.com", "evil.example"), "provider-key"))
+        assertFalse(BilibiliPolicy.isApprovedQrUrl(current.replace("/scan-web", "/scan-web/extra"), "provider-key"))
+        assertFalse(BilibiliPolicy.isApprovedQrUrl("$current#fragment", "provider-key"))
+        assertFalse(BilibiliPolicy.isApprovedQrUrl(current.replace("from=", "unexpected=1"), "provider-key"))
+        assertFalse(BilibiliPolicy.isApprovedQrUrl(current, "different-key"))
     }
 
     @Test fun `audio deadline and headers must be real and bounded`() {

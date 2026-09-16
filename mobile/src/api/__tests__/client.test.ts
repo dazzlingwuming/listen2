@@ -3,6 +3,12 @@ import {
   providerClient,
   ProviderClientError,
 } from '../client';
+import { bilibiliClient } from '../../bilibili/client';
+
+jest.mock('../../bilibili/client', () => ({
+  bilibiliClient: { search: jest.fn() },
+}));
+const mockBilibiliSearch = bilibiliClient.search as jest.Mock;
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -16,6 +22,7 @@ describe('providerClient', () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    mockBilibiliSearch.mockReset();
     jest.restoreAllMocks();
   });
 
@@ -144,23 +151,21 @@ describe('providerClient', () => {
   });
 
   it('uses the Android-proven Bilibili search query and removes display markup', async () => {
-    globalThis.fetch = jest.fn().mockResolvedValue(
-      jsonResponse({
-        code: 0,
-        data: {
-          numResults: 1,
-          result: [
-            {
-              bvid: 'BV1xx411c7mD',
-              title: '<em>Live</em> Song',
-              author: 'Uploader',
-              duration: '03:02',
-              pic: 'https://i0.hdslb.com/cover.jpg',
-            },
-          ],
+    globalThis.fetch = jest.fn();
+    mockBilibiliSearch.mockResolvedValue({
+      query: 'live',
+      page: 1,
+      total: 1,
+      results: [
+        {
+          bvid: 'BV1xx411c7mD',
+          title: 'Live Song',
+          artist: 'Uploader',
+          durationMs: 182000,
+          artworkUrl: 'https://i0.hdslb.com/cover.jpg',
         },
-      }),
-    );
+      ],
+    });
 
     await expect(
       providerClient.search('bilibili', 'live', 1),
@@ -177,60 +182,27 @@ describe('providerClient', () => {
         }),
       ],
     });
-    const url = (globalThis.fetch as jest.Mock).mock.calls[0][0] as string;
-    expect(url).toContain(
-      'https://api.bilibili.com/x/web-interface/search/type?',
-    );
-    expect(url).toContain('search_type=video');
-    expect(url).toContain('__refresh__=true');
-    expect(url).toContain('page_size=42');
-    expect(url).toContain('highlight=1');
-    expect(url).toContain('single_column=0');
-    expect(url).toContain('dynamic_offset=0');
-    expect(url).toContain('preload=true');
-    expect(url).toContain('com2co=true');
+    expect(mockBilibiliSearch).toHaveBeenCalledWith('live', 1);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it('retries one transient Bilibili rate limit on the same fixed route', async () => {
-    globalThis.fetch = jest
-      .fn()
-      .mockResolvedValueOnce(new Response(null, { status: 429 }))
-      .mockResolvedValueOnce(
-        jsonResponse({
-          code: 0,
-          data: {
-            numResults: 1,
-            result: [
-              {
-                bvid: 'BV1xx411c7mD',
-                title: '<em>Retry</em> Song',
-                author: 'Uploader',
-              },
-            ],
-          },
-        }),
-      );
+  it('preserves a retryable native Bilibili network error', async () => {
+    globalThis.fetch = jest.fn();
+    mockBilibiliSearch.mockRejectedValue({ code: 'NETWORK_ERROR' });
 
-    await expect(
-      providerClient.search('bilibili', 'retryable', 1),
-    ).resolves.toMatchObject({
-      results: [
-        expect.objectContaining({
-          kind: 'track',
-          track: expect.objectContaining({ title: 'Retry Song' }),
-        }),
-      ],
+    await expect(providerClient.search('bilibili', 'retryable', 1)).rejects.toMatchObject({
+      code: 'NETWORK_ERROR',
+      source: 'bilibili',
+      operation: 'search',
+      retryable: true,
     });
-    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
-    expect((globalThis.fetch as jest.Mock).mock.calls[0][0]).toBe(
-      (globalThis.fetch as jest.Mock).mock.calls[1][0],
-    );
+    expect(mockBilibiliSearch).toHaveBeenCalledTimes(1);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it('does not repeat a Bilibili security-policy rejection', async () => {
-    globalThis.fetch = jest
-      .fn()
-      .mockResolvedValue(new Response(null, { status: 412 }));
+  it('does not retry a terminal native Bilibili provider rejection', async () => {
+    globalThis.fetch = jest.fn();
+    mockBilibiliSearch.mockRejectedValue({ code: 'PROVIDER_ERROR' });
 
     await expect(
       providerClient.search('bilibili', 'retryable', 1),
@@ -240,7 +212,8 @@ describe('providerClient', () => {
       operation: 'search',
       retryable: false,
     });
-    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(mockBilibiliSearch).toHaveBeenCalledTimes(1);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
   it('rejects oversized or malformed provider payloads with a safe typed error', async () => {
@@ -279,13 +252,13 @@ describe('providerClient', () => {
         }),
     );
     const controller = new AbortController();
-    const pending = providerClient.search('bilibili', 'x', 1, {
+    const pending = providerClient.search('netease', 'x', 1, {
       signal: controller.signal,
     });
     controller.abort();
     await expect(pending).rejects.toMatchObject({
       code: 'CANCELLED',
-      source: 'bilibili',
+      source: 'netease',
     });
   });
 
@@ -400,13 +373,21 @@ describe('providerClient', () => {
     ['bilibili', 'bitrack_v_BV1xx411c7mD-456'],
     ['netease', 'netrack_42'],
     ['kugou', 'kgtrack_48C685F679FFC7CF08B8A8341CA9DB44'],
-  ] as const)('keeps %s playback closed until its native descriptor contract is ready', async (source, id) => {
-    globalThis.fetch = jest.fn();
-    await expect(
-      providerClient.resolveMedia({ id, source, title: 'Song', artist: 'Artist' }),
-    ).rejects.toMatchObject({ code: 'PLAYBACK_UNAVAILABLE', source });
-    expect(globalThis.fetch).not.toHaveBeenCalled();
-  });
+  ] as const)(
+    'keeps %s playback closed until its native descriptor contract is ready',
+    async (source, id) => {
+      globalThis.fetch = jest.fn();
+      await expect(
+        providerClient.resolveMedia({
+          id,
+          source,
+          title: 'Song',
+          artist: 'Artist',
+        }),
+      ).rejects.toMatchObject({ code: 'PLAYBACK_UNAVAILABLE', source });
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+    },
+  );
 
   it('maps NetEase primary and translated lyrics from the fixed public route', async () => {
     globalThis.fetch = jest.fn().mockResolvedValue(

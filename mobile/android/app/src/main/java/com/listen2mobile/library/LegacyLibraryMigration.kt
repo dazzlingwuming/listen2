@@ -59,9 +59,27 @@ internal class LegacyLibraryMigration(private val repository: LibraryRepository,
     }
 
     suspend fun validateLaterStartup(): MigrationStatus {
-        val status = preferences.status()
-        val journal = status.attemptId?.let(repository::migrationJournal)
-        if (status.backend == "room" && status.phase == "active" && journal?.checksum == status.checksum && journal?.sourceRetained == true && status.checksum == repository.migrationReadbackChecksum(status.attemptId)) {
+        var status = preferences.status()
+        var journal = status.attemptId?.let(repository::migrationJournal)
+        // The Room transaction can commit immediately before the process dies
+        // and before DataStore is switched to `room`. On the next real startup,
+        // recover that exact validated attempt instead of leaving `copying`
+        // stuck forever or starting a second, colliding copy.
+        if (
+            status.backend == "legacy" &&
+            status.phase == "staging" &&
+            status.attemptId != null &&
+            journal?.phase == "validated" &&
+            journal.checksum != null &&
+            journal.sourceRetained &&
+            journal.checksum == repository.migrationReadbackChecksum(status.attemptId)
+        ) {
+            preferences.activate(status.attemptId, journal.checksum)
+            status = preferences.status()
+            journal = status.attemptId?.let(repository::migrationJournal)
+        }
+        val activeAttemptId = status.attemptId
+        if (status.backend == "room" && status.phase == "active" && activeAttemptId != null && journal?.checksum == status.checksum && journal?.sourceRetained == true && status.checksum == repository.migrationReadbackChecksum(activeAttemptId)) {
             preferences.markLaterStartupValidated()
         }
         return preferences.status()

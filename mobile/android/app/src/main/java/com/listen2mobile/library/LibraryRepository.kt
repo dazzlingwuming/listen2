@@ -354,12 +354,40 @@ internal class LibraryRepository internal constructor(private val database: List
                 if (existing.phase == "validated" && existing.checksum == checksum && existing.sourceRetained) return@runInTransaction existing
                 throw IllegalStateException("migration attempt already exists")
             }
-            // A staged write is one Room transaction. A collision is rejected before activation,
-            // so a retry retains legacy input instead of silently changing playlist identities.
-            if (input.playlists.any { dao.playlist(it.playlistId) != null } || input.queueCheckpoint.any { dao.queue(it.occurrenceId) != null }) throw IllegalStateException("legacy identity collision")
+            // A previous process may have committed the Room copy before its
+            // DataStore cutover completed. An exact durable match is therefore
+            // an idempotent retry, while a same-ID row with different content
+            // remains a real collision and is never overwritten.
+            fun playlistMatches(item: SafeLegacyPlaylist, index: Int): Boolean {
+                val existing = dao.playlist(item.playlistId) ?: return false
+                if (existing.title != item.title || existing.position != index) return false
+                val memberships = dao.memberships(item.playlistId)
+                return memberships.size == item.tracks.size && memberships.zip(item.tracks).withIndex().all { (position, pair) ->
+                    val (stored, expected) = pair
+                    stored.position == position &&
+                        stored.source == expected.source &&
+                        stored.semanticTrackId == expected.trackId &&
+                        stored.title == expected.title &&
+                        stored.artist == expected.artist
+                }
+            }
+            fun queueMatches(item: SafeQueueCheckpoint): Boolean {
+                val existing = dao.queue(item.occurrenceId) ?: return false
+                return existing.position == item.position &&
+                    existing.source == item.source &&
+                    existing.semanticTrackId == item.trackId
+            }
+            if (input.playlists.withIndex().any { (index, item) -> dao.playlist(item.playlistId) != null && !playlistMatches(item, index) }) {
+                throw IllegalStateException("legacy playlist identity collision")
+            }
+            if (input.queueCheckpoint.any { item -> dao.queue(item.occurrenceId) != null && !queueMatches(item) }) {
+                throw IllegalStateException("legacy queue identity collision")
+            }
             input.playlists.forEachIndexed { index, item ->
-                dao.insertPlaylist(PersonalPlaylistEntity(item.playlistId, item.title, index))
-                item.tracks.forEachIndexed { trackPosition, track -> dao.insertMembership(PlaylistMembershipEntity(item.playlistId, track.source, track.trackId, trackPosition, track.title, track.artist)) }
+                if (dao.playlist(item.playlistId) == null) {
+                    dao.insertPlaylist(PersonalPlaylistEntity(item.playlistId, item.title, index))
+                    item.tracks.forEachIndexed { trackPosition, track -> dao.insertMembership(PlaylistMembershipEntity(item.playlistId, track.source, track.trackId, trackPosition, track.title, track.artist)) }
+                }
             }
             val existingLocalRecords = dao.localRecords()
             input.localRecords.forEachIndexed { index, item ->
@@ -373,7 +401,9 @@ internal class LibraryRepository internal constructor(private val database: List
             }
             input.favorites.forEach { dao.putFavorite(FavoriteEntity(it.source, it.trackId, it.title, it.artist)) }
             input.remoteCollections.forEach { dao.putRemoteCollection(RemoteCollectionEntity(it.collectionId, it.source, it.title, it.syncState)) }
-            input.queueCheckpoint.forEach { dao.putQueue(QueueCheckpointEntity(it.occurrenceId, it.position, it.source, it.trackId)) }
+            input.queueCheckpoint.forEach { item ->
+                if (dao.queue(item.occurrenceId) == null) dao.insertQueue(QueueCheckpointEntity(item.occurrenceId, item.position, item.source, item.trackId))
+            }
             input.lyricMetadata.forEach { dao.putLyricMetadata(LyricMetadataEntity(it.source, it.trackId, it.selectedVariantId, it.offsetMillis)) }
             val current = dao.meta() ?: LibraryMetaEntity(revision = 0L).also(dao::insertMeta)
             dao.updateMeta(LibraryMetaEntity(revision = current.revision + 1))

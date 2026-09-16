@@ -58,7 +58,9 @@ internal class BilibiliSession(
         synchronized(lock) { clearTransientLocked() }
         return try {
             val challenge = gateway.beginQr()
-            if (challenge.key.length !in 1..256 || challenge.expiresAt <= now || !isQrUrl(challenge.qrUrl)) throw IllegalArgumentException()
+            if (challenge.key.length !in 1..256 || challenge.expiresAt <= now ||
+                !BilibiliPolicy.isApprovedQrUrl(challenge.qrUrl, challenge.key)
+            ) throw IllegalArgumentException()
             val rendered = renderer.render(challenge.qrUrl); if (!isQrPng(rendered)) throw IllegalArgumentException()
             synchronized(lock) { generation += 1; qrKey = challenge.key; attemptId = randomAttemptId(); expiry = challenge.expiresAt; bitmap = rendered; status = PublicStatus.WAITING; error = null; projectionLocked() }
         } catch (failure: BilibiliHttpsGateway.ProviderException) { synchronized(lock) { clearTransientLocked(); status = PublicStatus.ERROR; error = failure.code; projectionLocked() } }
@@ -220,7 +222,6 @@ internal class BilibiliSession(
     private fun sameAttemptLocked(value: String?) = value != null && attemptId.isNotBlank() && attemptId == value
     private fun clearTransientLocked() { qrKey = null; attemptId = ""; expiry = 0L; bitmap = "" }
     private fun randomAttemptId(): String = BilibiliRandom.randomHex(24)
-    private fun isQrUrl(value: String) = try { val uri = java.net.URI(value); uri.scheme == "https" && uri.host == "passport.bilibili.com" && uri.path == "/h5-app/passport/login/scan" && (uri.query?.length ?: 0) <= BilibiliPolicy.MAX_QUERY_BYTES } catch (_: Exception) { false }
     private fun isQrPng(value: String) = value.startsWith("data:image/png;base64,") && value.length <= 192 * 1024
 }
 
@@ -228,6 +229,8 @@ internal interface BilibiliGateway {
     data class Account(val displayName: String?, val avatarUrl: String?)
     data class VideoPart(val cid: Long, val page: Long, val title: String, val durationMs: Long?)
     data class VideoDetail(val bvid: String, val title: String, val owner: String?, val parts: List<VideoPart>)
+    data class SearchTrack(val bvid: String, val title: String, val artist: String, val durationMs: Long?, val artworkUrl: String?)
+    data class SearchPage(val query: String, val page: Long, val total: Long?, val results: List<SearchTrack>)
     fun beginQr(): BilibiliSession.QrChallenge
     fun pollQr(qrKey: String): BilibiliSession.PollResult
     fun cancelPoll(qrKey: String)
@@ -236,6 +239,9 @@ internal interface BilibiliGateway {
     fun refresh(material: BilibiliVault.SessionMaterial): BilibiliVault.SessionMaterial?
     fun logout()
     fun account(): Account?
+    /** Search accepts only bounded semantic inputs; transport and session cookies stay native. */
+    fun search(query: String, page: Long): SearchPage =
+        throw UnsupportedOperationException("search unsupported by this gateway")
     fun videoDetail(bvid: String): VideoDetail
     fun resolveAudio(track: BilibiliPolicy.SemanticTrack): BilibiliPolicy.AudioHandoff
     /** Video transport remains native-only; callers receive it only through BilibiliMvController. */

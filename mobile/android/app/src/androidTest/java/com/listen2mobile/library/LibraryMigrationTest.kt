@@ -47,4 +47,76 @@ class LibraryMigrationTest {
         context.deleteDatabase(name)
         }
     }
+
+    @Test fun identical_residual_playlist_and_queue_are_an_idempotent_retry() = runBlocking {
+        val context = InstrumentationRegistry.getTargetContext()
+        val database = Room.inMemoryDatabaseBuilder(context, Listen2Database::class.java).allowMainThreadQueries().build()
+        val repository = LibraryRepository(database)
+        val dao = database.libraryDao()
+        dao.insertPlaylist(PersonalPlaylistEntity("road", "旧歌单", 0))
+        dao.insertMembership(PlaylistMembershipEntity("road", "netease", "42", 0, "青花瓷", "周杰伦"))
+        dao.insertQueue(QueueCheckpointEntity("q1", 0, "netease", "42"))
+        val input = LegacyLibraryInput(
+            1,
+            listOf(LegacyPlaylist("road", "旧歌单", 0, listOf(LegacyTrack("netease", "42", "青花瓷", "周杰伦")))),
+            emptyList(),
+            listOf(LegacyQueueCheckpoint("q1", 0, "netease", "42")),
+            emptyList(),
+            emptyList(),
+        )
+
+        val result = LegacyLibraryMigration(repository, LibraryPreferences(context)).migrate(input, "retry-identical")
+
+        assertTrue(result is MigrationResult.Activated)
+        assertEquals(1, repository.snapshot().personalPlaylists.size)
+        assertEquals(1, repository.snapshot().queueCheckpoint.size)
+        database.close()
+    }
+
+    @Test fun conflicting_residual_playlist_is_rejected_without_overwrite() = runBlocking {
+        val context = InstrumentationRegistry.getTargetContext()
+        val database = Room.inMemoryDatabaseBuilder(context, Listen2Database::class.java).allowMainThreadQueries().build()
+        val repository = LibraryRepository(database)
+        database.libraryDao().insertPlaylist(PersonalPlaylistEntity("road", "手机现有歌单", 0))
+        val input = LegacyLibraryInput(
+            1,
+            listOf(LegacyPlaylist("road", "旧版歌单", 0, emptyList())),
+            emptyList(), emptyList(), emptyList(), emptyList(),
+        )
+
+        val result = LegacyLibraryMigration(repository, LibraryPreferences(context)).migrate(input, "retry-conflict")
+
+        assertTrue(result is MigrationResult.Rejected)
+        assertEquals("MIGRATION_WRITE_FAILED", (result as MigrationResult.Rejected).errorCode)
+        assertEquals("手机现有歌单", repository.snapshot().personalPlaylists.single().title)
+        database.close()
+    }
+
+    @Test fun validated_room_copy_recovers_a_staging_cutover_after_restart() = runBlocking {
+        val context = InstrumentationRegistry.getTargetContext()
+        val database = Room.inMemoryDatabaseBuilder(context, Listen2Database::class.java).allowMainThreadQueries().build()
+        val repository = LibraryRepository(database)
+        val preferences = LibraryPreferences(context)
+        val attemptId = "staging-recovery"
+        val safeInput = SafeLegacyInput(
+            playlists = listOf(SafeLegacyPlaylist("recovered", "恢复歌单", 0, emptyList())),
+            favorites = emptyList(),
+            queueCheckpoint = emptyList(),
+            lyricMetadata = emptyList(),
+            localRecords = emptyList(),
+        )
+        val checksum = LegacyLibraryMigration.checksum(safeInput)
+        preferences.markStaging(attemptId)
+        repository.stageLegacyCopy(attemptId, safeInput, checksum)
+
+        val recovered = LegacyLibraryMigration(repository, preferences).validateLaterStartup()
+
+        assertEquals("room", recovered.backend)
+        assertEquals("active", recovered.phase)
+        assertEquals(attemptId, recovered.attemptId)
+        assertEquals(checksum, recovered.checksum)
+        assertTrue(recovered.cleanupEligible)
+        assertEquals("recovered", repository.snapshot().personalPlaylists.single().playlistId)
+        database.close()
+    }
 }

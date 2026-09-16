@@ -7,11 +7,16 @@ import type {
   BilibiliPart,
   BilibiliPublicState,
   BilibiliPublicStatus,
+  BilibiliSearchPage,
   BilibiliVideoDetail,
 } from './types';
 
 const MAX_TEXT = 256;
 const MAX_QR_DATA_URI = 192 * 1024;
+const MAX_SEARCH_QUERY_BYTES = 256;
+const MAX_SEARCH_PAGE = 1_000;
+const MAX_SEARCH_ROWS = 50;
+const MAX_SEARCH_TOTAL = 1_000_000_000;
 const statusValues = new Set<BilibiliPublicStatus>([
   'idle',
   'waiting',
@@ -39,8 +44,13 @@ const object = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : fail();
-const keys = (value: Record<string, unknown>, allowed: readonly string[]) => {
-  if (Object.keys(value).some(key => !allowed.includes(key))) fail();
+const keys = (
+  value: Record<string, unknown>,
+  allowed: readonly string[],
+  optional: readonly string[] = [],
+) => {
+  const accepted = new Set([...allowed, ...optional]);
+  if (Object.keys(value).some(key => !accepted.has(key))) fail();
 };
 const text = (value: unknown, limit = MAX_TEXT): string =>
   typeof value === 'string' &&
@@ -55,6 +65,26 @@ const numericText = (value: unknown): string =>
   Number.isSafeInteger(Number(value))
     ? value
     : fail();
+const utf8ByteLength = (value: string): number => {
+  try {
+    return encodeURIComponent(value).replace(/%[0-9a-f]{2}/gi, 'x').length;
+  } catch {
+    return -1;
+  }
+};
+const searchQuery = (value: unknown): string => {
+  const candidate = text(value, MAX_TEXT);
+  return utf8ByteLength(candidate) <= MAX_SEARCH_QUERY_BYTES
+    ? candidate
+    : fail('INVALID_REQUEST');
+};
+const searchPageNumber = (value: unknown): number =>
+  typeof value === 'number' &&
+  Number.isSafeInteger(value) &&
+  value >= 1 &&
+  value <= MAX_SEARCH_PAGE
+    ? value
+    : fail('INVALID_REQUEST');
 const bvid = (value: unknown) =>
   /^BV[0-9A-Za-z]{6,32}$/.test(text(value, 40))
     ? text(value, 40)
@@ -175,6 +205,70 @@ function detail(value: unknown): BilibiliVideoDetail {
     parts: (parts as unknown[]).map(part),
   };
 }
+function searchArtwork(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  const candidate = text(value, 2048);
+  try {
+    const url = new URL(candidate);
+    const host = url.hostname.toLowerCase();
+    return url.protocol === 'https:' &&
+      !url.username &&
+      !url.password &&
+      !url.hash &&
+      !url.port &&
+      (host === 'hdslb.com' ||
+        host.endsWith('.hdslb.com') ||
+        host === 'biliimg.com' ||
+        host.endsWith('.biliimg.com'))
+      ? url.toString()
+      : fail();
+  } catch {
+    return fail();
+  }
+}
+function searchTrack(value: unknown) {
+  const raw = object(value);
+  keys(raw, ['bvid', 'title', 'artist'], ['durationMs', 'artworkUrl']);
+  const duration = raw.durationMs;
+  return {
+    bvid: bvid(raw.bvid),
+    title: text(raw.title, 160),
+    artist: text(raw.artist, 160),
+    durationMs:
+      duration === undefined
+        ? undefined
+        : typeof duration === 'number' &&
+          Number.isSafeInteger(duration) &&
+          duration > 0 &&
+          duration <= 8 * 60 * 60 * 1000
+        ? duration
+        : fail(),
+    artworkUrl: searchArtwork(raw.artworkUrl),
+  };
+}
+function searchResultPage(value: unknown): BilibiliSearchPage {
+  const raw = object(value);
+  if (raw.errorCode !== undefined) fail(errorCode(raw.errorCode));
+  keys(raw, ['query', 'page', 'results'], ['total']);
+  const rowsValue = raw.results;
+  if (!Array.isArray(rowsValue) || rowsValue.length > MAX_SEARCH_ROWS) fail();
+  const rows = rowsValue as unknown[];
+  const total = raw.total;
+  return {
+    query: searchQuery(raw.query),
+    page: searchPageNumber(raw.page),
+    total:
+      total === undefined
+        ? undefined
+        : typeof total === 'number' &&
+          Number.isSafeInteger(total) &&
+          total >= 0 &&
+          total <= MAX_SEARCH_TOTAL
+        ? total
+        : fail(),
+    results: rows.map(searchTrack),
+  };
+}
 export const bilibiliClient = {
   status: () => call('status').then(publicState),
   qrBegin: () => call('qrBegin').then(publicState),
@@ -183,6 +277,29 @@ export const bilibiliClient = {
   qrCancel: (attemptId: string) =>
     call('qrCancel', { attemptId: text(attemptId, 64) }).then(publicState),
   logout: () => call('logout').then(publicState),
+  search: (
+    query: string,
+    page = 1,
+    options?: { signal?: AbortSignal },
+  ): Promise<BilibiliSearchPage> => {
+    try {
+      const normalized = searchQuery(query);
+      const normalizedPage = searchPageNumber(page);
+      if (options?.signal?.aborted)
+        return Promise.reject(new BilibiliClientError('CANCELLED'));
+      return call('search', { query: normalized, page: normalizedPage }).then(
+        value => {
+          if (options?.signal?.aborted) fail('CANCELLED');
+          const result = searchResultPage(value);
+          if (result.query !== normalized || result.page !== normalizedPage)
+            fail('INVALID_RESPONSE');
+          return result;
+        },
+      );
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  },
   videoDetail: (id: string, _options?: { signal?: AbortSignal }) =>
     call('videoDetail', { bvid: bvid(id) }).then(detail),
   resolveAudio: (request: BilibiliAudioRequest): Promise<MediaDescriptor> => {

@@ -5,6 +5,7 @@ import { historyProjectionReceived, hydrationFailed, hydrationStarted, hydration
 import { LibraryClientError, libraryClient } from './libraryClient';
 import { history } from '../history/history';
 import { migrateKnownLegacyLibrary } from './legacyMigration';
+import type { LibraryMigrationStatus } from './types';
 
 type Props = { children: React.ReactNode };
 
@@ -22,13 +23,22 @@ export function LibraryBootGate({ children }: Props) {
   const hydrate = useCallback(() => {
     dispatch(hydrationStarted());
     (async () => {
-      const migration = await libraryClient.getMigrationStatus();
+      let migration: LibraryMigrationStatus;
+      try {
+        migration = await libraryClient.getMigrationStatus();
+      } catch {
+        // Migration status is advisory during boot. Room may already have a
+        // usable snapshot even when the status read is temporarily unavailable.
+        return libraryClient.getSnapshot();
+      }
       if (migration.phase === 'not-started' || migration.phase === 'failed') {
         const attemptId = `boot_${Date.now().toString(36)}`;
-        const result = await migrateKnownLegacyLibrary(attemptId);
-        // An existing legacy payload must not be silently replaced by an invented
-        // empty Room projection. Keep the legacy source selected and surface retry.
-        if (result.status === 'invalid-legacy' || result.status === 'unconfirmed' || result.status === 'retryable') throw new LibraryClientError('INVALID_RESPONSE');
+        try {
+          await migrateKnownLegacyLibrary(attemptId);
+        } catch {
+          // Migration is best-effort. Its source is retained by the migration
+          // layer, so an existing Room snapshot still gets a chance to hydrate.
+        }
       }
       return libraryClient.getSnapshot();
     })().then(

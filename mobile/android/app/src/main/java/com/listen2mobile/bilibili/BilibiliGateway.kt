@@ -127,6 +127,40 @@ internal class BilibiliHttpsGateway : BilibiliGateway {
         } catch (_: Exception) { null }
     }
 
+    override fun search(query: String, page: Long): BilibiliGateway.SearchPage {
+        val normalized = BilibiliPolicy.normalizeSearchQuery(query)
+            ?: throw ProviderException(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
+        if (!BilibiliPolicy.isSearchPage(page)) throw ProviderException(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
+        val signedQuery = BilibiliPolicy.buildWbiSearchQuery(
+            normalized,
+            page,
+            wbiMixinKey(),
+            System.currentTimeMillis() / 1000L,
+        ) ?: throw ProviderException(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
+        val data = request(
+            "https://api.bilibili.com/x/web-interface/wbi/search/type?$signedQuery",
+            allowAnonymous = true,
+        )
+        val rows = data.optJSONArray("result") ?: throw ProviderException(BilibiliPolicy.ErrorCode.INVALID_RESPONSE)
+        if (rows.length() > BilibiliPolicy.MAX_SEARCH_ROWS) throw ProviderException(BilibiliPolicy.ErrorCode.INVALID_RESPONSE)
+        val results = ArrayList<BilibiliGateway.SearchTrack>()
+        for (index in 0 until rows.length()) {
+            val row = rows.optJSONObject(index) ?: continue
+            val bvid = row.optString("bvid", "").takeIf(BilibiliPolicy::isCanonicalBvid) ?: continue
+            val title = BilibiliPolicy.safeSearchTitle(row.optString("title", null)) ?: continue
+            val artist = BilibiliPolicy.safeText(row.optString("author", null), 160) ?: "Bilibili"
+            results += BilibiliGateway.SearchTrack(
+                bvid = bvid,
+                title = title,
+                artist = artist,
+                durationMs = BilibiliPolicy.searchDurationMs(row.optString("duration", null)),
+                artworkUrl = BilibiliPolicy.safeSearchArtwork(row.optString("pic", null)),
+            )
+        }
+        val total = data.optLong("numResults", -1L).takeIf { it in 0L..BilibiliPolicy.MAX_SEARCH_TOTAL }
+        return BilibiliGateway.SearchPage(normalized, page, total, results)
+    }
+
     override fun videoDetail(bvid: String): BilibiliGateway.VideoDetail {
         if (!BilibiliPolicy.isCanonicalBvid(bvid)) throw ProviderException(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
         val data = request("https://api.bilibili.com/x/web-interface/view?bvid=${encode(bvid)}")
@@ -221,7 +255,7 @@ internal class BilibiliHttpsGateway : BilibiliGateway {
     }
 
     private fun wbiMixinKey(): String {
-        val image = request("https://api.bilibili.com/x/web-interface/nav").optJSONObject("wbi_img")
+        val image = request("https://api.bilibili.com/x/web-interface/nav", allowAnonymous = true).optJSONObject("wbi_img")
             ?: throw ProviderException(BilibiliPolicy.ErrorCode.INVALID_RESPONSE)
         val source = image.optString("img_url", "").substringAfterLast('/').substringBefore('.') +
             image.optString("sub_url", "").substringAfterLast('/').substringBefore('.')
@@ -266,7 +300,7 @@ internal class BilibiliHttpsGateway : BilibiliGateway {
             commitCookies(connection)
             return when (root.optInt("code", Int.MIN_VALUE)) {
                 0 -> root.optJSONObject("data") ?: throw ProviderException(BilibiliPolicy.ErrorCode.INVALID_RESPONSE)
-                -101 -> if (allowAnonymous) JSONObject().put("_anonymous", true) else throw ProviderException(BilibiliPolicy.ErrorCode.LOGIN_REQUIRED)
+                -101 -> if (allowAnonymous) (root.optJSONObject("data") ?: JSONObject()).put("_anonymous", true) else throw ProviderException(BilibiliPolicy.ErrorCode.LOGIN_REQUIRED)
                 -10403, 6002003 -> throw ProviderException(BilibiliPolicy.ErrorCode.MEMBERSHIP_REQUIRED)
                 -403 -> throw ProviderException(BilibiliPolicy.ErrorCode.REGION_RESTRICTED)
                 else -> throw ProviderException(BilibiliPolicy.ErrorCode.PROVIDER_ERROR)
