@@ -91,11 +91,12 @@ internal class LibraryRepository internal constructor(private val database: List
     internal fun insertLocalRecords(records: List<SafeLocalRecord>): Pair<Int, Long> = database.runInTransaction<Pair<Int, Long>> {
         val dao = database.libraryDao()
         val current = dao.meta() ?: LibraryMetaEntity(revision = 0L).also(dao::insertMeta)
-        val known = dao.localRecords().map { it.localRecordId }.toSet()
-        records.filter { it.recordId !in known }.forEach { record ->
+        val known = dao.localRecords().map { LibraryRecordIds.publicId(it.localRecordId) }.toSet()
+        val accepted = records.filter { LibraryRecordIds.isValid(it.recordId) && it.recordId !in known }.distinctBy { it.recordId }
+        accepted.forEach { record ->
             dao.putLocalRecord(LocalRecordEntity(record.recordId, record.title, record.artist, record.availability, record.album, record.durationMs, record.hasArtwork, record.lyricState))
         }
-        val added = records.count { it.recordId !in known }
+        val added = accepted.size
         if (added > 0) dao.updateMeta(LibraryMetaEntity(revision = current.revision + 1))
         added to (if (added > 0) current.revision + 1 else current.revision)
     }
@@ -103,16 +104,14 @@ internal class LibraryRepository internal constructor(private val database: List
     /** LRC bytes live in native-private storage; Room retains only the safe attachment state. */
     internal fun attachExplicitLyric(recordId: String): Boolean = database.runInTransaction<Boolean> {
         val dao = database.libraryDao()
-        val record = dao.localRecord(recordId) ?: return@runInTransaction false
+        val record = resolveLocalRecord(dao.localRecords(), recordId) ?: return@runInTransaction false
         val current = dao.meta() ?: LibraryMetaEntity(revision = 0L).also(dao::insertMeta)
         dao.putLocalRecord(record.copy(lyricState = "attached"))
         dao.updateMeta(LibraryMetaEntity(revision = current.revision + 1))
         true
     }
 
-    internal fun localRecord(recordId: String): SafeLocalRecord? = database.libraryDao().localRecord(recordId)?.let { record ->
-        SafeLocalRecord(record.localRecordId, record.title, record.artist, record.accessState, record.album, record.durationMs, record.hasArtwork, record.lyricState)
-    }
+    internal fun localRecord(recordId: String): SafeLocalRecord? = resolveLocalRecord(database.libraryDao().localRecords(), recordId)?.let(::localRecordSnapshot)
 
     /** Provider refresh is all-or-nothing: malformed/unavailable data never erases the last local projection. */
     internal fun replaceRemoteCollections(collections: List<SafeRemoteCollection>, expectedRevision: Long): LibrarySnapshot? = database.runInTransaction<LibrarySnapshot?> {
@@ -133,7 +132,7 @@ internal class LibraryRepository internal constructor(private val database: List
     }
 
     internal fun repairLocalRecord(recordId: String, replacement: SafeLocalRecord): Boolean = database.runInTransaction<Boolean> {
-        val dao = database.libraryDao(); val existing = dao.localRecord(recordId) ?: return@runInTransaction false
+        val dao = database.libraryDao(); val existing = resolveLocalRecord(dao.localRecords(), recordId) ?: return@runInTransaction false
         val current = dao.meta() ?: LibraryMetaEntity(revision = 0L).also(dao::insertMeta)
         dao.putLocalRecord(existing.copy(title = replacement.title, artist = replacement.artist, album = replacement.album, durationMs = replacement.durationMs, hasArtwork = replacement.hasArtwork, accessState = "available"))
         dao.updateMeta(LibraryMetaEntity(revision = current.revision + 1)); true
@@ -142,7 +141,7 @@ internal class LibraryRepository internal constructor(private val database: List
     /** Access failures retain the semantic record and its relations for a future repair. */
     internal fun markLocalAvailability(recordId: String, availability: String): Boolean = database.runInTransaction<Boolean> {
         if (availability !in setOf("needs-repair", "revoked", "unreadable", "unsupported")) return@runInTransaction false
-        val dao = database.libraryDao(); val existing = dao.localRecord(recordId) ?: return@runInTransaction false
+        val dao = database.libraryDao(); val existing = resolveLocalRecord(dao.localRecords(), recordId) ?: return@runInTransaction false
         if (existing.accessState == availability) return@runInTransaction true
         val current = dao.meta() ?: LibraryMetaEntity(revision = 0L).also(dao::insertMeta)
         dao.putLocalRecord(existing.copy(accessState = availability))
@@ -150,10 +149,14 @@ internal class LibraryRepository internal constructor(private val database: List
     }
 
     internal fun removeLocalRecord(recordId: String): Boolean = database.runInTransaction<Boolean> {
-        val dao = database.libraryDao(); if (dao.localRecord(recordId) == null) return@runInTransaction false
+        val dao = database.libraryDao(); val storedId = resolveLocalRecord(dao.localRecords(), recordId)?.localRecordId ?: return@runInTransaction false
         val current = dao.meta() ?: LibraryMetaEntity(revision = 0L).also(dao::insertMeta)
-        dao.deleteLocalMemberships(recordId); dao.deleteLocalFavorite(recordId); dao.deleteLocalQueueEntries(recordId)
-        dao.deleteLocalLyricMetadata(recordId); dao.deleteLocalRecord(recordId)
+        val publicId = LibraryRecordIds.publicId(storedId)
+        listOf(storedId, publicId).distinct().forEach { id ->
+            dao.deleteLocalMemberships(id); dao.deleteLocalFavorite(id); dao.deleteLocalQueueEntries(id)
+            dao.deleteLocalLyricMetadata(id)
+        }
+        dao.deleteLocalRecord(storedId)
         dao.updateMeta(LibraryMetaEntity(revision = current.revision + 1)); true
     }
 
@@ -336,9 +339,7 @@ internal class LibraryRepository internal constructor(private val database: List
         val playlists = dao.playlists(LibraryLimits.MAX_PLAYLISTS).map { playlist ->
             SafePlaylist(playlist.playlistId, playlist.title, playlist.position, dao.memberships(playlist.playlistId).map { SafeTrack(it.source, it.semanticTrackId, it.title, it.artist) })
         }
-        val locals = dao.localRecords().map { record ->
-            SafeLocalRecord(record.localRecordId, record.title, record.artist, record.accessState, record.album, record.durationMs, record.hasArtwork, record.lyricState)
-        }
+        val locals = dao.localRecords().map(::localRecordSnapshot)
         val remote = dao.remoteCollections().map { SafeRemoteCollection(it.collectionId, it.source, it.title, it.syncState) }
         val queue = dao.queueCheckpoint().map { SafeQueueCheckpoint(it.occurrenceId, it.position, it.source, it.semanticTrackId) }
         val lyrics = dao.lyricMetadata().map { SafeLyricMetadata(it.source, it.semanticTrackId, it.selectedVariantId, it.offsetMillis) }
@@ -349,7 +350,6 @@ internal class LibraryRepository internal constructor(private val database: List
     internal fun stageLegacyCopy(attemptId: String, input: SafeLegacyInput, checksum: String): MigrationJournalEntity =
         database.runInTransaction<MigrationJournalEntity> {
             val dao = database.libraryDao()
-            val prefix = "migration-$attemptId-"
             dao.migrationJournal(attemptId)?.let { existing ->
                 if (existing.phase == "validated" && existing.checksum == checksum && existing.sourceRetained) return@runInTransaction existing
                 throw IllegalStateException("migration attempt already exists")
@@ -361,8 +361,15 @@ internal class LibraryRepository internal constructor(private val database: List
                 dao.insertPlaylist(PersonalPlaylistEntity(item.playlistId, item.title, index))
                 item.tracks.forEachIndexed { trackPosition, track -> dao.insertMembership(PlaylistMembershipEntity(item.playlistId, track.source, track.trackId, trackPosition, track.title, track.artist)) }
             }
+            val existingLocalRecords = dao.localRecords()
             input.localRecords.forEachIndexed { index, item ->
-                dao.putLocalRecord(LocalRecordEntity("$prefix$index", item.title, item.artist, "needs-repair"))
+                val recordId = LibraryRecordIds.forMigration(attemptId, index)
+                val existing = resolveLocalRecord(existingLocalRecords, recordId)
+                if (existing != null) {
+                    if (existing.title != item.title || existing.artist != item.artist) throw IllegalStateException("legacy local identity collision")
+                } else {
+                    dao.putLocalRecord(LocalRecordEntity(recordId, item.title, item.artist, "needs-repair"))
+                }
             }
             input.favorites.forEach { dao.putFavorite(FavoriteEntity(it.source, it.trackId, it.title, it.artist)) }
             input.remoteCollections.forEach { dao.putRemoteCollection(RemoteCollectionEntity(it.collectionId, it.source, it.title, it.syncState)) }
@@ -378,7 +385,10 @@ internal class LibraryRepository internal constructor(private val database: List
         val prefix = "migration-$attemptId-"; val dao = database.libraryDao()
         if (dao.migrationJournal(attemptId) == null) return@runInTransaction null
         val playlists = dao.playlists(LibraryLimits.MAX_PLAYLISTS).filter { !it.playlistId.startsWith(prefix) }.map { playlist -> SafeLegacyPlaylist(playlist.playlistId, playlist.title, playlist.position, dao.memberships(playlist.playlistId).map { SafeTrack(it.source, it.semanticTrackId, it.title, it.artist) }) }
-        val locals = dao.localRecordsByPrefix(prefix).map { SafeLegacyLocalRecord(it.title, it.artist) }
+        val locals = dao.localRecords()
+            .mapNotNull { record -> LibraryRecordIds.migrationIndex(record.localRecordId, attemptId)?.let { it to record } }
+            .sortedBy { it.first }
+            .map { SafeLegacyLocalRecord(it.second.title, it.second.artist) }
         LegacyLibraryMigration.checksum(SafeLegacyInput(
             playlists,
             dao.favorites().map { SafeTrack(it.source, it.semanticTrackId, it.title, it.artist) },
