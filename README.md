@@ -5,7 +5,7 @@
 ### 把 Bilibili 与多平台音乐内容，整理成更好用的桌面播放器
 
 [![License](https://img.shields.io/badge/license-MIT-7c5cff.svg)](./LICENSE.md)
-[![Version](https://img.shields.io/badge/version-2.35.0-8b5cf6.svg)](https://github.com/dazzlingwuming/listen2/releases/tag/v2.35.0)
+[![Version](https://img.shields.io/badge/version-2.35.1-8b5cf6.svg)](https://github.com/dazzlingwuming/listen2/releases/tag/v2.35.1)
 [![Electron](https://img.shields.io/badge/Electron-32-38bdf8.svg)](https://www.electronjs.org/)
 [![Windows](https://img.shields.io/badge/Windows-x64-2563eb.svg)](https://github.com/dazzlingwuming/listen2/releases/latest)
 [![macOS](https://img.shields.io/badge/macOS-Universal-111827.svg)](#平台支持)
@@ -18,6 +18,13 @@
 Listen2 是 [Listen1](https://github.com/listen1/listen1) 的社区增强版本。它保留多平台聚合搜索、播放和歌单能力，并重点改善 Bilibili 音乐播放、同步歌词、歌词翻译、桌面歌词、MV 和现代化桌面体验。
 
 > Listen2 只整理和播放用户本来就有权访问的内容，不解锁会员、付费、DRM、地区限制或其他受限资源。
+
+## v2.35.1 更新
+
+- Windows 与 macOS 启动时发现新版本会显示版本号和 GitHub Release 更新内容。
+- Windows 在用户确认后下载更新，下载完成后再次确认才会重启安装。
+- macOS 在用户确认后打开对应版本的本仓库 Release 页面下载 DMG。
+- 选择稍后或取消不会下载，也不会安装更新。
 
 ## v2.35.0 更新
 
