@@ -240,12 +240,13 @@ function checksum(exported: Pick<LegacyMigrationRequest, 'playlists' | 'favorite
 }
 
 function exportFromRoots(libraryRoot: UnknownRecord, playerRoot: UnknownRecord | null, attemptId: string): LegacyExport | null {
-  // These three fields are guaranteed by the old persisted library reducer. A
-  // missing/broken field means partial input, never an empty migration.
+  // The old reducer always wrote playlists and favorites. localTracks was
+  // added later, so an absent field is an older (but complete) payload; an
+  // explicitly present broken field still means partial input.
   const playlistValues = decodeArrayField(libraryRoot, 'playlists');
   const favoriteValues = decodeArrayField(libraryRoot, 'favorites');
-  const localValues = decodeArrayField(libraryRoot, 'localTracks');
-  if (!playlistValues || !favoriteValues || !localValues) return null;
+  const localValues = decodeOptionalArrayField(libraryRoot, 'localTracks');
+  if (!playlistValues || !favoriteValues || localValues === null) return null;
 
   const playlists: LegacyMigrationRequest['playlists'] = [];
   for (const [position, raw] of playlistValues.entries()) {
@@ -268,9 +269,13 @@ function exportFromRoots(libraryRoot: UnknownRecord, playerRoot: UnknownRecord |
   }
   if (new Set(playlists.map(item => item.playlistId)).size !== playlists.length) return null;
   const normalizedPlaylists = playlists.map((item, position) => ({ ...item, position }));
-  const favorites = strictTracks(favoriteValues, false);
-  if (!favorites) return null;
-  if (new Set(favorites.map(item => `${item.source}:${item.trackId}`)).size !== favorites.length) return null;
+  // Favorites are row-level legacy data. Keep every independently safe remote
+  // row, while isolating unsupported/local/malformed rows and collapsing
+  // duplicates before the native primary-key write.
+  const favorites = favoriteValues
+    .map(value => track(value, false))
+    .filter((item): item is SafeTrack => item !== null)
+    .filter((item, index, all) => all.findIndex(candidate => candidate.source === item.source && candidate.trackId === item.trackId) === index);
 
   const remoteValues = decodeOptionalArrayField(libraryRoot, 'remoteCollections');
   if (remoteValues === null) return null;
@@ -298,7 +303,7 @@ function exportFromRoots(libraryRoot: UnknownRecord, playerRoot: UnknownRecord |
   const safeLyrics = lyrics.filter((item): item is LibraryLyricMetadata => item !== null);
   if (new Set(safeLyrics.map(item => `${item.source}:${item.trackId}`)).size !== safeLyrics.length) return null;
 
-  const localEntries = localValues.map(value => {
+  const localEntries = (localValues ?? []).map(value => {
     const item = object(value);
     return item ? { title: text(item.title, '未知本地音乐'), artist: text(item.artist, '未知艺人') } : null;
   });
@@ -332,7 +337,10 @@ export function exportLegacyMigration(value: string, attemptId: string, playerVa
   try { libraryRoot = object(JSON.parse(value)); } catch { return null; }
   if (!libraryRoot) return null;
   const playerRoot = playerValue ? decodePersistedRecord(playerValue) : null;
-  if (playerValue && !playerRoot) return null;
+  // The player record is an auxiliary continuity hint. A permanently broken
+  // Redux Persist blob must not make the authoritative library un-migratable;
+  // exportFromRoots treats null as a safe empty player and still reads any
+  // queue/lyric fields present in the library record.
   return exportFromRoots(libraryRoot, playerRoot, attemptId);
 }
 
