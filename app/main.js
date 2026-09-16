@@ -2,6 +2,7 @@ const electron = require("electron");
 const {
   app,
   BrowserWindow,
+  dialog,
   globalShortcut,
   ipcMain,
   Menu,
@@ -9,10 +10,12 @@ const {
   session,
   protocol,
   screen,
+  shell,
   Tray,
 } = electron;
 const Store = require("electron-store");
 const { autoUpdater } = require("electron-updater");
+const { createDesktopUpdater } = require("./desktopUpdater");
 const remoteMain = require("@electron/remote/main");
 const { createHash } = require("crypto");
 const { join } = require("path");
@@ -54,8 +57,6 @@ if (protocol && typeof protocol.registerSchemesAsPrivileged === "function") {
     },
   ]);
 }
-
-autoUpdater.checkForUpdatesAndNotify();
 
 let floatingWindowCssKey = undefined,
   appIcon = null,
@@ -1623,6 +1624,14 @@ if (!gotTheLock) {
       audioCacheStartupError = error;
     }
     createWindow();
+    const desktopUpdater = createDesktopUpdater({
+      updater: autoUpdater,
+      dialog,
+      shell,
+      platform: process.platform,
+      getParentWindow: () => mainWindow,
+    });
+    void desktopUpdater.start();
     remoteMain.initialize();
     remoteMain.enable(mainWindow.webContents);
   });
