@@ -131,14 +131,10 @@ internal class BilibiliHttpsGateway : BilibiliGateway {
         val normalized = BilibiliPolicy.normalizeSearchQuery(query)
             ?: throw ProviderException(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
         if (!BilibiliPolicy.isSearchPage(page)) throw ProviderException(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
-        val signedQuery = BilibiliPolicy.buildWbiSearchQuery(
-            normalized,
-            page,
-            wbiMixinKey(),
-            System.currentTimeMillis() / 1000L,
-        ) ?: throw ProviderException(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
+        val directQuery = BilibiliPolicy.buildDirectSearchQuery(normalized, page)
+            ?: throw ProviderException(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
         val data = request(
-            "https://api.bilibili.com/x/web-interface/wbi/search/type?$signedQuery",
+            "https://api.bilibili.com/x/web-interface/search/type?$directQuery",
             allowAnonymous = true,
         )
         val rows = data.optJSONArray("result") ?: throw ProviderException(BilibiliPolicy.ErrorCode.INVALID_RESPONSE)
@@ -269,8 +265,10 @@ internal class BilibiliHttpsGateway : BilibiliGateway {
             throw ProviderException(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
         var connection: HttpsURLConnection? = null
         var registeredPoll: ActivePoll? = null
+        var stage = "open"
         try {
             if (pollKey != null && isPollCancelled(pollKey)) throw ProviderException(BilibiliPolicy.ErrorCode.CANCELLED)
+            stage = "connect"
             connection = URL(rawUrl).openConnection() as HttpsURLConnection
             connection.instanceFollowRedirects = false
             connection.connectTimeout = 10_000
@@ -292,12 +290,20 @@ internal class BilibiliHttpsGateway : BilibiliGateway {
                 connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
                 connection.outputStream.use { it.write(bytes) }
             }
+            stage = "response"
             val status = connection.responseCode
             if (pollKey != null && isPollCancelled(pollKey)) throw ProviderException(BilibiliPolicy.ErrorCode.CANCELLED)
-            if (status !in 200..299) throw ProviderException(if (status == 401 || status == 403) BilibiliPolicy.ErrorCode.LOGIN_REQUIRED else BilibiliPolicy.ErrorCode.NETWORK_ERROR)
-            val root = JSONObject(readBounded(connection, pollKey))
+            if (status !in 200..299) {
+                BilibiliDiagnostics.info("gateway-request-status=${BilibiliPolicy.statusDiagnostic(status)}")
+                throw ProviderException(BilibiliPolicy.errorForHttpStatus(status))
+            }
+            stage = "body"
+            val response = readBounded(connection, pollKey)
+            stage = "json"
+            val root = JSONObject(response)
             if (pollKey != null && isPollCancelled(pollKey)) throw ProviderException(BilibiliPolicy.ErrorCode.CANCELLED)
             commitCookies(connection)
+            stage = "provider-code"
             return when (root.optInt("code", Int.MIN_VALUE)) {
                 0 -> root.optJSONObject("data") ?: throw ProviderException(BilibiliPolicy.ErrorCode.INVALID_RESPONSE)
                 -101 -> if (allowAnonymous) (root.optJSONObject("data") ?: JSONObject()).put("_anonymous", true) else throw ProviderException(BilibiliPolicy.ErrorCode.LOGIN_REQUIRED)
@@ -309,7 +315,8 @@ internal class BilibiliHttpsGateway : BilibiliGateway {
             throw error
         } catch (_: java.net.SocketTimeoutException) {
             throw ProviderException(if (pollKey != null && isPollCancelled(pollKey)) BilibiliPolicy.ErrorCode.CANCELLED else BilibiliPolicy.ErrorCode.REQUEST_TIMEOUT)
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            BilibiliDiagnostics.info("gateway-request-failed-stage=$stage-kind=${networkFailureKind(error)}")
             throw ProviderException(if (pollKey != null && isPollCancelled(pollKey)) BilibiliPolicy.ErrorCode.CANCELLED else BilibiliPolicy.ErrorCode.NETWORK_ERROR)
         } finally {
             registeredPoll?.let { activePoll.compareAndSet(it, null) }
@@ -345,6 +352,15 @@ internal class BilibiliHttpsGateway : BilibiliGateway {
     }
 
     private fun isPollCancelled(key: String) = cancelledPoll.get() == key
+    /** Fixed-class diagnostics only; never include remote text, routes, or credentials. */
+    private fun networkFailureKind(error: Exception): String = when (error) {
+        is javax.net.ssl.SSLHandshakeException -> "tls"
+        is java.net.UnknownHostException -> "dns"
+        is java.net.ConnectException -> "connect"
+        is java.net.ProtocolException -> "protocol"
+        is java.net.SocketException -> "socket"
+        else -> "unexpected"
+    }
     private fun hasAlternateUrl(item: JSONObject): Boolean = hasValue(item.opt("backupUrl")) || hasValue(item.opt("backup_url"))
     private fun hasValue(value: Any?): Boolean = when (value) {
         null, JSONObject.NULL -> false

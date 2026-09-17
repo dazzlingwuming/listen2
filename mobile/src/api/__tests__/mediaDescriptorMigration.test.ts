@@ -82,11 +82,43 @@ describe('native media descriptor migration', () => {
     );
   });
 
+  it('accepts the app-owned content lease without relying on URL support', () => {
+    const urlDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'URL');
+    Object.defineProperty(globalThis, 'URL', {
+      configurable: true,
+      value: function UnsupportedUrl(): never {
+        throw new Error('custom content URI parsing is unavailable');
+      },
+    });
+    try {
+      expect(validateNativeMediaDescriptor(descriptor(), expected)).toEqual(
+        expect.objectContaining({
+          playableUri: `content://${AUTHORITY}/lease/${LEASE_ID}`,
+        }),
+      );
+    } finally {
+      if (urlDescriptor) Object.defineProperty(globalThis, 'URL', urlDescriptor);
+      else delete (globalThis as { URL?: unknown }).URL;
+    }
+  });
+
   it.each([
     ['extra top-level key', { url: 'https://provider.invalid/audio.mp3' }],
     [
       'unsafe URI authority',
       { playableUri: 'content://other.application.media/lease/' + LEASE_ID },
+    ],
+    [
+      'URI with an attacker-controlled query',
+      { playableUri: `content://${AUTHORITY}/lease/${LEASE_ID}?next=untrusted` },
+    ],
+    [
+      'URI with a fragment',
+      { playableUri: `content://${AUTHORITY}/lease/${LEASE_ID}#fragment` },
+    ],
+    [
+      'URI with an incorrect lease length',
+      { playableUri: `content://${AUTHORITY}/lease/${LEASE_ID.slice(1)}` },
     ],
     ['missing codec', { codec: undefined }],
     ['forged rendition', { selectedRenditionId: 'premium' }],

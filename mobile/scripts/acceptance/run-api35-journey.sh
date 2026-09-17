@@ -9,7 +9,7 @@ instrumentation_result_ok() {
 }
 
 phase08_class_allowed() {
-  [[ "$1" == "com.listen2mobile.acceptance.UpgradeSeedTest" || "$1" == "com.listen2mobile.acceptance.IntegratedJourneyTest" ]]
+  [[ "$1" == "com.listen2mobile.acceptance.UpgradeSeedTest" || "$1" == "com.listen2mobile.acceptance.LegacyLibraryUpgradeTest" || "$1" == "com.listen2mobile.acceptance.LibraryMigrationReadbackTest" || "$1" == "com.listen2mobile.acceptance.IntegratedJourneyTest" ]]
 }
 
 sanitize_diagnostic_log() {
@@ -42,6 +42,8 @@ if [[ "${1:-}" == "--self-test" ]]; then
   ! instrumentation_result_ok "$self_test_dir/assertion.txt" || { echo 'AssertionError fixture accepted' >&2; exit 1; }
   ! instrumentation_result_ok "$self_test_dir/failed.txt" || { echo 'INSTRUMENTATION_FAILED fixture accepted' >&2; exit 1; }
   phase08_class_allowed com.listen2mobile.acceptance.UpgradeSeedTest || { echo 'approved seed class rejected' >&2; exit 1; }
+  phase08_class_allowed com.listen2mobile.acceptance.LegacyLibraryUpgradeTest || { echo 'approved legacy-library class rejected' >&2; exit 1; }
+  phase08_class_allowed com.listen2mobile.acceptance.LibraryMigrationReadbackTest || { echo 'approved migration-readback class rejected' >&2; exit 1; }
   phase08_class_allowed com.listen2mobile.acceptance.IntegratedJourneyTest || { echo 'approved journey class rejected' >&2; exit 1; }
   ! phase08_class_allowed com.listen2mobile.acceptance.UnknownTest || { echo 'unknown instrumentation class accepted' >&2; exit 1; }
   printf '%s\n' 'token=forbidden-value https://example.invalid/path' > "$self_test_dir/raw-logcat.txt"
@@ -57,7 +59,7 @@ if [[ "${1:-}" == "--self-test" ]]; then
   grep -Fq 'stop_diagnostic_capture' "$0" || { echo 'runner must stop and retain diagnostics around instrumentation' >&2; exit 1; }
   grep -Fq 'Phase08Instrumentation' "$0" || { echo 'runner must require the self-contained Phase 8 runner' >&2; exit 1; }
   grep -Fq 'assert_acceptance_dex_class' "$0" || { echo 'runner must inspect the sealed acceptance dex classes directly' >&2; exit 1; }
-  for source in mobile/android/app/src/androidTest/java/com/listen2mobile/acceptance/{Phase08Instrumentation,AccessibilityDriver,UpgradeSeedTest,IntegratedJourneyTest}.java; do
+  for source in mobile/android/app/src/androidTest/java/com/listen2mobile/acceptance/{Phase08Instrumentation,AccessibilityDriver,UpgradeSeedTest,LegacyLibraryUpgradeTest,LibraryMigrationReadbackTest,IntegratedJourneyTest}.java; do
     [[ -f "$source" ]] || { echo "missing pure-Java acceptance source: $source" >&2; exit 1; }
     ! grep -Eqi 'kotlin|androidx\.test|InstrumentationRegistry|ActivityScenario' "$source" || { echo "acceptance source has a forbidden runtime dependency: $source" >&2; exit 1; }
   done
@@ -136,6 +138,8 @@ sha_file() { shasum -a 256 "$1" | awk '{print $1}'; }
 [[ "$(sha_file "$DEBUG_APK")" == "$DEBUG_SHA" && "$(sha_file "$RELEASE_APK")" == "$RELEASE_SHA" ]] || { echo "BLOCKED: retained product APK hash mismatch" >&2; exit 3; }
 APKANALYZER="$SDK/cmdline-tools/latest/bin/apkanalyzer"; [[ -x "$APKANALYZER" ]] || APKANALYZER="$(command -v apkanalyzer)"
 "$APKANALYZER" dex packages "$TEST_APK" | grep -Fq 'com.listen2mobile.acceptance.UpgradeSeedTest' || { echo "BLOCKED: sealed test payload lacks UpgradeSeedTest" >&2; exit 3; }
+"$APKANALYZER" dex packages "$TEST_APK" | grep -Fq 'com.listen2mobile.acceptance.LegacyLibraryUpgradeTest' || { echo "BLOCKED: sealed test payload lacks LegacyLibraryUpgradeTest" >&2; exit 3; }
+"$APKANALYZER" dex packages "$TEST_APK" | grep -Fq 'com.listen2mobile.acceptance.LibraryMigrationReadbackTest' || { echo "BLOCKED: sealed test payload lacks LibraryMigrationReadbackTest" >&2; exit 3; }
 "$APKANALYZER" dex packages "$TEST_APK" | grep -Fq 'com.listen2mobile.acceptance.IntegratedJourneyTest' || { echo "BLOCKED: sealed test payload lacks IntegratedJourneyTest" >&2; exit 3; }
 assert_acceptance_dex_class() {
   local class_name="$1" code
@@ -149,6 +153,8 @@ for acceptance_class in \
   com.listen2mobile.acceptance.Phase08Instrumentation \
   com.listen2mobile.acceptance.AccessibilityDriver \
   com.listen2mobile.acceptance.UpgradeSeedTest \
+  com.listen2mobile.acceptance.LegacyLibraryUpgradeTest \
+  com.listen2mobile.acceptance.LibraryMigrationReadbackTest \
   com.listen2mobile.acceptance.IntegratedJourneyTest; do
   assert_acceptance_dex_class "$acceptance_class"
 done
@@ -175,7 +181,7 @@ cp "$TEST_APK" "$RUN_DIR/artifacts/releaseLikeAndroidTest-journey.apk"
 node --input-type=module - "$RUN_DIR" "$TEST_SHA" "$TEST_SIGNER" "$BUILD_HEAD" "$JOURNEY_TEST_BUILD_HEAD" <<'NODE' > "$RUN_DIR/journey-test-payload.json"
 import { createHash } from 'node:crypto'; import { readFileSync } from 'node:fs';
 const [run, sha, signerSha256, candidateBuildHead, testPayloadBuildHead] = process.argv.slice(2);
-console.log(JSON.stringify({ kind: 'AndroidTest-only', sha256: sha, signerSha256, candidateBuildHead, testPayloadBuildHead, targetPackage: 'com.dazzlingwuming.listen2', targetVersionCode: 1000001, testPackage: 'com.dazzlingwuming.listen2.test', runner: 'com.listen2mobile.acceptance.Phase08Instrumentation', contains: ['Phase08Instrumentation', 'UpgradeSeedTest', 'IntegratedJourneyTest'], reason: 'AndroidTest-only payload is separately sealed; releaseLike product hash is unchanged.' }, null, 2));
+console.log(JSON.stringify({ kind: 'AndroidTest-only', sha256: sha, signerSha256, candidateBuildHead, testPayloadBuildHead, targetPackage: 'com.dazzlingwuming.listen2', targetVersionCode: 1000001, testPackage: 'com.dazzlingwuming.listen2.test', runner: 'com.listen2mobile.acceptance.Phase08Instrumentation', contains: ['Phase08Instrumentation', 'UpgradeSeedTest', 'LegacyLibraryUpgradeTest', 'LibraryMigrationReadbackTest', 'IntegratedJourneyTest'], reason: 'AndroidTest-only payload is separately sealed; releaseLike product hash is unchanged.' }, null, 2));
 NODE
 node mobile/scripts/acceptance/generate-fixtures.mjs --out "$FIXTURE_DIR" > "$RUN_DIR/fixture.json"
 FIXTURE_SHA="$(node --input-type=module - "$RUN_DIR/fixture.json" <<'NODE'

@@ -984,7 +984,12 @@ const qq: ProviderAdapter = {
     });
     const root = asObject(
       await requestJson(
-        { url: 'https://u.y.qq.com/cgi-bin/musicu.fcg', method: 'POST', body },
+        {
+          url: 'https://u.y.qq.com/cgi-bin/musicu.fcg',
+          method: 'POST',
+          body,
+          profile: 'qq',
+        },
         'qq',
         'search',
         options,

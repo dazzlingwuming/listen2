@@ -1,6 +1,8 @@
 package com.listen2mobile.bilibili
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.view.SurfaceView
 import android.widget.FrameLayout
 import androidx.annotation.OptIn
@@ -21,6 +23,7 @@ import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 @OptIn(UnstableApi::class)
 internal class BilibiliMvView(context: Context, private val controller: BilibiliMvController) : FrameLayout(context) {
     private val surface = SurfaceView(context)
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var player: ExoPlayer? = null
     private var handle: String? = null
     private var bindGeneration = 0L
@@ -28,10 +31,12 @@ internal class BilibiliMvView(context: Context, private val controller: Bilibili
     private var hostPaused = false
     private var sourceUrls: List<String> = emptyList()
     private var sourceIndex = 0
+    private var progressUpdate: Runnable? = null
     // Kept explicit for source/test inspection: no audio-focus API is called by this view.
     private val handleAudioFocus = false
 
     init {
+        surface.contentDescription = "Bilibili MV 正在准备画面"
         addView(surface, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
     }
 
@@ -46,6 +51,16 @@ internal class BilibiliMvView(context: Context, private val controller: Bilibili
         val generation = bindGeneration
         val boundHandle = next
         video.addListener(object : Player.Listener {
+            override fun onRenderedFirstFrame() {
+                if (generation != bindGeneration || boundHandle != handle) return
+                updateSurfaceAccessibility()
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (generation != bindGeneration || boundHandle != handle) return
+                updateSurfaceAccessibility()
+            }
+
             override fun onPlayerError(error: PlaybackException) {
                 if (generation != bindGeneration || boundHandle != handle) return
                 if (sourceIndex + 1 < sourceUrls.size) {
@@ -53,6 +68,7 @@ internal class BilibiliMvView(context: Context, private val controller: Bilibili
                     val position = controller.surfaceBinding(boundHandle)?.positionMs ?: 0L
                     prepare(video, sourceIndex, position)
                 } else {
+                    surface.contentDescription = "Bilibili MV 画面不可用"
                     controller.surfaceFailed(boundHandle)
                     releaseHandle(boundHandle)
                 }
@@ -60,10 +76,12 @@ internal class BilibiliMvView(context: Context, private val controller: Bilibili
         })
         sourceUrls = binding.urls
         sourceIndex = 0
+        surface.contentDescription = "Bilibili MV 正在准备画面"
         video.setVideoSurfaceView(surface)
         prepare(video, sourceIndex, binding.positionMs)
         lastPlayIntent = binding.playIntent
         video.playWhenReady = binding.playIntent && !hostPaused
+        updateSurfaceAccessibility()
     }
 
     fun detach() {
@@ -104,16 +122,19 @@ internal class BilibiliMvView(context: Context, private val controller: Bilibili
         }
         lastPlayIntent = playIntent
         video.playWhenReady = playIntent && !hostPaused
+        updateSurfaceAccessibility()
     }
 
     fun pauseForBackground() {
         hostPaused = true
         player?.playWhenReady = false
+        updateSurfaceAccessibility()
     }
 
     fun resumeAfterHost() {
         hostPaused = false
         player?.playWhenReady = lastPlayIntent
+        updateSurfaceAccessibility()
     }
 
     private fun createVideoOnlyPlayer(): ExoPlayer {
@@ -145,9 +166,45 @@ internal class BilibiliMvView(context: Context, private val controller: Bilibili
 
     private fun release() {
         bindGeneration += 1
+        cancelProgressUpdates()
         player?.release()
         player = null
         sourceUrls = emptyList()
         sourceIndex = 0
+    }
+
+    /**
+     * The React hierarchy cannot observe ExoPlayer's actual rendering state.
+     * Keep a bounded, transport-free accessibility status on the native
+     * SurfaceView so device acceptance can distinguish a mounted black view
+     * from a rendered video whose timeline is advancing.
+     */
+    private fun updateSurfaceAccessibility() {
+        cancelProgressUpdates()
+        val video = player ?: return
+        val seconds = kotlin.math.max(0L, video.currentPosition / 1000L)
+        if (video.isPlaying) {
+            surface.contentDescription = "Bilibili MV 视频播放中，进度 ${seconds} 秒"
+            val update = object : Runnable {
+                override fun run() {
+                    if (player !== video || !video.isPlaying) {
+                        updateSurfaceAccessibility()
+                        return
+                    }
+                    val currentSeconds = kotlin.math.max(0L, video.currentPosition / 1000L)
+                    surface.contentDescription = "Bilibili MV 视频播放中，进度 ${currentSeconds} 秒"
+                    mainHandler.postDelayed(this, 1_000L)
+                }
+            }
+            progressUpdate = update
+            mainHandler.postDelayed(update, 1_000L)
+        } else {
+            surface.contentDescription = "Bilibili MV 视频已暂停，进度 ${seconds} 秒"
+        }
+    }
+
+    private fun cancelProgressUpdates() {
+        progressUpdate?.let(mainHandler::removeCallbacks)
+        progressUpdate = null
     }
 }

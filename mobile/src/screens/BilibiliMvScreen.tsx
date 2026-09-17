@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -7,7 +7,7 @@ import {
   View,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { BilibiliMvView } from '../components/BilibiliMvView';
 import { bilibiliMvClient } from '../bilibili/mvClient';
 import type {
@@ -15,6 +15,7 @@ import type {
   BilibiliMvQualityId,
 } from '../bilibili/types';
 import { mvActions } from '../store/mvSlice';
+import type { RootState } from '../store';
 import { colors, spacing, text } from '../theme';
 
 const CODECS = ['avc1'] as const;
@@ -30,6 +31,10 @@ export function BilibiliMvScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const dispatch = useDispatch<any>();
+  const player = useSelector((root: RootState) => root.player);
+  const playerTrackIdentityRef = useRef<string | null>(null);
+  playerTrackIdentityRef.current =
+    player.nowPlaying?.source === 'bilibili' ? player.nowPlaying.id : null;
   const bvid = safeBvid(route.params?.bvid);
   const cid = safeCid(route.params?.cid);
   const [mv, setMv] = useState<BilibiliMvPublicState | null>(null);
@@ -38,11 +43,13 @@ export function BilibiliMvScreen() {
   const epoch = useRef(0);
   const mounted = useRef(false);
   const handleRef = useRef<string | null>(null);
+  const syncEpoch = useRef(0);
+  const mismatchPauseHandle = useRef<string | null>(null);
   const releaseStale = (value: BilibiliMvPublicState) => {
     if (value.handle)
       bilibiliMvClient.close(value.handle).catch(() => undefined);
   };
-  const applyMv = (value: BilibiliMvPublicState) => {
+  const applyMv = useCallback((value: BilibiliMvPublicState) => {
     if (!value.handle) throw new Error('VIDEO_UNAVAILABLE');
     handleRef.current = value.handle;
     setMv(value);
@@ -56,7 +63,7 @@ export function BilibiliMvScreen() {
           playIntent: value.playIntent,
         }),
       );
-  };
+  }, [bvid, cid, dispatch]);
   const open = (forceRefresh = false) => {
     if (!bvid || !cid) {
       setError('INVALID_REQUEST');
@@ -79,7 +86,11 @@ export function BilibiliMvScreen() {
           return;
         }
         applyMv(value);
-        if (restore && value.handle)
+        if (
+          restore &&
+          value.handle &&
+          playerTrackIdentityRef.current === `bitrack_v_${bvid}-${cid}`
+        )
           return bilibiliMvClient
             .sync(
               value.handle,
@@ -124,6 +135,73 @@ export function BilibiliMvScreen() {
     // The screen identity is semantic and never changes after navigation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bvid, cid]);
+  // The native surface is deliberately video-only.  Its timeline must follow
+  // the RNTP-owned audio state rather than the stale playIntent returned while
+  // resolving a fresh, opaque media handle.
+  useEffect(() => {
+    const handle = handleRef.current;
+    if (!handle || !bvid || !cid) return;
+    const current = ++syncEpoch.current;
+    const expectedTrackId = `bitrack_v_${bvid}-${cid}`;
+    if (playerTrackIdentityRef.current !== expectedTrackId) {
+      // A mounted MV must never follow position/play state from another
+      // semantic track. Pause this handle once, then invalidate any older
+      // sync response until the matching audio item becomes current again.
+      if (mismatchPauseHandle.current === handle) return;
+      mismatchPauseHandle.current = handle;
+      bilibiliMvClient
+        .sync(
+          handle,
+          bvid,
+          cid,
+          Math.max(0, Math.round(mv?.positionMs || 0)),
+          false,
+        )
+        .then(value => {
+          if (
+            mounted.current &&
+            current === syncEpoch.current &&
+            handleRef.current === handle
+          )
+            applyMv(value);
+        })
+        .catch(value => {
+          if (
+            mounted.current &&
+            current === syncEpoch.current &&
+            handleRef.current === handle
+          )
+            setError(value?.code || 'VIDEO_UNAVAILABLE');
+        });
+      return;
+    }
+    mismatchPauseHandle.current = null;
+    const positionMs = Math.max(0, Math.round(player.position * 1000));
+    bilibiliMvClient
+      .sync(handle, bvid, cid, positionMs, player.isPlaying)
+      .then(value => {
+        if (
+          mounted.current &&
+          current === syncEpoch.current &&
+          handleRef.current === handle
+        )
+          applyMv(value);
+      })
+      .catch(value => {
+        if (mounted.current && current === syncEpoch.current)
+          setError(value?.code || 'VIDEO_UNAVAILABLE');
+      });
+  }, [
+    bvid,
+    cid,
+    applyMv,
+    mv?.handle,
+    mv?.positionMs,
+    player.isPlaying,
+    player.position,
+    player.nowPlaying?.source,
+    player.nowPlaying?.id,
+  ]);
   useEffect(() => {
     const subscription = bilibiliMvClient.onPipState(value => {
       if (value.handle === handleRef.current) setInPip(value.active);

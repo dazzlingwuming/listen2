@@ -11,6 +11,8 @@ public final class IntegratedJourneyTest {
         AccessibilityDriver driver = new AccessibilityDriver(instrumentation);
         progress.step("journey-launch");
         driver.launchTarget();
+        progress.step("journey-library-upgrade");
+        driver.assertLegacyLibraryVisibleWithoutRecoveryFailure();
         progress.step("journey-search-tab");
         require(driver.waitForLabel("搜索", 20_000L), "search tab was not visible");
         driver.tapLabel("搜索");

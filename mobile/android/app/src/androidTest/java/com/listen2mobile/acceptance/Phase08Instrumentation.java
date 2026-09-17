@@ -11,7 +11,9 @@ import java.util.regex.Pattern;
 
 /** Self-contained, platform-only runner for the sealed releaseLike acceptance artifact. */
 public final class Phase08Instrumentation extends Instrumentation {
-    private static final long SCENARIO_TIMEOUT_MILLIS = 90_000L;
+    private static final long DEFAULT_SCENARIO_TIMEOUT_MILLIS = 90_000L;
+    private static final long LIVE_BILIBILI_TIMEOUT_MILLIS = 150_000L;
+    private static final long LIVE_ALL_PROVIDER_TIMEOUT_MILLIS = 150_000L;
     private static final int MAX_FAILURE_MESSAGE_LENGTH = 240;
     private static final Pattern URL_PATTERN = Pattern.compile("https?://[^\\s]+", Pattern.CASE_INSENSITIVE);
     private static final Pattern SECRET_PATTERN = Pattern.compile("(?i)(api[_-]?key|authorization|cookie|password|secret|token)\\s*[:=]\\s*[^\\s,;]+|bearer\\s+[^\\s,;]+");
@@ -49,9 +51,9 @@ public final class Phase08Instrumentation extends Instrumentation {
         worker.start();
 
         try {
-            if (!completed.await(SCENARIO_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
+            if (!completed.await(timeoutFor(requestedClass), TimeUnit.MILLISECONDS)) {
                 worker.interrupt();
-                failure.compareAndSet(null, new AssertionError("Phase 8 scenario exceeded its 90-second bound"));
+                failure.compareAndSet(null, new AssertionError("Phase 8 scenario exceeded its bounded timeout"));
             }
         } catch (InterruptedException error) {
             Thread.currentThread().interrupt();
@@ -93,12 +95,36 @@ public final class Phase08Instrumentation extends Instrumentation {
             IntegratedJourneyTest.run(this, progress);
             return;
         }
+        if ("com.listen2mobile.acceptance.LegacyLibraryUpgradeTest".equals(scenarioClass)) {
+            LegacyLibraryUpgradeTest.run(this, progress);
+            return;
+        }
+        if ("com.listen2mobile.acceptance.LibraryConflictGuardrailTest".equals(scenarioClass)) {
+            LibraryConflictGuardrailTest.run(this, progress);
+            return;
+        }
+        if ("com.listen2mobile.acceptance.LibraryConflictGuardrailSeedTest".equals(scenarioClass)) {
+            LibraryConflictGuardrailSeedTest.run(this, progress);
+            return;
+        }
+        if ("com.listen2mobile.acceptance.LibraryMigrationReadbackTest".equals(scenarioClass)) {
+            LibraryMigrationReadbackTest.run(this, progress);
+            return;
+        }
         if ("com.listen2mobile.acceptance.LiveProviderSmokeTest".equals(scenarioClass)) {
             LiveProviderSmokeTest.run(this, progress);
             return;
         }
         if ("com.listen2mobile.acceptance.LiveBilibiliSmokeTest".equals(scenarioClass)) {
             LiveBilibiliSmokeTest.run(this, progress);
+            return;
+        }
+        if ("com.listen2mobile.acceptance.LiveBilibiliPlaybackMvSmokeTest".equals(scenarioClass)) {
+            LiveBilibiliPlaybackMvSmokeTest.run(this, progress);
+            return;
+        }
+        if ("com.listen2mobile.acceptance.LiveAllProviderSearchSmokeTest".equals(scenarioClass)) {
+            LiveAllProviderSearchSmokeTest.run(this, progress);
             return;
         }
         if ("com.listen2mobile.acceptance.PerformanceRecoveryTest#api35Full".equals(scenarioClass)) {
@@ -114,6 +140,16 @@ public final class Phase08Instrumentation extends Instrumentation {
             return;
         }
         throw new IllegalArgumentException("unapproved Phase 8 instrumentation class");
+    }
+
+    private static long timeoutFor(String scenarioClass) {
+        if ("com.listen2mobile.acceptance.LiveBilibiliPlaybackMvSmokeTest".equals(scenarioClass)) {
+            return LIVE_BILIBILI_TIMEOUT_MILLIS;
+        }
+        if ("com.listen2mobile.acceptance.LiveAllProviderSearchSmokeTest".equals(scenarioClass)) {
+            return LIVE_ALL_PROVIDER_TIMEOUT_MILLIS;
+        }
+        return DEFAULT_SCENARIO_TIMEOUT_MILLIS;
     }
 
     static String sanitizeFailureMessage(String message) {

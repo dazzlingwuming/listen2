@@ -28,10 +28,14 @@ const BILIBILI_HEADERS = Object.freeze({
     'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124 Mobile Safari/537.36',
 });
 
-// QQ's public lyric route rejects requests without its first-party origin.
-// This is an adapter-owned constant, never a header accepted from UI code.
+// QQ's public search and lyric routes reject the Android default client
+// fingerprint. These are fixed first-party browser headers owned by this
+// adapter; UI code can never provide, override, or persist them.
 const QQ_HEADERS = Object.freeze({
+  Origin: 'https://y.qq.com',
   Referer: 'https://y.qq.com/',
+  'User-Agent':
+    'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124 Mobile Safari/537.36',
 });
 
 function providerErrorForStatus(

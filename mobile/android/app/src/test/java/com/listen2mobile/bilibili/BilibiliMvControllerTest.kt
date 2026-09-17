@@ -40,7 +40,19 @@ class BilibiliMvControllerTest {
         assertEquals(BilibiliPolicy.ErrorCode.INVALID_REQUEST, controller.sync(opened.handle, "BV1xx411c7mD", 12L, 500L, true).errorCode)
     }
 
-    private class FakeGateway(private val candidate: BilibiliMvPolicy.VideoCandidate) : BilibiliGateway {
+    @Test fun `public variants exclude unsafe and unsupported siblings`() {
+        val unsupported = candidate.copy(id = 64, codecs = "hev1.2.4.L156.90")
+        val unsafe = candidate.copy(id = 32, url = "https://example.com/video.m4s?deadline=1700000031")
+        val controller = BilibiliMvController(FakeGateway(listOf(candidate, unsupported, unsafe)), clock = { now })
+
+        val state = controller.open(BilibiliMvPolicy.MvRequest("BV1xx411c7mD", 12L, "80", listOf("avc1"), false))
+
+        assertEquals(BilibiliMvController.State.READY, state.state)
+        assertEquals(listOf("80"), state.variants.map { it.id })
+    }
+
+    private class FakeGateway(private val candidates: List<BilibiliMvPolicy.VideoCandidate>) : BilibiliGateway {
+        constructor(candidate: BilibiliMvPolicy.VideoCandidate) : this(listOf(candidate))
         override fun beginQr() = throw UnsupportedOperationException()
         override fun pollQr(qrKey: String) = throw UnsupportedOperationException()
         override fun cancelPoll(qrKey: String) = Unit
@@ -51,6 +63,6 @@ class BilibiliMvControllerTest {
         override fun account() = null
         override fun videoDetail(bvid: String) = BilibiliGateway.VideoDetail(bvid, "title", null, listOf(BilibiliGateway.VideoPart(12L, 1L, "part", null)))
         override fun resolveAudio(track: BilibiliPolicy.SemanticTrack) = throw UnsupportedOperationException()
-        override fun resolveVideo(request: BilibiliMvPolicy.MvRequest) = BilibiliMvPolicy.VideoManifest(request.bvid, request.cid, listOf(candidate))
+        override fun resolveVideo(request: BilibiliMvPolicy.MvRequest) = BilibiliMvPolicy.VideoManifest(request.bvid, request.cid, candidates)
     }
 }

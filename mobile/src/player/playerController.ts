@@ -55,6 +55,15 @@ function normalizedVolume(state: PlayerState) {
   return state.muted ? 0 : Math.max(0, Math.min(1, state.volume * fixedOutputGain));
 }
 
+/**
+ * Keep native hand-off diagnostics useful without exposing a provider URL,
+ * lease, title, headers, or an unbounded error message to logcat.
+ */
+function bilibiliPlaybackStage(track: PlayableTrack, stage: string) {
+  if (track.source === 'bilibili')
+    console.info(`[Listen2Bilibili] playback-${stage}`);
+}
+
 function scheduleCachedNormalization(
   track: PlayableTrack,
   context?: NativeOperationContext,
@@ -79,6 +88,10 @@ let runtime: ControllerRuntime | null = null;
 let setupPromise: Promise<void> | null = null;
 
 const STALE_NATIVE_COMMAND = Symbol('stale-native-command');
+// Rehydration restores semantic UI state before RNTP has any queue item. This
+// is distinct from a malformed active item, which must still block a
+// destructive replacement so its rollback remains safe.
+const NO_ACTIVE_NATIVE_SNAPSHOT = Symbol('no-active-native-snapshot');
 const MAX_SEEK_SECONDS = 86_400;
 
 type NativeOperationContext = {
@@ -378,10 +391,14 @@ async function captureRollbackSnapshot(
   state: PlayerState,
 ): Promise<NativeRollbackSnapshot | null> {
   if (!state.nowPlaying) return null;
-  const active = boundedNativeMedia(await TrackPlayer.getActiveTrack());
+  const rawActive = await TrackPlayer.getActiveTrack();
+  if (rawActive === undefined || rawActive === null)
+    throw NO_ACTIVE_NATIVE_SNAPSHOT;
+  const active = boundedNativeMedia(rawActive);
+  if (!active) throw new Error('snapshot-unavailable');
   const progress = await TrackPlayer.getProgress();
   const playback = await TrackPlayer.getPlaybackState();
-  if (!active || !progress || !Number.isFinite(progress.position)) {
+  if (!progress || !Number.isFinite(progress.position)) {
     throw new Error('snapshot-unavailable');
   }
   return {
@@ -431,12 +448,16 @@ async function replaceNativeTrack(
   assertNativeOperationCurrent(context);
   const nativeTrack = asNativeTrack(track, media);
   context?.markMutation();
+  bilibiliPlaybackStage(track, 'replace-reset');
   await TrackPlayer.reset();
   assertNativeOperationCurrent(context);
+  bilibiliPlaybackStage(track, 'replace-add');
   await TrackPlayer.add(nativeTrack as any);
   context?.markLoaded(nativeTrack.id, track);
+  bilibiliPlaybackStage(track, 'replace-configure');
   await configureNativeSnapshot(state, context);
   assertNativeOperationCurrent(context);
+  bilibiliPlaybackStage(track, 'replace-play');
   await TrackPlayer.play();
 }
 
@@ -520,8 +541,10 @@ async function loadAndPlay(
   let media: NativePlayableMedia | null = null;
   try {
     assertNativeOperationCurrent(context);
+    bilibiliPlaybackStage(track, 'ensure-player');
     await ensurePlayer();
     assertNativeOperationCurrent(context);
+    bilibiliPlaybackStage(track, 'resolve-media');
     const acceptedMedia =
       resolvedMedia ?? (await resolveTrackMedia(track, context?.signal));
     media = acceptedMedia;
@@ -529,17 +552,22 @@ async function loadAndPlay(
     const state = playerState();
     const nativeTrack = asNativeTrack(track, acceptedMedia);
     context?.markMutation();
+    bilibiliPlaybackStage(track, 'reset');
     await TrackPlayer.reset();
     assertNativeOperationCurrent(context);
+    bilibiliPlaybackStage(track, 'add');
     await TrackPlayer.add(nativeTrack as any);
     context?.markLoaded(nativeTrack.id, track);
+    bilibiliPlaybackStage(track, 'configure');
     await configureNativeSnapshot(state, context);
     scheduleCachedNormalization(track, context);
     if (position > 0) {
       assertNativeOperationCurrent(context);
+      bilibiliPlaybackStage(track, 'seek');
       await TrackPlayer.seekTo(position);
     }
     assertNativeOperationCurrent(context);
+    bilibiliPlaybackStage(track, 'play');
     await TrackPlayer.play();
     if (
       isAcceptedOfflineCacheMedia(track, acceptedMedia)
@@ -548,6 +576,7 @@ async function loadAndPlay(
     emit(dispatch, 'player/setPlaying', true);
     return true;
   } catch (error) {
+    bilibiliPlaybackStage(track, 'failed');
     if (error === STALE_NATIVE_COMMAND) return false;
     if (!isNativeOperationCurrent(context)) return false;
     if (
@@ -635,9 +664,15 @@ async function transition(
     try {
       await ensurePlayer();
       rollback = await captureRollbackSnapshot(playerState());
-    } catch {
-      emit(dispatch, 'player/setError', 'playback-transition-unavailable');
-      return false;
+    } catch (error) {
+      if (
+        error !== NO_ACTIVE_NATIVE_SNAPSHOT ||
+        !playerController.canReplaceRestoredSemanticOnly()
+      ) {
+        if (!isNativeOperationCurrent(context)) return false;
+        emit(dispatch, 'player/setError', 'playback-transition-unavailable');
+        return false;
+      }
     }
   }
   if (!isNativeOperationCurrent(context)) return false;
@@ -801,6 +836,14 @@ class PlayerController {
     this.restoredNeedsLoad = false;
     const historyTrack = playerState().nowPlaying;
     if (historyTrack) history.begin(historyTrack);
+  }
+
+  canReplaceRestoredSemanticOnly() {
+    return (
+      Boolean(playerState().nowPlaying) &&
+      this.restoredNeedsLoad &&
+      this.activeNativeTrackId === null
+    );
   }
 
   markNativeQueueCleared() {
@@ -1002,9 +1045,11 @@ class PlayerController {
     if (!target) return false;
     let media: NativePlayableMedia;
     try {
+      bilibiliPlaybackStage(target, 'multi-resolve');
       media = await resolveTrackMedia(target, context.signal);
       assertNativeOperationCurrent(context);
     } catch (error) {
+      bilibiliPlaybackStage(target, 'multi-resolve-failed');
       if (!isNativeOperationCurrent(context)) return false;
       emit(
         dispatch,
@@ -1015,20 +1060,33 @@ class PlayerController {
     }
 
     const state = playerState();
-    let snapshot: NativeRollbackSnapshot | null;
+    let snapshot: NativeRollbackSnapshot | null = null;
     try {
+      bilibiliPlaybackStage(target, 'multi-ensure-player');
       await ensurePlayer();
+      bilibiliPlaybackStage(target, 'multi-snapshot');
       snapshot = await captureRollbackSnapshot(state);
       assertNativeOperationCurrent(context);
-    } catch {
-      if (!isNativeOperationCurrent(context)) return false;
-      emit(dispatch, 'player/setError', 'playback-transition-unavailable');
-      return false;
+    } catch (error) {
+      bilibiliPlaybackStage(target, 'multi-ensure-failed');
+      if (
+        error === NO_ACTIVE_NATIVE_SNAPSHOT &&
+        this.canReplaceRestoredSemanticOnly()
+      ) {
+        // The restored semantic item has no native queue to preserve. The
+        // newly selected track may now own the first RNTP mutation.
+        snapshot = null;
+      } else {
+        if (!isNativeOperationCurrent(context)) return false;
+        emit(dispatch, 'player/setError', 'playback-transition-unavailable');
+        return false;
+      }
     }
 
     try {
       await replaceNativeTrack(target, media, state, context);
     } catch {
+      bilibiliPlaybackStage(target, 'replace-failed');
       if (!isNativeOperationCurrent(context)) return false;
       if (!snapshot) {
         emit(dispatch, 'player/setPlaying', false);

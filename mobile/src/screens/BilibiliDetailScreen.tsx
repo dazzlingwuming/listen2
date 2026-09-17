@@ -7,11 +7,13 @@ import {
   View,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { bilibiliClient } from '../bilibili/client';
 import type { BilibiliVideoDetail } from '../bilibili/types';
 import type { Track } from '../types/music';
+import type { RootState } from '../store';
 import * as playerActions from '../store/playerSlice';
+import { playerErrorCopy } from '../player/playerErrorCopy';
 import { ScreenLayout, sectionStyles } from './ScreenLayout';
 import { colors, spacing, text } from '../theme';
 
@@ -20,11 +22,19 @@ export function BilibiliDetailScreen() {
   const route = useRoute<any>();
   const dispatch = useDispatch<any>();
   const bvid = typeof route.params?.bvid === 'string' ? route.params.bvid : '';
+  const playerError = useSelector((root: RootState) =>
+    typeof (root as any).player?.error === 'string'
+      ? (root as any).player.error
+      : null,
+  );
   const [detail, setDetail] = useState<BilibiliVideoDetail | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>(
     'loading',
   );
   const [reload, setReload] = useState(0);
+  const [failedPart, setFailedPart] = useState<
+    BilibiliVideoDetail['parts'][number] | null
+  >(null);
   const epoch = useRef(0);
   useEffect(() => {
     const controller = new AbortController();
@@ -53,6 +63,7 @@ export function BilibiliDetailScreen() {
   }, [bvid, reload]);
   const play = async (part: BilibiliVideoDetail['parts'][number]) => {
     if (!detail || detail.bvid !== bvid) return;
+    if (failedPart) setFailedPart(null);
     const track: Track = {
       id: `bitrack_v_${bvid}-${part.cid}`,
       source: 'bilibili',
@@ -63,6 +74,7 @@ export function BilibiliDetailScreen() {
     const action = playerActions.playTracks([track]);
     const result = await dispatch(action);
     if (result === true) navigation.navigate('Player');
+    else setFailedPart(part);
   };
   return (
     <ScreenLayout title="视频分段" subtitle={route.params?.title || 'Bilibili'}>
@@ -98,6 +110,21 @@ export function BilibiliDetailScreen() {
           <Text style={text.meta}>
             {detail.owner || 'Bilibili'} · 请选择要播放的分段
           </Text>
+          {failedPart ? (
+            <View accessibilityRole="alert" style={styles.failure}>
+              <Text style={text.heading}>该分段暂时无法播放</Text>
+              <Text style={text.meta}>
+                {playerErrorCopy(playerError) || '请稍后重试，或选择其他分段。'}
+              </Text>
+              <Pressable
+                accessibilityLabel={`重试播放${failedPart.title}`}
+                onPress={() => play(failedPart)}
+                style={sectionStyles.secondaryButton}
+              >
+                <Text style={sectionStyles.secondaryText}>重试播放</Text>
+              </Pressable>
+            </View>
+          ) : null}
           {detail.parts.map(part => (
             <Pressable
               accessibilityLabel={`播放${part.title}`}
@@ -156,6 +183,12 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   copy: { flex: 1, gap: 2 },
+  failure: {
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
   play: {
     color: colors.accent,
     minWidth: 48,

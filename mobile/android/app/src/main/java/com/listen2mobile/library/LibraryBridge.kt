@@ -7,6 +7,7 @@ import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.ReadableType
+import com.facebook.react.bridge.WritableArray
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.module.annotations.ReactModule
 import java.util.concurrent.Executors
@@ -315,16 +316,16 @@ class LibraryBridge internal constructor(
     private fun snapshot(value: LibrarySnapshot) = Arguments.createMap().apply {
         putDouble("schemaVersion", value.schemaVersion.toDouble())
         putDouble("revision", value.revision.toDouble())
-        putArray("personalPlaylists", Arguments.fromList(value.personalPlaylists.map { playlist ->
+        putArray("personalPlaylists", writableMapArray(value.personalPlaylists.map { playlist ->
             Arguments.createMap().apply {
                 putString("playlistId", playlist.playlistId)
                 putString("title", playlist.title)
                 putInt("position", playlist.position)
-                putArray("tracks", Arguments.fromList(playlist.tracks.map(::track)))
+                putArray("tracks", writableMapArray(playlist.tracks.map(::track)))
             }
         }))
-        putArray("favorites", Arguments.fromList(value.favorites.map(::track)))
-        putArray("remoteCollections", Arguments.fromList(value.remoteCollections.map { collection ->
+        putArray("favorites", writableMapArray(value.favorites.map(::track)))
+        putArray("remoteCollections", writableMapArray(value.remoteCollections.map { collection ->
             Arguments.createMap().apply {
                 putString("collectionId", collection.collectionId)
                 putString("source", collection.source)
@@ -332,13 +333,13 @@ class LibraryBridge internal constructor(
                 putString("syncState", collection.syncState)
             }
         }))
-        putArray("queueCheckpoint", Arguments.fromList(value.queueCheckpoint.map { checkpoint ->
+        putArray("queueCheckpoint", writableMapArray(value.queueCheckpoint.map { checkpoint ->
             Arguments.createMap().apply { putString("occurrenceId", checkpoint.occurrenceId); putInt("position", checkpoint.position); putString("source", checkpoint.source); putString("trackId", checkpoint.trackId) }
         }))
-        putArray("lyricMetadata", Arguments.fromList(value.lyricMetadata.map { metadata ->
+        putArray("lyricMetadata", writableMapArray(value.lyricMetadata.map { metadata ->
             Arguments.createMap().apply { putString("source", metadata.source); putString("trackId", metadata.trackId); putString("selectedVariantId", metadata.selectedVariantId); putDouble("offsetMillis", metadata.offsetMillis.toDouble()) }
         }))
-        putArray("localRecords", Arguments.fromList(value.localRecords.map { record ->
+        putArray("localRecords", writableMapArray(value.localRecords.map { record ->
             Arguments.createMap().apply {
                 putString("recordId", record.recordId)
                 putString("title", record.title)
@@ -352,6 +353,10 @@ class LibraryBridge internal constructor(
             }
         }))
     }
+
+    /** `Arguments.fromList` does not accept React Native WritableMap values. */
+    private fun writableMapArray(values: List<WritableMap>): WritableArray =
+        Arguments.createArray().apply { values.forEach(::pushMap) }
 
     private fun track(value: SafeTrack) = Arguments.createMap().apply {
         putString("source", value.source)

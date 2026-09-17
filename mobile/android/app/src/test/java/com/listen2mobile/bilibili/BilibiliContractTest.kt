@@ -10,6 +10,43 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
 class BilibiliContractTest {
+    @Test fun `revocation serializes with media lease issuance and rejects a stale generation`() {
+        val gate = BilibiliAccountGenerationGate()
+        val requestGeneration = gate.snapshot()
+        val issuanceEntered = CountDownLatch(1)
+        val allowIssuance = CountDownLatch(1)
+        val revocationCompleted = CountDownLatch(1)
+        val issuedGeneration = AtomicReference<Long?>()
+
+        val issuer = Thread {
+            issuedGeneration.set(gate.withCurrent(requestGeneration) { generation ->
+                issuanceEntered.countDown()
+                assertTrue(allowIssuance.await(1, TimeUnit.SECONDS))
+                generation
+            })
+        }
+        issuer.start()
+        assertTrue(issuanceEntered.await(1, TimeUnit.SECONDS))
+        val revoker = Thread { gate.revoke { revocationCompleted.countDown() } }
+        revoker.start()
+        assertFalse(revocationCompleted.await(100, TimeUnit.MILLISECONDS))
+
+        allowIssuance.countDown()
+        issuer.join(1_000)
+        revoker.join(1_000)
+        assertEquals(requestGeneration, issuedGeneration.get())
+        assertTrue(revocationCompleted.await(1, TimeUnit.SECONDS))
+        assertNull(gate.withCurrent(requestGeneration) { it })
+        assertFalse(gate.runIfCurrent(requestGeneration) { })
+    }
+
+    @Test fun `HTTP security rejection is terminal provider policy not offline`() {
+        assertEquals(BilibiliPolicy.ErrorCode.PROVIDER_ERROR, BilibiliPolicy.errorForHttpStatus(412))
+        assertEquals("security-policy", BilibiliPolicy.statusDiagnostic(412))
+        assertEquals(BilibiliPolicy.ErrorCode.REQUEST_TIMEOUT, BilibiliPolicy.errorForHttpStatus(429))
+        assertEquals(BilibiliPolicy.ErrorCode.LOGIN_REQUIRED, BilibiliPolicy.errorForHttpStatus(403))
+    }
+
     private companion object {
         const val NOW = 1_700_000_000_000L
         val SESSION_COOKIES = mapOf("SESSDATA" to "opaque", "bili_jct" to "csrf")
@@ -42,6 +79,12 @@ class BilibiliContractTest {
         assertTrue(searchQuery.matches(Regex(".*&w_rid=[0-9a-f]{32}")))
         assertNull(BilibiliPolicy.buildWbiSearchQuery("x".repeat(BilibiliPolicy.MAX_SEARCH_QUERY_BYTES + 1), 1L, "0123456789abcdef0123456789abcdef", 1L))
         assertNull(BilibiliPolicy.buildWbiSearchQuery("x", 0L, "0123456789abcdef0123456789abcdef", 1L))
+        val directSearch = BilibiliPolicy.buildDirectSearchQuery("青花瓷", 2L)
+        assertTrue(directSearch!!.contains("keyword=%E9%9D%92%E8%8A%B1%E7%93%B7"))
+        assertTrue(directSearch.contains("page=2"))
+        assertFalse(directSearch.contains("w_rid"))
+        assertTrue(BilibiliPolicy.isApprovedApiRoute("https://api.bilibili.com/x/web-interface/search/type?$directSearch"))
+        assertFalse(BilibiliPolicy.isApprovedApiRoute("https://api.bilibili.com/x/web-interface/search/type?$directSearch&attacker=1"))
     }
 
     @Test fun `qr urls accept current and exact legacy routes`() {
@@ -71,14 +114,15 @@ class BilibiliContractTest {
         assertNull(BilibiliPolicy.signedDeadline("https://upos-sz-mirrorcos.bilivideo.com/audio.m4s?deadline=not-a-signature"))
     }
 
-    @Test fun `audio candidates require safe MIME codec and bounded alternatives`() {
+    @Test fun `audio candidates require safe primary MIME codec and ignore untransported backups`() {
         val valid = BilibiliPolicy.MediaCandidate(30280L, signedAudio, "audio/mp4", "mp4a.40.2", false)
         val lower = BilibiliPolicy.MediaCandidate(30216L, signedAudio, "audio/mp4", "mp4a.40.5", false)
         assertEquals(valid, BilibiliPolicy.selectAudioCandidate(listOf(lower, valid), NOW))
         assertNull(BilibiliPolicy.selectAudioCandidate(listOf(valid.copy(mimeType = "audio/webm")), NOW))
         assertNull(BilibiliPolicy.selectAudioCandidate(listOf(valid.copy(codecs = "opus")), NOW))
-        assertNull(BilibiliPolicy.selectAudioCandidate(listOf(valid.copy(hasAlternateUrl = true)), NOW))
-        assertNull(BilibiliPolicy.selectAudioCandidate(List(5) { valid.copy(id = it.toLong() + 1) }, NOW))
+        assertEquals(valid, BilibiliPolicy.selectAudioCandidate(listOf(valid, valid.copy(id = 30296L, mimeType = "audio/webm", codecs = "opus")), NOW))
+        assertEquals(valid.copy(hasAlternateUrl = true), BilibiliPolicy.selectAudioCandidate(listOf(valid.copy(hasAlternateUrl = true)), NOW))
+        assertNull(BilibiliPolicy.selectAudioCandidate(List(9) { valid.copy(id = it.toLong() + 1) }, NOW))
     }
 
     @Test fun `qr exposes waiting scanned expired authenticated and cancellation states`() {

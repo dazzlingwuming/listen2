@@ -2,6 +2,7 @@ package com.listen2mobile.library
 
 import android.content.Context
 import androidx.room.Room
+import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.util.UUID
 
@@ -346,12 +347,112 @@ internal class LibraryRepository internal constructor(private val database: List
         return LibrarySnapshot(1, meta.revision, playlists, dao.favorites().map { SafeTrack(it.source, it.semanticTrackId, it.title, it.artist) }, locals, remote, queue, lyrics)
     }
 
+    /**
+     * The legacy checksum describes one input, but is not reversible after a process restart.
+     * Keep a bounded, hash-only membership proof in a sibling journal row so readback can verify
+     * only the rows that input produced, while unrelated Room activity remains irrelevant.
+     */
+    private fun readbackProofAttemptId(attemptId: String) = "$attemptId#readback-proof"
+
+    private fun readbackProof(input: SafeLegacyInput): String {
+        val fingerprints = inputReadbackFingerprints(input).sorted()
+        return "$READBACK_PROOF_VERSION:${fingerprints.size}:${fingerprints.joinToString("")}"
+    }
+
+    private fun inputReadbackFingerprints(input: SafeLegacyInput): List<String> = buildList {
+        input.playlists.forEach { playlist ->
+            add(playlistReadbackFingerprint(playlist.playlistId, playlist.title, playlist.position, playlist.tracks.mapIndexed { index, track -> index to track }))
+        }
+        input.favorites.forEach { item -> add(readbackFingerprint("favorite", item.source, item.trackId, item.title, item.artist)) }
+        input.remoteCollections.forEach { item -> add(readbackFingerprint("remote", item.collectionId, item.source, item.title, item.syncState)) }
+        input.queueCheckpoint.forEach { item -> add(readbackFingerprint("queue", item.occurrenceId, item.position, item.source, item.trackId)) }
+        input.lyricMetadata.forEach { item -> add(readbackFingerprint("lyric", item.source, item.trackId, item.selectedVariantId, item.offsetMillis)) }
+        input.localRecords.forEachIndexed { index, item -> add(readbackFingerprint("local", index, item.title, item.artist)) }
+    }
+
+    private fun playlistReadbackFingerprint(
+        playlistId: String,
+        title: String,
+        position: Int,
+        tracks: List<Pair<Int, SafeTrack>>,
+    ): String {
+        val fields = mutableListOf<Any?>(playlistId, title, position)
+        tracks.forEach { (trackPosition, track) ->
+            fields += trackPosition
+            fields += track.source
+            fields += track.trackId
+            fields += track.title
+            fields += track.artist
+        }
+        return readbackFingerprint("playlist", *fields.toTypedArray())
+    }
+
+    private fun readbackFingerprint(kind: String, vararg values: Any?): String {
+        fun field(value: Any?) = "${value?.toString()?.length ?: 0}:${value ?: ""}"
+        val canonical = buildString {
+            append(kind).append('|')
+            values.forEach { append(field(it)).append('|') }
+        }
+        return MessageDigest.getInstance("SHA-256")
+            .digest(canonical.toByteArray(StandardCharsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+    }
+
+    private fun parseReadbackProof(value: String?): Set<String>? {
+        if (value == null || !value.startsWith("$READBACK_PROOF_VERSION:")) return null
+        val countSeparator = value.indexOf(':', READBACK_PROOF_VERSION.length + 1)
+        if (countSeparator < 0) return null
+        val count = value.substring(READBACK_PROOF_VERSION.length + 1, countSeparator).toIntOrNull()
+            ?: return null
+        if (count !in 0..MAX_READBACK_PROOF_ROWS) return null
+        val payload = value.substring(countSeparator + 1)
+        if (payload.length != count * READBACK_FINGERPRINT_LENGTH) return null
+        val fingerprints = buildSet {
+            for (offset in payload.indices step READBACK_FINGERPRINT_LENGTH) {
+                add(payload.substring(offset, offset + READBACK_FINGERPRINT_LENGTH))
+            }
+        }
+        return fingerprints.takeIf { it.size == count }
+    }
+
+    private fun durableReadbackFingerprints(dao: LibraryDao, attemptId: String): Set<String> = buildSet {
+        dao.playlists(Int.MAX_VALUE).forEach { playlist ->
+            val tracks = dao.memberships(playlist.playlistId).map { membership ->
+                membership.position to SafeTrack(membership.source, membership.semanticTrackId, membership.title, membership.artist)
+            }
+            add(playlistReadbackFingerprint(playlist.playlistId, playlist.title, playlist.position, tracks))
+        }
+        dao.favorites().forEach { item -> add(readbackFingerprint("favorite", item.source, item.semanticTrackId, item.title, item.artist)) }
+        dao.remoteCollections().forEach { item -> add(readbackFingerprint("remote", item.collectionId, item.source, item.title, item.syncState)) }
+        dao.queueCheckpoint().forEach { item -> add(readbackFingerprint("queue", item.occurrenceId, item.position, item.source, item.semanticTrackId)) }
+        dao.lyricMetadata().forEach { item -> add(readbackFingerprint("lyric", item.source, item.semanticTrackId, item.selectedVariantId, item.offsetMillis)) }
+        dao.localRecords().forEach { record ->
+            LibraryRecordIds.migrationIndex(record.localRecordId, attemptId)?.let { index ->
+                add(readbackFingerprint("local", index, record.title, record.artist))
+            }
+        }
+    }
+
     /** Internal migration entry point. It is deliberately not a React Native bridge capability. */
     internal fun stageLegacyCopy(attemptId: String, input: SafeLegacyInput, checksum: String): MigrationJournalEntity =
         database.runInTransaction<MigrationJournalEntity> {
             val dao = database.libraryDao()
+            val proof = readbackProof(input)
+            fun persistReadbackProof() {
+                val proofAttemptId = readbackProofAttemptId(attemptId)
+                dao.migrationJournal(proofAttemptId)?.let { existing ->
+                    if (existing.phase != READBACK_PROOF_PHASE || !existing.sourceRetained || existing.checksum != proof) {
+                        throw IllegalStateException("migration readback proof collision")
+                    }
+                    return
+                }
+                dao.putMigrationJournal(MigrationJournalEntity(proofAttemptId, READBACK_PROOF_PHASE, proof, sourceRetained = true))
+            }
             dao.migrationJournal(attemptId)?.let { existing ->
-                if (existing.phase == "validated" && existing.checksum == checksum && existing.sourceRetained) return@runInTransaction existing
+                if (existing.phase == "validated" && existing.checksum == checksum && existing.sourceRetained) {
+                    persistReadbackProof()
+                    return@runInTransaction existing
+                }
                 throw IllegalStateException("migration attempt already exists")
             }
             // A previous process may have committed the Room copy before its
@@ -377,11 +478,35 @@ internal class LibraryRepository internal constructor(private val database: List
                     existing.source == item.source &&
                     existing.semanticTrackId == item.trackId
             }
+            fun favoriteMatches(item: SafeTrack): Boolean {
+                val existing = dao.favorite(item.source, item.trackId) ?: return false
+                return existing.title == item.title && existing.artist == item.artist
+            }
+            fun remoteCollectionMatches(item: SafeRemoteCollection): Boolean {
+                val existing = dao.remoteCollection(item.collectionId) ?: return false
+                return existing.source == item.source &&
+                    existing.title == item.title &&
+                    existing.syncState == item.syncState
+            }
+            fun lyricMetadataMatches(item: SafeLyricMetadata): Boolean {
+                val existing = dao.lyricMetadataForTrack(item.source, item.trackId) ?: return false
+                return existing.selectedVariantId == item.selectedVariantId &&
+                    existing.offsetMillis == item.offsetMillis
+            }
             if (input.playlists.withIndex().any { (index, item) -> dao.playlist(item.playlistId) != null && !playlistMatches(item, index) }) {
                 throw IllegalStateException("legacy playlist identity collision")
             }
             if (input.queueCheckpoint.any { item -> dao.queue(item.occurrenceId) != null && !queueMatches(item) }) {
                 throw IllegalStateException("legacy queue identity collision")
+            }
+            if (input.favorites.any { item -> dao.favorite(item.source, item.trackId) != null && !favoriteMatches(item) }) {
+                throw IllegalStateException("legacy favorite identity collision")
+            }
+            if (input.remoteCollections.any { item -> dao.remoteCollection(item.collectionId) != null && !remoteCollectionMatches(item) }) {
+                throw IllegalStateException("legacy remote collection identity collision")
+            }
+            if (input.lyricMetadata.any { item -> dao.lyricMetadataForTrack(item.source, item.trackId) != null && !lyricMetadataMatches(item) }) {
+                throw IllegalStateException("legacy lyric identity collision")
             }
             input.playlists.forEachIndexed { index, item ->
                 if (dao.playlist(item.playlistId) == null) {
@@ -399,34 +524,38 @@ internal class LibraryRepository internal constructor(private val database: List
                     dao.putLocalRecord(LocalRecordEntity(recordId, item.title, item.artist, "needs-repair"))
                 }
             }
-            input.favorites.forEach { dao.putFavorite(FavoriteEntity(it.source, it.trackId, it.title, it.artist)) }
-            input.remoteCollections.forEach { dao.putRemoteCollection(RemoteCollectionEntity(it.collectionId, it.source, it.title, it.syncState)) }
+            input.favorites.forEach { item ->
+                if (dao.favorite(item.source, item.trackId) == null) dao.putFavorite(FavoriteEntity(item.source, item.trackId, item.title, item.artist))
+            }
+            input.remoteCollections.forEach { item ->
+                if (dao.remoteCollection(item.collectionId) == null) dao.putRemoteCollection(RemoteCollectionEntity(item.collectionId, item.source, item.title, item.syncState))
+            }
             input.queueCheckpoint.forEach { item ->
                 if (dao.queue(item.occurrenceId) == null) dao.insertQueue(QueueCheckpointEntity(item.occurrenceId, item.position, item.source, item.trackId))
             }
-            input.lyricMetadata.forEach { dao.putLyricMetadata(LyricMetadataEntity(it.source, it.trackId, it.selectedVariantId, it.offsetMillis)) }
+            input.lyricMetadata.forEach { item ->
+                if (dao.lyricMetadataForTrack(item.source, item.trackId) == null) dao.putLyricMetadata(LyricMetadataEntity(item.source, item.trackId, item.selectedVariantId, item.offsetMillis))
+            }
             val current = dao.meta() ?: LibraryMetaEntity(revision = 0L).also(dao::insertMeta)
             dao.updateMeta(LibraryMetaEntity(revision = current.revision + 1))
+            persistReadbackProof()
             MigrationJournalEntity(attemptId, "validated", checksum, sourceRetained = true).also(dao::putMigrationJournal)
         }
 
-    /** Rebuild the canonical migration checksum from durable rows before source cleanup becomes eligible. */
+    /**
+     * Verifies the durable subset that belongs to this migration. Extra rows from an earlier Room
+     * state or ordinary later use do not participate; a changed/deleted migrated row fails closed.
+     */
     internal fun migrationReadbackChecksum(attemptId: String): String? = database.runInTransaction<String?> {
-        val prefix = "migration-$attemptId-"; val dao = database.libraryDao()
-        if (dao.migrationJournal(attemptId) == null) return@runInTransaction null
-        val playlists = dao.playlists(LibraryLimits.MAX_PLAYLISTS).filter { !it.playlistId.startsWith(prefix) }.map { playlist -> SafeLegacyPlaylist(playlist.playlistId, playlist.title, playlist.position, dao.memberships(playlist.playlistId).map { SafeTrack(it.source, it.semanticTrackId, it.title, it.artist) }) }
-        val locals = dao.localRecords()
-            .mapNotNull { record -> LibraryRecordIds.migrationIndex(record.localRecordId, attemptId)?.let { it to record } }
-            .sortedBy { it.first }
-            .map { SafeLegacyLocalRecord(it.second.title, it.second.artist) }
-        LegacyLibraryMigration.checksum(SafeLegacyInput(
-            playlists,
-            dao.favorites().map { SafeTrack(it.source, it.semanticTrackId, it.title, it.artist) },
-            dao.queueCheckpoint().map { SafeQueueCheckpoint(it.occurrenceId, it.position, it.source, it.semanticTrackId) },
-            dao.lyricMetadata().map { SafeLyricMetadata(it.source, it.semanticTrackId, it.selectedVariantId, it.offsetMillis) },
-            locals,
-            dao.remoteCollections().map { SafeRemoteCollection(it.collectionId, it.source, it.title, it.syncState) },
-        ))
+        val dao = database.libraryDao()
+        val journal = dao.migrationJournal(attemptId) ?: return@runInTransaction null
+        val proof = dao.migrationJournal(readbackProofAttemptId(attemptId))
+            ?.takeIf { it.phase == READBACK_PROOF_PHASE && it.sourceRetained }
+            ?.checksum
+            ?.let(::parseReadbackProof)
+            ?: return@runInTransaction null
+        if (!proof.all(durableReadbackFingerprints(dao, attemptId)::contains)) return@runInTransaction null
+        journal.checksum
     }
 
     internal fun migrationJournal(attemptId: String): MigrationJournalEntity? = database.libraryDao().migrationJournal(attemptId)
@@ -434,6 +563,11 @@ internal class LibraryRepository internal constructor(private val database: List
     internal fun historyDatabase(): Listen2Database = database
 
     companion object {
+        private const val READBACK_PROOF_VERSION = "v1"
+        private const val READBACK_PROOF_PHASE = "readback-proof-v1"
+        private const val READBACK_FINGERPRINT_LENGTH = 64
+        private const val MAX_READBACK_PROOF_ROWS = LibraryLimits.MAX_PLAYLISTS * 3 + 150_000
+
         fun open(context: Context): LibraryRepository = LibraryRepository(LibraryDatabaseRegistry.get(context))
     }
 }

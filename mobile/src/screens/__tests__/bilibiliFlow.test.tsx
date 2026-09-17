@@ -56,7 +56,8 @@ jest.mock('../../bilibili/client', () => ({
 }));
 jest.mock('react-redux', () => ({
   useDispatch: () => mockDispatch,
-  useSelector: () => [],
+  useSelector: (selector: (state: unknown) => unknown) =>
+    selector({ player: mockPlayerState }),
 }));
 jest.mock('react-native-track-player', () => ({
   __esModule: true,
@@ -308,6 +309,9 @@ describe('Bilibili exact part flow', () => {
     expect(mockNativePlayer.add).not.toHaveBeenCalled();
     expect(mockPlayerState.currentTrack).toBeNull();
     expect(mockNavigate).not.toHaveBeenCalledWith('Player');
+    expect(
+      tree.root.findByProps({ accessibilityRole: 'alert' }),
+    ).toBeTruthy();
   });
 
   it('opens exact Bilibili detail from search instead of constructing a first-part track', async () => {

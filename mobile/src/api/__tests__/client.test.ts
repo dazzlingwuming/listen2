@@ -363,6 +363,11 @@ describe('providerClient', () => {
     );
     expect((globalThis.fetch as jest.Mock).mock.calls[0][1]).toMatchObject({
       method: 'POST',
+      headers: expect.objectContaining({
+        Origin: 'https://y.qq.com',
+        Referer: 'https://y.qq.com/',
+        'User-Agent': expect.stringContaining('Android 14'),
+      }),
     });
     expect((globalThis.fetch as jest.Mock).mock.calls[1][0]).toContain(
       'https://songsearch.kugou.com/song_search_v2?',
@@ -427,7 +432,11 @@ describe('providerClient', () => {
       'https://i.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid=0039MnYb0qxYhV&g_tk=5381&format=json&inCharset=utf8&outCharset=utf-8&nobase64=1',
     );
     expect((globalThis.fetch as jest.Mock).mock.calls[0][1]).toMatchObject({
-      headers: { Referer: 'https://y.qq.com/' },
+      headers: expect.objectContaining({
+        Origin: 'https://y.qq.com',
+        Referer: 'https://y.qq.com/',
+        'User-Agent': expect.stringContaining('Android 14'),
+      }),
     });
   });
 

@@ -2,6 +2,7 @@ package com.listen2mobile.media
 
 import com.listen2mobile.kugou.KugouPlaybackGateway
 import com.listen2mobile.netease.NeteasePlaybackGateway
+import java.io.ByteArrayOutputStream
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -45,6 +46,40 @@ class FiveSourceMediaDescriptorContractTest {
         assertFalse(MediaStreamPolicy.isAllowedTransport(NativeTransport("https://music.163.com/song/media/outer/url?id=1.mp3", mapOf("Referer" to "https://attacker/"), source = "netease")))
         assertFalse(MediaStreamPolicy.isAllowedTransport(NativeTransport("https://wwwapi.kugou.com/yy/index.php?r=play/getdata&hash=ABCD1234", mapOf("Accept" to "audio/*", "User-Agent" to "Listen2Mobile/1"), source = "kugou")))
         assertFalse(MediaStreamPolicy.isAllowedTransport(NativeTransport("https://music.163.com/song/media/outer/url?id=1.mp3", emptyMap(), candidates = listOf("https://attacker.invalid/redirect"), source = "netease")))
+    }
+
+    @Test fun `native stream rejects an unapproved transport before opening any network connection`() {
+        val output = ByteArrayOutputStream()
+        assertEquals(
+            MediaStreamPolicy.StreamOutcome.POLICY,
+            MediaStreamPolicy.streamTo(
+                NativeTransport(
+                    "https://attacker.invalid/audio.mp3",
+                    emptyMap(),
+                    source = "bilibili",
+                ),
+                output,
+            ),
+        )
+        assertEquals(0, output.size())
+    }
+
+    @Test fun `native stream adds only its fixed media user agent`() {
+        val transport = NativeTransport(
+            "https://upos.bilivideo.com/audio.m4s?deadline=1700000031",
+            mapOf("Referer" to "https://www.bilibili.com/"),
+        )
+        assertEquals(
+            mapOf(
+                "Referer" to "https://www.bilibili.com/",
+                "User-Agent" to "Listen2Mobile/1",
+            ),
+            MediaStreamPolicy.requestHeadersFor(transport),
+        )
+        assertEquals(
+            "bytes=0-9",
+            MediaStreamPolicy.requestHeadersFor(transport, "bytes=0-9")["Range"],
+        )
     }
 
     private fun assertThrows(block: () -> Unit) {

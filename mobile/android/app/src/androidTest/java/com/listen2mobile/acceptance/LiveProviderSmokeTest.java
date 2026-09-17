@@ -26,10 +26,10 @@ public final class LiveProviderSmokeTest {
         progress.step("live-netease-results");
         List<String> neteaseTitles = driver.requireLiveSearchResults("网易云音乐");
         progress.step("live-bilibili-results");
-        driver.tapLabel("哔哩哔哩");
+        driver.selectLiveSource("哔哩哔哩");
         driver.requireLiveSearchResults("哔哩哔哩");
         progress.step("live-anonymous-playback");
-        driver.tapLabel("网易云音乐");
+        driver.selectLiveSource("网易云音乐");
         AccessibilityDriver.PlaybackProbe playback = driver.attemptNativePlayback(neteaseTitles.get(0));
         driver.record("live-playback=" + (playback.verified ? "PASS-" : "NOT_VERIFIED-") + playback.detail);
         progress.step("live-capture");

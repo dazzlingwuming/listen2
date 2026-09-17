@@ -98,25 +98,30 @@ npm --prefix mobile run lint -- --quiet
 
 ### Current source verification
 
-- Formatting, TypeScript and ESLint checks: passed.
-- Focused provider, Discover, playback rollback, offline-cache and UI Jest
-  suites: passed, including 53 Discover/provider/rollback checks and 17 offline
-  cache/player checks.
-- Android production Metro bundles for the offline and Discover slices: passed
-  with 19 assets.
-- No APK, Gradle/native compile-only, or Android emulator end-to-end test was
-  completed. The focused Kotlin/JVM offline contract remains `not verified`
-  because this host has no Java Runtime/JDK 17; this does not establish native
-  Kotlin compilation or content-provider playback.
-- Real `content://` URI playback in the background and after app restart:
-  `not verified`.
+- TypeScript, Jest, ESLint, Kotlin/JVM contracts and release-like Android builds
+  have been exercised on the current JDK 17 toolchain.
+- API 35 visible search acceptance returned relevant rows for Kugou, Kuwo, QQ
+  and Bilibili. NetEase currently returns its explicit anonymous-verification
+  challenge (`-462`); the UI reports that upstream restriction instead of
+  treating it as an empty successful result.
+- A live Bilibili audio run crossed the native descriptor and app-owned stream
+  boundary, reached MediaSession `PLAYING`, and reported 3562 ms buffered.
+- A real prior-APK overwrite upgrade retained migrated library content without
+  the former restore-failure banner; the collision scenario preserved both the
+  existing row and the divergent legacy source data.
+- Bilibili MV candidate filtering is covered by JVM contracts, but the fresh
+  native surface/progress regression could not be repeated after Bilibili began
+  returning anonymous HTTP 412. That terminal MV evidence remains
+  `not verified`, and offline/background restart flows still require separate
+  physical-device coverage.
 
-APK assembly is intentionally deferred until an integrated feature slice is
-ready; it is not repeated after every source-level change.
+APK assembly is performed at integrated acceptance boundaries rather than
+after every source-level change.
 
 ## Packaging status
 
-No new APK was generated for this feature batch. Debug signing can use the
-standard React Native development keystore; release signing is deliberately
-not configured and must use credentials supplied outside the repository. No
-production signing material belongs in source.
+A minified, non-debuggable release-like APK is assembled with the development
+signer for emulator acceptance. It is not a production-signed release artifact.
+Formal release signing remains deliberately unconfigured and must use
+credentials supplied outside the repository; no production signing material
+belongs in source.

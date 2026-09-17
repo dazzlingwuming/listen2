@@ -641,6 +641,20 @@ index afa6b0f..3b9918d 100644
          player.automaticallyUpdateNotificationMetadata = automaticallyUpdateNotificationMetadata
          observeEvents()
          setupForegrounding()
+@@ -742,6 +746,6 @@ class MusicService : HeadlessJsTaskService() {
+     @MainThread
+     private fun emit(event: String, data: Bundle? = null) {
+-        reactNativeHost.reactInstanceManager.currentReactContext
++        reactContext
+             ?.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+             ?.emit(event, data?.let { Arguments.fromBundle(it) })
+     }
+@@ -754,4 +758,4 @@ class MusicService : HeadlessJsTaskService() {
+-        reactNativeHost.reactInstanceManager.currentReactContext
++        reactContext
+             ?.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+             ?.emit(event, payload)
+     }
 @@ -800,6 +804,7 @@ class MusicService : HeadlessJsTaskService() {
      override fun onDestroy() {
          super.onDestroy()

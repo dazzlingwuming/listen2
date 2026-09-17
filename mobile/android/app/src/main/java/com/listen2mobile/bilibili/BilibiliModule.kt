@@ -39,7 +39,8 @@ internal class BilibiliModule(
     }
     private val worker = Executors.newSingleThreadExecutor()
     @Volatile private var invalidated = false
-    private var accountGeneration = 0L
+    private val accountAuthority = BilibiliAccountGenerationGate()
+    private val authenticationLock = Any()
     private var authenticated = false
 
     init { context.addLifecycleEventListener(this) }
@@ -81,30 +82,53 @@ internal class BilibiliModule(
     @ReactMethod fun videoDetail(request: ReadableMap, promise: Promise) = complete(promise) {
         requireKeys(request, setOf("bvid")); detail(gateway.videoDetail(requireBvid(request, "bvid")))
     }
-    @ReactMethod fun resolveAudio(request: ReadableMap, promise: Promise) = complete(promise) {
-        requireKeys(request, setOf("version", "requestId", "bvid", "cid"))
-        require(request.getType("version") == ReadableType.Number && request.getDouble("version") == VERSION.toDouble())
-        synchronizeAccountAuthority(session.snapshot())
-        val requestId = requireText(request, "requestId", 96)
-        val bvid = requireBvid(request, "bvid")
-        val cid = requirePositive(request, "cid")
-        val detail = gateway.videoDetail(bvid)
-        val part = detail.parts.singleOrNull { it.cid == cid }
-            ?: throw BilibiliHttpsGateway.ProviderException(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
-        val handoff = gateway.resolveAudio(BilibiliPolicy.SemanticTrack(bvid, cid, part.page))
-        if (!BilibiliPolicy.isSafeAudioHandoff(handoff.url, mapOf("Referer" to BilibiliPolicy.FIXED_REFERER), handoff.deadline, System.currentTimeMillis())) throw BilibiliHttpsGateway.ProviderException(BilibiliPolicy.ErrorCode.INVALID_RESPONSE)
-        val descriptor = mediaLeases.register(
-            requestId,
-            MediaIdentity("bilibili", "bitrack_v_${handoff.bvid}-${handoff.cid}", handoff.cid.toString(), accountGeneration),
-            MediaRendition("audio", "authorized", "audio/mp4", "mp4", "mp4a.40.2", part.durationMs ?: 1L, null),
-            NativeTransport(handoff.url, mapOf("Referer" to BilibiliPolicy.FIXED_REFERER)),
-            accountGeneration,
-        )
-        descriptor.toWritableMap(
-            detail.parts.map {
-                BridgeMediaPart(it.cid.toString(), it.page.toString(), it.title, it.durationMs)
-            },
-        )
+    @ReactMethod fun resolveAudio(request: ReadableMap, promise: Promise) {
+        // Capture before this request enters the worker. A logout/account switch
+        // invalidates this exact generation while provider I/O is in flight.
+        val requestGeneration = accountAuthority.snapshot()
+        complete(promise, requestGeneration) {
+        // Fixed lifecycle markers distinguish bridge/descriptor failures from
+        // provider failures without recording transport or account data.
+        BilibiliDiagnostics.info("audio-resolve-request")
+        var stage = "request"
+        try {
+            requireKeys(request, setOf("version", "requestId", "bvid", "cid"))
+            require(request.getType("version") == ReadableType.Number && request.getDouble("version") == VERSION.toDouble())
+            synchronizeAccountAuthority(session.snapshot())
+            val requestId = requireText(request, "requestId", 96)
+            val bvid = requireBvid(request, "bvid")
+            val cid = requirePositive(request, "cid")
+            stage = "detail"
+            val detail = gateway.videoDetail(bvid)
+            val part = detail.parts.singleOrNull { it.cid == cid }
+                ?: throw BilibiliHttpsGateway.ProviderException(BilibiliPolicy.ErrorCode.INVALID_REQUEST)
+            stage = "handoff"
+            val handoff = gateway.resolveAudio(BilibiliPolicy.SemanticTrack(bvid, cid, part.page))
+            stage = "handoff-policy"
+            if (!BilibiliPolicy.isSafeAudioHandoff(handoff.url, mapOf("Referer" to BilibiliPolicy.FIXED_REFERER), handoff.deadline, System.currentTimeMillis())) throw BilibiliHttpsGateway.ProviderException(BilibiliPolicy.ErrorCode.INVALID_RESPONSE)
+            stage = "lease"
+            val reply = accountAuthority.withCurrent(requestGeneration) { generation ->
+                val descriptor = mediaLeases.register(
+                    requestId,
+                    MediaIdentity("bilibili", "bitrack_v_${handoff.bvid}-${handoff.cid}", handoff.cid.toString(), generation),
+                    MediaRendition("audio", "authorized", "audio/mp4", "mp4", "mp4a.40.2", part.durationMs ?: 1L, null),
+                    NativeTransport(handoff.url, mapOf("Referer" to BilibiliPolicy.FIXED_REFERER)),
+                    generation,
+                )
+                stage = "descriptor"
+                descriptor.toWritableMap(
+                    detail.parts.map {
+                        BridgeMediaPart(it.cid.toString(), it.page.toString(), it.title, it.durationMs)
+                    },
+                )
+            } ?: throw BilibiliHttpsGateway.ProviderException(BilibiliPolicy.ErrorCode.CANCELLED)
+            BilibiliDiagnostics.info("audio-resolved-descriptor")
+            reply
+        } catch (failure: BilibiliHttpsGateway.ProviderException) {
+            BilibiliDiagnostics.info("audio-failed-stage=$stage-code=" + failure.code.name)
+            throw failure
+        }
+        }
     }
 
     @ReactMethod fun cancelAudio(request: ReadableMap, promise: Promise) {
@@ -122,7 +146,7 @@ internal class BilibiliModule(
         requireKeys(request, setOf("bvid", "cid", "qualityId", "preferredCodecs", "forceRefresh"))
         (reactApplicationContext.currentActivity as? MainActivity)?.apply { bindMvController(mvController); discardPendingMvSnapshot() }
         mvViewManager.releaseHandle(mvController.currentHandle())
-        mvState(mvController.open(requireMvRequest(request, accountGeneration)))
+        mvState(mvController.open(requireMvRequest(request, accountAuthority.snapshot())))
     }
     @ReactMethod fun mvRestore(request: ReadableMap, promise: Promise) = complete(promise) {
         requireKeys(request, setOf("bvid", "cid"))
@@ -171,19 +195,37 @@ internal class BilibiliModule(
     @ReactMethod fun mvExitFullscreen(request: ReadableMap, promise: Promise) = completeMvUi(promise, request) { activity, handle -> activity.exitMvFullscreen(handle) }
     @ReactMethod fun mvRequestPip(request: ReadableMap, promise: Promise) = completeMvUi(promise, request, true) { activity, handle -> activity.enterMvPip(handle) }
 
-    private fun complete(promise: Promise, operation: () -> WritableMap) {
+    private fun complete(promise: Promise, requestGeneration: Long? = null, operation: () -> WritableMap) {
         try {
             if (invalidated) return promise.resolve(error(BilibiliPolicy.ErrorCode.CANCELLED))
             worker.execute {
                 try {
                     val result = operation()
-                    promise.resolve(if (invalidated) error(BilibiliPolicy.ErrorCode.CANCELLED) else result)
+                    resolveReply(promise, if (invalidated) error(BilibiliPolicy.ErrorCode.CANCELLED) else result, requestGeneration)
                 }
-                catch (failure: BilibiliHttpsGateway.ProviderException) { promise.resolve(error(if (invalidated) BilibiliPolicy.ErrorCode.CANCELLED else failure.code)) }
-                catch (_: IllegalArgumentException) { promise.resolve(error(if (invalidated) BilibiliPolicy.ErrorCode.CANCELLED else BilibiliPolicy.ErrorCode.INVALID_REQUEST)) }
-                catch (_: Exception) { promise.resolve(error(if (invalidated) BilibiliPolicy.ErrorCode.CANCELLED else BilibiliPolicy.ErrorCode.PROVIDER_ERROR)) }
+                catch (failure: BilibiliHttpsGateway.ProviderException) {
+                    // Stable code only: never log provider text, signed URLs, headers, or cookies.
+                    BilibiliDiagnostics.info("operation-failed=" + failure.code.name)
+                    resolveReply(promise, error(if (invalidated) BilibiliPolicy.ErrorCode.CANCELLED else failure.code), requestGeneration)
+                }
+                catch (_: IllegalArgumentException) {
+                    BilibiliDiagnostics.info("operation-failed=INVALID_REQUEST")
+                    resolveReply(promise, error(if (invalidated) BilibiliPolicy.ErrorCode.CANCELLED else BilibiliPolicy.ErrorCode.INVALID_REQUEST), requestGeneration)
+                }
+                catch (_: Exception) {
+                    BilibiliDiagnostics.info("operation-failed=PROVIDER_ERROR")
+                    resolveReply(promise, error(if (invalidated) BilibiliPolicy.ErrorCode.CANCELLED else BilibiliPolicy.ErrorCode.PROVIDER_ERROR), requestGeneration)
+                }
             }
         } catch (_: RejectedExecutionException) {
+            promise.resolve(error(BilibiliPolicy.ErrorCode.CANCELLED))
+        }
+    }
+    /** A stale request resolves as cancellation and never publishes its lease descriptor. */
+    private fun resolveReply(promise: Promise, reply: WritableMap, requestGeneration: Long?) {
+        if (requestGeneration == null) {
+            promise.resolve(reply)
+        } else if (!accountAuthority.runIfCurrent(requestGeneration) { promise.resolve(reply) }) {
             promise.resolve(error(BilibiliPolicy.ErrorCode.CANCELLED))
         }
     }
@@ -314,14 +356,43 @@ internal class BilibiliModule(
 
     private fun synchronizeAccountAuthority(value: BilibiliSession.PublicState) {
         val nextAuthenticated = value.status == BilibiliSession.PublicStatus.AUTHENTICATED
-        if (nextAuthenticated != authenticated) {
-            authenticated = nextAuthenticated
-            revokeAccountAuthority()
+        val changed = synchronized(authenticationLock) {
+            if (nextAuthenticated == authenticated) false else {
+                authenticated = nextAuthenticated
+                true
+            }
         }
+        if (changed) revokeAccountAuthority()
     }
     private fun revokeAccountAuthority() {
-        accountGeneration += 1L
-        mediaLeases.invalidateSource("bilibili", accountGeneration)
-        mvController.setAccountGeneration(accountGeneration)
+        accountAuthority.revoke { generation ->
+            mediaLeases.invalidateSource("bilibili", generation)
+            mvController.setAccountGeneration(generation)
+        }
+    }
+}
+
+/** Serializes account transitions with native lease issuance; values contain no identity or secrets. */
+internal class BilibiliAccountGenerationGate {
+    private val lock = Any()
+    private var generation = 0L
+
+    fun snapshot(): Long = synchronized(lock) { generation }
+
+    fun revoke(onRevoked: (Long) -> Unit): Long = synchronized(lock) {
+        generation += 1L
+        onRevoked(generation)
+        generation
+    }
+
+    fun <T> withCurrent(expected: Long, action: (Long) -> T): T? = synchronized(lock) {
+        if (expected != generation) null else action(generation)
+    }
+
+    fun runIfCurrent(expected: Long, action: (Long) -> Unit): Boolean = synchronized(lock) {
+        if (expected != generation) false else {
+            action(generation)
+            true
+        }
     }
 }

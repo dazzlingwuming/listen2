@@ -96,6 +96,20 @@ function throwError(code: ProviderErrorCode, source: SourceId): never {
   throw new ProviderClientError(code, source, 'bootstrap');
 }
 
+/**
+ * A live Bilibili rejection needs a stable boundary signal, not a dump of the
+ * native descriptor. Keep these markers to fixed check names so no URI,
+ * header, cookie, title, or provider response data reaches logs.
+ */
+function invalidDescriptor(
+  expected: Pick<Track, 'id' | 'source'> & { requestId: string },
+  check: string,
+): never {
+  if (expected.source === 'bilibili')
+    console.info(`[Listen2Bilibili] descriptor-invalid-${check}`);
+  return throwError('INVALID_RESPONSE', expected.source);
+}
+
 function errorCode(value: unknown): ProviderErrorCode {
   if (
     typeof value === 'string' &&
@@ -169,24 +183,15 @@ function safeSize(value: unknown): number | undefined | null {
 
 function safeUri(value: unknown): string | null {
   if (typeof value !== 'string' || value.length > 256) return null;
-  const pattern = new RegExp(
-    `^content://${NATIVE_MEDIA_AUTHORITY}/lease/${LEASE_ID}$`,
-  );
-  if (!pattern.test(value)) return null;
-  try {
-    const parsed = new URL(value);
-    return parsed.protocol === 'content:' &&
-      parsed.hostname === NATIVE_MEDIA_AUTHORITY &&
-      parsed.username === '' &&
-      parsed.password === '' &&
-      parsed.port === '' &&
-      parsed.search === '' &&
-      parsed.hash === ''
-      ? value
-      : null;
-  } catch {
-    return null;
-  }
+  // This fixed prefix plus the fixed-length lease token is stricter than a
+  // generic URI parser: it admits no user-info, port, query, or fragment.
+  // Avoid `new URL(content://...)` here because Hermes does not guarantee
+  // parsing support for Android's app-owned custom content scheme.
+  const prefix = `content://${NATIVE_MEDIA_AUTHORITY}/lease/`;
+  if (!value.startsWith(prefix)) return null;
+  return new RegExp(`^${LEASE_ID}$`).test(value.slice(prefix.length))
+    ? value
+    : null;
 }
 
 function safePart(value: unknown): MediaPart | null {
@@ -280,18 +285,24 @@ export function validateNativeMediaDescriptor(
   expected: Pick<Track, 'id' | 'source'> & { requestId: string },
 ): MediaDescriptor {
   const raw = object(value);
-  if (!raw) throwError('INVALID_RESPONSE', expected.source);
+  if (!raw) return invalidDescriptor(expected, 'object');
   if (
     raw &&
     Object.keys(raw).length === 1 &&
     typeof raw.errorCode === 'string'
-  )
-    throwError(errorCode(raw.errorCode), expected.source);
+  ) {
+    const code = errorCode(raw.errorCode);
+    if (expected.source === 'bilibili')
+      console.info(`[Listen2Bilibili] descriptor-native-error-${code}`);
+    throwError(code, expected.source);
+  }
+  if (expected.source === 'bilibili')
+    console.info('[Listen2Bilibili] descriptor-received');
   if (
     !raw ||
     !exactKeys(raw, descriptorRequiredKeys, ['partId', 'sizeBytes', 'parts'])
   )
-    throwError('INVALID_RESPONSE', expected.source);
+    return invalidDescriptor(expected, 'keys');
 
   const now = Date.now();
   const source = raw.source;
@@ -331,22 +342,22 @@ export function validateNativeMediaDescriptor(
     (raw.sizeBytes !== undefined && !sizeBytes) ||
     entitlementStatus !== 'allowed'
   )
-    throwError('INVALID_RESPONSE', expected.source);
+    return invalidDescriptor(expected, 'base');
 
   if (expected.source === 'bilibili') {
     const match = /^bitrack_v_BV[0-9A-Za-z]{6,32}-([1-9][0-9]{0,17})$/.exec(
       expected.id,
     );
     if (!match || partId !== match[1])
-      throwError('INVALID_RESPONSE', expected.source);
+      return invalidDescriptor(expected, 'bilibili-part');
   } else if (partId !== undefined) {
-    throwError('INVALID_RESPONSE', expected.source);
+    return invalidDescriptor(expected, 'unexpected-part');
   }
   if (
     partId !== undefined &&
     (typeof partId !== 'string' || !PART_ID.test(partId))
   )
-    throwError('INVALID_RESPONSE', expected.source);
+    return invalidDescriptor(expected, 'part-format');
 
   const renditionValues = raw.renditions;
   if (
@@ -354,22 +365,22 @@ export function validateNativeMediaDescriptor(
     renditionValues.length < 1 ||
     renditionValues.length > 8
   )
-    throwError('INVALID_RESPONSE', expected.source);
+    return invalidDescriptor(expected, 'rendition-count');
   const renditions = renditionValues.map(safeRendition);
   if (renditions.some(value => value === null))
-    throwError('INVALID_RESPONSE', expected.source);
+    return invalidDescriptor(expected, 'rendition-shape');
   const safeRenditions = renditions as MediaRendition[];
   if (
     new Set(safeRenditions.map(value => value.id)).size !==
     safeRenditions.length
   )
-    throwError('INVALID_RESPONSE', expected.source);
+    return invalidDescriptor(expected, 'rendition-duplicate');
   const selectedRenditionId = raw.selectedRenditionId;
   if (
     typeof selectedRenditionId !== 'string' ||
     !RENDITION_ID.test(selectedRenditionId)
   )
-    throwError('INVALID_RESPONSE', expected.source);
+    return invalidDescriptor(expected, 'selected-rendition-id');
   const selected = safeRenditions.find(
     value => value.id === selectedRenditionId,
   );
@@ -380,9 +391,9 @@ export function validateNativeMediaDescriptor(
     selected.codec !== codec ||
     selected.durationMs !== durationMs
   )
-    throwError('INVALID_RESPONSE', expected.source);
+    return invalidDescriptor(expected, 'selected-rendition');
   if ((selected.sizeBytes ?? undefined) !== (sizeBytes ?? undefined))
-    throwError('INVALID_RESPONSE', expected.source);
+    return invalidDescriptor(expected, 'selected-size');
 
   const rawParts = raw.parts;
   let parts: readonly MediaPart[] | undefined;
@@ -392,18 +403,18 @@ export function validateNativeMediaDescriptor(
       rawParts.length < 1 ||
       rawParts.length > 50
     )
-      throwError('INVALID_RESPONSE', expected.source);
+      return invalidDescriptor(expected, 'parts-count');
     const safeParts = rawParts.map(safePart);
     if (safeParts.some(value => value === null))
-      throwError('INVALID_RESPONSE', expected.source);
+      return invalidDescriptor(expected, 'parts-shape');
     parts = safeParts as MediaPart[];
     if (new Set(parts.map(value => value.cid)).size !== parts.length)
-      throwError('INVALID_RESPONSE', expected.source);
+      return invalidDescriptor(expected, 'parts-duplicate');
     if (
       expected.source === 'bilibili' &&
       !parts.some(value => value.cid === partId)
     )
-      throwError('INVALID_RESPONSE', expected.source);
+      return invalidDescriptor(expected, 'parts-selected-missing');
   }
 
   return {

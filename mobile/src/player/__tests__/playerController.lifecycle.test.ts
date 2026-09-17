@@ -9,6 +9,9 @@ const mockNative = {
   play: jest.fn().mockResolvedValue(undefined),
   pause: jest.fn().mockResolvedValue(undefined),
   stop: jest.fn().mockResolvedValue(undefined),
+  getActiveTrack: jest.fn().mockResolvedValue(undefined),
+  getProgress: jest.fn(),
+  getPlaybackState: jest.fn(),
 };
 const mockResolveMedia = jest.fn();
 const SAFE_MEDIA_URI = 'content://com.dazzlingwuming.listen2.media/lease/' + 'a'.repeat(48);
@@ -42,6 +45,10 @@ jest.mock('react-native-track-player', () => ({
     play: (...args: unknown[]) => mockNative.play(...args),
     pause: (...args: unknown[]) => mockNative.pause(...args),
     stop: (...args: unknown[]) => mockNative.stop(...args),
+    getActiveTrack: (...args: unknown[]) => mockNative.getActiveTrack(...args),
+    getProgress: (...args: unknown[]) => mockNative.getProgress(...args),
+    getPlaybackState: (...args: unknown[]) =>
+      mockNative.getPlaybackState(...args),
   },
   Capability: {
     Play: 'play',
@@ -138,5 +145,77 @@ describe('PlayerController lifecycle recovery', () => {
     expect(mockNative.pause).toHaveBeenCalledTimes(2);
     expect(state.isPlaying).toBe(false);
     expect(state.error).toBe('playback-unavailable');
+  });
+
+  it('replaces a restored semantic item when RNTP has no native queue to roll back', async () => {
+    const restored = { ...track, id: 'netrack_restored' };
+    const selected = { ...track, id: 'netrack_selected' };
+    state = reducer(state, playerActions.replacePlaylist({ tracks: [restored] }));
+
+    await expect(playerController.restore()).resolves.toBe(true);
+    await expect(playerController.playTracks(dispatch, [selected])).resolves.toBe(
+      true,
+    );
+
+    expect(mockNative.reset).toHaveBeenCalledTimes(1);
+    expect(mockNative.add).toHaveBeenCalledTimes(1);
+    expect(mockNative.play).toHaveBeenCalledTimes(1);
+    expect(state.currentTrack?.id).toBe('netrack_selected');
+    expect(state.error).toBeNull();
+  });
+
+  it('allows playTrack to replace a restored semantic item without a native queue', async () => {
+    const restored = { ...track, id: 'netrack_restored' };
+    const selected = { ...track, id: 'netrack_selected' };
+    state = reducer(
+      state,
+      playerActions.replacePlaylist({ tracks: [restored, selected] }),
+    );
+
+    await expect(playerController.restore()).resolves.toBe(true);
+    await expect(playerController.playTrack(dispatch, selected)).resolves.toBe(
+      true,
+    );
+
+    expect(mockNative.reset).toHaveBeenCalledTimes(1);
+    expect(mockNative.add).toHaveBeenCalledTimes(1);
+    expect(state.currentTrack?.id).toBe(selected.id);
+  });
+
+  it('allows next to replace a restored semantic item without a native queue', async () => {
+    const restored = { ...track, id: 'netrack_restored' };
+    const selected = { ...track, id: 'netrack_selected' };
+    state = reducer(
+      state,
+      playerActions.replacePlaylist({ tracks: [restored, selected] }),
+    );
+
+    await expect(playerController.restore()).resolves.toBe(true);
+    await expect(playerController.next(dispatch)).resolves.toBe(true);
+
+    expect(mockNative.reset).toHaveBeenCalledTimes(1);
+    expect(mockNative.add).toHaveBeenCalledTimes(1);
+    expect(state.currentTrack?.id).toBe(selected.id);
+  });
+
+  it('fails closed when a restored semantic item has a malformed native snapshot', async () => {
+    const restored = { ...track, id: 'netrack_restored' };
+    const selected = { ...track, id: 'netrack_selected' };
+    state = reducer(
+      state,
+      playerActions.replacePlaylist({ tracks: [restored, selected] }),
+    );
+
+    await expect(playerController.restore()).resolves.toBe(true);
+    mockNative.getActiveTrack.mockResolvedValue({ url: 'https://invalid.test' });
+
+    await expect(playerController.playTrack(dispatch, selected)).resolves.toBe(
+      false,
+    );
+
+    expect(mockNative.reset).not.toHaveBeenCalled();
+    expect(mockNative.add).not.toHaveBeenCalled();
+    expect(state.currentTrack?.id).toBe(restored.id);
+    expect(state.error).toBe('playback-transition-unavailable');
   });
 });

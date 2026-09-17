@@ -40,6 +40,9 @@ internal object BilibiliMvPolicy {
     )
     data class VideoManifest(val bvid: String, val cid: Long, val candidates: List<VideoCandidate>)
     data class PublicVariant(val id: String, val label: String, val codec: String, val width: Int, val height: Int)
+    /** Internal proof that each candidate passed URL, shape, and codec policy together. */
+    data class SelectableVideoCandidates internal constructor(internal val values: List<VideoCandidate>)
+    enum class CandidateSelectionFailure { NONE, SIZE, UNSAFE, QUALITY, CODEC }
 
     fun request(bvid: String?, cid: Long, qualityId: String?, preferredCodecs: List<String>?, forceRefresh: Boolean, accountGeneration: Long = 0L): MvRequest? {
         val normalizedQuality = qualityId ?: "auto"
@@ -51,16 +54,41 @@ internal object BilibiliMvPolicy {
         return MvRequest(bvid!!, cid, normalizedQuality, normalizedCodecs, forceRefresh, accountGeneration)
     }
 
-    fun selectVideoCandidate(candidates: List<VideoCandidate>, qualityId: String, preferredCodecs: List<String>, now: Long): VideoCandidate? {
+    /** The exact safe candidate set used by both native selection and JS projection. */
+    fun selectableVideoCandidates(candidates: List<VideoCandidate>, preferredCodecs: List<String>, now: Long): SelectableVideoCandidates? {
         if (candidates.isEmpty() || candidates.size > MAX_CANDIDATES) return null
-        if (candidates.any { !isSafeCandidate(it, now) }) return null
         val allowed = if (preferredCodecs.isEmpty()) codecs else preferredCodecs.toSet()
-        val qualityMatches = if (qualityId == "auto") candidates else candidates.filter { it.id.toString() == qualityId }
-        return qualityMatches.filter { candidate -> codecFamily(candidate.codecs) in allowed }
+        return SelectableVideoCandidates(candidates.mapNotNull { sanitizeCandidate(it, now) }.filter { codecFamily(it.codecs) in allowed })
+    }
+
+    fun selectVideoCandidate(candidates: List<VideoCandidate>, qualityId: String, preferredCodecs: List<String>, now: Long): VideoCandidate? {
+        if (selectionFailure(candidates, qualityId, preferredCodecs, now) != CandidateSelectionFailure.NONE) return null
+        return selectVideoCandidate(selectableVideoCandidates(candidates, preferredCodecs, now) ?: return null, qualityId)
+    }
+
+    fun selectVideoCandidate(candidates: SelectableVideoCandidates, qualityId: String): VideoCandidate? {
+        val qualityMatches = if (qualityId == "auto") candidates.values else candidates.values.filter { it.id.toString() == qualityId }
+        return qualityMatches
             .sortedWith(compareByDescending<VideoCandidate> { it.id }.thenBy { it.codecs }).firstOrNull()
     }
 
-    fun publicVariant(candidate: VideoCandidate): PublicVariant = PublicVariant(candidate.id.toString(), candidate.label, candidate.codecs.substringBefore('.'), candidate.width, candidate.height)
+    /** A fixed diagnostic classification: no media values leave the native boundary. */
+    fun selectionFailure(candidates: List<VideoCandidate>, qualityId: String, preferredCodecs: List<String>, now: Long): CandidateSelectionFailure {
+        if (candidates.isEmpty() || candidates.size > MAX_CANDIDATES) return CandidateSelectionFailure.SIZE
+        val safeCandidates = candidates.mapNotNull { sanitizeCandidate(it, now) }
+        if (safeCandidates.isEmpty()) return CandidateSelectionFailure.UNSAFE
+        val qualityMatches = if (qualityId == "auto") safeCandidates else safeCandidates.filter { it.id.toString() == qualityId }
+        if (qualityMatches.isEmpty()) return CandidateSelectionFailure.QUALITY
+        val allowed = if (preferredCodecs.isEmpty()) codecs else preferredCodecs.toSet()
+        return if (qualityMatches.any { codecFamily(it.codecs) in allowed }) CandidateSelectionFailure.NONE else CandidateSelectionFailure.CODEC
+    }
+
+    private fun publicVariant(candidate: VideoCandidate): PublicVariant = PublicVariant(candidate.id.toString(), candidate.label, candidate.codecs.substringBefore('.'), candidate.width, candidate.height)
+    /** Public variants must share the controller's exact safe candidate set. */
+    fun publicVariants(candidates: SelectableVideoCandidates): List<PublicVariant> =
+        candidates.values.groupBy { it.id }.values.map { sameQuality ->
+            publicVariant(sameQuality.sortedWith(compareByDescending<VideoCandidate> { it.id }.thenBy { it.codecs }).first())
+        }
     /** The UI may select only an exact ID from this native-reported projection. */
     fun selectAuthorizedVariant(variants: List<PublicVariant>, requestedId: String?): PublicVariant? =
         variants.takeIf { it.size in 1..MAX_CANDIDATES }?.singleOrNull { it.id == requestedId && requestedId in qualityIds }
@@ -92,12 +120,22 @@ internal object BilibiliMvPolicy {
         return mapOf("bvid" to request.bvid, "cid" to request.cid.toString(), "qualityId" to request.qualityId, "positionMs" to positionMs, "playIntent" to playIntent)
     }
 
-    private fun isSafeCandidate(candidate: VideoCandidate, now: Long): Boolean {
+    /**
+     * The primary URL is mandatory; backup CDNs are optional fallbacks. Filter
+     * each backup before it reaches the native surface, rather than allowing
+     * one unsuitable fallback to reject a separately safe primary rendition.
+     */
+    private fun sanitizeCandidate(candidate: VideoCandidate, now: Long): VideoCandidate? {
+        if (!isSafePrimaryCandidate(candidate, now)) return null
+        return candidate.copy(backupUrls = candidate.backupUrls.filter { isSafeVideoUrl(it, now) })
+    }
+
+    private fun isSafePrimaryCandidate(candidate: VideoCandidate, now: Long): Boolean {
         return candidate.id.toString() in qualityIds && BilibiliPolicy.safeText(candidate.label, 80) != null &&
             candidate.mimeType == "video/mp4" && codecFamily(candidate.codecs) != null &&
             candidate.width in 1..MAX_DIMENSION && candidate.height in 1..MAX_DIMENSION && candidate.frameRate in 1..MAX_FRAME_RATE &&
             candidate.role == "video" && !candidate.hasAlternateUrl && candidate.backupUrls.size <= 3 &&
-            isSafeVideoUrl(candidate.url, now) && candidate.backupUrls.all { isSafeVideoUrl(it, now) }
+            isSafeVideoUrl(candidate.url, now)
     }
 
     private fun codecFamily(value: String): String? =

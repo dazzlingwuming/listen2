@@ -288,6 +288,7 @@ interface LibraryDao {
     @Query("DELETE FROM favorites WHERE source = :source AND semanticTrackId = :trackId") fun deleteFavorite(source: String, trackId: String)
     @Query("DELETE FROM favorites") fun deleteAllFavorites()
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putRemoteCollection(value: RemoteCollectionEntity)
+    @Query("SELECT * FROM remote_collections WHERE collectionId = :collectionId") fun remoteCollection(collectionId: String): RemoteCollectionEntity?
     @Query("SELECT * FROM remote_collections ORDER BY source ASC, title ASC, collectionId ASC") fun remoteCollections(): List<RemoteCollectionEntity>
     @Query("DELETE FROM remote_collections") fun deleteAllRemoteCollections()
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putLocalRecord(value: LocalRecordEntity)
@@ -299,6 +300,7 @@ interface LibraryDao {
     @Query("DELETE FROM lyric_metadata WHERE source = 'local' AND semanticTrackId = :recordId") fun deleteLocalLyricMetadata(recordId: String)
     @Query("SELECT * FROM local_records ORDER BY localRecordId ASC") fun localRecords(): List<LocalRecordEntity>
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putLyricMetadata(value: LyricMetadataEntity)
+    @Query("SELECT * FROM lyric_metadata WHERE source = :source AND semanticTrackId = :trackId") fun lyricMetadataForTrack(source: String, trackId: String): LyricMetadataEntity?
     @Query("SELECT * FROM lyric_metadata ORDER BY source ASC, semanticTrackId ASC") fun lyricMetadata(): List<LyricMetadataEntity>
     @Query("DELETE FROM lyric_metadata") fun deleteAllLyricMetadata()
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun putMigrationJournal(value: MigrationJournalEntity)

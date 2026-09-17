@@ -165,11 +165,12 @@ Android 端正在改为与原作者 `listen1_mobile` 同类的独立 React Nativ
 旧 [`android/`](android/) WebView 工程暂时保留为迁移参考，不是新版发布入口。
 新 canonical 入口是 [`mobile/`](mobile/)；当前状态仍是开发中，还不能宣称与桌面端功能完全等价。
 
-当前源码验证结果：离线缓存相关聚焦测试 17 个、发现页/provider/播放回滚聚焦测试 53 个，
-TypeScript、作用域 ESLint/Prettier 和 Android production Metro bundle 均通过。
-仍未生成整合 APK，也未完成模拟器端到端验收；真实 `content://` URI、原生缓存 provider、
-后台/重启播放和 TrackPlayer 回滚仍 `not verified`。本机缺少 Java Runtime/JDK 17，
-因此不能据此声称 Kotlin 原生编译或 JVM contract 已通过。
+当前 Android 验证已覆盖 TypeScript/Jest/ESLint、Kotlin/JVM contract、release-like 构建和 API 35
+模拟器。五音源可见搜索矩阵中，酷狗、酷我、QQ 和 Bilibili 均返回相关结果；网易云当前
+对匿名搜索返回 `-462` 验证挑战，应用会明确显示上游限制，不伪装成空结果。Bilibili
+音频已在模拟器中进入 MediaSession `PLAYING` 并取得非零缓冲进度；真实旧 APK 覆盖升级也
+验证了音乐库迁移及冲突数据保留。MV 候选策略修复已通过 JVM 测试，但最新的真实画面/进度
+回归被 Bilibili 后续的匿名 HTTP 412 安全策略拦截，因此该项仍标记为 `not verified`。
 
 ## 使用提示
 
@@ -268,11 +269,11 @@ listen2/
 - MV 可用性受视频、地区、CDN 和设备解码能力影响；不可用时请继续使用纯音频模式。
 - 逐词高亮需要歌词源提供逐词时间戳；普通 LRC 只能可靠地逐行同步。
 - 机器翻译需要用户自行配置 DeepSeek API 密钥并明确同意；React Native Android 版尚未接入该能力。
-- React Native Android 版已实现网易与酷狗的主动离线下载源码，但 Kotlin 编译、真实下载、重启修复和离线 TrackPlayer 播放仍待 JDK 17 与模拟器/真机统一验收；Bilibili 离线缓存尚未接入。
+- React Native Android 版已实现网易与酷狗的主动离线下载，并完成 Kotlin/JVM 编译门禁；真实下载、重启修复和离线 TrackPlayer 播放仍需要独立实机验收，Bilibili 离线缓存尚未接入。
 - React Native Android 版的登录、MV、PiP、音效、可视化和响度分析仍在迁移；当前不对这些能力做完成声明。
 - 网易公开歌单详情的本次样本只返回 10 首歌曲，而摘要显示 35 首；这是公开接口样本限制，不代表完整歌单已验证。
 - QQ 匿名播放仍不可用；酷我播放仍需 Cookie/Secret，不能以匿名搜索成功推断可播放。
-- 尚未生成整合 APK，也未完成模拟器端到端验收；本机缺少 JDK 17，因此 Kotlin/JVM contract、真实 `content://` 后台与重启播放、原生缓存和 TrackPlayer 回滚仍为 `not verified`。
+- release-like APK 已使用开发签名构建并用于 API 35 模拟器验收；它不是正式发布签名制品。Bilibili MV 的最新画面/进度回归受上游 HTTP 412 拦截，离线下载与重启播放仍有未覆盖的实机风险。
 - 响度分析器会把解码器支持的来源采样率统一重采样到 48 kHz 分析域；超过时长或资源限制、无法解码的完整 Bilibili 缓存保持原音量。
 
 ## 贡献

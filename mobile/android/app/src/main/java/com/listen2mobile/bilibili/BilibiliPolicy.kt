@@ -24,6 +24,26 @@ internal object BilibiliPolicy {
 
     enum class ErrorCode { INVALID_REQUEST, NETWORK_ERROR, REQUEST_TIMEOUT, LOGIN_REQUIRED, MEMBERSHIP_REQUIRED, REGION_RESTRICTED, DRM_RESTRICTED, PROVIDER_ERROR, INVALID_RESPONSE, VIDEO_UNAVAILABLE, UNSUPPORTED_VIDEO_CODEC, NOT_READY, CANCELLED }
 
+    /**
+     * Maps transport-only HTTP outcomes to stable public provider failures.
+     * In particular Bilibili uses 412 for an anonymous-request security gate;
+     * retrying it as an offline error is both misleading and wasteful.
+     */
+    fun errorForHttpStatus(status: Int): ErrorCode = when (status) {
+        401, 403 -> ErrorCode.LOGIN_REQUIRED
+        412 -> ErrorCode.PROVIDER_ERROR
+        429 -> ErrorCode.REQUEST_TIMEOUT
+        else -> ErrorCode.NETWORK_ERROR
+    }
+
+    fun statusDiagnostic(status: Int): String = when (status) {
+        401, 403 -> "authorization"
+        412 -> "security-policy"
+        429 -> "rate-limit"
+        in 500..599 -> "server"
+        else -> "other"
+    }
+
     data class SemanticTrack(val bvid: String, val cid: Long, val page: Long)
     data class AudioHandoff(val bvid: String, val cid: Long, val page: Long, val url: String, val deadline: Long)
     data class MediaCandidate(val id: Long, val url: String, val mimeType: String, val codecs: String, val hasAlternateUrl: Boolean)
@@ -49,10 +69,12 @@ internal object BilibiliPolicy {
     private val apiPaths = setOf(
         "/x/web-interface/nav",
         "/x/web-interface/view",
+        "/x/web-interface/search/type",
         "/x/web-interface/wbi/search/type",
         "/x/player/wbi/playurl",
     )
     private val playbackWbiKeys = setOf("bvid", "cid", "qn", "fnval", "fnver", "fourk")
+    private val directSearchKeys = setOf("__refresh__", "_extra", "category_id", "com2co", "context", "dynamic_offset", "highlight", "keyword", "page", "page_size", "platform", "preload", "search_type", "single_column")
 
     fun parseSemanticTrack(id: String?, page: Long?): SemanticTrack? {
         if (id == null || page == null || page < 1L || page > Long.MAX_VALUE) return null
@@ -135,7 +157,9 @@ internal object BilibiliPolicy {
             if (host != "api.bilibili.com" && host != "passport.bilibili.com") return false
             val queryBytes = uri.rawQuery?.toByteArray(StandardCharsets.UTF_8)?.size ?: 0
             if (queryBytes > MAX_QUERY_BYTES) return false
-            (host == "api.bilibili.com" && uri.path in apiPaths) ||
+            (host == "api.bilibili.com" &&
+                if (uri.path == "/x/web-interface/search/type") isApprovedDirectSearchQuery(uri.rawQuery)
+                else uri.path in apiPaths) ||
                 (host == "passport.bilibili.com" && uri.path in passportPaths)
         } catch (_: Exception) { false }
     }
@@ -174,17 +198,27 @@ internal object BilibiliPolicy {
         } catch (_: Exception) { null }
     }
 
-    /** All alternatives must be valid; callers expose only the deterministic best candidate. */
+    /**
+     * The audio lease transports exactly one validated primary URL. Bilibili
+     * normally includes provider backup URLs in the same response; they are
+     * intentionally ignored here rather than copied into a transport, so their
+     * presence must not make an otherwise safe primary rendition unplayable.
+     */
     fun selectAudioCandidate(candidates: List<MediaCandidate>, now: Long): MediaCandidate? {
-        if (candidates.isEmpty() || candidates.size > 4) return null
-        for (candidate in candidates) {
-            val deadline = signedDeadline(candidate.url)
-            if (candidate.id <= 0 || candidate.hasAlternateUrl || candidate.mimeType != "audio/mp4" ||
-                !candidate.codecs.startsWith("mp4a.") || deadline == null ||
-                !isSafeAudioHandoff(candidate.url, mapOf("Referer" to FIXED_REFERER), deadline, now)
-            ) return null
-        }
-        return candidates.sortedByDescending { it.id }.first()
+        if (candidates.isEmpty() || candidates.size > 8) return null
+        // The provider may list WebM/Opus or lower-quality renditions beside a
+        // valid MP4/AAC stream.  Validate each candidate independently and
+        // retain only a safe primary URL; unsupported siblings are never used.
+        return candidates.asSequence()
+            .filter { candidate ->
+                val deadline = signedDeadline(candidate.url)
+                candidate.id > 0 &&
+                    candidate.mimeType == "audio/mp4" &&
+                    candidate.codecs.startsWith("mp4a.") &&
+                    deadline != null &&
+                    isSafeAudioHandoff(candidate.url, mapOf("Referer" to FIXED_REFERER), deadline, now)
+            }
+            .maxByOrNull { it.id }
     }
 
     fun authorizePart(parts: List<AuthorizedPart>, cid: Long, page: Long): AuthorizedPart? =
@@ -215,9 +249,20 @@ internal object BilibiliPolicy {
     }
 
     fun buildWbiSearchQuery(query: String, page: Long, mixinKey: String, nowSeconds: Long): String? {
+        return directSearchParameters(query, page)?.let { buildSignedQuery(it, mixinKey, nowSeconds) }
+    }
+
+    /**
+     * Matches the original author-proven anonymous web-search route. It is a
+     * fixed native profile, not a caller-provided URL or query surface.
+     */
+    fun buildDirectSearchQuery(query: String, page: Long): String? =
+        directSearchParameters(query, page)?.let(::buildUnsignedQuery)
+
+    private fun directSearchParameters(query: String, page: Long): LinkedHashMap<String, String>? {
         val normalized = normalizeSearchQuery(query) ?: return null
         if (!isSearchPage(page)) return null
-        val params = linkedMapOf(
+        return linkedMapOf(
             "__refresh__" to "true",
             "_extra" to "",
             "category_id" to "",
@@ -233,7 +278,6 @@ internal object BilibiliPolicy {
             "search_type" to "video",
             "single_column" to "0",
         )
-        return buildSignedQuery(params, mixinKey, nowSeconds)
     }
 
     fun safeSearchTitle(value: String?): String? = safeText(value?.replace(Regex("<[^>]*>"), ""), 160)
@@ -264,6 +308,30 @@ internal object BilibiliPolicy {
         val query = canonical.entries.joinToString("&") { (key, value) -> "${encode(key)}=${encode(value.filterNot { it in "!'()*" })}" }
         val digest = MessageDigest.getInstance("MD5").digest((query + mixinKey).toByteArray(StandardCharsets.UTF_8))
         return "$query&w_rid=${digest.joinToString("") { "%02x".format(it) }}"
+    }
+
+    private fun buildUnsignedQuery(params: Map<String, String>): String? {
+        if (params.keys != directSearchKeys || params.any { (key, value) -> key.length > 32 || value.length > MAX_TEXT || value.any { it.code <= 31 } }) return null
+        return params.entries.joinToString("&") { (key, value) -> "${encode(key)}=${encode(value)}" }
+    }
+
+    private fun isApprovedDirectSearchQuery(rawQuery: String?): Boolean {
+        if (rawQuery == null || rawQuery.toByteArray(StandardCharsets.UTF_8).size > MAX_QUERY_BYTES) return false
+        val values = LinkedHashMap<String, String>()
+        rawQuery.split('&').forEach { part ->
+            val separator = part.indexOf('=')
+            if (separator < 0) return false
+            val key = decodeQueryKey(part.substring(0, separator)) ?: return false
+            val value = decodeQueryKey(part.substring(separator + 1)) ?: return false
+            if (key !in directSearchKeys || values.put(key, value) != null) return false
+        }
+        return values.keys == directSearchKeys &&
+            values["__refresh__"] == "true" && values["_extra"] == "" && values["category_id"] == "" &&
+            values["com2co"] == "true" && values["context"] == "" && values["dynamic_offset"] == "0" &&
+            values["highlight"] == "1" && values["page_size"] == SEARCH_PAGE_SIZE.toString() && values["platform"] == "pc" &&
+            values["preload"] == "true" && values["search_type"] == "video" && values["single_column"] == "0" &&
+            values["keyword"]?.let { normalizeSearchQuery(it) == it } == true &&
+            values["page"]?.toLongOrNull()?.let(::isSearchPage) == true
     }
 
     fun decodeQueryKey(value: String): String? = try { URLDecoder.decode(value, StandardCharsets.UTF_8.name()) } catch (_: Exception) { null }
