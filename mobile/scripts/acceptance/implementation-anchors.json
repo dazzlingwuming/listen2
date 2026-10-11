@@ -1,0 +1,462 @@
+[
+  {
+    "id": "PERF-001",
+    "paths": [
+      "mobile/android/app/src/main/java/com/listen2mobile/MainActivity.kt",
+      "mobile/android/app/src/androidTest/java/com/listen2mobile/acceptance/PerformanceRecoveryTest.java",
+      "mobile/scripts/acceptance/run-performance-recovery.sh"
+    ]
+  },
+  {
+    "id": "PERF-002",
+    "paths": [
+      "mobile/src/api/client.ts",
+      "mobile/src/player/playerController.ts",
+      "mobile/android/app/src/androidTest/java/com/listen2mobile/acceptance/PerformanceRecoveryTest.java"
+    ]
+  },
+  {
+    "id": "PERF-003",
+    "paths": [
+      "mobile/src/store/playerPersistence.ts",
+      "mobile/src/player/playbackService.ts",
+      "mobile/android/app/src/androidTest/java/com/listen2mobile/acceptance/PerformanceRecoveryTest.java"
+    ]
+  },
+  {
+    "id": "UI-001",
+    "paths": [
+      "mobile/src/navigation/RootNavigator.tsx",
+      "mobile/src/screens/ScreenLayout.tsx",
+      "mobile/src/navigation/__tests__/RootNavigator.test.tsx"
+    ]
+  },
+  {
+    "id": "UI-002",
+    "paths": [
+      "mobile/src/screens/ScreenLayout.tsx",
+      "mobile/src/navigation/RootNavigator.tsx",
+      "mobile/src/navigation/__tests__/RootNavigator.test.tsx"
+    ]
+  },
+  {
+    "id": "UI-003",
+    "paths": [
+      "mobile/src/screens/PlayerScreen.tsx",
+      "mobile/src/components/MiniPlayer.tsx",
+      "mobile/src/screens/__tests__/playerJourney.test.tsx"
+    ]
+  },
+  {
+    "id": "NET-001",
+    "paths": [
+      "mobile/src/api/nativePlayback.ts",
+      "mobile/src/api/http.ts",
+      "mobile/android/app/src/main/java/com/listen2mobile/ReactRuntimeContract.kt"
+    ]
+  },
+  {
+    "id": "NET-002",
+    "paths": [
+      "mobile/src/api/http.ts",
+      "mobile/src/api/client.ts",
+      "mobile/src/api/__tests__/client.test.ts"
+    ]
+  },
+  {
+    "id": "NET-003",
+    "paths": [
+      "mobile/src/bilibili/client.ts",
+      "mobile/src/api/providers.ts",
+      "mobile/android/app/src/androidTest/java/com/listen2mobile/acceptance/LiveBilibiliSmokeTest.java"
+    ]
+  },
+  {
+    "id": "NET-004",
+    "paths": [
+      "mobile/src/api/providers.ts",
+      "mobile/src/api/client.ts",
+      "mobile/android/app/src/androidTest/java/com/listen2mobile/acceptance/LiveProviderSmokeTest.java"
+    ]
+  },
+  {
+    "id": "SRCH-001",
+    "paths": [
+      "mobile/src/screens/SearchScreen.tsx",
+      "mobile/src/search/searchJourneyState.ts",
+      "mobile/src/screens/__tests__/searchJourney.test.tsx"
+    ]
+  },
+  {
+    "id": "SRCH-002",
+    "paths": [
+      "mobile/src/screens/DiscoverScreen.tsx",
+      "mobile/src/api/providers.ts",
+      "mobile/src/screens/__tests__/discoverFlow.test.tsx"
+    ]
+  },
+  {
+    "id": "SRCH-003",
+    "paths": [
+      "mobile/src/screens/SearchScreen.tsx",
+      "mobile/src/api/client.ts",
+      "mobile/src/screens/__tests__/searchJourney.test.tsx"
+    ]
+  },
+  {
+    "id": "PLAY-001",
+    "paths": [
+      "mobile/src/player/playbackService.ts",
+      "mobile/src/player/playerController.ts",
+      "mobile/src/player/__tests__/playbackService.test.ts"
+    ]
+  },
+  {
+    "id": "PLAY-002",
+    "paths": [
+      "mobile/src/api/nativePlayback.ts",
+      "mobile/android/app/src/main/java/com/listen2mobile/media/NativeMediaDescriptor.kt",
+      "mobile/android/app/src/test/java/com/listen2mobile/media/FiveSourceMediaDescriptorContractTest.kt"
+    ]
+  },
+  {
+    "id": "PLAY-003",
+    "paths": [
+      "mobile/src/player/playerController.ts",
+      "mobile/src/store/playerSlice.ts",
+      "mobile/src/player/__tests__/playerController.lifecycle.test.ts"
+    ]
+  },
+  {
+    "id": "PLAY-004",
+    "paths": [
+      "mobile/src/store/playerSlice.ts",
+      "mobile/src/store/playerPersistence.ts",
+      "mobile/src/store/__tests__/playerSlice.test.ts"
+    ]
+  },
+  {
+    "id": "PLAY-005",
+    "paths": [
+      "mobile/src/store/playerSlice.ts",
+      "mobile/src/store/playerPersistence.ts",
+      "mobile/src/store/__tests__/playerPersistence.test.ts"
+    ]
+  },
+  {
+    "id": "PLAY-006",
+    "paths": [
+      "mobile/src/player/playbackService.ts",
+      "mobile/android/app/src/main/AndroidManifest.xml",
+      "mobile/android/app/src/androidTest/java/com/listen2mobile/acceptance/PerformanceRecoveryTest.java"
+    ]
+  },
+  {
+    "id": "LYR-001",
+    "paths": [
+      "mobile/src/bilibili/lyrics.ts",
+      "mobile/src/lyrics/timeline.ts",
+      "mobile/src/screens/__tests__/bilibiliLyricsFlow.test.tsx"
+    ]
+  },
+  {
+    "id": "LYR-002",
+    "paths": [
+      "mobile/src/lyrics/selectionStore.ts",
+      "mobile/src/components/BilibiliLyricPicker.tsx",
+      "mobile/src/lyrics/__tests__/selectionStore.test.ts"
+    ]
+  },
+  {
+    "id": "LYR-003",
+    "paths": [
+      "mobile/src/lyrics/session.ts",
+      "mobile/src/screens/PlayerScreen.tsx",
+      "mobile/src/screens/__tests__/lyricAccessibility.test.tsx"
+    ]
+  },
+  {
+    "id": "LIB-001",
+    "paths": [
+      "mobile/src/screens/MyMusicScreen.tsx",
+      "mobile/src/library/libraryProjection.ts",
+      "mobile/src/screens/__tests__/libraryFlow.test.tsx"
+    ]
+  },
+  {
+    "id": "LIB-002",
+    "paths": [
+      "mobile/src/library/libraryClient.ts",
+      "mobile/android/app/src/main/java/com/listen2mobile/library/LibraryRepository.kt",
+      "mobile/src/screens/__tests__/libraryFlow.test.tsx"
+    ]
+  },
+  {
+    "id": "LIB-003",
+    "paths": [
+      "mobile/src/library/continuityCoordinator.ts",
+      "mobile/src/store/librarySlice.ts",
+      "mobile/src/library/__tests__/continuityCoordinator.test.ts"
+    ]
+  },
+  {
+    "id": "AUTH-001",
+    "paths": [
+      "mobile/src/screens/SettingsScreen.tsx",
+      "mobile/src/api/client.ts",
+      "mobile/src/screens/__tests__/accountFlow.test.tsx"
+    ]
+  },
+  {
+    "id": "AUTH-002",
+    "paths": [
+      "mobile/src/screens/SettingsScreen.tsx",
+      "mobile/android/app/src/main/java/com/listen2mobile/bilibili/BilibiliSession.kt",
+      "mobile/src/screens/__tests__/accountFlow.test.tsx"
+    ]
+  },
+  {
+    "id": "AUTH-003",
+    "paths": [
+      "mobile/android/app/src/main/java/com/listen2mobile/bilibili/BilibiliVault.kt",
+      "mobile/android/app/src/main/java/com/listen2mobile/bilibili/BilibiliSession.kt",
+      "mobile/src/screens/__tests__/accountFlow.test.tsx"
+    ]
+  },
+  {
+    "id": "LOCAL-001",
+    "paths": [
+      "mobile/src/localAudio/picker.ts",
+      "mobile/android/app/src/main/java/com/listen2mobile/local/LocalAudioModule.kt",
+      "mobile/android/app/src/androidTest/java/com/listen2mobile/local/SafImportInstrumentationTest.kt"
+    ]
+  },
+  {
+    "id": "LOCAL-002",
+    "paths": [
+      "mobile/android/app/src/main/java/com/listen2mobile/local/LocalMediaProvider.kt",
+      "mobile/android/app/src/main/java/com/listen2mobile/local/LocalMetadataReader.kt",
+      "mobile/android/app/src/androidTest/java/com/listen2mobile/local/LocalMediaProviderInstrumentationTest.kt"
+    ]
+  },
+  {
+    "id": "LOCAL-003",
+    "paths": [
+      "mobile/android/app/src/main/java/com/listen2mobile/local/LocalAudioPolicy.kt",
+      "mobile/android/app/src/main/java/com/listen2mobile/local/LocalMediaPolicy.kt",
+      "mobile/android/app/src/test/java/com/listen2mobile/local/LocalAudioPolicyTest.kt"
+    ]
+  },
+  {
+    "id": "DATA-001",
+    "paths": [
+      "mobile/android/app/src/main/java/com/listen2mobile/library/LibraryDatabase.kt",
+      "mobile/android/app/src/main/java/com/listen2mobile/library/LibraryPreferences.kt",
+      "mobile/android/app/src/androidTest/java/com/listen2mobile/library/LibraryMigrationTest.kt"
+    ]
+  },
+  {
+    "id": "DATA-002",
+    "paths": [
+      "mobile/src/backup/backupCodec.ts",
+      "mobile/android/app/src/main/java/com/listen2mobile/library/LibraryBridge.kt",
+      "mobile/src/backup/__tests__/backupCodec.test.ts"
+    ]
+  },
+  {
+    "id": "DATA-003",
+    "paths": [
+      "mobile/src/backup/backupCodec.ts",
+      "mobile/android/app/src/main/java/com/listen2mobile/library/LibraryRepository.kt",
+      "mobile/android/app/src/androidTest/java/com/listen2mobile/library/BackupTransactionInstrumentationTest.kt"
+    ]
+  },
+  {
+    "id": "HIST-001",
+    "paths": [
+      "mobile/android/app/src/main/java/com/listen2mobile/history/ListeningPolicy.kt",
+      "mobile/android/app/src/main/java/com/listen2mobile/history/ListeningLedger.kt",
+      "mobile/src/history/__tests__/historyLedger.test.ts"
+    ]
+  },
+  {
+    "id": "HIST-002",
+    "paths": [
+      "mobile/src/history/history.ts",
+      "mobile/android/app/src/main/java/com/listen2mobile/history/ListeningLedger.kt",
+      "mobile/android/app/src/androidTest/java/com/listen2mobile/history/ListeningLedgerInstrumentationTest.kt"
+    ]
+  },
+  {
+    "id": "HIST-003",
+    "paths": [
+      "mobile/src/screens/HistoryScreen.tsx",
+      "mobile/src/history/history.ts",
+      "mobile/src/history/__tests__/historyPrivacy.test.tsx"
+    ]
+  },
+  {
+    "id": "CACHE-001",
+    "paths": [
+      "mobile/src/offline/offlineAudio.ts",
+      "mobile/android/app/src/main/java/com/listen2mobile/offline/OfflineCore.kt",
+      "mobile/android/app/src/test/java/com/listen2mobile/offline/OfflineAudioContractTest.kt"
+    ]
+  },
+  {
+    "id": "CACHE-002",
+    "paths": [
+      "mobile/android/app/src/main/java/com/listen2mobile/offline/OfflineCatalogService.kt",
+      "mobile/android/app/src/main/java/com/listen2mobile/offline/OfflineCatalogRepository.kt",
+      "mobile/android/app/src/test/java/com/listen2mobile/offline/OfflineRecoveryContractTest.kt"
+    ]
+  },
+  {
+    "id": "CACHE-003",
+    "paths": [
+      "mobile/src/screens/CacheLibraryScreen.tsx",
+      "mobile/android/app/src/main/java/com/listen2mobile/offline/OfflineCore.kt",
+      "mobile/src/offline/__tests__/offlineUi.test.tsx"
+    ]
+  },
+  {
+    "id": "CACHE-004",
+    "paths": [
+      "mobile/src/screens/CacheLibraryScreen.tsx",
+      "mobile/android/app/src/main/java/com/listen2mobile/offline/OfflineCore.kt",
+      "mobile/src/offline/__tests__/cacheLibrary.test.tsx"
+    ]
+  },
+  {
+    "id": "FX-001",
+    "paths": [
+      "mobile/src/audioFx/client.ts",
+      "mobile/android/app/src/main/java/com/listen2mobile/audiofx/AudioEffectsModule.kt",
+      "mobile/src/screens/__tests__/audioEffectsFlow.test.tsx"
+    ]
+  },
+  {
+    "id": "FX-002",
+    "paths": [
+      "mobile/android/app/src/main/java/com/listen2mobile/audiofx/AudioEffectsModule.kt",
+      "mobile/src/screens/PlayerScreen.tsx",
+      "mobile/android/app/src/test/java/com/listen2mobile/audiofx/AudioEffectsContractTest.kt"
+    ]
+  },
+  {
+    "id": "FX-003",
+    "paths": [
+      "mobile/android/app/src/main/java/com/listen2mobile/audiofx/LoudnessAnalyzer.kt",
+      "mobile/src/player/playbackService.ts",
+      "mobile/src/player/__tests__/loudnessPlaybackIntegration.test.ts"
+    ]
+  },
+  {
+    "id": "AI-001",
+    "paths": [
+      "mobile/src/screens/SettingsScreen.tsx",
+      "mobile/android/app/src/main/java/com/listen2mobile/deepseek/DeepSeekVault.kt",
+      "mobile/src/screens/__tests__/deepSeekSettingsStatus.test.tsx"
+    ]
+  },
+  {
+    "id": "AI-002",
+    "paths": [
+      "mobile/src/deepseek/consent.ts",
+      "mobile/src/screens/PlayerScreen.tsx",
+      "mobile/src/screens/__tests__/deepSeekFlow.test.tsx"
+    ]
+  },
+  {
+    "id": "AI-003",
+    "paths": [
+      "mobile/src/deepseek/client.ts",
+      "mobile/android/app/src/main/java/com/listen2mobile/deepseek/DeepSeekClient.kt",
+      "mobile/src/deepseek/__tests__/client.test.ts"
+    ]
+  },
+  {
+    "id": "SEC-001",
+    "paths": []
+  },
+  {
+    "id": "SEC-002",
+    "paths": [
+      "mobile/android/app/src/main/AndroidManifest.xml",
+      "mobile/src/security/__tests__/phase7Security.test.ts",
+      "mobile/android/app/src/main/java/com/listen2mobile/ReactRuntimeContract.kt"
+    ]
+  },
+  {
+    "id": "SEC-003",
+    "paths": [
+      "mobile/src/api/http.ts",
+      "mobile/src/backup/backupCodec.ts",
+      "mobile/src/security/__tests__/phase7Security.test.ts"
+    ]
+  },
+  {
+    "id": "SEC-004",
+    "paths": [
+      "mobile/android/app/src/main/java/com/listen2mobile/deepseek/DeepSeekVault.kt",
+      "mobile/android/app/src/main/java/com/listen2mobile/offline/OfflineCore.kt",
+      "mobile/android/app/src/test/java/com/listen2mobile/security/Phase7EntitlementMatrixTest.kt"
+    ]
+  },
+  {
+    "id": "TEST-001",
+    "paths": [
+      "mobile/src/api/__tests__/client.test.ts",
+      "mobile/android/app/src/test/java/com/listen2mobile/MainApplicationHostContractTest.kt",
+      "mobile/src/security/__tests__/phase7Security.test.ts"
+    ]
+  },
+  {
+    "id": "TEST-002",
+    "paths": [
+      "mobile/android/app/src/androidTest/java/com/listen2mobile/acceptance/IntegratedJourneyTest.java",
+      "mobile/android/app/src/androidTest/java/com/listen2mobile/local/SafImportInstrumentationTest.kt",
+      "mobile/android/app/src/androidTest/java/com/listen2mobile/history/ListeningLedgerInstrumentationTest.kt"
+    ]
+  },
+  {
+    "id": "TEST-003",
+    "paths": [
+      "mobile/android/app/src/androidTest/java/com/listen2mobile/acceptance/IntegratedJourneyTest.java",
+      "mobile/android/app/src/androidTest/java/com/listen2mobile/acceptance/LiveProviderSmokeTest.java",
+      "mobile/scripts/acceptance/run-api35-journey.sh"
+    ]
+  },
+  {
+    "id": "TEST-004",
+    "paths": [
+      "mobile/scripts/acceptance/evidence.mjs",
+      "mobile/scripts/acceptance/run-performance-recovery.sh",
+      "mobile/scripts/acceptance/verify-apk.sh"
+    ]
+  },
+  {
+    "id": "REL-001",
+    "paths": [
+      "mobile/android/app/build.gradle",
+      "mobile/scripts/acceptance/build-release-like.sh",
+      "mobile/scripts/acceptance/reproducibility-gate.sh"
+    ]
+  },
+  {
+    "id": "REL-002",
+    "paths": [
+      "mobile/scripts/acceptance/verify-apk.sh",
+      "mobile/scripts/acceptance/reproducibility-gate.sh",
+      "mobile/android/app/src/main/AndroidManifest.xml"
+    ]
+  },
+  {
+    "id": "REL-003",
+    "paths": [
+      "mobile/scripts/acceptance/candidate.mjs",
+      "mobile/scripts/acceptance/evidence.mjs",
+      "mobile/scripts/acceptance/run-api35-journey.sh"
+    ]
+  }
+]
