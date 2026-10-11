@@ -835,12 +835,18 @@ public final class AccessibilityDriver {
     PerformanceSample measureLiveSearch() {
         long setupStarted = SystemClock.elapsedRealtime();
         try {
-            if (hasClickableTarget("关闭播放器")) tapLabel("关闭播放器");
-            if (hasClickableTarget("搜索")) tapLabel("搜索");
+            returnToPhoneShellForPreparation("phase08SearchPreparation");
+            emitPreparation("search-tab-tap", "phase08SearchPreparation");
+            tapLabel("搜索");
+            emitPreparation("input-wait", "phase08SearchPreparation");
             require(waitForLabel("搜索歌曲、歌手或歌单", 5_000L), "search field missing");
+            emitPreparation("input-ready", "phase08SearchPreparation");
             enterText("搜索歌曲、歌手或歌单", "青花瓷");
+            emitPreparation("source-qq", "phase08SearchPreparation");
             selectLiveSource("QQ音乐");
+            emitPreparation("source-kugou", "phase08SearchPreparation");
             selectLiveSource("酷狗音乐");
+            emitPreparation("sources-ready", "phase08SearchPreparation");
         } catch (AssertionError error) {
             return new PerformanceSample("FAIL", SystemClock.elapsedRealtime() - setupStarted, "search-setup-failed", null);
         }
@@ -849,7 +855,7 @@ public final class AccessibilityDriver {
         while (SystemClock.elapsedRealtime() - started < 5_000L) {
             String window = dumpWindow();
             for (String title : visiblePlayableTitles(window)) {
-                if (title.contains("青花瓷")) return new PerformanceSample("PASS", SystemClock.elapsedRealtime() - started, "semantic-live-result", title);
+                if (title.contains("青花瓷") && GenericAudioObservation.uniqueControl(window, "播放" + title)) return new PerformanceSample("PASS", SystemClock.elapsedRealtime() - started, "semantic-live-result", title);
             }
             if (!window.contains("正在搜索") && "provider-error".equals(liveSearchTerminal(window))) {
                 return new PerformanceSample("DEGRADED", SystemClock.elapsedRealtime() - started, "visible-provider-error", null);
@@ -860,7 +866,28 @@ public final class AccessibilityDriver {
     }
 
     PerformanceSample measureVisibleAudio(String title) {
-        return measureVisibleAudio(title, false);
+        try {
+            long preparationStarted = SystemClock.elapsedRealtime();
+            boolean paused = false;
+            while (SystemClock.elapsedRealtime() - preparationStarted < 5_000L) {
+                NativePlaybackObservation.Sample sample = NativePlaybackObservation.read(instrumentation);
+                GenericAudioObservation.Precondition state = GenericAudioObservation.precondition(shell("dumpsys media_session"), sample.observed());
+                if (state == GenericAudioObservation.Precondition.PAUSED || state == GenericAudioObservation.Precondition.NO_SESSION) {
+                    Bundle status = new Bundle();
+                    status.putString("phase08AudioPrecondition", state == GenericAudioObservation.Precondition.PAUSED ? "paused-existing" : "no-existing-session");
+                    instrumentation.sendStatus(1, status);
+                    if (!GenericAudioObservation.uniqueControl(dumpWindow(), "播放" + title)) return new PerformanceSample("NOT_VERIFIED", 0L, "audio-selection-ambiguous", null);
+                    return measureVisibleAudio(title, false);
+                }
+                if (state != GenericAudioObservation.Precondition.PLAYING) break;
+                if (!paused) {
+                    if (!GenericAudioObservation.uniqueControl(dumpWindow(), "暂停播放")) break;
+                    tapLabel("暂停播放"); paused = true;
+                }
+                SystemClock.sleep(100L);
+            }
+        } catch (AssertionError error) { /* Failed public preparation cannot become a timed success. */ }
+        return new PerformanceSample("NOT_VERIFIED", 0L, "audio-precondition-unverified", null);
     }
 
     private PerformanceSample measureVisibleAudio(String title, boolean localDiagnostic) {
@@ -875,11 +902,9 @@ public final class AccessibilityDriver {
     }
 
     private PerformanceSample observeVisibleAudioAdvancement(String title, long started, boolean localDiagnostic, Long resumeAnchor) {
-        SyntheticAudioObservation paired = localDiagnostic ? new SyntheticAudioObservation(resumeAnchor == null, resumeAnchor) : null;
+        SyntheticAudioObservation paired = new SyntheticAudioObservation(resumeAnchor == null, resumeAnchor);
         String operation = "audio-unknown-assert";
         Long first = null;
-        NativePlaybackObservation.Sample firstNative = null;
-        BilibiliPlaybackObservation.Snapshot firstSession = null;
         boolean uiObserved = false;
         boolean getterObserved = false;
         boolean playingIdentityObserved = false;
@@ -900,7 +925,7 @@ public final class AccessibilityDriver {
                 long uiAt = SystemClock.elapsedRealtime();
                 Long current = progressPosition(playerWindow);
                 uiObserved |= current != null;
-                if (!localDiagnostic && first == null && current != null) first = current;
+
                 NativePlaybackObservation.Sample currentNative = NativePlaybackObservation.read(instrumentation);
                 getterObserved |= currentNative.observed();
                 operation = "audio-native-shell-failed";
@@ -908,15 +933,18 @@ public final class AccessibilityDriver {
                 operation = "audio-unknown-assert";
                 BilibiliPlaybackObservation.Snapshot currentSession = BilibiliPlaybackObservation.snapshot(sessions, title);
                 playingIdentityObserved |= currentSession != null;
-                if (!localDiagnostic && firstNative == null && currentNative.observed() && currentSession != null) { firstNative = currentNative; firstSession = currentSession; }
+
                 SyntheticAudioObservation.Result pairedResult = SyntheticAudioObservation.Result.WAIT;
-                if (localDiagnostic) {
+                if (!localDiagnostic && currentSession != null && !GenericAudioObservation.exactMetadataTitle(currentSession.metadata, title)) return new PerformanceSample("NOT_VERIFIED", SystemClock.elapsedRealtime() - started, "audio-metadata-unverified", null);
+                {
                     pairedResult = paired.observe(SystemClock.elapsedRealtime() - started, current,
                         currentNative.observed() ? currentNative.positionMs : null, uiAt, currentNative.elapsedMs,
-                        playerWindow.contains("关闭播放器") && playerWindow.contains(title), currentSession != null, currentSession == null ? null : currentSession.metadata);
+                        localDiagnostic ? playerWindow.contains("关闭播放器") && playerWindow.contains(title) : GenericAudioObservation.fullPlayerTitle(playerWindow, title), currentSession != null, currentSession == null ? null : currentSession.metadata);
                     first = paired.firstUiSeconds;
                     if (pairedResult == SyntheticAudioObservation.Result.ROLLBACK) return new PerformanceSample("FAIL", SystemClock.elapsedRealtime() - started, "audio-resume-position-rollback", null);
                     if (pairedResult == SyntheticAudioObservation.Result.INVALID_CLOCK) return new PerformanceSample("NOT_VERIFIED", SystemClock.elapsedRealtime() - started, "audio-observation-clock-invalid", null);
+                }
+                if (localDiagnostic) {
                     long elapsed = SystemClock.elapsedRealtime() - started;
                     long uiFirst = first == null ? -1L : first;
                     long uiCurrent = current == null ? -1L : current;
@@ -933,18 +961,13 @@ public final class AccessibilityDriver {
                             currentNative.observed() + "|" + (currentSession != null) + "|" + metadataEqual);
                     }
                 }
-                if (localDiagnostic && pairedResult == SyntheticAudioObservation.Result.PASS && SystemClock.elapsedRealtime() - started <= 6_000L) return new PerformanceSample("PASS", SystemClock.elapsedRealtime() - started, "visible-and-native-position-advancing", null);
-                if (!localDiagnostic && first != null && current != null && current > first && firstNative != null && currentNative.observed() &&
-                        currentNative.positionMs > firstNative.positionMs && currentSession != null && firstSession.metadata.equals(currentSession.metadata) &&
-                        SystemClock.elapsedRealtime() - started <= 6_000L) {
-                    return new PerformanceSample("PASS", SystemClock.elapsedRealtime() - started, "visible-and-native-position-advancing", null);
-                }
+                if (pairedResult == SyntheticAudioObservation.Result.PASS && SystemClock.elapsedRealtime() - started <= 6_000L) return new PerformanceSample("PASS", SystemClock.elapsedRealtime() - started, "visible-and-native-position-advancing", null);
                 SystemClock.sleep(100L);
             }
             String reason = !uiObserved ? "audio-ui-progress-unavailable" :
                 !getterObserved ? "audio-native-getter-unavailable" :
                 !playingIdentityObserved ? "audio-playing-identity-unavailable" :
-                localDiagnostic && paired.firstNativeMs == null ? "audio-pair-unavailable" : "audio-not-advancing";
+                paired.firstNativeMs == null ? "audio-pair-unavailable" : "audio-not-advancing";
             return new PerformanceSample("TIMEOUT", SystemClock.elapsedRealtime() - started, reason, null);
         } catch (AssertionError error) {
             return new PerformanceSample("FAIL", SystemClock.elapsedRealtime() - started, operation, null);
@@ -983,45 +1006,49 @@ public final class AccessibilityDriver {
 
     /** Preparation only: follow visible back controls, never force a route. */
     private void returnToPhoneShellForLocalPreparation() {
+        returnToPhoneShellForPreparation("phase08LocalPreparation");
+    }
+
+    private void returnToPhoneShellForPreparation(String marker) {
         long deadline = SystemClock.elapsedRealtime() + 10_000L;
         int navigations = 0;
-        emitLocalPreparation("start");
+        emitPreparation("start", marker);
         while (SystemClock.elapsedRealtime() < deadline) {
             if (hasClickableTarget("搜索") && hasClickableTarget("我的")) {
-                emitLocalPreparation("shell-ready");
+                emitPreparation("shell-ready", marker);
                 return;
             }
             String control = hasClickableTarget("关闭播放器") ? "关闭播放器" :
                 hasClickableTarget("返回上一页") ? "返回上一页" : null;
             if (control != null) {
                 if (navigations >= 3) {
-                    emitLocalPreparation("navigation-limit");
+                    emitPreparation("navigation-limit", marker);
                     throw new AssertionError("local preparation exceeded its visible navigation limit");
                 }
                 try {
                     String before = dumpWindow();
-                    emitLocalPreparation("关闭播放器".equals(control) ? "close-player" : "back-detail");
+                    emitPreparation("关闭播放器".equals(control) ? "close-player" : "back-detail", marker);
                     tapLabel(control);
                     navigations += 1;
                     long remaining = deadline - SystemClock.elapsedRealtime();
                     if (remaining > 0L) waitForWindowChange(before, Math.min(remaining, 1_500L));
                 } catch (AssertionError error) {
-                    emitLocalPreparation("action-failed");
+                    emitPreparation("action-failed", marker);
                     throw new AssertionError("local preparation visible navigation failed");
                 }
             } else {
                 SystemClock.sleep(100L);
             }
         }
-        emitLocalPreparation("deadline-exceeded");
+        emitPreparation("deadline-exceeded", marker);
         throw new AssertionError("local preparation phone shell was not ready before deadline");
     }
 
-    private void emitLocalPreparation(String stage) {
+    private void emitPreparation(String stage, String marker) {
         long now = SystemClock.elapsedRealtime();
         if (now < 0L || now > 999_999_999_999L) return;
         Bundle status = new Bundle();
-        status.putString("phase08LocalPreparation", stage + "|" + now);
+        status.putString(marker, stage + "|" + now);
         instrumentation.sendStatus(1, status);
     }
 

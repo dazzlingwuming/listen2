@@ -39,6 +39,27 @@ public final class PerformanceRecoveryTest {
         }
     }
 
+    /** Two public UI samples only; deliberately separate from the immutable twenty-attempt lane. */
+    public static void genericAudioRepresentative(Instrumentation instrumentation, ScenarioProgress progress) {
+        AccessibilityDriver driver = new AccessibilityDriver(instrumentation);
+        driver.launchTarget();
+        String expectedTitle = null;
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            progress.step("live-performance-attempt-" + attempt);
+            String id = String.format(java.util.Locale.ROOT, "%02d", attempt);
+            AccessibilityDriver.PerformanceSample search = driver.measureLiveSearch();
+            emit(instrumentation, "first-search", id, search);
+            if (attempt == 1) expectedTitle = search.title;
+            AccessibilityDriver.PerformanceSample audio = search.title != null && !search.title.equals(expectedTitle)
+                ? new AccessibilityDriver.PerformanceSample("NOT_VERIFIED", 0L, "audio-selection-ambiguous", null)
+                : search.title == null
+                ? new AccessibilityDriver.PerformanceSample("NOT_VERIFIED", 0L, "no-matching-live-track", null)
+                : driver.measureVisibleAudio(search.title);
+            emit(instrumentation, "first-audio", id, audio);
+            if (!"PASS".equals(audio.status)) return;
+        }
+    }
+
     public static void compatibilityColdStart(Instrumentation instrumentation, ScenarioProgress progress, Bundle arguments) {
         int api = integerArgument(arguments, "phase08Api");
         if (api != 26 && api != 36) {

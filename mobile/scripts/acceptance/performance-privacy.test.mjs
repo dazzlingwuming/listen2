@@ -70,3 +70,17 @@ test('synthetic observation diagnostics contain bounded numeric and boolean tupl
  for(const reason of ['sample-limit','diagnostic-values-out-of-range']){const safe=sanitizePerformanceInstrumentation('phase08LocalObservationStatus=NOT_VERIFIED|'+reason+terminal,0);assert.match(safe,/phase08LocalObservationStatus=/);assert.equal(performanceInstrumentationOk(safe),false);}
  const unknown=sanitizePerformanceInstrumentation('phase08LocalObservationStatus=PASS|private-sentinel'+terminal,0);assert.doesNotMatch(unknown,/private-sentinel|phase08LocalObservationStatus=/);assert.equal(performanceInstrumentationOk(unknown),false);
 });
+
+ test('generic preconditions remain closed and unverified metrics cannot become PASS', () => {
+  for (const value of ['paused-existing', 'no-existing-session']) assert.match(sanitizePerformanceInstrumentation(`INSTRUMENTATION_STATUS: phase08AudioPrecondition=${value}`, 0), new RegExp(value));
+  for (const value of ['private-sentinel', 'paused-existing private-sentinel']) { const safe = sanitizePerformanceInstrumentation(`INSTRUMENTATION_STATUS: phase08AudioPrecondition=${value}`, 0); assert.doesNotMatch(safe, /private-sentinel/); assert.match(safe, /EvidencePrivacyOrScenarioFailure/); }
+  for (const reason of ['audio-selection-ambiguous', 'audio-precondition-unverified', 'audio-metadata-unverified']) {
+    assert.match(sanitizePerformanceInstrumentation(`phase08Metric=first-audio|01|NOT_VERIFIED|0|${reason}`, 0), /first-audio\|01\|NOT_VERIFIED/);
+    assert.doesNotMatch(sanitizePerformanceInstrumentation(`phase08Metric=first-audio|01|PASS|0|${reason}`, 0), /first-audio\|01\|PASS/);
+  }
+ });
+
+ test('search preparation exposes only closed stages and bounded numeric monotonic values', () => {
+  for (const stage of ['start','close-player','back-detail','shell-ready','navigation-limit','action-failed','deadline-exceeded','search-tab-tap','input-wait','input-ready','source-qq','source-kugou','sources-ready']) assert.match(sanitizePerformanceInstrumentation(`phase08SearchPreparation=${stage}|12345`,0), /phase08SearchPreparation=/);
+  for (const row of ['private-sentinel|12345','input-ready|private-sentinel','input-ready|1234567890123']) {const safe=sanitizePerformanceInstrumentation(`phase08SearchPreparation=${row}`,0);assert.doesNotMatch(safe,/private-sentinel|phase08SearchPreparation=/);assert.match(safe,/EvidencePrivacyOrScenarioFailure/);}
+ });

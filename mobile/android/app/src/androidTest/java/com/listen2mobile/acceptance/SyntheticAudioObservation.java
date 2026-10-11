@@ -1,6 +1,6 @@
 package com.listen2mobile.acceptance;
 
-/** Pure synthetic-only pairing; never estimates actual playback position. */
+/** Pure post-action position pairing; never estimates actual playback position. */
 final class SyntheticAudioObservation {
     enum Result { WAIT, PASS, ROLLBACK, INVALID_ANCHOR, INVALID_CLOCK }
     final boolean fresh;

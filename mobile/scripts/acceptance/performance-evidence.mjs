@@ -10,7 +10,8 @@ const ids = Array.from({ length: 20 }, (_, index) => String(index + 1).padStart(
 const SDK_FAILURE_TYPES = new Set(['PatternSyntaxException', 'IllegalStateException', 'IllegalArgumentException', 'NullPointerException', 'SecurityException', 'NoSuchMethodError', 'NoClassDefFoundError', 'AbstractMethodError', 'AssertionError', 'Exception']);
 const AUDIO_FAILURES = new Set(['audio-initial-tap-failed', 'audio-mini-tap-failed', 'audio-notification-failed', 'audio-native-shell-failed', 'audio-unknown-assert', 'audio-resume-control-failed', 'audio-resume-position-rollback']);
 const AUDIO_TIMEOUTS = new Set(['audio-ui-progress-unavailable', 'audio-native-getter-unavailable', 'audio-playing-identity-unavailable', 'audio-not-advancing', 'audio-pair-unavailable']);
-const LIVE_REASONS = new Set(['semantic-live-result', 'visible-and-native-position-advancing', 'search-setup-failed', 'visible-provider-error', 'no-matching-live-result', 'audio-not-advancing', 'audio-ui-action-failed', 'search-action-failed', 'no-matching-live-track', ...AUDIO_FAILURES, ...AUDIO_TIMEOUTS]);
+const LIVE_REASONS = new Set(['semantic-live-result', 'visible-and-native-position-advancing', 'search-setup-failed', 'visible-provider-error', 'no-matching-live-result', 'audio-not-advancing', 'audio-ui-action-failed', 'search-action-failed', 'no-matching-live-track', 'audio-selection-ambiguous', 'audio-precondition-unverified', 'audio-metadata-unverified', 'audio-observation-clock-invalid', ...AUDIO_FAILURES, ...AUDIO_TIMEOUTS]);
+const AUDIO_UNVERIFIED = new Set(['audio-selection-ambiguous', 'audio-precondition-unverified', 'audio-metadata-unverified', 'audio-observation-clock-invalid']);
 const LIVE_STATUS = new Set(['PASS', 'FAIL', 'TIMEOUT', 'DEGRADED', 'NOT_VERIFIED']);
 export function sanitizePerformanceInstrumentation(raw, commandExitCode) {
   const retained = []; let rejected = false;
@@ -21,20 +22,25 @@ export function sanitizePerformanceInstrumentation(raw, commandExitCode) {
     const validObservation = observation && Number(observation[1]) >= 1 && Number(observation[1]) <= 32 && Number(observation[2]) <= 120000 && Number(observation[3]) <= 604800 && Number(observation[4]) <= 604800 && Number(observation[5]) <= 604800000 && Number(observation[6]) <= 604800000;
     const failure = line.match(/^INSTRUMENTATION_STATUS: failureType=([A-Za-z]{1,40})$/u);
     const preparation = line.match(/^(?:INSTRUMENTATION_STATUS: )?phase08LocalPreparation=(start|close-player|back-detail|shell-ready|navigation-limit|action-failed|deadline-exceeded)\|([0-9]{1,12})$/u);
+    const searchPreparation = line.match(/^(?:INSTRUMENTATION_STATUS: )?phase08SearchPreparation=(start|close-player|back-detail|shell-ready|navigation-limit|action-failed|deadline-exceeded|search-tab-tap|input-wait|input-ready|source-qq|source-kugou|sources-ready)\|([0-9]{1,12})$/u);
     const local = line.match(/^(?:INSTRUMENTATION_STATUS: )?phase08LocalAudio=(PASS|FAIL|TIMEOUT|NOT_VERIFIED)\|([0-9]{1,6})\|([a-z-]+)$/u);
     const timing = line.match(/^(?:INSTRUMENTATION_STATUS: )?phase08LocalTiming=(initial-tap-complete|first-observation)\|([0-9]{1,6})\|([0-9]{1,12})$/u);
     const validLocal = local && Number(local[2]) <= 120000 && (local[1] === 'PASS' && local[3] === 'visible-and-native-position-advancing' || local[1] === 'FAIL' && AUDIO_FAILURES.has(local[3]) || local[1] === 'TIMEOUT' && AUDIO_TIMEOUTS.has(local[3]) || local[1] === 'NOT_VERIFIED' && (local[3] === 'audio-observation-clock-invalid' || local[2] === '0' && ['diagnostic-elapsed-out-of-range', 'audio-resume-anchor-unavailable'].includes(local[3])));
     if (validObservation) retained.push(`phase08LocalObservation=${observation.slice(1).join('|')}`);
     else if (/^(?:INSTRUMENTATION_STATUS: )?phase08LocalObservationStatus=NOT_VERIFIED\|(?:sample-limit|diagnostic-values-out-of-range)$/u.test(line)) retained.push(line.replace(/^INSTRUMENTATION_STATUS: /u, ''));
     else if (line.includes('phase08LocalObservation=') || line.includes('phase08LocalObservationStatus=')) rejected = true;
+    else if (/^(?:INSTRUMENTATION_STATUS: )?phase08AudioPrecondition=(?:paused-existing|no-existing-session)$/u.test(line)) retained.push(line.replace(/^INSTRUMENTATION_STATUS: /u, ''));
+    else if (line.includes('phase08AudioPrecondition=')) rejected = true;
     else if (failure && SDK_FAILURE_TYPES.has(failure[1])) retained.push(line);
+    else if (searchPreparation) retained.push(`phase08SearchPreparation=${searchPreparation.slice(1).join('|')}`);
+    else if (line.includes('phase08SearchPreparation=')) rejected = true;
     else if (preparation) retained.push(`phase08LocalPreparation=${preparation.slice(1).join('|')}`);
     else if (line.includes('phase08LocalPreparation=')) rejected = true;
     else if (validLocal) retained.push(`phase08LocalAudio=${local.slice(1).join('|')}`);
     else if (line.includes('phase08LocalAudio=')) rejected = true;
     else if (timing && Number(timing[2]) <= 120000) retained.push(`phase08LocalTiming=${timing.slice(1).join('|')}`);
     else if (line.includes('phase08LocalTiming=')) rejected = true;
-    else if (metric && ids.includes(metric[2]) && LIVE_STATUS.has(metric[3]) && LIVE_REASONS.has(metric[5])) retained.push(`phase08Metric=${metric.slice(1).join('|')}`);
+    else if (metric && ids.includes(metric[2]) && LIVE_STATUS.has(metric[3]) && LIVE_REASONS.has(metric[5]) && (!AUDIO_UNVERIFIED.has(metric[5]) || metric[1] === 'first-audio' && metric[3] === 'NOT_VERIFIED')) retained.push(`phase08Metric=${metric.slice(1).join('|')}`);
     else if (line.includes('phase08Metric=')) rejected = true;
     else if (/^(?:INSTRUMENTATION_STATUS: )?phase08Native=(?:PASS\|OBSERVED|NOT_VERIFIED\|UNAVAILABLE)\|[0-9]{1,12}\|[0-9]{1,12}$/u.test(line)) retained.push(line.replace(/^INSTRUMENTATION_STATUS: /u, ''));
     else if (line.includes('phase08Native=')) rejected = true;
