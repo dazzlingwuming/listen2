@@ -33,6 +33,8 @@ public final class AccessibilityDriver {
     private static final int MAX_ATTRIBUTE_LENGTH = 512;
 
     private final Instrumentation instrumentation;
+    private String selectedBilibiliVideoTitle;
+    private String selectedBilibiliPartTitle;
 
     AccessibilityDriver(Instrumentation instrumentation) {
         this.instrumentation = instrumentation;
@@ -299,6 +301,14 @@ public final class AccessibilityDriver {
             return PlaybackProbe.notVerified("no-visible-play-action-" + safeTitle);
         }
         tapLabel(playLabel);
+        // A video search Play action opens the required part chooser; it is
+        // not yet a concrete audio request. Follow only an unambiguous visible P1.
+        if (waitForLabel("视频分段", 2_000L)) {
+            selectedBilibiliVideoTitle = title;
+            String part = waitForUniqueBilibiliP1();
+            if (part == null) return PlaybackProbe.notVerified("ambiguous-or-unavailable-p1");
+            return playBilibiliPart(part);
+        }
         if (!waitForLabel("打开播放器", 12_000L)) {
             return PlaybackProbe.notVerified("no-mini-player-" + safeTitle);
         }
@@ -329,20 +339,27 @@ public final class AccessibilityDriver {
      * inspect application state.
      */
     String openFirstBilibiliPart(String searchTitle) {
+        selectedBilibiliVideoTitle = searchTitle;
+        selectedBilibiliPartTitle = null;
         tapLabel("查看" + searchTitle + "详情");
         require(waitForLabel("视频分段", 12_000L), "Bilibili part screen was not visible");
+        return waitForUniqueBilibiliP1();
+    }
+
+    private String waitForUniqueBilibiliP1() {
         // Detail is a second live provider request.  On a cold API 35 image it
         // can legitimately arrive after the search rows, so keep this bounded
         // but do not mistake a slow visible loading state for a missing action.
         long deadline = SystemClock.elapsedRealtime() + 20_000L;
         while (SystemClock.elapsedRealtime() < deadline) {
-            Matcher matcher = Pattern.compile("content-desc=\\\"打开([^\\\"]{1,160})MV画面\\\"").matcher(dumpWindow());
-            if (matcher.find()) {
-                return matcher.group(1);
+            String title = BilibiliPlaybackObservation.uniqueP1(dumpWindow());
+            if (title != null && hasClickableTarget("播放" + title)) {
+                selectedBilibiliPartTitle = title;
+                return title;
             }
             SystemClock.sleep(250L);
         }
-        throw new AssertionError("Bilibili part actions were not visible");
+        return null;
     }
 
     /**
@@ -352,7 +369,12 @@ public final class AccessibilityDriver {
      * to play the video-level search row itself.
      */
     PlaybackProbe playBilibiliPart(String partTitle) {
+        if (partTitle == null || !partTitle.equals(selectedBilibiliPartTitle) || selectedBilibiliVideoTitle == null ||
+            !partTitle.equals(BilibiliPlaybackObservation.uniqueP1(dumpWindow()))) {
+            return PlaybackProbe.notVerified("ambiguous-or-changed-p1");
+        }
         String safeTitle = sanitizeVisibleTitle(partTitle);
+        String expectedTitle = selectedBilibiliVideoTitle + " · " + partTitle;
         tapLabel("播放" + partTitle);
         allowNotificationPermissionIfPrompted();
         // Native Bilibili resolution has a bounded 10s connect + 15s read
@@ -367,16 +389,24 @@ public final class AccessibilityDriver {
         if (firstPosition == null) {
             return PlaybackProbe.notVerified("no-progress-control-" + safeTitle);
         }
+        BilibiliPlaybackObservation.Snapshot firstNative = BilibiliPlaybackObservation.snapshot(shell("dumpsys media_session"), expectedTitle);
         SystemClock.sleep(2_500L);
         Long laterPosition = progressPosition(dumpWindow());
         if (laterPosition == null || laterPosition <= firstPosition) {
             return PlaybackProbe.notVerified("position-not-advancing-" + safeTitle);
         }
-        String mediaSession = shell("dumpsys media_session");
-        if (!mediaSession.contains(TARGET_PACKAGE) || !isNativePlayingState(mediaSession)) {
-            return PlaybackProbe.notVerified("native-session-not-playing-" + safeTitle);
+        BilibiliPlaybackObservation.Snapshot laterNative = BilibiliPlaybackObservation.snapshot(shell("dumpsys media_session"), expectedTitle);
+        if (firstNative == null || !firstNative.sameObservedAdvancingTrack(laterNative)) {
+            return PlaybackProbe.notVerified("target-native-position-or-title-not-verified-" + safeTitle);
         }
-        return PlaybackProbe.verified(safeTitle, firstPosition, laterPosition);
+        record("live-bilibili-native-position=PASS-target-package-video-part-title-advancing");
+        if (firstNative.sameExactAdvancingTrack(laterNative)) {
+            record("live-bilibili-native-track-identity=PASS-observed-stable-bvid-cid");
+        }
+        // The UI does not expose the selected expected cid or the complete
+        // provider part count. An observed native id cannot independently bind
+        // that selection, even when audio progression has been demonstrated.
+        return PlaybackProbe.notVerified("cid-identity-unavailable");
     }
 
     /**
