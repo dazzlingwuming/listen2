@@ -26,6 +26,7 @@ class BilibiliOfflineContractTest {
         assertFalse(BilibiliOfflinePolicy.matches(grant().copy(identity = grant().identity.copy(partId = "124")), "bilibili", track))
         assertFalse(BilibiliOfflinePolicy.matches(grant().copy(accountGeneration = 0L), "bilibili", track))
         assertFalse(BilibiliOfflinePolicy.matches(grant().copy(entitlementClass = OfflineEntitlementClass.ANONYMOUS_FREE), "bilibili", track))
+        assertFalse(BilibiliOfflinePolicy.matches(grant().copy(entitlementClass = OfflineEntitlementClass.UNVERIFIED), "bilibili", track))
     }
 
     @Test fun `fixed native DASH transport rejects arbitrary host path headers and expired URL`() {

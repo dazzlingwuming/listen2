@@ -62,6 +62,7 @@ internal enum class LeaseStatus {
 
 /** Only a native provider resolver may classify a descriptor as anonymous-free. */
 internal enum class OfflineEntitlementClass(val wire: String) {
+    UNVERIFIED("unverified"),
     ACCOUNT_BOUND("account-bound"),
     ANONYMOUS_FREE("anonymous-free"),
 }

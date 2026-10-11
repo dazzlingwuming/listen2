@@ -1,5 +1,7 @@
 package com.listen2mobile.bilibili
 
+import com.listen2mobile.media.OfflineEntitlementClass
+
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -38,6 +40,79 @@ class BilibiliContractTest {
         assertTrue(revocationCompleted.await(1, TimeUnit.SECONDS))
         assertNull(gate.withCurrent(requestGeneration) { it })
         assertFalse(gate.runIfCurrent(requestGeneration) { })
+    }
+
+    @Test fun `restoration adopts its own authenticated transition but cannot adopt concurrent logout`() {
+        val gate = BilibiliAccountGenerationGate()
+        val entryGeneration = gate.snapshot()
+        val restoredGeneration = gate.withCurrent(entryGeneration) {
+            gate.revoke { }
+            gate.snapshot()
+        }
+        assertEquals(1L, restoredGeneration)
+        assertNull(gate.withCurrent(entryGeneration) { it })
+        assertEquals(1L, gate.withCurrent(requireNotNull(restoredGeneration)) { it })
+        val restoringGeneration = gate.snapshot()
+        gate.revoke { } // Logout happened while restore was doing provider I/O.
+        var authenticationTransitionRan = false
+        assertNull(gate.withCurrent(restoringGeneration) {
+            authenticationTransitionRan = true
+            gate.revoke { }
+        })
+        assertFalse(authenticationTransitionRan)
+    }
+
+    @Test fun `only verified authentication gives account bound offline authority after any logout epoch`() {
+        for (status in BilibiliSession.PublicStatus.entries) {
+            val authenticated = status == BilibiliSession.PublicStatus.AUTHENTICATED
+            assertEquals(if (authenticated) 7L else 0L, BilibiliAudioAuthority.accountGeneration(status, 7L))
+            assertEquals(if (authenticated) OfflineEntitlementClass.ACCOUNT_BOUND else OfflineEntitlementClass.UNVERIFIED, BilibiliAudioAuthority.entitlement(status))
+        }
+    }
+
+    @Test fun `shared provider preparation restores a persisted account before provider I O`() {
+        val vault = FakeVault().apply { loaded = BilibiliVault.SessionMaterial("refresh", SESSION_COOKIES, "csrf") }
+        val gateway = FakeGateway()
+        val session = BilibiliSession(gateway, vault, FakeQrRenderer())
+        val gate = BilibiliAccountGenerationGate()
+        val prepared = BilibiliProviderSessionPreparation.prepare(gate.snapshot(), gate, session::restore) {
+            assertEquals(BilibiliSession.PublicStatus.AUTHENTICATED, it.status)
+            gate.revoke { }
+        }
+        prepared.requireUsable()
+        assertEquals(1, gateway.refreshCalls)
+        assertEquals(1L, prepared.generation)
+        assertEquals(BilibiliSession.PublicStatus.AUTHENTICATED, prepared.state.status)
+        assertTrue(gate.runIfCurrent(prepared.generation) { })
+    }
+
+    @Test fun `provider preparation never falls back to anonymous on degraded restore and respects logout`() {
+        for (status in listOf(BilibiliSession.PublicStatus.ERROR, BilibiliSession.PublicStatus.UNAVAILABLE)) {
+            val gate = BilibiliAccountGenerationGate()
+            val code = if (status == BilibiliSession.PublicStatus.ERROR) BilibiliPolicy.ErrorCode.NETWORK_ERROR else null
+            val prepared = BilibiliProviderSessionPreparation.prepare(gate.snapshot(), gate, { BilibiliSession.PublicState(status, errorCode = code) }) { }
+            var providerCalled = false
+            try {
+                prepared.requireUsable()
+                providerCalled = true
+            } catch (failure: BilibiliHttpsGateway.ProviderException) {
+                assertEquals(code ?: BilibiliPolicy.ErrorCode.NOT_READY, failure.code)
+            }
+            assertFalse(providerCalled)
+        }
+        val gate = BilibiliAccountGenerationGate()
+        val expected = gate.snapshot()
+        var authorityAdopted = false
+        try {
+            BilibiliProviderSessionPreparation.prepare(expected, gate, {
+                gate.revoke { }
+                BilibiliSession.PublicState(BilibiliSession.PublicStatus.AUTHENTICATED)
+            }) { authorityAdopted = true }
+            throw AssertionError("logout must cancel preparation")
+        } catch (failure: BilibiliHttpsGateway.ProviderException) {
+            assertEquals(BilibiliPolicy.ErrorCode.CANCELLED, failure.code)
+        }
+        assertFalse(authorityAdopted)
     }
 
     @Test fun `HTTP security rejection is terminal provider policy not offline`() {
@@ -192,14 +267,130 @@ class BilibiliContractTest {
         assertFalse(state.toString().contains("new-refresh"))
     }
 
-    @Test fun `restore failure clears vault and gateway without exposing session material`() {
+    @Test fun `explicit anonymous account clears vault and gateway without exposing session material`() {
         val vault = FakeVault().apply { loaded = BilibiliVault.SessionMaterial("refresh", SESSION_COOKIES, "csrf") }
-        val gateway = FakeGateway().apply { refreshed = null }
+        val gateway = FakeGateway().apply { accountValue = null }
         val state = BilibiliSession(gateway, vault, FakeQrRenderer()).restore()
         assertEquals(BilibiliSession.PublicStatus.IDLE, state.status)
         assertTrue(vault.cleared)
         assertTrue(gateway.loggedOut)
         assertFalse(state.toString().contains("SESSDATA"))
+    }
+
+    @Test fun `transient refresh and nav failures retain vault and retry once on later status`() {
+        for (code in listOf(BilibiliPolicy.ErrorCode.NETWORK_ERROR, BilibiliPolicy.ErrorCode.REQUEST_TIMEOUT, BilibiliPolicy.ErrorCode.PROVIDER_ERROR, BilibiliPolicy.ErrorCode.LOGIN_REQUIRED, BilibiliPolicy.ErrorCode.INVALID_RESPONSE)) {
+            val stored = BilibiliVault.SessionMaterial("refresh", SESSION_COOKIES, "csrf")
+            val vault = FakeVault().apply { loaded = stored }
+            val gateway = FakeGateway().apply { refreshFailure = BilibiliHttpsGateway.ProviderException(code) }
+            var now = NOW
+            val session = BilibiliSession(gateway, vault, FakeQrRenderer()) { now }
+            val degraded = session.restore()
+            assertEquals(BilibiliSession.PublicStatus.ERROR, degraded.status)
+            assertEquals(code, degraded.errorCode)
+            assertTrue(degraded.retryable)
+            assertFalse(vault.cleared)
+            assertTrue(gateway.loggedOut)
+            assertEquals(1, gateway.refreshCalls)
+            assertFalse(session.snapshot().status == BilibiliSession.PublicStatus.AUTHENTICATED)
+            repeat(10) { session.restore() }
+            assertEquals(1, gateway.refreshCalls)
+            now += 5_000L
+            gateway.refreshFailure = null
+            gateway.accountFailure = BilibiliHttpsGateway.ProviderException(code)
+            assertEquals(BilibiliSession.PublicStatus.ERROR, session.restore().status)
+            assertEquals(2, gateway.refreshCalls)
+            assertFalse(vault.cleared)
+            gateway.accountFailure = null
+            now += 5_000L
+            assertEquals(BilibiliSession.PublicStatus.AUTHENTICATED, session.restore().status)
+            assertEquals(3, gateway.refreshCalls)
+            session.restore()
+            assertEquals(3, gateway.refreshCalls)
+        }
+    }
+
+    @Test fun `nav authority requires an explicit boolean and treats missing or malformed fields as unknown`() {
+        assertEquals(true, BilibiliNavAccountPolicy.authenticated(true))
+        assertEquals(false, BilibiliNavAccountPolicy.authenticated(false))
+        for (invalid in listOf(null, "false", "true", 0, 1, mapOf("isLogin" to true))) {
+            assertNull(BilibiliNavAccountPolicy.authenticated(invalid))
+        }
+    }
+
+    @Test fun `provider explicit expired authentication clears instead of promoting stale cookies`() {
+        val vault = FakeVault().apply { loaded = BilibiliVault.SessionMaterial("refresh", SESSION_COOKIES, "csrf") }
+        val gateway = FakeGateway().apply { refreshFailure = BilibiliHttpsGateway.ProviderException(BilibiliPolicy.ErrorCode.LOGIN_REQUIRED, invalidAuthentication = true) }
+        val session = BilibiliSession(gateway, vault, FakeQrRenderer())
+        assertEquals(BilibiliSession.PublicStatus.IDLE, session.restore().status)
+        assertTrue(vault.cleared)
+        assertTrue(gateway.loggedOut)
+        assertFalse(session.snapshot().status == BilibiliSession.PublicStatus.AUTHENTICATED)
+    }
+
+    @Test fun `incomplete refresh response preserves encrypted session but grants no account authority`() {
+        val vault = FakeVault().apply { loaded = BilibiliVault.SessionMaterial("refresh", SESSION_COOKIES, "csrf") }
+        val gateway = FakeGateway().apply { refreshed = null }
+        assertEquals(BilibiliSession.PublicStatus.ERROR, BilibiliSession(gateway, vault, FakeQrRenderer()).restore().status)
+        assertFalse(vault.cleared)
+        assertTrue(gateway.loggedOut)
+    }
+
+    @Test fun `failed refresh confirmation preserves rotated material and grants no authority until later validation`() {
+        val vault = FakeVault().apply { loaded = BilibiliVault.SessionMaterial("old-refresh", SESSION_COOKIES, "csrf", "owner") }
+        val rotated = BilibiliVault.SessionMaterial("rotated-refresh", SESSION_COOKIES, "csrf")
+        val gateway = FakeGateway().apply {
+            refreshFailure = BilibiliHttpsGateway.ProviderException(BilibiliPolicy.ErrorCode.REQUEST_TIMEOUT, rotatedSession = rotated)
+        }
+        var now = NOW
+        val session = BilibiliSession(gateway, vault, FakeQrRenderer()) { now }
+        assertEquals(BilibiliSession.PublicStatus.ERROR, session.restore().status)
+        assertEquals(rotated.copy(ownerId = "owner"), vault.saved)
+        assertFalse(vault.cleared)
+        assertTrue(gateway.loggedOut)
+        gateway.refreshFailure = null
+        now += 5_000L
+        assertEquals(BilibiliSession.PublicStatus.AUTHENTICATED, session.restore().status)
+        assertEquals(rotated.copy(ownerId = "owner"), gateway.restoredMaterials[1])
+        assertFalse(session.snapshot().toString().contains("rotated-refresh"))
+    }
+
+    @Test fun `concurrent restore queries share one in flight provider attempt`() {
+        val vault = FakeVault().apply { loaded = BilibiliVault.SessionMaterial("refresh", SESSION_COOKIES, "csrf") }
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val gateway = FakeGateway().apply { beforeRefresh = { entered.countDown(); assertTrue(release.await(1, TimeUnit.SECONDS)) } }
+        val session = BilibiliSession(gateway, vault, FakeQrRenderer())
+        val result = AtomicReference<BilibiliSession.PublicState>()
+        val restoring = Thread { result.set(session.restore()) }
+        restoring.start()
+        assertTrue(entered.await(1, TimeUnit.SECONDS))
+        assertFalse(session.restore().status == BilibiliSession.PublicStatus.AUTHENTICATED)
+        assertEquals(1, gateway.refreshCalls)
+        release.countDown()
+        restoring.join(1_000)
+        assertEquals(BilibiliSession.PublicStatus.AUTHENTICATED, result.get().status)
+        assertEquals(1, gateway.refreshCalls)
+    }
+
+    @Test fun `logout during refresh prevents old material from being saved and discards late cookies`() {
+        val vault = FakeVault().apply { loaded = BilibiliVault.SessionMaterial("refresh", SESSION_COOKIES, "csrf") }
+        val gateway = FakeGateway()
+        val session = BilibiliSession(gateway, vault, FakeQrRenderer())
+        gateway.beforeRefresh = { session.logout() }
+        assertEquals(BilibiliSession.PublicStatus.IDLE, session.restore().status)
+        assertTrue(vault.cleared)
+        assertNull(vault.saved)
+        assertEquals(2, gateway.logoutCalls)
+    }
+
+    @Test fun `logout during restoration cannot resurrect the persisted session`() {
+        val vault = FakeVault().apply { loaded = BilibiliVault.SessionMaterial("refresh", SESSION_COOKIES, "csrf") }
+        val gateway = FakeGateway()
+        val session = BilibiliSession(gateway, vault, FakeQrRenderer())
+        gateway.beforeAccount = { session.logout() }
+        assertEquals(BilibiliSession.PublicStatus.IDLE, session.restore().status)
+        assertTrue(vault.cleared)
+        assertFalse(session.snapshot().status == BilibiliSession.PublicStatus.AUTHENTICATED)
     }
 
     @Test fun `vault decrypt failure fails closed before any public session state`() {
@@ -336,7 +527,7 @@ class BilibiliContractTest {
                 saved?.ownerId?.let { clearIfOwned(it) }
                 return null
             }
-            return loaded ?: saved
+            return saved ?: loaded
         }
         override fun clearIfOwned(ownerId: String) {
             if (saved?.ownerId == ownerId) {
@@ -357,15 +548,26 @@ class BilibiliContractTest {
         var accountValue: BilibiliGateway.Account? = BilibiliGateway.Account("listener", null)
         var beforeAccount: (() -> Unit)? = null
         var loggedOut = false
+        var refreshCalls = 0
+        var beforeRefresh: (() -> Unit)? = null
+        var logoutCalls = 0
+        var refreshFailure: Exception? = null
+        var accountFailure: Exception? = null
         override fun beginQr() = BilibiliSession.QrChallenge("provider-key", "https://passport.bilibili.com/h5-app/passport/login/scan?qrcode_key=provider-key", NOW + 10_000L)
         override fun pollQr(qrKey: String): BilibiliSession.PollResult { polled = true; return pollResult }
         override fun cancelPoll(qrKey: String) { cancelledKeys += qrKey }
         override fun exportSession(refreshMaterial: String) = BilibiliVault.SessionMaterial(refreshMaterial, SESSION_COOKIES, "csrf")
         override fun restoreSession(material: BilibiliVault.SessionMaterial) { restoredMaterials += material }
-        override fun refresh(material: BilibiliVault.SessionMaterial) = refreshed
-        override fun logout() { loggedOut = true }
+        override fun refresh(material: BilibiliVault.SessionMaterial): BilibiliVault.SessionMaterial? {
+            refreshCalls += 1
+            beforeRefresh?.invoke()
+            refreshFailure?.let { throw it }
+            return refreshed
+        }
+        override fun logout() { loggedOut = true; logoutCalls += 1 }
         override fun account(): BilibiliGateway.Account? {
             beforeAccount?.invoke()
+            accountFailure?.let { throw it }
             return accountValue
         }
         override fun videoDetail(bvid: String) = throw UnsupportedOperationException()

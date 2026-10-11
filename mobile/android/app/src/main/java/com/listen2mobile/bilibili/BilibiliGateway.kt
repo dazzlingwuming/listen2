@@ -105,12 +105,19 @@ internal class BilibiliHttpsGateway : BilibiliGateway {
             ?: return null
         val newCsrf = synchronized(cookies) { cookies["bili_jct"] }
             ?.takeIf { it.isNotBlank() } ?: return null
-        request(
-            "https://passport.bilibili.com/x/passport-login/web/confirm/refresh",
-            method = "POST",
-            body = formBody("csrf" to newCsrf, "refresh_token" to material.refreshMaterial),
-        )
-        return exportSession(refreshed)
+        val rotated = exportSession(refreshed)
+        try {
+            request(
+                "https://passport.bilibili.com/x/passport-login/web/confirm/refresh",
+                method = "POST",
+                body = formBody("csrf" to newCsrf, "refresh_token" to material.refreshMaterial),
+            )
+        } catch (failure: ProviderException) {
+            // Rotation already happened. Preserve its new encrypted material without
+            // pretending that the failed finalization established account authority.
+            throw ProviderException(failure.code, failure.invalidAuthentication, rotated)
+        }
+        return rotated
     }
 
     override fun logout() {
@@ -120,11 +127,15 @@ internal class BilibiliHttpsGateway : BilibiliGateway {
 
     override fun account(): BilibiliGateway.Account? {
         if (synchronized(cookies) { cookies["SESSDATA"].isNullOrBlank() }) return null
-        return try {
-            val data = request("https://api.bilibili.com/x/web-interface/nav", allowAnonymous = true)
-            if (data.optBoolean("_anonymous", false)) return null
-            BilibiliGateway.Account(data.optString("uname", null), data.optString("face", null))
-        } catch (_: Exception) { null }
+        val data = request("https://api.bilibili.com/x/web-interface/nav")
+        // Only the provider's positive login assertion establishes account authority.
+        // A network/policy failure must remain distinguishable from an invalid session.
+        when (BilibiliNavAccountPolicy.authenticated(data.opt("isLogin"))) {
+            null -> throw ProviderException(BilibiliPolicy.ErrorCode.INVALID_RESPONSE)
+            false -> return null
+            true -> Unit
+        }
+        return BilibiliGateway.Account(data.optString("uname", null), data.optString("face", null))
     }
 
     override fun search(query: String, page: Long): BilibiliGateway.SearchPage {
@@ -306,7 +317,7 @@ internal class BilibiliHttpsGateway : BilibiliGateway {
             stage = "provider-code"
             return when (root.optInt("code", Int.MIN_VALUE)) {
                 0 -> root.optJSONObject("data") ?: throw ProviderException(BilibiliPolicy.ErrorCode.INVALID_RESPONSE)
-                -101 -> if (allowAnonymous) (root.optJSONObject("data") ?: JSONObject()).put("_anonymous", true) else throw ProviderException(BilibiliPolicy.ErrorCode.LOGIN_REQUIRED)
+                -101 -> if (allowAnonymous) (root.optJSONObject("data") ?: JSONObject()).put("_anonymous", true) else throw ProviderException(BilibiliPolicy.ErrorCode.LOGIN_REQUIRED, invalidAuthentication = true)
                 -10403, 6002003 -> throw ProviderException(BilibiliPolicy.ErrorCode.MEMBERSHIP_REQUIRED)
                 -403 -> throw ProviderException(BilibiliPolicy.ErrorCode.REGION_RESTRICTED)
                 else -> throw ProviderException(BilibiliPolicy.ErrorCode.PROVIDER_ERROR)
@@ -409,9 +420,18 @@ internal class BilibiliHttpsGateway : BilibiliGateway {
         .find(html)?.groupValues?.getOrNull(1)?.takeIf { it.length in 1..512 && it.none { character -> character.code <= 31 } }
     private fun encode(value: String) = URLEncoder.encode(value, StandardCharsets.UTF_8.name())
 
-    class ProviderException(val code: BilibiliPolicy.ErrorCode) : IOException(code.name)
+    class ProviderException(
+        val code: BilibiliPolicy.ErrorCode,
+        val invalidAuthentication: Boolean = false,
+        val rotatedSession: BilibiliVault.SessionMaterial? = null,
+    ) : IOException(code.name)
 
     private companion object {
         const val REFRESH_PUBLIC_KEY = "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDLgd2OAkcGVtoE3ThUREbio0EgUc/prcajMKXvkCKFCWhJYJcLkcM2DKKcSeFpD/j6Boy538YXnR6VhcuUJOhH2x71nzPjfdTcqMz7djHum0qSZA0AyCBDABUqCrfNgCiJ00Ra7GmRj+YCK1NJEuewlb40JNrRuoEUXpabUzGB8QIDAQAB"
     }
+}
+
+/** Missing/malformed nav fields are unknown, never evidence that encrypted credentials expired. */
+internal object BilibiliNavAccountPolicy {
+    fun authenticated(isLogin: Any?): Boolean? = isLogin as? Boolean
 }

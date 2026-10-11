@@ -7,6 +7,7 @@ internal class BilibiliSession(
     private val gateway: BilibiliGateway,
     private val vault: BilibiliVaultStore,
     private val renderer: BilibiliQrRendererContract,
+    private val clock: () -> Long = { System.nanoTime() / 1_000_000L },
 ) {
     enum class PublicStatus { IDLE, WAITING, SCANNED, AUTHENTICATED, EXPIRED, CANCELLED, ERROR, UNAVAILABLE }
     sealed class PollResult {
@@ -21,6 +22,7 @@ internal class BilibiliSession(
     private val lock = Any()
     private val commitLock = Any()
     private var restored = false
+    private var restoreRetryAfter = 0L
     private var qrKey: String? = null
     private var attemptId = ""
     private var generation = 0L
@@ -30,27 +32,70 @@ internal class BilibiliSession(
     private var error: BilibiliPolicy.ErrorCode? = null
     private var account: BilibiliGateway.Account? = null
 
-    /** Restores only inside native code, refreshes by fixed route, then validates nav/account truth. */
+    /** Single-flight restoration with a short retry cooldown; encrypted material survives transport failures. */
     fun restore(): PublicState {
-        if (synchronized(lock) { if (restored) true else { restored = true; false } }) return snapshot()
-        if (!vault.isAvailable()) return synchronized(lock) { status = PublicStatus.UNAVAILABLE; projectionLocked() }
+        val restoreGeneration = synchronized(lock) {
+            if (restored || clock() < restoreRetryAfter || status in setOf(PublicStatus.WAITING, PublicStatus.SCANNED)) return projectionLocked()
+            restored = true
+            generation
+        }
+        if (!vault.isAvailable()) return synchronized(lock) { restored = false; restoreRetryAfter = clock() + RESTORE_RETRY_COOLDOWN_MS; status = PublicStatus.UNAVAILABLE; projectionLocked() }
         val material = try { vault.loadSession() } catch (_: Exception) {
             try { vault.clear() } catch (_: Exception) { }
             return synchronized(lock) { account = null; status = PublicStatus.IDLE; projectionLocked() }
         } ?: return synchronized(lock) { status = PublicStatus.IDLE; projectionLocked() }
         return try {
             gateway.restoreSession(material)
-            val refreshed = gateway.refresh(material) ?: throw IllegalStateException()
-            vault.saveCommittedSession(refreshed.copy(ownerId = material.ownerId))
+            val refreshed = gateway.refresh(material)
+                ?: throw BilibiliHttpsGateway.ProviderException(BilibiliPolicy.ErrorCode.INVALID_RESPONSE)
+            // Persist rotated refresh material even if the following nav request is temporarily
+            // unavailable. It remains credential storage, never proof of current authorization.
+            synchronized(commitLock) {
+                if (synchronized(lock) { generation != restoreGeneration }) return discardStaleRestoration()
+                vault.saveCommittedSession(refreshed.copy(ownerId = material.ownerId))
+            }
             gateway.restoreSession(refreshed)
-            val verifiedAccount = gateway.account() ?: throw IllegalStateException()
-            synchronized(lock) { account = verifiedAccount; status = PublicStatus.AUTHENTICATED; error = null; projectionLocked() }
-        } catch (_: Exception) {
-            try { vault.clear() } catch (_: Exception) { }
-            gateway.logout()
-            synchronized(lock) { account = null; status = PublicStatus.IDLE; error = null; projectionLocked() }
+            val verifiedAccount = gateway.account() ?: throw InvalidStoredAuthentication()
+            synchronized(commitLock) {
+                synchronized(lock) {
+                    if (generation != restoreGeneration) return discardStaleRestoration()
+                    restoreRetryAfter = 0L
+                    account = verifiedAccount; status = PublicStatus.AUTHENTICATED; error = null; projectionLocked()
+                }
+            }
+        } catch (failure: Exception) {
+            val invalid = failure is InvalidStoredAuthentication ||
+                (failure is BilibiliHttpsGateway.ProviderException && failure.invalidAuthentication)
+            synchronized(commitLock) {
+                if (synchronized(lock) { generation != restoreGeneration }) return discardStaleRestoration()
+                if (invalid) try { vault.clear() } catch (_: Exception) { }
+                else (failure as? BilibiliHttpsGateway.ProviderException)?.rotatedSession?.let { rotated ->
+                    try { vault.saveCommittedSession(rotated.copy(ownerId = material.ownerId)) } catch (_: Exception) { }
+                }
+                try { gateway.logout() } catch (_: Exception) { }
+                synchronized(lock) {
+                    account = null
+                    status = if (invalid) PublicStatus.IDLE else PublicStatus.ERROR
+                    error = if (invalid) null else (failure as? BilibiliHttpsGateway.ProviderException)?.code ?: BilibiliPolicy.ErrorCode.PROVIDER_ERROR
+                    // A later query may perform one attempt after the cooldown; no background loop.
+                    restoreRetryAfter = if (invalid) 0L else clock() + RESTORE_RETRY_COOLDOWN_MS
+                    restored = invalid
+                    projectionLocked()
+                }
+            }
         }
     }
+
+    private fun discardStaleRestoration(): PublicState = synchronized(lock) {
+        // A late refresh may have reinstalled cookies after logout. Do not retain
+        // them, and do not disturb a newer independently authenticated account.
+        if (status != PublicStatus.AUTHENTICATED) try { gateway.logout() } catch (_: Exception) { }
+        projectionLocked()
+    }
+
+    private class InvalidStoredAuthentication : Exception()
+
+    private companion object { const val RESTORE_RETRY_COOLDOWN_MS = 5_000L }
 
     fun begin(now: Long): PublicState {
         cancelActiveRequest()
@@ -131,7 +176,10 @@ internal class BilibiliSession(
         cancelActiveRequest()
         // Credential erasure is not contingent on best-effort provider transport
         // cleanup. A gateway exception must never retain an authenticated vault.
-        try { vault.clear() } catch (_: Exception) { }
+        synchronized(commitLock) {
+            synchronized(lock) { generation += 1L; restored = true; account = null; status = PublicStatus.IDLE; error = null }
+            try { vault.clear() } catch (_: Exception) { }
+        }
         return try {
             gateway.logout()
             synchronized(lock) { account = null; status = PublicStatus.IDLE; error = null; projectionLocked() }
@@ -178,6 +226,7 @@ internal class BilibiliSession(
                 if (!isActiveAttemptLocked(attempt)) CommitOutcome.STALE else {
                     clearTransientLocked()
                     account = verifiedAccount
+                    restored = true
                     status = PublicStatus.AUTHENTICATED
                     error = null
                     CommitOutcome.COMMITTED
