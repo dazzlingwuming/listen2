@@ -32,7 +32,7 @@ Listen2 是 [Listen1](https://github.com/listen1/listen1) 的社区增强版本�
 
 Windows 安装版选择 `listen1_2.35.2_win_x64.exe`，免安装压缩包选择 `.7z`。macOS 提供 x64、arm64、universal DMG。
 
-本版本未进行代码签名。频谱与缓存后续修正通过语法和前端静态检查；未执行本轮自动化回归或实机播放回归。主题预览、首版实测数据及具体修正记录见 [交付记录](docs/APPEARANCE_AND_WINDOWS.md)，其中首版性能数字不代表本次全部改动的回归结果。
+Windows 未使用商业代码签名；macOS 使用完整本地 ad-hoc 签名，未使用 Developer ID 或 Apple 公证。频谱与缓存后续修正通过语法和前端静态检查；未执行本轮自动化回归或实机播放回归。主题预览、首版实测数据及具体修正记录见 [交付记录](docs/APPEARANCE_AND_WINDOWS.md)，其中首版性能数字不代表本次全部改动的回归结果。
 
 ## v2.35.1 更新
 
@@ -149,7 +149,15 @@ Windows 安装版选择 `listen1_2.35.2_win_x64.exe`，免安装压缩包选择 
 
 ### macOS
 
-下载 x64、arm64 或 Universal DMG 后拖入“应用程序”。当前 macOS 构建未使用 Apple Developer ID 签名或公证，首次打开时可能出现系统安全提示。
+Intel Mac 下载 x64 DMG，Apple Silicon（M 系列）下载 arm64 DMG；Universal DMG 同时支持两者。打开 DMG 后将 Listen1 拖入“应用程序”。
+
+当前 macOS 构建使用完整的 ad-hoc（本地）签名来校验程序完整性，未使用 Apple Developer ID，也未经过 Apple 公证，因此首次从浏览器下载后仍会被 Gatekeeper 拦截。请先核对 [官方 Release](https://github.com/dazzlingwuming/listen2/releases/latest) 来源和 SHA-256，然后：
+
+1. 从“应用程序”打开 Listen1 一次，关闭系统拦截提示。
+2. 打开“系统设置 → 隐私与安全性”，在安全性区域找到 Listen1 的提示，点击“仍要打开”（Open Anyway）。
+3. 按系统要求确认或输入管理员密码，再点击“打开”。此操作仅允许这份应用运行；后续通常可正常打开。更新后系统可能再次要求确认。
+
+ad-hoc 签名不代表 Apple 验证了开发者身份。如果系统未提供“仍要打开”，请保留提示文字并反馈，不要关闭 Gatekeeper。
 
 本版本只发布 Windows x64 的 NSIS 与 7z，以及 macOS x64、arm64 和 Universal DMG；不发布 Linux、Windows ia32 或 Windows arm64 制品。
 
@@ -160,7 +168,7 @@ Windows 安装版选择 `listen1_2.35.2_win_x64.exe`，免安装压缩包选择 
 | 平台                        | 状态         | 说明                                                                  |
 | --------------------------- | ------------ | --------------------------------------------------------------------- |
 | Windows 10/11 x64           | 发布目标     | 提供 NSIS 安装包与 7z；包含现代 UI、Bilibili、MV、桌面歌词与 DeepSeek 翻译 |
-| macOS Intel / Apple Silicon | 发布目标     | 提供 x64、arm64 与 Universal DMG；当前未签名或公证                    |
+| macOS Intel / Apple Silicon | 发布目标     | 提供 x64、arm64 与 Universal DMG；完整 ad-hoc 签名，无 Developer ID 或公证 |
 | Windows ia32 / arm64        | 不发布       | 本版本不提供对应制品                                                  |
 | Linux                       | 不发布       | 本版本不提供 Linux 制品                                               |
 
@@ -208,7 +216,7 @@ npm run dist:win
 npm run dist:mac
 ```
 
-构建产物位于 `dist/`。公开分发前，请在目标系统实机测试并按平台要求完成代码签名。
+构建产物位于 `dist/`。macOS 的 `build/macosSign.js` 在架构合并完成后，对完整应用及嵌套代码进行 ad-hoc 签名并严格验证，随后才生成 DMG 与更新元数据；不需要商业签名证书。这不会移除首次下载时的 Gatekeeper 提示。公开分发前，请在目标系统实机测试。
 
 ### 运行测试
 
