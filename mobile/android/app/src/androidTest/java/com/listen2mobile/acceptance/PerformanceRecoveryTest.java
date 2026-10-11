@@ -86,9 +86,16 @@ public final class PerformanceRecoveryTest {
         progress.step("saf-generated-local-playing");
     }
 
-    public static void resumeLocal(Instrumentation instrumentation, ScenarioProgress progress) {
+    public static void resumeLocal(Instrumentation instrumentation, ScenarioProgress progress, Bundle arguments) {
         progress.step("resume-local-player");
-        new AccessibilityDriver(instrumentation).resumeVisiblePlayer();
+        new AccessibilityDriver(instrumentation).resumeVisiblePlayer(SyntheticAudioObservation.parseAnchor(arguments.getString("phase08ResumeAnchorMs")));
+    }
+
+    public static void nativeProbe(Instrumentation instrumentation, ScenarioProgress progress) {
+        progress.step("native-read-only-sample");
+        Bundle status = new Bundle();
+        status.putString("phase08Native", NativePlaybackObservation.read(instrumentation).safeLine());
+        instrumentation.sendStatus(1, status);
     }
 
     private static void emit(Instrumentation instrumentation, String metric, String id, AccessibilityDriver.PerformanceSample sample) {

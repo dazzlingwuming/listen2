@@ -126,8 +126,11 @@ android {
             minifyEnabled true
             shrinkResources true
             // Test-only R8 reachability. Product ProGuard inputs remain
-            // unchanged and acceptance installs the sealed product APK.
+            // isolated from the ordinary release build.
             testProguardFiles 'proguard-android-test.pro'
+            // Preserve only the existing read-only public APIs used by the
+            // acceptance APK; test R8 applies this product's obfuscation map.
+            proguardFiles 'proguard-release-like-acceptance.pro'
             manifestPlaceholders = [usesCleartextTraffic: "false"]
             matchingFallbacks = ["release"]
         }

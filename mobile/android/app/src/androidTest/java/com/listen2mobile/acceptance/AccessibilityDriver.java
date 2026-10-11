@@ -860,37 +860,182 @@ public final class AccessibilityDriver {
     }
 
     PerformanceSample measureVisibleAudio(String title) {
+        return measureVisibleAudio(title, false);
+    }
+
+    private PerformanceSample measureVisibleAudio(String title, boolean localDiagnostic) {
         long started = SystemClock.elapsedRealtime();
         try {
             tapLabel("播放" + title);
-            Long first = null;
+            if (localDiagnostic) emitLocalAudioTiming("initial-tap-complete", started);
+            return observeVisibleAudioAdvancement(title, started, localDiagnostic, null);
+        } catch (AssertionError error) {
+            return new PerformanceSample("FAIL", SystemClock.elapsedRealtime() - started, "audio-initial-tap-failed", null);
+        }
+    }
+
+    private PerformanceSample observeVisibleAudioAdvancement(String title, long started, boolean localDiagnostic, Long resumeAnchor) {
+        SyntheticAudioObservation paired = localDiagnostic ? new SyntheticAudioObservation(resumeAnchor == null, resumeAnchor) : null;
+        String operation = "audio-unknown-assert";
+        Long first = null;
+        NativePlaybackObservation.Sample firstNative = null;
+        BilibiliPlaybackObservation.Snapshot firstSession = null;
+        boolean uiObserved = false;
+        boolean getterObserved = false;
+        boolean playingIdentityObserved = false;
+        List<String> observations = new ArrayList<>();
+        String observationStatus = null;
+        try {
+            if (localDiagnostic) emitLocalAudioTiming("first-observation", started);
             while (SystemClock.elapsedRealtime() - started < 6_000L) {
-                if (dumpWindow().contains("Allow Listen2 to send you notifications?")) allowNotificationPermissionIfPrompted();
-                if (hasClickableTarget("打开播放器")) tapLabel("打开播放器");
-                Long current = progressPosition(dumpWindow());
-                if (first == null && current != null) first = current;
-                if (first != null && current != null && current > first && targetSessionPlaying(shell("dumpsys media_session"), title)) {
+                operation = "audio-unknown-assert";
+                if (dumpWindow().contains("Allow Listen2 to send you notifications?")) {
+                    operation = "audio-notification-failed";
+                    allowNotificationPermissionIfPrompted();
+                }
+                operation = "audio-mini-tap-failed";
+                if (!localDiagnostic && hasClickableTarget("打开播放器")) tapLabel("打开播放器");
+                operation = "audio-unknown-assert";
+                String playerWindow = dumpWindow();
+                long uiAt = SystemClock.elapsedRealtime();
+                Long current = progressPosition(playerWindow);
+                uiObserved |= current != null;
+                if (!localDiagnostic && first == null && current != null) first = current;
+                NativePlaybackObservation.Sample currentNative = NativePlaybackObservation.read(instrumentation);
+                getterObserved |= currentNative.observed();
+                operation = "audio-native-shell-failed";
+                String sessions = shell("dumpsys media_session");
+                operation = "audio-unknown-assert";
+                BilibiliPlaybackObservation.Snapshot currentSession = BilibiliPlaybackObservation.snapshot(sessions, title);
+                playingIdentityObserved |= currentSession != null;
+                if (!localDiagnostic && firstNative == null && currentNative.observed() && currentSession != null) { firstNative = currentNative; firstSession = currentSession; }
+                SyntheticAudioObservation.Result pairedResult = SyntheticAudioObservation.Result.WAIT;
+                if (localDiagnostic) {
+                    pairedResult = paired.observe(SystemClock.elapsedRealtime() - started, current,
+                        currentNative.observed() ? currentNative.positionMs : null, uiAt, currentNative.elapsedMs,
+                        playerWindow.contains("关闭播放器") && playerWindow.contains(title), currentSession != null, currentSession == null ? null : currentSession.metadata);
+                    first = paired.firstUiSeconds;
+                    if (pairedResult == SyntheticAudioObservation.Result.ROLLBACK) return new PerformanceSample("FAIL", SystemClock.elapsedRealtime() - started, "audio-resume-position-rollback", null);
+                    if (pairedResult == SyntheticAudioObservation.Result.INVALID_CLOCK) return new PerformanceSample("NOT_VERIFIED", SystemClock.elapsedRealtime() - started, "audio-observation-clock-invalid", null);
+                    long elapsed = SystemClock.elapsedRealtime() - started;
+                    long uiFirst = first == null ? -1L : first;
+                    long uiCurrent = current == null ? -1L : current;
+                    long nativeFirst = paired.firstNativeMs == null ? -1L : paired.firstNativeMs;
+                    long nativeCurrent = currentNative.observed() ? currentNative.positionMs : -1L;
+                    if (elapsed < 0L || elapsed > 120_000L || uiFirst < -1L || uiFirst > 604_800L || uiCurrent < -1L || uiCurrent > 604_800L ||
+                            nativeFirst < -1L || nativeFirst > 604_800_000L || nativeCurrent < -1L || nativeCurrent > 604_800_000L) {
+                        observationStatus = "NOT_VERIFIED|diagnostic-values-out-of-range";
+                    } else if (observations.size() >= 32) {
+                        observationStatus = "NOT_VERIFIED|sample-limit";
+                    } else {
+                        boolean metadataEqual = currentSession != null && paired.sameIdentity(currentSession.metadata);
+                        observations.add((observations.size() + 1) + "|" + elapsed + "|" + uiFirst + "|" + uiCurrent + "|" + nativeFirst + "|" + nativeCurrent + "|" +
+                            currentNative.observed() + "|" + (currentSession != null) + "|" + metadataEqual);
+                    }
+                }
+                if (localDiagnostic && pairedResult == SyntheticAudioObservation.Result.PASS && SystemClock.elapsedRealtime() - started <= 6_000L) return new PerformanceSample("PASS", SystemClock.elapsedRealtime() - started, "visible-and-native-position-advancing", null);
+                if (!localDiagnostic && first != null && current != null && current > first && firstNative != null && currentNative.observed() &&
+                        currentNative.positionMs > firstNative.positionMs && currentSession != null && firstSession.metadata.equals(currentSession.metadata) &&
+                        SystemClock.elapsedRealtime() - started <= 6_000L) {
                     return new PerformanceSample("PASS", SystemClock.elapsedRealtime() - started, "visible-and-native-position-advancing", null);
                 }
                 SystemClock.sleep(100L);
             }
-            return new PerformanceSample("TIMEOUT", SystemClock.elapsedRealtime() - started, "audio-not-advancing", null);
+            String reason = !uiObserved ? "audio-ui-progress-unavailable" :
+                !getterObserved ? "audio-native-getter-unavailable" :
+                !playingIdentityObserved ? "audio-playing-identity-unavailable" :
+                localDiagnostic && paired.firstNativeMs == null ? "audio-pair-unavailable" : "audio-not-advancing";
+            return new PerformanceSample("TIMEOUT", SystemClock.elapsedRealtime() - started, reason, null);
         } catch (AssertionError error) {
-            return new PerformanceSample("FAIL", SystemClock.elapsedRealtime() - started, "audio-ui-action-failed", null);
+            return new PerformanceSample("FAIL", SystemClock.elapsedRealtime() - started, operation, null);
+        } finally {
+            if (localDiagnostic) {
+                for (String row : observations) {
+                    Bundle status = new Bundle();
+                    status.putString("phase08LocalObservation", row);
+                    instrumentation.sendStatus(1, status);
+                }
+                if (observationStatus != null) {
+                    Bundle status = new Bundle();
+                    status.putString("phase08LocalObservationStatus", observationStatus);
+                    instrumentation.sendStatus(1, status);
+                }
+            }
         }
+    }
+
+    private void emitLocalAudioTiming(String stage, long started) {
+        long now = SystemClock.elapsedRealtime();
+        long elapsed = now - started;
+        if (elapsed < 0L || elapsed > 120_000L || now < 0L || now > 999_999_999_999L) return;
+        Bundle status = new Bundle();
+        status.putString("phase08LocalTiming", stage + "|" + elapsed + "|" + now);
+        instrumentation.sendStatus(1, status);
+    }
+
+    private void emitLocalAudioSample(PerformanceSample sample) {
+        boolean validElapsed = sample.elapsedMillis >= 0L && sample.elapsedMillis <= 120_000L;
+        Bundle status = new Bundle();
+        status.putString("phase08LocalAudio", validElapsed ? sample.status + "|" + sample.elapsedMillis + "|" + sample.reason :
+            "NOT_VERIFIED|0|diagnostic-elapsed-out-of-range");
+        instrumentation.sendStatus(1, status);
+    }
+
+    /** Preparation only: follow visible back controls, never force a route. */
+    private void returnToPhoneShellForLocalPreparation() {
+        long deadline = SystemClock.elapsedRealtime() + 10_000L;
+        int navigations = 0;
+        emitLocalPreparation("start");
+        while (SystemClock.elapsedRealtime() < deadline) {
+            if (hasClickableTarget("搜索") && hasClickableTarget("我的")) {
+                emitLocalPreparation("shell-ready");
+                return;
+            }
+            String control = hasClickableTarget("关闭播放器") ? "关闭播放器" :
+                hasClickableTarget("返回上一页") ? "返回上一页" : null;
+            if (control != null) {
+                if (navigations >= 3) {
+                    emitLocalPreparation("navigation-limit");
+                    throw new AssertionError("local preparation exceeded its visible navigation limit");
+                }
+                try {
+                    String before = dumpWindow();
+                    emitLocalPreparation("关闭播放器".equals(control) ? "close-player" : "back-detail");
+                    tapLabel(control);
+                    navigations += 1;
+                    long remaining = deadline - SystemClock.elapsedRealtime();
+                    if (remaining > 0L) waitForWindowChange(before, Math.min(remaining, 1_500L));
+                } catch (AssertionError error) {
+                    emitLocalPreparation("action-failed");
+                    throw new AssertionError("local preparation visible navigation failed");
+                }
+            } else {
+                SystemClock.sleep(100L);
+            }
+        }
+        emitLocalPreparation("deadline-exceeded");
+        throw new AssertionError("local preparation phone shell was not ready before deadline");
+    }
+
+    private void emitLocalPreparation(String stage) {
+        long now = SystemClock.elapsedRealtime();
+        if (now < 0L || now > 999_999_999_999L) return;
+        Bundle status = new Bundle();
+        status.putString("phase08LocalPreparation", stage + "|" + now);
+        instrumentation.sendStatus(1, status);
     }
 
     /** Imports only the generated file through the ordinary system SAF picker. */
     void prepareSyntheticLocalAudio() {
         launchTarget();
-        if (hasClickableTarget("关闭播放器")) tapLabel("关闭播放器");
+        returnToPhoneShellForLocalPreparation();
         tapLabel("我的");
         if (!waitForLabel("Listen2AcceptanceSignal", 500L)) {
             require(scrollToLabel("导入本地音频"), "local importer not visible");
             tapLabel("导入本地音频");
-            require(waitForLabel("listen2-performance-signal.wav", 2_000L) || openDownloads(), "SAF Downloads route not visible");
-            require(waitForLabel("listen2-performance-signal.wav", 5_000L), "generated WAV not visible in SAF");
-            tapLabel("listen2-performance-signal.wav");
+            require(waitForLabel("listen2-performance-signal.flac", 2_000L) || openDownloads(), "SAF Downloads route not visible");
+            require(waitForLabel("listen2-performance-signal.flac", 5_000L), "generated FLAC not visible in SAF");
+            tapLabel("listen2-performance-signal.flac");
             if (hasClickableTarget("Open")) tapLabel("Open");
             else if (hasClickableTarget("打开")) tapLabel("打开");
             require(waitForLabel("已导入", 10_000L), "SAF import did not report completion");
@@ -898,8 +1043,13 @@ public final class AccessibilityDriver {
         require(scrollToLabel("打开本地音乐"), "local library tile not visible");
         tapLabel("打开本地音乐");
         require(waitForLabel("Listen2AcceptanceSignal", 5_000L), "generated title cannot be identified; refusing another local track");
-        PerformanceSample sample = measureVisibleAudio("Listen2AcceptanceSignal");
-        require("PASS".equals(sample.status), "generated local media did not advance");
+        // The main library also shows this title. Wait for the actual detail
+        // route and its exact enabled Play action before measuring audio.
+        require(waitForAnyClickableTarget(5_000L, "返回上一页") != null, "generated local detail back control was not ready");
+        require(waitForAnyClickableTarget(5_000L, "播放Listen2AcceptanceSignal") != null, "generated local detail play action was not ready");
+        PerformanceSample sample = measureVisibleAudio("Listen2AcceptanceSignal", true);
+        emitLocalAudioSample(sample);
+        require("PASS".equals(sample.status), "generated local media did not advance;status=" + sample.status + ";reason=" + sample.reason);
     }
 
     private static boolean targetSessionPlaying(String sessions, String title) {
@@ -911,13 +1061,51 @@ public final class AccessibilityDriver {
     }
 
     private boolean openDownloads() {
-        for (String label : new String[] { "Show roots", "显示根目录", "显示导航抽屉" }) {
-            if (hasClickableTarget(label)) { tapLabel(label); break; }
+        ClickTarget downloads = safDownloadsTarget();
+        if (downloads == null) {
+            String toggle = waitForAnyClickableTarget(5_000L, "Show roots", "显示根目录", "显示导航抽屉");
+            if (toggle == null) return false;
+            tapLabel(toggle);
+            long deadline = SystemClock.elapsedRealtime() + 5_000L;
+            while (downloads == null && SystemClock.elapsedRealtime() < deadline) {
+                downloads = safDownloadsTarget();
+                if (downloads == null) SystemClock.sleep(100L);
+            }
         }
+        if (downloads == null) return false;
+        String before = dumpWindow();
+        try {
+            boolean clicked = downloads.node.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+            if (!clicked || !waitForWindowChange(before, 1_000L)) {
+                // DocumentsUI ListView rows can handle touch without exposing
+                // clickable=true. This fallback uses only the exact trusted
+                // Downloads root row resolved below, never a nearby control.
+                shell("input tap " + downloads.bounds.centerX() + " " + downloads.bounds.centerY());
+                if (!waitForWindowChange(before, 3_000L)) return false;
+            }
+        } finally { downloads.node.recycle(); }
+        return true;
+    }
+
+    private ClickTarget safDownloadsTarget() {
         for (String label : new String[] { "Downloads", "下载" }) {
-            if (hasClickableTarget(label)) { tapLabel(label); return true; }
+            AccessibilityNodeInfo current = findLabeledNode(label);
+            for (int depth = 0; current != null && depth < 8; depth++) {
+                AccessibilityNodeInfo parent = current.getParent();
+                String packageName = stringValue(current.getPackageName());
+                boolean trusted = "com.google.android.documentsui".equals(packageName) || "com.android.documentsui".equals(packageName);
+                if (parent != null && trusted && current.isEnabled() && current.isVisibleToUser() &&
+                    parent.isEnabled() && "android.widget.ListView".contentEquals(stringValue(parent.getClassName())) &&
+                    (packageName + ":id/roots_list").equals(parent.getViewIdResourceName())) {
+                    Rect bounds = new Rect(); current.getBoundsInScreen(bounds); parent.recycle();
+                    if (!bounds.isEmpty()) return new ClickTarget(current, bounds);
+                    current.recycle(); current = null; break;
+                }
+                current.recycle(); current = parent;
+            }
+            if (current != null) current.recycle();
         }
-        return false;
+        return null;
     }
 
     private boolean scrollToLabel(String label) {
@@ -941,11 +1129,43 @@ public final class AccessibilityDriver {
         return false;
     }
 
-    void resumeVisiblePlayer() {
+    void resumeVisiblePlayer(Long resumeAnchor) {
+        if (resumeAnchor == null) {
+            emitLocalAudioSample(new PerformanceSample("NOT_VERIFIED", 0L, "audio-resume-anchor-unavailable", null));
+            throw new AssertionError("synthetic recovery anchor unavailable");
+        }
         launchTarget();
-        if (hasClickableTarget("打开播放器")) tapLabel("打开播放器");
-        if (hasClickableTarget("继续播放")) tapLabel("继续播放");
-        require(waitForLabel("暂停播放", 5_000L), "recovered player is not playing");
+        String ready = waitForAnyClickableTarget(20_000L, "关闭播放器", "打开播放器");
+        require(ready != null, "recovery launch did not expose a retained player");
+        if ("打开播放器".equals(ready)) tapLabel("打开播放器");
+        require(waitForLabel("Listen2AcceptanceSignal", 5_000L), "recovered generated media title was not visible");
+        String action = waitForAnyClickableTarget(5_000L, "继续播放", "暂停播放");
+        require(action != null, "recovered player controls were not ready");
+        long started = SystemClock.elapsedRealtime();
+        PerformanceSample sample;
+        try {
+            if ("继续播放".equals(action)) tapLabel("继续播放");
+            emitLocalAudioTiming("initial-tap-complete", started);
+            if (!waitForLabel("暂停播放", 5_000L)) {
+                sample = new PerformanceSample("FAIL", SystemClock.elapsedRealtime() - started, "audio-resume-control-failed", null);
+            } else {
+                sample = observeVisibleAudioAdvancement("Listen2AcceptanceSignal", started, true, resumeAnchor);
+            }
+        } catch (AssertionError error) {
+            sample = new PerformanceSample("FAIL", SystemClock.elapsedRealtime() - started, "audio-initial-tap-failed", null);
+        }
+        emitLocalAudioSample(sample);
+        require("PASS".equals(sample.status), "recovered generated media did not advance;status=" + sample.status + ";reason=" + sample.reason);
+    }
+
+    /** Wait for a real enabled control after asynchronous Activity/RN restoration. */
+    private String waitForAnyClickableTarget(long timeoutMillis, String... labels) {
+        long deadline = SystemClock.elapsedRealtime() + timeoutMillis;
+        while (SystemClock.elapsedRealtime() < deadline) {
+            for (String label : labels) if (hasClickableTarget(label)) return label;
+            SystemClock.sleep(100L);
+        }
+        return null;
     }
 
     static final class PerformanceSample {

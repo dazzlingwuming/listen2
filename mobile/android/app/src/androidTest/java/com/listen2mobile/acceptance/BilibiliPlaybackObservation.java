@@ -52,7 +52,7 @@ final class BilibiliPlaybackObservation {
             selected = section;
         }
         if (selected == null) return null;
-        Matcher state = Pattern.compile("PlaybackState\\s*\\{\\s*state=3\\b[^\\n]*?\\bposition=([0-9]+)").matcher(selected);
+        Matcher state = Pattern.compile("PlaybackState\\s*\\{\\s*state=(?:3|PLAYING\\(3\\))(?=,|\\s|\\})[^\\n]*?\\bposition=([0-9]+)").matcher(selected);
         Matcher metadata = Pattern.compile("metadata:\\s*([^\\n]+)").matcher(selected);
         if (!state.find() || !metadata.find() || !metadata.group(1).contains(expectedTitle)) return null;
         Matcher identity = Pattern.compile("bitrack_v_(BV[A-Za-z0-9]{10})-([1-9][0-9]*)(?![0-9])").matcher(selected);

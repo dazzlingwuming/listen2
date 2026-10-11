@@ -1,8 +1,22 @@
+import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 
+// JDK accepts some dangling braces that Android ICU rejects. Audit literal
+// Pattern strings independently of JDK compilation; quantifier braces remain.
+for (const name of ['BilibiliPlaybackObservation.java', 'AccessibilityDriver.java']) {
+  const text = readFileSync(resolve(import.meta.dirname, '../../android/app/src/androidTest/java/com/listen2mobile/acceptance', name), 'utf8');
+  for (const match of text.matchAll(/Pattern\.compile\("((?:\\.|[^"\\])*)"/gu)) {
+    const pattern = JSON.parse('"' + match[1] + '"');
+    for (let i = 0; i < pattern.length; i++) {
+      if (pattern[i] !== '}') continue;
+      let escapes = 0; for (let j = i - 1; j >= 0 && pattern[j] === '\\'; j--) escapes++;
+      assert.ok(escapes % 2 === 1 || /\{[0-9]+(?:,[0-9]*)?$/u.test(pattern.slice(0, i)), name + ': dangling literal closing brace');
+    }
+  }
+}
 const temporary = mkdtempSync(resolve(tmpdir(), 'listen2-bilibili-observation-'));
 try {
   const harness = resolve(temporary, 'BilibiliPlaybackObservationTest.java');
@@ -27,6 +41,15 @@ public final class BilibiliPlaybackObservationTest {
     String title = "video · part";
     BilibiliPlaybackObservation.Snapshot first = BilibiliPlaybackObservation.snapshot(session(1000, title, ""), title);
     BilibiliPlaybackObservation.Snapshot later = BilibiliPlaybackObservation.snapshot(session(3500, title, ""), title);
+    check(BilibiliPlaybackObservation.snapshot(session(1000, title, "").replace("state=3,", "state=PLAYING(3),"), title).positionMs == 1000);
+    for (String token : new String[] { "PLAYING(2)", "PAUSED(3)", "ERROR(7)", "UNKNOWN(3)", "PLAYING", "33" }) {
+      check(BilibiliPlaybackObservation.snapshot(session(1000, title, "").replace("state=3,", "state=" + token + ","), title) == null);
+    }
+    for (String invalid : new String[] { "3x,", "3foo,", "PLAYING(3)x,", "3.0," }) {
+      check(BilibiliPlaybackObservation.snapshot(session(1000, title, "").replace("state=3,", "state=" + invalid), title) == null);
+    }
+    check(BilibiliPlaybackObservation.snapshot(session(1000, title, "").replace("state=3,", "state=3 "), title).positionMs == 1000);
+    check(BilibiliPlaybackObservation.snapshot(session(1000, title, "").replace("state=3,", "state=PLAYING(3) "), title).positionMs == 1000);
     check(first.positionMs == 1000 && first.sameObservedAdvancingTrack(later));
     check(!first.sameExactAdvancingTrack(later));
     check(!first.sameObservedAdvancingTrack(BilibiliPlaybackObservation.snapshot(session(1000, title, ""), title)));

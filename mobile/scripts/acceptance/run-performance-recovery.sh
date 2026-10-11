@@ -51,8 +51,10 @@ trap cleanup EXIT INT TERM
 now_ms() { node -p 'Date.now()'; }
 instrument() {
   local class="$1" out="$2" command_status=0 sanitize_status=0 raw
+  local lifecycle_flag=''
+  [[ "${4:-}" != --no-restart ]] || lifecycle_flag=--no-restart
   raw="$(mktemp "${TMPDIR:-/tmp}/listen2-performance-instrumentation.XXXXXX")"
-  "$ADB" -s "$SERIAL" shell am instrument -w -r -e class "$class" -e phase08Api "$DEVICE_API" -e phase08Attempts 20 ${3:-} "$TEST_PACKAGE/com.listen2mobile.acceptance.Phase08Instrumentation" > "$raw" 2>&1 || command_status=$?
+  "$ADB" -s "$SERIAL" shell am instrument ${lifecycle_flag:+"$lifecycle_flag"} -w -r -e class "$class" -e phase08Api "$DEVICE_API" -e phase08Attempts 20 ${3:-} "$TEST_PACKAGE/com.listen2mobile.acceptance.Phase08Instrumentation" > "$raw" 2>&1 || command_status=$?
   node --input-type=module - "$raw" "$out" "$command_status" <<'NODE' || sanitize_status=$?
 import { readFileSync, writeFileSync } from 'node:fs';
 import { sanitizePerformanceInstrumentation } from './mobile/scripts/acceptance/performance-evidence.mjs';
@@ -60,6 +62,40 @@ writeFileSync(process.argv[3], sanitizePerformanceInstrumentation(readFileSync(p
 NODE
   rm -f "$raw"
   [[ "$sanitize_status" == 0 && "$command_status" == 0 ]] && ! grep -Eq 'INSTRUMENTATION_STATUS_CODE: -1|failureType=' "$out" && grep -Eq '^INSTRUMENTATION_CODE: (-1|0)[[:space:]]*$' "$out"
+}
+
+
+# Only the generated-local lane must keep its process alive after finish().
+# Cold/search instrumentation retains its original process-start semantics.
+instrument_local_retained() {
+  local class="$1" out="$2" extra='' anchor="${4:-}" before='' after='' deadline lifecycle='PASS-same-process' result=0
+  [[ ! -e "$out" ]] || return 1
+  if [[ "${3:-}" != existing ]] && ! "$ADB" -s "$SERIAL" shell am start -W -n "$PACKAGE/com.listen2mobile.MainActivity" >/dev/null 2>&1; then
+    lifecycle='FAIL-launch'
+  else
+    deadline=$(( $(date +%s) + 5 ))
+    while [[ $(date +%s) -le $deadline ]]; do
+      before="$("$ADB" -s "$SERIAL" shell pidof "$PACKAGE" 2>/dev/null | tr -d '\r\n')"
+      [[ "$before" =~ ^[1-9][0-9]*$ ]] && break
+      sleep 0.1
+    done
+    [[ "$before" =~ ^[1-9][0-9]*$ ]] || lifecycle='FAIL-process-unavailable'
+  fi
+  if [[ "$lifecycle" == PASS-same-process ]]; then
+    if [[ "$anchor" =~ ^[0-9]{1,9}$ ]]; then extra="-e phase08ResumeAnchorMs $anchor"; fi
+    instrument "$class" "$out" "$extra" --no-restart || result=$?
+    # A short bounded observation catches termination queued after finish.
+    for observation in 1 2 3; do
+      after="$("$ADB" -s "$SERIAL" shell pidof "$PACKAGE" 2>/dev/null | tr -d '\r\n')"
+      if [[ "$after" != "$before" ]]; then lifecycle='FAIL-process-changed'; break; fi
+      sleep 0.1
+    done
+  else
+    [[ ! -e "$out" ]] || return 1
+    ( set -o noclobber; printf 'performanceCommandExitCode=125\n' > "$out" ) || return 1
+  fi
+  printf 'performanceLifecycle=%s\n' "$lifecycle" >> "$out"
+  [[ "$result" == 0 && "$lifecycle" == PASS-same-process ]]
 }
 
 # The startup probe is deliberately separate from the fixed 20-attempt acceptance paths below.
@@ -176,14 +212,25 @@ sample_startup_probe() {
   printf '%s|%s|%s|%s|%s|%s|%s|%s|%s\n' "$id" "$status" "$pidAbsent" "$hostElapsed" "$total" "$wait" "$a11y" "$launchState" "$reason"
 }
 
+NATIVE_PROBE_COUNTER=0
 snapshot_native() {
-  local destination="$1" elapsed
+  local destination="$1" elapsed probe
   elapsed="$(device_elapsed_millis)"
+  NATIVE_PROBE_COUNTER=$(( NATIVE_PROBE_COUNTER + 1 ))
+  probe="$RUN_DIR/performance/native-probe-${NATIVE_PROBE_COUNTER}-instrumentation.txt"
+  # Attach only to the current process. Never launch/wake/create a service in soak.
+  if ! instrument_local_retained 'com.listen2mobile.acceptance.PerformanceRecoveryTest#nativeProbe' "$probe" existing; then
+    echo 'Native position probe unavailable; retained non-pass evidence.' >&2
+  fi
   "$ADB" -s "$SERIAL" shell dumpsys media_session | node --input-type=module -e '
 import { readFileSync, writeFileSync } from "node:fs";
-import { nativeSnapshot } from "./mobile/scripts/acceptance/performance-evidence.mjs";
-writeFileSync(process.argv[1], JSON.stringify(nativeSnapshot(readFileSync(0, "utf8"), Number(process.argv[2])), null, 2));
-' "$destination" "$elapsed"
+import { execFileSync } from "node:child_process";
+import { nativeSnapshot, screenOffObservation } from "./mobile/scripts/acceptance/performance-evidence.mjs";
+let power = "";
+try { power = execFileSync(process.argv[4], ["-s", process.argv[5], "shell", "dumpsys", "power"], { encoding: "utf8", timeout: 3000, maxBuffer: 1048576, stdio: ["ignore", "pipe", "pipe"] }); } catch { /* Unavailable power observation remains unverified. */ }
+const snapshot = { ...nativeSnapshot(readFileSync(0, "utf8"), Number(process.argv[2]), readFileSync(process.argv[3], "utf8")), ...screenOffObservation(power) };
+writeFileSync(process.argv[1], JSON.stringify(snapshot, null, 2));
+' "$destination" "$elapsed" "$probe" "$ADB" "$SERIAL"
 }
 
 if [[ "$MODE" == startup-probe ]]; then
@@ -221,11 +268,11 @@ if [[ "$MODE" == api35 ]]; then
 import { writeFileSync } from 'node:fs';
 import { generateSignal } from './mobile/scripts/acceptance/performance-evidence.mjs';
 const run = process.argv[2];
-writeFileSync(`${run}/performance/synthetic-media.json`, JSON.stringify(generateSignal(`${run}/performance/listen2-performance-signal.wav`), null, 2));
+writeFileSync(`${run}/performance/synthetic-media.json`, JSON.stringify(generateSignal(`${run}/performance/listen2-performance-signal.flac`), null, 2));
 NODE
-  "$ADB" -s "$SERIAL" push "$RUN_DIR/performance/listen2-performance-signal.wav" /sdcard/Download/listen2-performance-signal.wav >/dev/null || fail 'could not place generated file in Downloads'
+  "$ADB" -s "$SERIAL" push "$RUN_DIR/performance/listen2-performance-signal.flac" /sdcard/Download/listen2-performance-signal.flac >/dev/null || fail 'could not place generated file in Downloads'
   LOCAL_READY=false
-  if instrument 'com.listen2mobile.acceptance.PerformanceRecoveryTest#prepareLocal' "$RUN_DIR/performance/local-saf-instrumentation.txt"; then LOCAL_READY=true; fi
+  if instrument_local_retained 'com.listen2mobile.acceptance.PerformanceRecoveryTest#prepareLocal' "$RUN_DIR/performance/local-saf-instrumentation.txt"; then LOCAL_READY=true; fi
   printf '[]' > "$RUN_DIR/performance/recovery.json"
   printf '[]' > "$RUN_DIR/performance/soak.json"
   printf '{}' > "$RUN_DIR/performance/network.json"
@@ -234,9 +281,10 @@ NODE
       "$ADB" -s "$SERIAL" shell input keyevent KEYCODE_MEDIA_PAUSE >/dev/null
       sleep 1
       snapshot_native "$RUN_DIR/performance/recovery-before.json"
+      RESUME_ANCHOR="$(node --input-type=module -e 'import {readFileSync} from "node:fs"; import {resumeAnchor} from "./mobile/scripts/acceptance/performance-evidence.mjs"; console.log(resumeAnchor(JSON.parse(readFileSync(process.argv[1], "utf8"))));' "$RUN_DIR/performance/recovery-before.json")"
       "$ADB" -s "$SERIAL" shell am force-stop "$PACKAGE" >/dev/null
       resumed=false
-      if instrument 'com.listen2mobile.acceptance.PerformanceRecoveryTest#resumeLocal' "$RUN_DIR/performance/recovery-${cycle}-instrumentation.txt"; then resumed=true; fi
+      if instrument_local_retained 'com.listen2mobile.acceptance.PerformanceRecoveryTest#resumeLocal' "$RUN_DIR/performance/recovery-${cycle}-instrumentation.txt" '' "$RESUME_ANCHOR"; then resumed=true; fi
       # Pause immediately after UI restoration to bound the measured recovery position error.
       "$ADB" -s "$SERIAL" shell input keyevent KEYCODE_MEDIA_PAUSE >/dev/null
       snapshot_native "$RUN_DIR/performance/recovery-after.json"
@@ -246,7 +294,8 @@ const [run, cycle, resumed] = process.argv.slice(2); const file = `${run}/perfor
 const rows = JSON.parse(readFileSync(file)); rows.push({ cycle: Number(cycle), resumeVerified: resumed === 'true', before: JSON.parse(readFileSync(`${run}/performance/recovery-before.json`)), after: JSON.parse(readFileSync(`${run}/performance/recovery-after.json`)) }); writeFileSync(file, JSON.stringify(rows, null, 2));
 NODE
     done
-    instrument 'com.listen2mobile.acceptance.PerformanceRecoveryTest#resumeLocal' "$RUN_DIR/performance/network-resume-instrumentation.txt" || LOCAL_READY=false
+    RESUME_ANCHOR="$(node --input-type=module -e 'import {readFileSync} from "node:fs"; import {resumeAnchor} from "./mobile/scripts/acceptance/performance-evidence.mjs"; console.log(resumeAnchor(JSON.parse(readFileSync(process.argv[1], "utf8"))));' "$RUN_DIR/performance/recovery-after.json")"
+    instrument_local_retained 'com.listen2mobile.acceptance.PerformanceRecoveryTest#resumeLocal' "$RUN_DIR/performance/network-resume-instrumentation.txt" '' "$RESUME_ANCHOR" || LOCAL_READY=false
     snapshot_native "$RUN_DIR/performance/network-before.json"
     "$ADB" -s "$SERIAL" shell svc wifi disable >/dev/null
     WIFI_DISABLED="$("$ADB" -s "$SERIAL" shell settings get global wifi_on | tr -d '\r')"
@@ -260,6 +309,17 @@ const read = name => JSON.parse(readFileSync(`${run}/performance/network-${name}
 writeFileSync(`${run}/performance/network.json`, JSON.stringify({ disabledConfirmed: disabled === '0', enabledConfirmed: enabled === '1', before: read('before'), offline: read('offline'), after: read('after'), lane: 'generated-local-continuity-only', providerNetworkRecovery: 'NOT_VERIFIED' }, null, 2));
 NODE
     "$ADB" -s "$SERIAL" shell input keyevent KEYCODE_SLEEP >/dev/null || fail 'could not enter screen-off playback window'
+    # The bounded settle is outside the measured 600s window. Dozing is not Asleep.
+    if node --input-type=module - "$RUN_DIR" "$ADB" "$SERIAL" <<'NODE'
+import { writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { waitForScreenOff } from './mobile/scripts/acceptance/performance-evidence.mjs';
+const [run, adb, serial] = process.argv.slice(2);
+const result = await waitForScreenOff(remainingMs => execFileSync(adb, ['-s', serial, 'shell', 'dumpsys', 'power'], { encoding: 'utf8', timeout: Math.min(1000, remainingMs), maxBuffer: 1048576, stdio: ['ignore', 'pipe', 'pipe'] }));
+writeFileSync(`${run}/performance/soak-screen-off-preflight.json`, JSON.stringify(result, null, 2), { flag: 'wx', mode: 0o600 });
+process.exitCode = result.status === 'PASS' ? 0 : 1;
+NODE
+    then
     SOAK_START="$(device_elapsed_millis)"
     for sample in $(seq 0 60); do
       snapshot_native "$RUN_DIR/performance/soak-current.json"
@@ -273,6 +333,9 @@ NODE
       deadline="$(( SOAK_START + (sample + 1) * 10000 ))"
       while [[ "$(device_elapsed_millis)" -lt "$deadline" ]]; do sleep 1; done
     done
+    else
+      echo 'Screen-off preflight unverified; no formal soak samples collected.' >&2
+    fi
     "$ADB" -s "$SERIAL" shell input keyevent KEYCODE_WAKEUP >/dev/null
   fi
   "$ADB" -s "$SERIAL" shell dumpsys meminfo "$PACKAGE" | node --input-type=module -e '

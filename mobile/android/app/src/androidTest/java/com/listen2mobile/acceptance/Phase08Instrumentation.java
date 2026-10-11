@@ -147,7 +147,10 @@ public final class Phase08Instrumentation extends Instrumentation {
             PerformanceRecoveryTest.prepareLocal(this, progress); return;
         }
         if ("com.listen2mobile.acceptance.PerformanceRecoveryTest#resumeLocal".equals(scenarioClass)) {
-            PerformanceRecoveryTest.resumeLocal(this, progress); return;
+            PerformanceRecoveryTest.resumeLocal(this, progress, requestedArguments); return;
+        }
+        if ("com.listen2mobile.acceptance.PerformanceRecoveryTest#nativeProbe".equals(scenarioClass)) {
+            PerformanceRecoveryTest.nativeProbe(this, progress); return;
         }
         throw new IllegalArgumentException("unapproved Phase 8 instrumentation class");
     }
