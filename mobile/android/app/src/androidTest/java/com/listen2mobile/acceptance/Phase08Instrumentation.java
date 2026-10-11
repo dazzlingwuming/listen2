@@ -72,10 +72,10 @@ public final class Phase08Instrumentation extends Instrumentation {
         String step = progress.currentStep();
         result.putString("stage", step);
         result.putString("failureType", terminalFailure.getClass().getSimpleName());
-        result.putString("failureDetail", sanitizeFailureMessage(terminalFailure.getMessage()));
+        result.putString("failureDetail", "com.listen2mobile.acceptance.CredentialAcceptanceTest".equals(requestedClass) ? "credential-ui-probe-failed" : sanitizeFailureMessage(terminalFailure.getMessage()));
         result.putString("acceptanceStack", formatAcceptanceStack(terminalFailure));
         try {
-            new AccessibilityDriver(this).captureFailureEvidence();
+            if (!"com.listen2mobile.acceptance.CredentialAcceptanceTest".equals(requestedClass)) new AccessibilityDriver(this).captureFailureEvidence();
         } catch (Throwable ignored) {
             result.putString("failureEvidence", "capture-unavailable");
         }
@@ -87,6 +87,10 @@ public final class Phase08Instrumentation extends Instrumentation {
     }
 
     private void dispatchScenario(String scenarioClass, ScenarioProgress progress) {
+        if ("com.listen2mobile.acceptance.CredentialAcceptanceTest".equals(scenarioClass)) {
+            CredentialAcceptanceTest.run(this, progress, requestedArguments);
+            return;
+        }
         if ("com.listen2mobile.acceptance.UpgradeSeedTest".equals(scenarioClass)) {
             UpgradeSeedTest.run(this, progress);
             return;
@@ -149,6 +153,7 @@ public final class Phase08Instrumentation extends Instrumentation {
     }
 
     private static long timeoutFor(String scenarioClass) {
+        if ("com.listen2mobile.acceptance.CredentialAcceptanceTest".equals(scenarioClass)) return 180_000L;
         if ("com.listen2mobile.acceptance.PerformanceRecoveryTest#api35Full".equals(scenarioClass)) return 900_000L;
         if ("com.listen2mobile.acceptance.PerformanceRecoveryTest#prepareLocal".equals(scenarioClass)) return 120_000L;
         if ("com.listen2mobile.acceptance.LiveBilibiliPlaybackMvSmokeTest".equals(scenarioClass)) {

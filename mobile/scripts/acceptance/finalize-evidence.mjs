@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 // Source reachability is provenance, never proof of a device or live behavior.
-import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createHash, randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertRecord, pathWithinRun, runRootFor, sha256 } from './evidence.mjs';
 import { verify as verifyCandidate } from './candidate.mjs';
+import { assertCredentialObservations, credentialResults, CREDENTIAL_MANIFEST, CREDENTIAL_GAPS } from './credential-evidence.mjs';
 
 const REPO = resolve(import.meta.dirname, '../../..');
 const PHASE = '.planning/phases/08-integrated-api-35-acceptance-release-like-evidence';
@@ -93,7 +94,9 @@ function noSymlinks(root, target) {
 }
 export function loadRecords(run, head) {
   const records = [];
-  for (const file of FILES) {
+  const credentialFiles = readdirSync(run).filter(name => name.startsWith('08-credential-live-') && name.endsWith('.json'));
+  if (credentialFiles.length > 32 || credentialFiles.some(name => !/^08-credential-live-0(?:0[1-9]|[12][0-9]|3[0-2])\.json$/.test(name))) reject('CREDENTIAL_RECORD_NAME_INVALID');
+  for (const file of [...FILES, ...credentialFiles.sort()]) {
     if (!existsSync(resolve(run, file))) continue;
     let record; try { record = JSON.parse(readFileSync(pathWithinRun(run, file), 'utf8')); } catch { reject('RECORD_JSON_INVALID'); }
     try { assertRecord(record, run); } catch { reject('RECORD_SCHEMA_OR_ARTIFACT_INVALID'); }
@@ -104,7 +107,7 @@ export function loadRecords(run, head) {
     if (!Array.isArray(kinds) || new Set(kinds).size !== kinds.length || kinds.some(k => !KINDS.has(k) || ['CURRENT_HEAD_REACHABILITY', 'FINAL_INDEX'].includes(k))) reject('RECORD_EVIDENCE_KINDS_INVALID');
     if (kinds.length && !record.artifacts.length) reject('EVIDENCE_ARTIFACT_MISSING');
     if (kinds.includes('CREDENTIAL_LIVE') && record.outcome === 'PASS' && !['authorized-in-app', 'credential-authorized'].includes(record.fixture.accountLane)) reject('CREDENTIAL_LANE_MISSING');
-    if (kinds.some(k => DEVICE_KINDS.has(k)) && record.outcome === 'PASS' && (record.recovery.deviceStateRestored !== true || !(record.recordId === 'phase8-performance-matrix' ? ['restored', 'not-required'] : ['restored']).includes(record.recovery.cleanupStatus))) reject('CLEANUP_FALSE_PASS');
+    if (kinds.some(k => DEVICE_KINDS.has(k)) && record.outcome === 'PASS' && (record.recovery.deviceStateRestored !== true || !(record.recordId === 'phase8-performance-matrix' || /^phase8-credential-live-0(?:0[1-9]|[12][0-9]|3[0-2])$/.test(record.recordId) ? ['restored', 'not-required'] : ['restored']).includes(record.recovery.cleanupStatus))) reject('CLEANUP_FALSE_PASS');
     if (kinds.some(k => k.startsWith('API35_')) && record.device.apiLevel !== 35) reject('API35_DEVICE_MISMATCH');
     checkMetrics(record);
     records.push({ file, sha256: sha256(resolve(run, file)), record });
@@ -128,7 +131,16 @@ export function evaluate({ repo, run, head, requirementsText, mapText, anchors, 
       if (build && (!test || record.build.testPayloadSha256 !== test.sha256)) reject('TEST_PAYLOAD_SHA_MISSING');
       const fixture = record.fixture;
       if (typeof fixture.id !== 'string' || typeof fixture.revision !== 'string' || !/^[a-f0-9]{64}$/.test(fixture.manifestSha256) || !/^[a-f0-9]{64}$/.test(fixture.generatedMediaSha256)) reject('FIXTURE_HASH_INVALID');
-      if (fixture.id === 'none') {
+      if (/^08-credential-live-/.test(file)) {
+        const suffix = file.match(/(\d{3})\.json$/)[1];
+        if (record.recordId !== `phase8-credential-live-${suffix}` || record.network.mode !== 'retained-data-visible-credential-ui' || fixture.id !== 'phase08-credential-live' || fixture.revision !== '1' || !/^0+$/.test(fixture.generatedMediaSha256) || !['authorized-in-app', 'none'].includes(fixture.accountLane) || record.requirements.slice().sort().join(',') !== 'AI-001,AI-003,AUTH-002' || kinds.slice().sort().join(',') !== 'API35_E2E,CREDENTIAL_LIVE,INSTRUMENTATION') reject('CREDENTIAL_LANE_SCOPE_INVALID');
+        const manifestFile = pathWithinRun(run, `credential/attempt-${suffix}/scenario-manifest.json`), observationFile = pathWithinRun(run, `credential/attempt-${suffix}/observations.json`);
+        if (fixture.manifestSha256 !== sha256(manifestFile) || !record.artifacts.some(a => a.relativePath === `credential/attempt-${suffix}/scenario-manifest.json` && a.sha256 === fixture.manifestSha256) || !record.artifacts.some(a => a.relativePath === `credential/attempt-${suffix}/observations.json` && a.sha256 === sha256(observationFile)) || JSON.stringify(JSON.parse(readFileSync(manifestFile, 'utf8'))) !== JSON.stringify(CREDENTIAL_MANIFEST)) reject('CREDENTIAL_MANIFEST_INVALID');
+        const observations = JSON.parse(readFileSync(observationFile, 'utf8')); assertCredentialObservations(observations);
+        if (Object.entries(CREDENTIAL_GAPS).some(([id, code]) => !record.uncovered.some(item => item.requirement === id && item.reasonCode === code))) reject('CREDENTIAL_LIFECYCLE_GAP_REMOVED');
+        if (record.device.serialHash !== observations.serialHash || record.outcome === 'PASS' && Object.values(credentialResults(observations)).some(status => status !== 'PASS')) reject('CREDENTIAL_FALSE_PASS');
+        if (!buildEntry || !record.artifacts.some(a => a.relativePath === '08-build.json' && a.sha256 === buildEntry.sha256) || !record.artifacts.some(a => a.relativePath === '08-build.sha256' && a.sha256 === sha256(pathWithinRun(run, '08-build.sha256')))) reject('CREDENTIAL_BUILD_SEAL_UNLINKED');
+      } else if (fixture.id === 'none') {
         const coldMatrix = record.recordId === 'phase8-performance-matrix' && kinds.length === 1 && kinds[0] === 'PERFORMANCE';
         const livePublic = /^phase8-live-(?:provider|bilibili)-smoke$/.test(record.recordId) && record.network.mode === 'production-routes-fixture-free' && kinds.every(k => ['INSTRUMENTATION', 'LIVE_PUBLIC_PROVIDER', 'SYSTEM_MEDIA'].includes(k)) && kinds.includes('LIVE_PUBLIC_PROVIDER');
         if (!coldMatrix && !livePublic) reject('FIXTURE_FREE_SCOPE_INVALID');

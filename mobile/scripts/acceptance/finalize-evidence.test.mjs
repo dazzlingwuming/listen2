@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { resolve, basename } from 'node:path';
 import { createHash, randomInt } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
+import { writeCredentialEvidence, nextCredentialAttempt } from './credential-evidence.mjs';
 import { writeCompatibilityRecord } from './performance-evidence.mjs';
 import { baseRecord, sha256 } from './evidence.mjs';
 import { evaluate, loadRecords, parseMap, parseRequirements, implementation, checkMetrics, assertIndex, markdown } from './finalize-evidence.mjs';
@@ -152,3 +153,32 @@ test('actual live record emitter accepts explicit public fixture-free lane but f
   assert.doesNotThrow(()=>evaluateFixture());
   record.command.evidenceKinds.push('CREDENTIAL_LIVE');record.outcome='NOT_VERIFIED';writeFileSync(resolve(run,'08-live-provider.json'),JSON.stringify(record));assert.throws(()=>evaluateFixture(),/FIXTURE_FREE_SCOPE_INVALID/);
 }));
+
+const retainedObservations = serialHash => ({schemaVersion:1,serialHash,startedAt:new Date().toISOString(),baseline:{account:'AUTHENTICATED',configuration:'CONFIGURED',connection:'PASS',translation:'PASS'},resume:{account:'AUTHENTICATED',configuration:'CONFIGURED'}});
+test('append-only credential writer integrates with finalizer and cannot erase lifecycle gaps',()=>fixture(({run,original,evaluateFixture})=>{
+  const observations=retainedObservations(original[2].device.serialHash);
+  const first=writeCredentialEvidence(run,nextCredentialAttempt(run),observations);
+  assert.equal(first.outcome,'PASS');assert.equal(first.fixture.generatedMediaSha256,'0'.repeat(64));
+  assert.throws(()=>writeCredentialEvidence(run,'001',observations),/IMMUTABLE/);
+  writeCredentialEvidence(run,nextCredentialAttempt(run),observations);
+  const model=evaluateFixture();assert.equal(model.records.filter(r=>r.recordId.startsWith('phase8-credential-live-')).length,2);
+  for(const id of ['AUTH-002','AI-001','AI-003'])assert.equal(model.requirements.find(r=>r.id===id).status,'NOT_VERIFIED');
+  first.uncovered=[];writeFileSync(resolve(run,'08-credential-live-001.json'),JSON.stringify(first));
+  assert.throws(()=>evaluateFixture(),/CREDENTIAL_LIFECYCLE_GAP_REMOVED/);
+}));
+test('credential observations are hash bound, missing input stays NV, and directories cannot escape',()=>{
+  fixture(({run,original,evaluateFixture})=>{
+    writeCredentialEvidence(run,'001',retainedObservations(original[2].device.serialHash));
+    writeFileSync(resolve(run,'credential/attempt-001/observations.json'),'{}');
+    assert.throws(()=>evaluateFixture(),/RECORD_SCHEMA_OR_ARTIFACT_INVALID/);
+  });
+  fixture(({run,original,evaluateFixture})=>{
+    const value=retainedObservations(original[2].device.serialHash);value.baseline={account:'NOT_AUTHENTICATED',configuration:'NOT_CONFIGURED'};value.resume={};
+    assert.equal(writeCredentialEvidence(run,'001',value).outcome,'NOT_VERIFIED');
+    assert.equal(evaluateFixture().requirements.find(r=>r.id==='AI-001').status,'NOT_VERIFIED');
+  });
+  fixture(({run,root,original})=>{
+    symlinkSync(root,resolve(run,'credential'));
+    assert.throws(()=>writeCredentialEvidence(run,'001',retainedObservations(original[2].device.serialHash)),/CREDENTIAL_DIRECTORY_INVALID/);
+  });
+});
