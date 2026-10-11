@@ -115,6 +115,12 @@ public final class PerformanceRecoveryTest {
         progress.step("saf-generated-local-playing");
     }
 
+    public static void awaitLocalContinuity(Instrumentation instrumentation, ScenarioProgress progress) {
+        progress.step("local-continuity-wait");
+        new AccessibilityDriver(instrumentation).awaitSyntheticLocalContinuity();
+        progress.step("local-continuity-complete");
+    }
+
     public static void resumeLocal(Instrumentation instrumentation, ScenarioProgress progress, Bundle arguments) {
         progress.step("resume-local-player");
         new AccessibilityDriver(instrumentation).resumeVisiblePlayer(SyntheticAudioObservation.parseAnchor(arguments.getString("phase08ResumeAnchorMs")));

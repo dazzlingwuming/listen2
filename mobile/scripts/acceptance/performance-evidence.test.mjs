@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
+import { execFileSync } from 'node:child_process';
 import { baseRecord } from './evidence.mjs';
-import { assessContinuity, assessRecovery, coldFamilies, generateSignal, liveFamilies, nativeSnapshot, writeCompatibilityRecord, metricHasDecidableFailure } from './performance-evidence.mjs';
+import { assessContinuity, assessRecovery, coldFamilies, generateSignal, liveFamilies, nativeSnapshot, writeCompatibilityRecord, metricHasDecidableFailure, sanitizePerformanceInstrumentation, localContinuityPreparation, writePerformanceRecord } from './performance-evidence.mjs';
 const ids = Array.from({ length: 20 }, (_, i) => String(i + 1).padStart(2, '0'));
 const output = ids.flatMap(id => [`phase08Metric=first-search|${id}|PASS|4900|semantic-live-result`, `phase08Metric=first-audio|${id}|PASS|5900|visible-and-native-position-advancing`]).join('\n');
 assert.equal(liveFamilies(output, 900000).every(metric => metric.status === 'PASS'), true);
@@ -78,3 +79,79 @@ const settled=await waitForScreenOff(()=>++calls===1?'mWakefulness=Dozing':'mWak
 clockMs=0;const never=await waitForScreenOff(()=>'mWakefulness=Dozing\nprivate-sentinel',clock);assert.equal(never.status,'NOT_VERIFIED');assert.equal(never.observations.length,20);assert.equal(clockMs,10000);assert.doesNotMatch(JSON.stringify(never),/private-sentinel/);
 clockMs=0;const unavailable=await waitForScreenOff(()=>{throw new Error('private-sentinel');},clock);assert.equal(unavailable.status,'NOT_VERIFIED');assert.equal(unavailable.observations.every(r=>r.screenOffState==='UNKNOWN'),true);
 clockMs=0;let lastBudget=0;const bounded=await waitForScreenOff(remainingMs=>{lastBudget=remainingMs;clockMs+=Math.min(1000,remainingMs);return 'mWakefulness=Dozing';},clock);assert.equal(bounded.status,'NOT_VERIFIED');assert.equal(clockMs,10000);assert.equal(lastBudget,1000);
+
+// A steady-state observation is independent of the immutable 6s startup diagnostic.
+const steadyHash = 'a'.repeat(64);
+const steadyMarker = `phase08LocalContinuity=v1|PASS|12000|steady-ready|2|3|2100|3100|${steadyHash}`;
+const steadyEvidence = marker => sanitizePerformanceInstrumentation(`${marker}\nINSTRUMENTATION_CODE: -1\n`, 0) + 'performanceLifecycle=PASS-same-process\n';
+assert.equal(localContinuityPreparation(steadyEvidence(steadyMarker)).ready, true);
+assert.equal(localContinuityPreparation(steadyEvidence('phase08LocalContinuity=v1|TIMEOUT|15050|audio-pair-unavailable|-1|-1|-1|-1|none')).ready, false);
+
+for (const tuple of [
+  steadyMarker.replace('|12000|', '|15001|'), steadyMarker.replace('|12000|', '|20001|'),
+  steadyMarker.replace('|2|3|', '|2|2|'), steadyMarker.replace('|2100|3100|', '|2100|3099|'),
+  steadyMarker.replace('|2|3|', '|3|2|'), steadyMarker.replace('|2100|3100|', '|3100|2100|'),
+  steadyMarker.replace('|2|3|', '|-1|3|'), steadyMarker.replace('|2|3|', '|604800|604801|'),
+  steadyMarker.replace('|2100|3100|', '|604800000|604800001|'),
+  steadyMarker.replace(steadyHash, 'none'), steadyMarker.replace('steady-ready', 'audio-not-advancing'),
+  steadyMarker.replace('v1|', 'v2|'), steadyMarker + '|private-sentinel',
+  steadyMarker.replace(steadyHash, 'private-sentinel'),
+]) {
+  const safe = steadyEvidence(tuple); assert.equal(localContinuityPreparation(safe).ready, false);
+  assert.doesNotMatch(safe, /private-sentinel/); assert.equal(sanitizePerformanceInstrumentation(safe), safe);
+}
+for (const reason of ['identity-changed', 'position-rollback', 'invalid-clock', 'observation-unavailable']) {
+  const safe = steadyEvidence(`phase08LocalContinuity=v1|NOT_VERIFIED|15000|${reason}|-1|-1|-1|-1|none`);
+  assert.equal(localContinuityPreparation(safe).observation.reason, reason); assert.equal(localContinuityPreparation(safe).ready, false);
+}
+const steady = steadyEvidence(steadyMarker);
+for (const invalid of [
+  steady.replace('INSTRUMENTATION_CODE: -1', 'INSTRUMENTATION_CODE: 0'),
+  steady.replace('INSTRUMENTATION_CODE: -1\n', ''), steady + 'INSTRUMENTATION_CODE: -1\n',
+  steady + steadyMarker + '\n', steady.replace('performanceCommandExitCode=0', 'performanceCommandExitCode=124'),
+  steady.replace('performanceLifecycle=PASS-same-process', 'performanceLifecycle=FAIL-process-changed'),
+  steady.replace('performanceLifecycle=PASS-same-process\n', ''), steady + 'performanceLifecycle=PASS-same-process\n',
+  steady + 'INSTRUMENTATION_STATUS: failureType=AssertionError\n',
+]) assert.equal(localContinuityPreparation(invalid).ready, false);
+
+// Execute the actual runner function with a bounded fixed-argv fake ADB.
+const runnerSource = readFileSync(resolve(import.meta.dirname, 'run-performance-recovery.sh'), 'utf8');
+const continuityFunction = runnerSource.slice(runnerSource.indexOf('instrument_local_continuity() {'), runnerSource.indexOf('# The startup probe is deliberately separate'));
+assert.match(continuityFunction, /Date\.now\(\) \+ 20000/u);
+assert.doesNotMatch(continuityFunction, /'am', 'start'|AUTO_CREATE|prepareLocal/u);
+assert.match(runnerSource, /LOCAL_ORIGIN_PID="\$before"; fi\n    instrument/u);
+const transportDir = mkdtempSync(resolve(tmpdir(), 'listen2-continuity-runner-'));
+try {
+  const fake = resolve(transportDir, 'adb'), out = resolve(transportDir, 'out.txt'), count = resolve(transportDir, 'count');
+  writeFileSync(fake, `#!/usr/bin/env node\nconst fs=require('node:fs');const a=process.argv.slice(2);if(a.slice(2).join(' ')==='shell pidof com.dazzlingwuming.listen2'){let n=0;try{n=Number(fs.readFileSync(process.env.COUNT,'utf8'))}catch{}fs.writeFileSync(process.env.COUNT,String(n+1));console.log(process.env.MODE==='changed'&&n>0?'43':process.env.MODE==='wrong-origin'?'43':'42');}else{const expected=['-s','fixture','shell','am','instrument','--no-restart','-w','-r','-e','class','com.listen2mobile.acceptance.PerformanceRecoveryTest#awaitLocalContinuity','com.dazzlingwuming.listen2.test/com.listen2mobile.acceptance.Phase08Instrumentation'];if(JSON.stringify(a)!==JSON.stringify(expected))process.exit(9);console.log(${JSON.stringify(steadyMarker)});if(process.env.MODE==='duplicate')console.log(${JSON.stringify(steadyMarker)});console.log('INSTRUMENTATION_CODE: '+(process.env.MODE==='cancel'?'0':'-1'));if(process.env.MODE==='nonzero')process.exit(124);if(process.env.MODE==='hang')setTimeout(()=>{},25000);}`);
+  chmodSync(fake, 0o700);
+  const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
+  for (const mode of ['pass', 'wrong-origin', 'changed', 'duplicate', 'cancel', 'nonzero', 'bad-prepare-life', 'hang']) {
+    rmSync(out, { force: true }); rmSync(count, { force: true });
+    let exit = 0;
+    try { execFileSync('bash', ['-c', `${continuityFunction}\nADB=${quote(fake)}; SERIAL=fixture; LOCAL_ORIGIN_PID=42; LOCAL_ORIGIN_LIFECYCLE=${mode === 'bad-prepare-life' ? 'FAIL-process-changed' : 'PASS-same-process'}; instrument_local_continuity ${quote(out)}`], { cwd: resolve(import.meta.dirname, '../../..'), env: { ...process.env, MODE: mode, COUNT: count }, stdio: 'pipe' }); } catch (error) { exit = error.status; }
+    const evidence = readFileSync(out, 'utf8'); assert.equal(exit === 0, mode === 'pass'); assert.equal(localContinuityPreparation(evidence).ready, mode === 'pass');
+    assert.doesNotMatch(evidence, /private-sentinel/);
+  }
+} finally { rmSync(transportDir, { recursive: true, force: true }); }
+console.log('Local continuity contract passed: separate immutable startup, exact fixed transport, original PID chain, strict marker and terminal.');
+
+const writerRoot = mkdtempSync(resolve(tmpdir(), 'listen2-continuity-writer-'));
+try {
+  const run = resolve(writerRoot, 'phase08-20261011T000000Z-aaaaaaaaaaaa'); mkdirSync(resolve(run, 'performance'), { recursive: true });
+  const build = baseRecord(run, 'phase8-build', ['REL-001']); writeFileSync(resolve(run, '08-build.json'), JSON.stringify(build));
+  const put = (name, value) => writeFileSync(resolve(run, 'performance', name), typeof value === 'string' ? value : JSON.stringify(value));
+  put('api35-instrumentation.txt', sanitizePerformanceInstrumentation(output + '\nINSTRUMENTATION_CODE: -1', 0));
+  put('api35-cold.tsv', cold); put('resources-meminfo.txt', { schemaVersion: 1, scope: 'com.dazzlingwuming.listen2', status: 'PASS', unit: 'KiB', values: { 'TOTAL PSS': 1 } });
+  put('synthetic-media.json', { sha256: steadyHash }); put('recovery.json', []); put('soak.json', []); put('network.json', {});
+  const originalStartup = sanitizePerformanceInstrumentation('phase08LocalAudio=TIMEOUT|6188|audio-pair-unavailable\nINSTRUMENTATION_CODE: 0', 0) + 'performanceLifecycle=PASS-same-process\n';
+  put('local-saf-instrumentation.txt', originalStartup); put('local-continuity-instrumentation.txt', steady);
+  writePerformanceRecord(run, new Date().toISOString(), 'b'.repeat(64), 1234, 'restored');
+  const record = JSON.parse(readFileSync(resolve(run, '.api35-performance.json'), 'utf8'));
+  assert.equal(record.command.localStartupDiagnostic.status, 'TIMEOUT'); assert.equal(record.command.localStartupDiagnostic.elapsedMs, 6188);
+  assert.equal(record.command.continuityPreparation.status, 'PASS'); assert.equal(record.outcome, 'NOT_VERIFIED');
+  assert.equal(record.metrics[3].samples.length, 20); assert.equal(record.metrics[3].p95, 5900);
+  for (const name of ['local-saf-instrumentation.txt', 'local-continuity-instrumentation.txt']) assert.equal(record.artifacts.some(item => item.relativePath === `performance/${name}`), true);
+  assert.equal(readFileSync(resolve(run, 'performance/local-saf-instrumentation.txt'), 'utf8'), originalStartup);
+  assert.equal(record.uncovered.some(item => item.reasonCode === 'LOCAL_STARTUP_DIAGNOSTIC' && item.safeDetail.includes('TIMEOUT')), true);
+} finally { rmSync(writerRoot, { recursive: true, force: true }); }

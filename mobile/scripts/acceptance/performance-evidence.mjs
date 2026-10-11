@@ -13,10 +13,37 @@ const AUDIO_TIMEOUTS = new Set(['audio-ui-progress-unavailable', 'audio-native-g
 const LIVE_REASONS = new Set(['semantic-live-result', 'visible-and-native-position-advancing', 'search-setup-failed', 'visible-provider-error', 'no-matching-live-result', 'audio-not-advancing', 'audio-ui-action-failed', 'search-action-failed', 'no-matching-live-track', 'audio-selection-ambiguous', 'audio-precondition-unverified', 'audio-metadata-unverified', 'audio-observation-clock-invalid', ...AUDIO_FAILURES, ...AUDIO_TIMEOUTS]);
 const AUDIO_UNVERIFIED = new Set(['audio-selection-ambiguous', 'audio-precondition-unverified', 'audio-metadata-unverified', 'audio-observation-clock-invalid']);
 const LIVE_STATUS = new Set(['PASS', 'FAIL', 'TIMEOUT', 'DEGRADED', 'NOT_VERIFIED']);
+const CONTINUITY_REASONS = {
+  PASS: new Set(['steady-ready']),
+  TIMEOUT: new Set(['audio-pair-unavailable', 'audio-not-advancing']),
+  NOT_VERIFIED: new Set(['identity-changed', 'position-rollback', 'invalid-clock', 'observation-unavailable']),
+};
+function continuityTuple(line) {
+  const row = line.match(/^(?:INSTRUMENTATION_STATUS: )?phase08LocalContinuity=v1\|(PASS|TIMEOUT|NOT_VERIFIED)\|([0-9]{1,5})\|([a-z-]+)\|(-1|[0-9]{1,6})\|(-1|[0-9]{1,6})\|(-1|[0-9]{1,9})\|(-1|[0-9]{1,9})\|(none|[a-f0-9]{64})$/u);
+  if (!row || !CONTINUITY_REASONS[row[1]].has(row[3])) return null;
+  const [elapsedMs, uiStartSec, uiEndSec, nativeStartMs, nativeEndMs] = [row[2], row[4], row[5], row[6], row[7]].map(Number);
+  if (elapsedMs > 20000 || uiStartSec > 604800 || uiEndSec > 604800 || nativeStartMs > 604800000 || nativeEndMs > 604800000) return null;
+  if (row[1] === 'PASS' && (elapsedMs > 15000 || uiStartSec < 0 || nativeStartMs < 0 || uiEndSec - uiStartSec < 1 || nativeEndMs - nativeStartMs < 1000 || row[8] === 'none')) return null;
+  return { status: row[1], elapsedMs, reason: row[3], uiStartSec, uiEndSec, nativeStartMs, nativeEndMs, identitySha256: row[8] };
+}
+export function localContinuityPreparation(text) {
+  const rows = text.split('\n').filter(line => line.includes('phase08LocalContinuity='));
+  const row = rows.length === 1 ? continuityTuple(rows[0]) : null;
+  const terminal = [...text.matchAll(/^INSTRUMENTATION_CODE: (-?[0-9]+)$/gmu)];
+  const exits = [...text.matchAll(/^performanceCommandExitCode=([0-9]+)$/gmu)];
+  const lifecycle = [...text.matchAll(/^performanceLifecycle=([^\n]+)$/gmu)];
+  const ready = Boolean(row?.status === 'PASS' && sanitizePerformanceInstrumentation(text) === text && terminal.length === 1 && terminal[0][1] === '-1' && exits.length === 1 && exits[0][1] === '0' && lifecycle.length === 1 && lifecycle[0][1] === 'PASS-same-process' && !/failureType=|INSTRUMENTATION_STATUS_CODE: -1/u.test(text));
+  return { status: ready ? 'PASS' : 'NOT_VERIFIED', ready, observation: row };
+}
+function localStartupDiagnostic(text) {
+  const rows = [...text.matchAll(/^phase08LocalAudio=(PASS|FAIL|TIMEOUT|NOT_VERIFIED)\|([0-9]+)\|([a-z-]+)$/gmu)];
+  return rows.length === 1 ? { status: rows[0][1], elapsedMs: Number(rows[0][2]), reason: rows[0][3], budgetMs: 6000 } : { status: 'NOT_VERIFIED', reason: 'missing-or-ambiguous-local-startup-diagnostic', budgetMs: 6000 };
+}
 export function sanitizePerformanceInstrumentation(raw, commandExitCode) {
   const retained = []; let rejected = false;
   for (const original of raw.split(/\r?\n/u)) {
     const line = original.trim();
+    const continuity = continuityTuple(line);
     const metric = line.match(/^(?:INSTRUMENTATION_STATUS: )?phase08Metric=(first-search|first-audio)\|([0-9]{2})\|([A-Z_]+)\|([0-9]{1,12})\|([a-z-]+)$/u);
     const observation = line.match(/^(?:INSTRUMENTATION_STATUS: )?phase08LocalObservation=([0-9]{1,2})\|([0-9]{1,6})\|(-1|[0-9]{1,6})\|(-1|[0-9]{1,6})\|(-1|[0-9]{1,9})\|(-1|[0-9]{1,9})\|(true|false)\|(true|false)\|(true|false)$/u);
     const validObservation = observation && Number(observation[1]) >= 1 && Number(observation[1]) <= 32 && Number(observation[2]) <= 120000 && Number(observation[3]) <= 604800 && Number(observation[4]) <= 604800 && Number(observation[5]) <= 604800000 && Number(observation[6]) <= 604800000;
@@ -26,7 +53,9 @@ export function sanitizePerformanceInstrumentation(raw, commandExitCode) {
     const local = line.match(/^(?:INSTRUMENTATION_STATUS: )?phase08LocalAudio=(PASS|FAIL|TIMEOUT|NOT_VERIFIED)\|([0-9]{1,6})\|([a-z-]+)$/u);
     const timing = line.match(/^(?:INSTRUMENTATION_STATUS: )?phase08LocalTiming=(initial-tap-complete|first-observation)\|([0-9]{1,6})\|([0-9]{1,12})$/u);
     const validLocal = local && Number(local[2]) <= 120000 && (local[1] === 'PASS' && local[3] === 'visible-and-native-position-advancing' || local[1] === 'FAIL' && AUDIO_FAILURES.has(local[3]) || local[1] === 'TIMEOUT' && AUDIO_TIMEOUTS.has(local[3]) || local[1] === 'NOT_VERIFIED' && (local[3] === 'audio-observation-clock-invalid' || local[2] === '0' && ['diagnostic-elapsed-out-of-range', 'audio-resume-anchor-unavailable'].includes(local[3])));
-    if (/^(?:INSTRUMENTATION_STATUS: )?phase08FixedInput=(?:field-unavailable|existing-fixed-query|focus-already|focus-requested|focus-action-failed|set-action-failed|set-action-complete|retained|retained-mismatch)$/u.test(line)) retained.push(line.replace(/^INSTRUMENTATION_STATUS: /u, ''));
+    if (continuity) retained.push(line.replace(/^INSTRUMENTATION_STATUS: /u, ''));
+    else if (line.includes('phase08LocalContinuity=')) rejected = true;
+    else if (/^(?:INSTRUMENTATION_STATUS: )?phase08FixedInput=(?:field-unavailable|existing-fixed-query|focus-already|focus-requested|focus-action-failed|set-action-failed|set-action-complete|retained|retained-mismatch)$/u.test(line)) retained.push(line.replace(/^INSTRUMENTATION_STATUS: /u, ''));
     else if (/^(?:INSTRUMENTATION_STATUS: )?phase08FixedInputSample=[12]\|PASS$/u.test(line)) retained.push(line.replace(/^INSTRUMENTATION_STATUS: /u, ''));
     else if (line.includes('phase08FixedInput=') || line.includes('phase08FixedInputSample=')) rejected = true;
     else if (validObservation) retained.push(`phase08LocalObservation=${observation.slice(1).join('|')}`);
@@ -51,7 +80,7 @@ export function sanitizePerformanceInstrumentation(raw, commandExitCode) {
     else if (/^performanceCommandExitCode=[0-9]{1,3}$/u.test(line)) retained.push(line);
     else if (/^performanceLifecycle=(?:PASS-same-process|FAIL-launch|FAIL-process-unavailable|FAIL-process-changed)$/u.test(line)) retained.push(line);
     else if (/^INSTRUMENTATION_STATUS: stream=Phase08Instrumentation (?:started|completed)$/u.test(line)) retained.push(line);
-    else if (/^INSTRUMENTATION_STATUS: stage=(?:runner-start|fixed-input-preparation|live-performance-attempt-(?:[1-9]|1[0-9]|20)|saf-generated-local-(?:import|playing)|resume-local-player|native-read-only-sample|compatibility-cold-start-(?:launch|shell|complete)|startup-probe-(?:launch|complete))$/u.test(line)) retained.push(line);
+    else if (/^INSTRUMENTATION_STATUS: stage=(?:runner-start|fixed-input-preparation|local-continuity-wait|local-continuity-complete|live-performance-attempt-(?:[1-9]|1[0-9]|20)|saf-generated-local-(?:import|playing)|resume-local-player|native-read-only-sample|compatibility-cold-start-(?:launch|shell|complete)|startup-probe-(?:launch|complete))$/u.test(line)) retained.push(line);
     else if (line === 'INSTRUMENTATION_STATUS: failureType=EvidencePrivacyOrScenarioFailure') retained.push(line);
     else if (/INSTRUMENTATION_FAILED|INSTRUMENTATION_ABORTED|failureType=|shortMsg=|FAILURES!!!|AssertionError/u.test(line)) rejected = true;
   }
@@ -225,25 +254,30 @@ export function writePerformanceRecord(run, startedAt, serialHash, liveDuration,
   const instrumentation = read('api35-instrumentation.txt');
   if (sanitizePerformanceInstrumentation(instrumentation) !== instrumentation) throw new Error('instrumentation evidence is not sanitized');
   assertPerformanceMemory(JSON.parse(read('resources-meminfo.txt')));
+  const startupText = existsSync(resolve(run, 'performance/local-saf-instrumentation.txt')) ? read('local-saf-instrumentation.txt') : '';
+  const continuityText = existsSync(resolve(run, 'performance/local-continuity-instrumentation.txt')) ? read('local-continuity-instrumentation.txt') : '';
+  for (const text of [startupText, continuityText]) if (text && sanitizePerformanceInstrumentation(text) !== text) throw new Error('local preparation evidence is not sanitized');
+  const localStartup = localStartupDiagnostic(startupText);
+  const preparation = localContinuityPreparation(continuityText);
   const instrumentationPass = performanceInstrumentationOk(instrumentation);
   const metrics = [...coldFamilies(read('api35-cold.tsv')), ...liveFamilies(instrumentation, Number(liveDuration))];
   const recovery = JSON.parse(read('recovery.json'));
   const soak = JSON.parse(read('soak.json'));
   const network = JSON.parse(read('network.json'));
-  const continuity = assessContinuity(soak);
-  const recovered = recovery.length === 5 && recovery.every(row => row.resumeVerified === true && assessRecovery(row.before, row.after) === 'PASS');
-  const networkPass = network.disabledConfirmed && network.enabledConfirmed && [network.before, network.offline, network.after].every(row => row?.status === 'PASS' && row.state === 3 && row.positionStatus === 'OBSERVED' && row.positionSource === 'exoplayer-current-position' && row.synthetic && row.identitySha256 === network.before?.identitySha256) && network.offline.positionMs > network.before.positionMs && network.after.positionMs > network.offline.positionMs;
-  const measuredPass = instrumentationPass && metrics.every(metric => metric.status === 'PASS') && recovered && continuity === 'PASS' && networkPass && cleanupStatus === 'restored';
+  const continuity = preparation.ready ? assessContinuity(soak) : 'NOT_VERIFIED';
+  const recovered = preparation.ready && recovery.length === 5 && recovery.every(row => row.resumeVerified === true && assessRecovery(row.before, row.after) === 'PASS');
+  const networkPass = preparation.ready && network.disabledConfirmed && network.enabledConfirmed && [network.before, network.offline, network.after].every(row => row?.status === 'PASS' && row.state === 3 && row.positionStatus === 'OBSERVED' && row.positionSource === 'exoplayer-current-position' && row.synthetic && row.identitySha256 === network.before?.identitySha256) && network.offline.positionMs > network.before.positionMs && network.after.positionMs > network.offline.positionMs;
+  const measuredPass = preparation.ready && localStartup.status === 'PASS' && instrumentationPass && metrics.every(metric => metric.status === 'PASS') && recovered && continuity === 'PASS' && networkPass && cleanupStatus === 'restored';
   const probeFiles = readdirSync(resolve(run, 'performance')).filter(name => /^native-probe-[0-9]+-instrumentation\.txt$/u.test(name)).sort();
   for (const name of probeFiles) if (sanitizePerformanceInstrumentation(read(name)) !== read(name)) throw new Error('native probe evidence is not sanitized');
-  const files = [...probeFiles, 'api35-cold.tsv', 'api35-instrumentation.txt', 'synthetic-media.json', 'listen2-performance-signal.flac', 'recovery.json', 'soak-screen-off-preflight.json', 'soak.json', 'network.json', 'continuity-status.json', 'resources-meminfo.txt'].filter(name => existsSync(resolve(run, 'performance', name)));
+  const files = [...probeFiles, 'api35-cold.tsv', 'api35-instrumentation.txt', 'local-saf-instrumentation.txt', 'local-continuity-instrumentation.txt', 'synthetic-media.json', 'listen2-performance-signal.flac', 'recovery.json', 'soak-screen-off-preflight.json', 'soak.json', 'network.json', 'continuity-status.json', 'resources-meminfo.txt'].filter(name => existsSync(resolve(run, 'performance', name)));
   const record = { ...build, recordId: 'api35-performance-sealed', recordedAt: new Date().toISOString(),
     device: { ...build.device, serialHash, apiLevel: 35 }, network: { mode: 'live-public-search-and-generated-local-continuity', transport: 'emulator', offlineWindows: ['recorded-wifi-off-window'], proxyConfigured: false },
     fixture: { ...build.fixture, id: 'phase08-performance-local', revision: '1', manifestSha256: hash(readFileSync(resolve(run, 'performance/synthetic-media.json'))), queryIds: ['qinghuaci-kugou-live'], generatedMediaSha256: JSON.parse(read('synthetic-media.json')).sha256 },
-    command: { id: 'api35-performance-once', argvRedacted: ['explicit-api35-serial', '20-fixed-cold-live-search-live-audio-attempts', 'generated-local-saf', 'five-process-recovery', '600-second-native-position-soak'], startedAt, endedAt: new Date().toISOString(), timezone: 'Asia/Shanghai', exitCode: measuredPass ? 0 : 4, evidenceKinds: ['PERFORMANCE', 'LIVE_PUBLIC_PROVIDER', 'RECOVERY_SOAK'] },
-    requirements: ['PERF-001', 'PERF-002', 'PERF-003', 'TEST-004'], metrics, outcome: !instrumentationPass || metrics.some(metricHasDecidableFailure) || continuity === 'FAIL' ? 'FAIL' : 'NOT_VERIFIED',
+    command: { id: 'api35-performance-once', argvRedacted: ['explicit-api35-serial', '20-fixed-cold-live-search-live-audio-attempts', 'generated-local-saf', 'five-process-recovery', '600-second-native-position-soak'], startedAt, endedAt: new Date().toISOString(), timezone: 'Asia/Shanghai', exitCode: measuredPass ? 0 : 4, evidenceKinds: ['PERFORMANCE', 'LIVE_PUBLIC_PROVIDER', 'RECOVERY_SOAK'], localStartupDiagnostic: localStartup, continuityPreparation: preparation },
+    requirements: ['PERF-001', 'PERF-002', 'PERF-003', 'TEST-004'], metrics, outcome: localStartup.status === 'FAIL' || !instrumentationPass || metrics.some(metricHasDecidableFailure) || continuity === 'FAIL' ? 'FAIL' : 'NOT_VERIFIED',
     artifacts: files.map(name => { const file = resolve(run, 'performance', name); return { kind: name, relativePath: `performance/${name}`, sha256: hash(readFileSync(file)), bytes: statSync(file).size, sanitized: true }; }),
-    uncovered: [{ requirement: 'PERF-001', reasonCode: 'HOST_UI_DUMP_OBSERVER_OVERHEAD', safeDetail: 'Host-observed TTFD upper bounds are retained but measurement-limited NOT_VERIFIED; AM TotalTime remains separately assessed.', ownerAction: 'Provide an independently validated startup observer before claiming TTFD.' }, { requirement: 'PERF-001', reasonCode: 'COMPATIBILITY_MATRIX_PENDING', safeDetail: 'This record covers API35 measurements only; API26 and API36 device metrics are separate.', ownerAction: 'Consume separately sealed compatibility lanes before claiming PERF-001.' }, { requirement: 'PERF-002', reasonCode: 'LIVE_METRICS_REQUIRE_INDIVIDUAL_REVIEW', safeDetail: `liveSearch=${metrics[2].status};liveAudio=${metrics[3].status};bridgeNetworkMedia3Substages=NOT_VERIFIED`, ownerAction: 'Review actual terminal samples; no local fixture may replace a live sample.' }, { requirement: 'PERF-003', reasonCode: 'PERFORMANCE_OR_CONTINUITY_NON_PASS', safeDetail: `compatibilityMatrix=NOT_VERIFIED;providerNetworkRecovery=NOT_VERIFIED;duplicateMutationAndAnrCrash=NOT_VERIFIED;coldLiveMetricsPass=${metrics.every(metric => metric.status === 'PASS')};fiveRecoveryPass=${recovered};generatedPlaybackSoak=${continuity};networkLocalContinuityPass=${Boolean(networkPass)};cleanup=${cleanupStatus}`, ownerAction: 'Inspect immutable attempt and state evidence; fix the cause before a new candidate run. Local continuity does not establish provider network recovery.' }],
+    uncovered: [{ requirement: 'PERF-003', reasonCode: 'LOCAL_STARTUP_DIAGNOSTIC', safeDetail: `localStartupDiagnostic=${localStartup.status};budgetMs=6000;reason=${localStartup.reason};continuityPreparation=${preparation.status};steadyReadinessDoesNotVerifyFirstAudio=true`, ownerAction: 'Retain the original startup sample independently of the read-only continuity preparation.' }, { requirement: 'PERF-003', reasonCode: 'LOCAL_CONTINUITY_PREPARATION', safeDetail: `continuityPreparation=${preparation.status};ready=${preparation.ready};budgetMs=15000;reason=${preparation.observation?.reason ?? 'missing-or-invalid-observation'}`, ownerAction: 'Only a valid same-process steady observation may gate independent recovery and soak; it does not replace the startup result.' }, { requirement: 'PERF-001', reasonCode: 'HOST_UI_DUMP_OBSERVER_OVERHEAD', safeDetail: 'Host-observed TTFD upper bounds are retained but measurement-limited NOT_VERIFIED; AM TotalTime remains separately assessed.', ownerAction: 'Provide an independently validated startup observer before claiming TTFD.' }, { requirement: 'PERF-001', reasonCode: 'COMPATIBILITY_MATRIX_PENDING', safeDetail: 'This record covers API35 measurements only; API26 and API36 device metrics are separate.', ownerAction: 'Consume separately sealed compatibility lanes before claiming PERF-001.' }, { requirement: 'PERF-002', reasonCode: 'LIVE_METRICS_REQUIRE_INDIVIDUAL_REVIEW', safeDetail: `liveSearch=${metrics[2].status};liveAudio=${metrics[3].status};bridgeNetworkMedia3Substages=NOT_VERIFIED`, ownerAction: 'Review actual terminal samples; no local fixture may replace a live sample.' }, { requirement: 'PERF-003', reasonCode: 'PERFORMANCE_OR_CONTINUITY_NON_PASS', safeDetail: `compatibilityMatrix=NOT_VERIFIED;providerNetworkRecovery=NOT_VERIFIED;duplicateMutationAndAnrCrash=NOT_VERIFIED;coldLiveMetricsPass=${metrics.every(metric => metric.status === 'PASS')};fiveRecoveryPass=${recovered};generatedPlaybackSoak=${continuity};networkLocalContinuityPass=${Boolean(networkPass)};cleanup=${cleanupStatus}`, ownerAction: 'Inspect immutable attempt and state evidence; fix the cause before a new candidate run. Local continuity does not establish provider network recovery.' }],
     recovery: { cleanupStatus, deviceStateRestored: cleanupStatus === 'restored', rollbackArtifactSha256: build.build.sha256, steps: ['original wifi setting restored', 'screen woken', 'retained immutable native position observations'] } };
   writeFileSync(resolve(run, '.api35-performance.json'), JSON.stringify(record, null, 2), { flag: 'wx', mode: 0o600 });
   return measuredPass;

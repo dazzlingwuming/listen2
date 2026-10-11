@@ -1140,6 +1140,93 @@ public final class AccessibilityDriver {
         require("PASS".equals(sample.status), "generated local media did not advance;status=" + sample.status + ";reason=" + sample.reason);
     }
 
+    /** Read-only continuity preparation, independent of the immutable six-second first-audio lane. */
+    void awaitSyntheticLocalContinuity() {
+        final String title = "Listen2AcceptanceSignal";
+        final long started = SystemClock.elapsedRealtime();
+        LocalContinuityObservation observation = new LocalContinuityObservation();
+        try {
+            while (SystemClock.elapsedRealtime() - started < 15_000L) {
+                String window = dumpWindow();
+                long uiAt = SystemClock.elapsedRealtime();
+                Long position = progressPosition(window);
+                boolean fullPlayer = GenericAudioObservation.fullPlayerTitle(window, title);
+                BilibiliPlaybackObservation.Snapshot session = BilibiliPlaybackObservation.snapshot(shell("dumpsys media_session"), title);
+                boolean exactIdentity = session != null && GenericAudioObservation.exactMetadataTitle(session.metadata, title);
+                NativePlaybackObservation.Sample nativeSample = fullPlayer && position != null && exactIdentity
+                    ? NativePlaybackObservation.read(instrumentation) : NativePlaybackObservation.Sample.unavailable();
+                String result = observation.observe(SystemClock.elapsedRealtime() - started, position,
+                    nativeSample.observed() ? nativeSample.positionMs : null, uiAt, nativeSample.elapsedMs,
+                    fullPlayer && exactIdentity, exactIdentity ? session.metadata : null);
+                if (result != null) {
+                    emitLocalContinuity(observation, result, SystemClock.elapsedRealtime() - started);
+                    require("steady-ready".equals(result), "local continuity was not verified");
+                    return;
+                }
+                SystemClock.sleep(100L);
+            }
+            emitLocalContinuity(observation, observation.timeoutReason(), SystemClock.elapsedRealtime() - started);
+        } catch (AssertionError | RuntimeException error) {
+            if (!observation.emitted) emitLocalContinuity(observation, "observation-unavailable", SystemClock.elapsedRealtime() - started);
+            throw new AssertionError("local continuity was not verified");
+        }
+        throw new AssertionError("local continuity was not verified");
+    }
+
+    private void emitLocalContinuity(LocalContinuityObservation observation, String reason, long elapsed) {
+        // An unbounded or invalid clock cannot produce a consumable readiness marker.
+        if (elapsed < 0L || elapsed > 20_000L) return;
+        Bundle status = new Bundle();
+        status.putString("phase08LocalContinuity", observation.safeLine(reason, elapsed));
+        observation.emitted = true;
+        instrumentation.sendStatus(1, status);
+    }
+
+    /** Pure paired-sample policy. It contains no playback, navigation, import or storage operations. */
+    static final class LocalContinuityObservation {
+        Long firstUi, lastUi, firstNative, lastNative;
+        String metadata;
+        long lastElapsed = -1L, lastUiAt = -1L, lastNativeAt = -1L;
+        boolean emitted;
+
+        String observe(long elapsed, Long uiSeconds, Long nativeMs, long uiAt, long nativeAt, boolean exactPlayer, String identity) {
+            if (elapsed < 0L || elapsed < lastElapsed || uiAt < 0L || nativeAt < uiAt || uiAt < lastUiAt || nativeAt < lastNativeAt) return "invalid-clock";
+            lastElapsed = elapsed; lastUiAt = uiAt; lastNativeAt = nativeAt;
+            if (elapsed > 15_000L) return timeoutReason();
+            if (!exactPlayer || identity == null || uiSeconds == null || nativeMs == null ||
+                    uiSeconds < 0L || uiSeconds > 604_800L || nativeMs < 0L || nativeMs > 604_800_000L ||
+                    nativeAt - uiAt > 500L || Math.abs(uiSeconds * 1000L - nativeMs) > 2_500L) return null;
+            if (metadata != null && !metadata.equals(identity)) return "identity-changed";
+            if (lastUi != null && (uiSeconds < lastUi || nativeMs < lastNative)) return "position-rollback";
+            if (firstUi == null) {
+                firstUi = uiSeconds; firstNative = nativeMs; metadata = identity;
+            }
+            lastUi = uiSeconds; lastNative = nativeMs;
+            return uiSeconds - firstUi >= 1L && nativeMs - firstNative >= 1_000L ? "steady-ready" : null;
+        }
+
+        String timeoutReason() { return firstUi == null ? "audio-pair-unavailable" : "audio-not-advancing"; }
+
+        String safeLine(String reason, long elapsed) {
+            String status = "steady-ready".equals(reason) ? "PASS" :
+                "audio-pair-unavailable".equals(reason) || "audio-not-advancing".equals(reason) ? "TIMEOUT" : "NOT_VERIFIED";
+            String hash = "none";
+            if (metadata != null) {
+                try {
+                    byte[] digest = java.security.MessageDigest.getInstance("SHA-256").digest(metadata.getBytes(StandardCharsets.UTF_8));
+                    StringBuilder hex = new StringBuilder();
+                    for (byte value : digest) hex.append(String.format(java.util.Locale.ROOT, "%02x", value & 0xff));
+                    hash = hex.toString();
+                } catch (java.security.NoSuchAlgorithmException error) {
+                    throw new AssertionError("local continuity digest unavailable");
+                }
+            }
+            return "v1|" + status + "|" + elapsed + "|" + reason + "|" +
+                (firstUi == null ? -1L : firstUi) + "|" + (lastUi == null ? -1L : lastUi) + "|" +
+                (firstNative == null ? -1L : firstNative) + "|" + (lastNative == null ? -1L : lastNative) + "|" + hash;
+        }
+    }
+
     private static boolean targetSessionPlaying(String sessions, String title) {
         int start = sessions.indexOf("package=" + TARGET_PACKAGE);
         if (start < 0) return false;

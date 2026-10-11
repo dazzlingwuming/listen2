@@ -67,6 +67,7 @@ NODE
 
 # Only the generated-local lane must keep its process alive after finish().
 # Cold/search instrumentation retains its original process-start semantics.
+LOCAL_ORIGIN_PID=''; LOCAL_ORIGIN_LIFECYCLE='FAIL-process-unavailable'
 instrument_local_retained() {
   local class="$1" out="$2" extra='' anchor="${4:-}" before='' after='' deadline lifecycle='PASS-same-process' result=0
   [[ ! -e "$out" ]] || return 1
@@ -83,6 +84,7 @@ instrument_local_retained() {
   fi
   if [[ "$lifecycle" == PASS-same-process ]]; then
     if [[ "$anchor" =~ ^[0-9]{1,9}$ ]]; then extra="-e phase08ResumeAnchorMs $anchor"; fi
+    if [[ "$class" == com.listen2mobile.acceptance.PerformanceRecoveryTest#prepareLocal ]]; then LOCAL_ORIGIN_PID="$before"; fi
     instrument "$class" "$out" "$extra" --no-restart || result=$?
     # A short bounded observation catches termination queued after finish.
     for observation in 1 2 3; do
@@ -94,8 +96,43 @@ instrument_local_retained() {
     [[ ! -e "$out" ]] || return 1
     ( set -o noclobber; printf 'performanceCommandExitCode=125\n' > "$out" ) || return 1
   fi
+  if [[ "$class" == com.listen2mobile.acceptance.PerformanceRecoveryTest#prepareLocal ]]; then LOCAL_ORIGIN_LIFECYCLE="$lifecycle"; fi
   printf 'performanceLifecycle=%s\n' "$lifecycle" >> "$out"
   [[ "$result" == 0 && "$lifecycle" == PASS-same-process ]]
+}
+
+# Independent readiness is read-only and must remain in the original prepare process.
+# This 20s transport bound never extends or replaces the original 6s startup sample.
+instrument_local_continuity() {
+  local out="$1"
+  [[ ! -e "$out" ]] || return 1
+  node --input-type=module - "$ADB" "$SERIAL" "$out" "$LOCAL_ORIGIN_PID" "$LOCAL_ORIGIN_LIFECYCLE" <<'NODE'
+import { execFileSync } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
+import { sanitizePerformanceInstrumentation, localContinuityPreparation } from './mobile/scripts/acceptance/performance-evidence.mjs';
+const [adb, serial, out, origin, originLifecycle] = process.argv.slice(2);
+const deadline = Date.now() + 20000;
+let raw = '', commandStatus = 125, lifecycle = 'FAIL-process-unavailable';
+const pid = () => execFileSync(adb, ['-s', serial, 'shell', 'pidof', 'com.dazzlingwuming.listen2'], { encoding: 'utf8', timeout: Math.max(1, Math.min(1000, deadline - Date.now())), maxBuffer: 128, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+try {
+  if (/^[1-9][0-9]*$/u.test(origin) && originLifecycle === 'PASS-same-process') {
+    lifecycle = pid() === origin ? 'PASS-same-process' : 'FAIL-process-changed';
+    if (lifecycle === 'PASS-same-process') {
+      try {
+        raw = execFileSync(adb, ['-s', serial, 'shell', 'am', 'instrument', '--no-restart', '-w', '-r', '-e', 'class', 'com.listen2mobile.acceptance.PerformanceRecoveryTest#awaitLocalContinuity', 'com.dazzlingwuming.listen2.test/com.listen2mobile.acceptance.Phase08Instrumentation'], { encoding: 'utf8', timeout: Math.max(1, deadline - Date.now()), maxBuffer: 131072, stdio: ['ignore', 'pipe', 'pipe'] });
+        commandStatus = 0;
+      } catch (error) {
+        raw = typeof error.stdout === 'string' ? error.stdout : '';
+        commandStatus = Number.isInteger(error.status) && error.status >= 1 && error.status <= 255 ? error.status : 124;
+      }
+      if (Date.now() >= deadline || pid() !== origin || pid() !== origin) lifecycle = 'FAIL-process-changed';
+    }
+  }
+} catch { lifecycle = 'FAIL-process-unavailable'; }
+const safe = sanitizePerformanceInstrumentation(raw, commandStatus) + `performanceLifecycle=${lifecycle}\n`;
+writeFileSync(out, safe, { flag: 'wx', mode: 0o600 });
+process.exitCode = localContinuityPreparation(safe).ready ? 0 : 1;
+NODE
 }
 
 # The startup probe is deliberately separate from the fixed 20-attempt acceptance paths below.
@@ -310,7 +347,8 @@ writeFileSync(`${run}/performance/synthetic-media.json`, JSON.stringify(generate
 NODE
   "$ADB" -s "$SERIAL" push "$RUN_DIR/performance/listen2-performance-signal.flac" /sdcard/Download/listen2-performance-signal.flac >/dev/null || fail 'could not place generated file in Downloads'
   LOCAL_READY=false
-  if instrument_local_retained 'com.listen2mobile.acceptance.PerformanceRecoveryTest#prepareLocal' "$RUN_DIR/performance/local-saf-instrumentation.txt"; then LOCAL_READY=true; fi
+  if instrument_local_retained 'com.listen2mobile.acceptance.PerformanceRecoveryTest#prepareLocal' "$RUN_DIR/performance/local-saf-instrumentation.txt"; then :; fi
+  if instrument_local_continuity "$RUN_DIR/performance/local-continuity-instrumentation.txt"; then LOCAL_READY=true; fi
   printf '[]' > "$RUN_DIR/performance/recovery.json"
   printf '[]' > "$RUN_DIR/performance/soak.json"
   printf '{}' > "$RUN_DIR/performance/network.json"

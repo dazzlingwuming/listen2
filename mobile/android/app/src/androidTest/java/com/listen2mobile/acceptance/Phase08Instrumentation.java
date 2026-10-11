@@ -152,6 +152,9 @@ public final class Phase08Instrumentation extends Instrumentation {
         if ("com.listen2mobile.acceptance.PerformanceRecoveryTest#prepareLocal".equals(scenarioClass)) {
             PerformanceRecoveryTest.prepareLocal(this, progress); return;
         }
+        if ("com.listen2mobile.acceptance.PerformanceRecoveryTest#awaitLocalContinuity".equals(scenarioClass)) {
+            PerformanceRecoveryTest.awaitLocalContinuity(this, progress); return;
+        }
         if ("com.listen2mobile.acceptance.PerformanceRecoveryTest#resumeLocal".equals(scenarioClass)) {
             PerformanceRecoveryTest.resumeLocal(this, progress, requestedArguments); return;
         }
@@ -165,6 +168,7 @@ public final class Phase08Instrumentation extends Instrumentation {
         if ("com.listen2mobile.acceptance.CredentialAcceptanceTest".equals(scenarioClass)) return 180_000L;
         if ("com.listen2mobile.acceptance.PerformanceRecoveryTest#api35Full".equals(scenarioClass)) return 900_000L;
         if ("com.listen2mobile.acceptance.PerformanceRecoveryTest#prepareLocal".equals(scenarioClass)) return 120_000L;
+        if ("com.listen2mobile.acceptance.PerformanceRecoveryTest#awaitLocalContinuity".equals(scenarioClass)) return 20_000L;
         if ("com.listen2mobile.acceptance.LiveBilibiliPlaybackMvSmokeTest".equals(scenarioClass)) {
             return LIVE_BILIBILI_TIMEOUT_MILLIS;
         }
