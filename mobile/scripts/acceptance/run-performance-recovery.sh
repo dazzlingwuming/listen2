@@ -159,7 +159,41 @@ capture_startup_probe_environment() {
 }
 
 device_elapsed_millis() {
-  "$ADB" -s "$SERIAL" shell 'awk '\''{ printf "%.0f", $1 * 1000 }'\'' /proc/uptime' 2>/dev/null | tr -d '\r'
+  local elapsed=''
+  if elapsed="$("$ADB" -s "$SERIAL" shell cat /proc/uptime 2>/dev/null | node --input-type=module -e '
+import { readSync } from "node:fs";
+
+// /proc/uptime is a fixed, one-line kernel value. Read at most 129 bytes so a
+// malformed or unexpectedly large response cannot become an unbounded input.
+const input = Buffer.alloc(129);
+let used = 0;
+while (used < input.length) {
+  const count = readSync(0, input, used, input.length - used, null);
+  if (count === 0) break;
+  used += count;
+}
+if (used > 128) process.exit(1);
+
+let raw = input.subarray(0, used).toString("utf8");
+if (raw.endsWith("\n")) {
+  raw = raw.slice(0, -1);
+  if (raw.endsWith("\r")) raw = raw.slice(0, -1);
+}
+if (raw.includes("\n") || raw.includes("\r")) process.exit(1);
+const match = /^([0-9]+)(?:\.([0-9]+))?[ \t]+([0-9]+)(?:\.([0-9]+))?$/.exec(raw);
+if (!match) process.exit(1);
+
+const fraction = match[2] ?? "";
+let milliseconds = BigInt(match[1]) * 1000n + BigInt((fraction + "000").slice(0, 3));
+if (fraction.length > 3 && fraction[3] >= "5") milliseconds += 1n;
+if (milliseconds > BigInt(Number.MAX_SAFE_INTEGER)) process.exit(1);
+process.stdout.write(milliseconds.toString());
+' 2>/dev/null)"; then
+    printf '%s\n' "$elapsed"
+  fi
+  # The caller classifies a missing monotonic value as NOT_VERIFIED. A helper
+  # failure must not trip set -e and discard the startup-probe row.
+  return 0
 }
 
 wait_for_phone_shell() {
