@@ -5,16 +5,16 @@ milestone_name: android-official-mobile-product-pivot
 current_phase: 8
 current_phase_name: Integrated API 35 Acceptance & Release-Like Evidence
 status: in_progress
-stopped_at: Retained one partial API 35 upgrade/CJK-search journey; API 26/35/36 performance, recovery, and 58-row evidence closure remain
-last_updated: "2026-09-16T05:31:45+08:00"
+stopped_at: Approved current-candidate replacement and Android completion plan; implementation and fresh API35 acceptance in progress
+last_updated: "2026-10-11T11:42:00+08:00"
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 24
   completed_plans: 21
   percent: 80
-last_activity: 2026-09-14
-last_activity_desc: Closed quick 260914-kh4 MV source and native JVM gates; 26 mobile suites/145 tests plus Android JVM tests passed
+last_activity: 2026-10-11
+last_activity_desc: Resume approved Android completion on agent/android-completion-20261011; retain historical evidence and replace candidates without rebinding
 ---
 
 # Project State
@@ -31,11 +31,11 @@ See: `.planning/PROJECT.md`
 
 Phase: 8 — Integrated API 35 Acceptance & Release-Like Evidence
 
-Plan: 2 of 4
+Plan: Current-candidate replacement and gap closure; historical plans 08-01–03 retain partial results
 
-Status: Partial API 35 journey evidence retained — not parity-ready
+Status: Implementation in progress; fresh current-candidate device acceptance pending — not parity-ready
 
-Progress: [█████████░] 90%
+Progress: Implementation and device evidence tracked separately; no parity percentage claimed
 
 ## Performance Metrics
 
@@ -43,11 +43,11 @@ Progress: [█████████░] 90%
 
 | Phase                        | Plans | Status      |
 | ---------------------------- | ----- | ----------- |
-| 4. Official Mobile Shell & Unified Provider Registry | TBD   | Not started |
-| 5. Five-Source Listen Journey | TBD   | Not started |
-| 6. Personal Library & Continuity | TBD   | Not started |
-| 7. Offline & Advanced Desktop-Equivalent Playback | TBD   | Not started |
-| 8. Integrated API 35 Acceptance & Release-Like Evidence | TBD   | Not started |
+| 4. Official Mobile Shell & Unified Provider Registry | 3/3 | Historical implementation/contract evidence; current-candidate runtime proof pending |
+| 5. Five-Source Listen Journey | 5/5 | Historical implementation/contract evidence; current-candidate runtime proof pending |
+| 6. Personal Library & Continuity | 7/7 | Historical implementation/contract evidence; current-candidate runtime proof pending |
+| 7. Offline & Advanced Desktop-Equivalent Playback | 5/5 | Historical implementation/contract evidence; current-candidate runtime proof pending |
+| 8. Integrated API 35 Acceptance & Release-Like Evidence | Partial | Current-candidate replacement and runtime acceptance in progress |
 
 **Per-Plan Metrics:**
 

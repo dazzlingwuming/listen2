@@ -14,6 +14,7 @@ sha_file() { shasum -a 256 "$1" | awk '{print $1}'; }
 fail() { echo "BLOCKED: $*" >&2; exit 3; }
 
 if [[ "${1:-}" == '--self-test' ]]; then
+  [[ $# == 1 ]] || fail 'self-test accepts no extra arguments'
   grep -Fq 'phase08Attempts' "$0" && grep -Fq 'immutable' "$0" && grep -Fq 'PerformanceRecoveryTest#api35Full' "$0" && grep -Fq 'a11y-phone-shell-tabs-ready' mobile/scripts/acceptance/summarize-performance.mjs || exit 1
   echo 'Performance runner self-test passed.'; exit 0
 fi
@@ -34,19 +35,11 @@ APKANALYZER="$SDK/cmdline-tools/latest/bin/apkanalyzer"; [[ -x "$APKANALYZER" ]]
 [[ "$("$ADB" -s "$SERIAL" get-state 2>/dev/null)" == device ]] || fail 'explicit serial is unavailable'
 [[ "$("$ADB" -s "$SERIAL" shell getprop ro.build.version.sdk | tr -d '\r')" =~ ^(26|35|36)$ ]] || fail 'device API is unsupported'
 
-BUILD_INFO=()
-while IFS= read -r line; do BUILD_INFO+=("$line"); done < <(node --input-type=module - "$BUILD_EVIDENCE" "$RUN_DIR" <<'NODE'
-import { readFileSync, realpathSync } from 'node:fs'; import { dirname, resolve, relative } from 'node:path';
-const [recordFile, run] = process.argv.slice(2); const record = JSON.parse(readFileSync(recordFile, 'utf8')); const root = realpathSync(run);
-for (const kind of ['release-like-apk']) { const item = record.artifacts.find(value => value.kind === kind); if (!item || !item.relativePath || item.relativePath.includes('..')) throw new Error('missing product candidate'); const path = realpathSync(resolve(dirname(recordFile), item.relativePath)); if (!path.startsWith(`${root}/`)) throw new Error('candidate escapes run'); console.log(`${path}|${item.sha256}`); }
-console.log(record.git.sha);
-NODE
-)
-[[ ${#BUILD_INFO[@]} == 2 ]] || fail 'build evidence is malformed'
-RELEASE_APK="${BUILD_INFO[0]%%|*}"; RELEASE_SHA="${BUILD_INFO[0]##*|}"; BUILD_HEAD="${BUILD_INFO[1]}"
-[[ "$(sha_file "$RELEASE_APK")" == "$RELEASE_SHA" && "$RELEASE_SHA" == 'b3e06e090d273bbc11a7e16e13826e5529f862844222716fa3f31865a629865b' ]] || fail 'sealed product candidate SHA does not match'
-[[ "$(sha_file "$TEST_APK")" =~ ^[a-f0-9]{64}$ ]] || fail 'test payload hash unavailable'
-"$APKSIGNER" verify --verbose "$RELEASE_APK" >/dev/null && "$APKSIGNER" verify --verbose "$TEST_APK" >/dev/null || fail 'APK signer verification failed'
+[[ "$(cd "$(dirname "$BUILD_EVIDENCE")" && pwd)/$(basename "$BUILD_EVIDENCE")" == "$(cd "$RUN_DIR" && pwd)/08-build.json" ]] || fail 'build evidence must belong to this run'
+CANDIDATE_OUTPUT="$(node mobile/scripts/acceptance/candidate.mjs --verify --run-dir "$RUN_DIR" --apksigner "$APKSIGNER" --test-apk "$TEST_APK")" || fail 'sealed candidate validation failed'
+BUILD_INFO=(); while IFS= read -r field; do BUILD_INFO+=("$field"); done <<< "$CANDIDATE_OUTPUT"
+[[ ${#BUILD_INFO[@]} == 6 ]] || fail 'candidate output is malformed'
+RELEASE_APK="${BUILD_INFO[0]}"; RELEASE_SHA="${BUILD_INFO[1]}"; BUILD_HEAD="${BUILD_INFO[4]}"; TEST_APK="${BUILD_INFO[5]}"
 "$APKANALYZER" dex packages "$TEST_APK" | grep -Fq 'com.listen2mobile.acceptance.PerformanceRecoveryTest' || fail 'test payload lacks PerformanceRecoveryTest'
 for forbidden in kotlin androidx.test.runner InstrumentationRegistry ActivityScenario; do ! "$APKANALYZER" dex code --class com.listen2mobile.acceptance.PerformanceRecoveryTest "$TEST_APK" | grep -Fqi "$forbidden" || fail 'test payload contains forbidden runtime dependency'; done
 
@@ -174,6 +167,7 @@ sample_startup_probe() {
 
 if [[ "$MODE" == startup-probe ]]; then
   [[ "$DEVICE_API" =~ ^(35|36)$ && ( "$ATTEMPTS" == 3 || "$ATTEMPTS" == 5 ) && "$FILTER" == 'com.listen2mobile.acceptance.PerformanceRecoveryTest#startupProbe' && ${#API_VALUES[@]} == 0 && "$RECOVERY_CYCLES" == 0 && "$SOAK_SECONDS" == 0 ]] || fail 'startup probe requires one API35/API36 serial, 3 or 5 attempts, and only the startupProbe filter'
+  mkdir "$RUN_DIR/.startup-probe-api${DEVICE_API}-once" || fail 'startup probe window already consumed'
   LEDGER="$RUN_DIR/performance/api${DEVICE_API}-startup-probe.tsv"
   [[ ! -e "$LEDGER" ]] || fail 'startup probe ledger already exists; immutable attempts cannot be replaced'
   "$ADB" -s "$SERIAL" install -r "$RELEASE_APK" >/dev/null || fail 'releaseLike install failed'
@@ -193,6 +187,7 @@ fi
 
 if [[ "$MODE" == api35 ]]; then
   [[ "$ATTEMPTS" == 20 && "$DEVICE_API" == 35 && "$FILTER" == 'com.listen2mobile.acceptance.PerformanceRecoveryTest#api35Full' && "$RECOVERY_CYCLES" == 5 && "$SOAK_SECONDS" == 600 ]] || fail 'API35 full mode arguments are exact and mandatory'
+  mkdir "$RUN_DIR/.api35-performance-once" || fail 'API35 performance window already consumed'
   [[ ! -e "$RUN_DIR/08-api35-performance.json" ]] || fail 'API35 record already exists and is sealed'
   "$ADB" -s "$SERIAL" install -r "$RELEASE_APK" >/dev/null || fail 'releaseLike install failed'
   "$ADB" -s "$SERIAL" install -r "$TEST_APK" >/dev/null || fail 'AndroidTest install failed'
@@ -226,6 +221,7 @@ fi
 [[ "$MODE" == compatibility && "$ATTEMPTS" == 20 && ${#API_VALUES[@]} == 2 && " ${API_VALUES[*]} " == *' 26 '* && " ${API_VALUES[*]} " == *' 36 '* ]] || fail 'compatibility requires API 26 and API 36 only'
 [[ "$FILTER" == 'com.listen2mobile.acceptance.PerformanceRecoveryTest#compatibilityColdStart' ]] || fail 'unexpected compatibility filter'
 [[ -f "$RUN_DIR/08-api35-performance.json" && ! -e "$RUN_DIR/08-performance.json" ]] || fail 'sealed API35 input/final record state is invalid'
+mkdir "$RUN_DIR/.compatibility-api${DEVICE_API}-once" || fail 'compatibility window already consumed'
 API35_HASH="$(sha_file "$RUN_DIR/08-api35-performance.json")"
 [[ "$DEVICE_API" == 26 || "$DEVICE_API" == 36 ]] || fail 'this explicit serial must be API26 or API36'
 "$ADB" -s "$SERIAL" install -r "$RELEASE_APK" >/dev/null || fail 'releaseLike install failed'; "$ADB" -s "$SERIAL" install -r "$TEST_APK" >/dev/null || fail 'AndroidTest install failed'; instrument "$FILTER" "$RUN_DIR/performance/api${DEVICE_API}-compatibility.txt" || fail 'compatibility instrumentation failed'

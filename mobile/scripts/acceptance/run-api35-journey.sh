@@ -32,6 +32,7 @@ js_ready_phone_shell() {
 }
 
 if [[ "${1:-}" == "--self-test" ]]; then
+  [[ $# == 1 ]] || { echo "self-test accepts no extra arguments" >&2; exit 2; }
   self_test_dir="$(mktemp -d "${TMPDIR:-/tmp}/listen2-instrumentation-result.XXXXXX")"
   trap 'rm -rf "$self_test_dir"' EXIT
   bash "$(dirname "$0")/avd-manager.sh" --self-test
@@ -97,7 +98,7 @@ phase08_class_allowed "$SEED_CLASS" || { echo "unexpected seed class" >&2; exit 
 phase08_class_allowed "$JOURNEY_CLASS" || { echo "unexpected journey class" >&2; exit 2; }
 [[ "$SEED_CLASS" != "$JOURNEY_CLASS" ]] || { echo "seed and journey classes must be distinct" >&2; exit 2; }
 [[ -n "$JOURNEY_TEST_APK" && -f "$JOURNEY_TEST_APK" ]] || { echo "a sealed journey AndroidTest APK is required" >&2; exit 2; }
-[[ "$JOURNEY_TEST_BUILD_HEAD" =~ ^[a-f0-9]{7,40}$ ]] || { echo "a sealed journey AndroidTest build head is required" >&2; exit 2; }
+[[ "$JOURNEY_TEST_BUILD_HEAD" == "$(git rev-parse HEAD)" ]] || { echo "a sealed journey AndroidTest build head is required" >&2; exit 2; }
 for name in $(env | cut -d= -f1); do
   if [[ "$name" =~ (BILIBILI|DEEPSEEK|COOKIE|TOKEN|AUTHORIZATION|PASSWORD|SECRET) ]] && [[ -n "${!name:-}" ]]; then echo "credential-like environment variable is forbidden: $name" >&2; exit 2; fi
 done
@@ -112,6 +113,9 @@ case "$(uname -m)" in arm64|aarch64) HOST_ABI=arm64-v8a;; x86_64|amd64) HOST_ABI
 
 BUILD_RECORD="$RUN_DIR/08-build.json"
 [[ -f "$BUILD_RECORD" ]] || { echo "missing 08-build.json" >&2; exit 3; }
+APKSIGNER="$SDK/build-tools/37.0.0/apksigner"
+node mobile/scripts/acceptance/candidate.mjs --verify --run-dir "$RUN_DIR" --apksigner "$APKSIGNER" --test-apk "$JOURNEY_TEST_APK" >/dev/null || { echo "BLOCKED: sealed candidate validation failed" >&2; exit 3; }
+[[ ! -e "$RUN_DIR/08-journey.json" && ! -e "$RUN_DIR/journey-events.txt" && ! -e "$RUN_DIR/.journey-once" ]] || { echo "BLOCKED: journey already consumed; preserve old evidence" >&2; exit 3; }
 BUILD_FIELDS=()
 while IFS= read -r field; do BUILD_FIELDS+=("$field"); done < <(node --input-type=module - "$BUILD_RECORD" <<'NODE'
 import { readFileSync } from 'node:fs';
@@ -175,6 +179,7 @@ unzip -Z1 "$DEBUG_APK" | grep -Fx 'assets/index.android.bundle' >/dev/null || { 
 DEBUG_BADGING="$($SDK/build-tools/37.0.0/aapt dump badging "$DEBUG_APK")"
 [[ "$DEBUG_BADGING" == *"package: name='com.dazzlingwuming.listen2' versionCode='1'"* ]] || { echo "BLOCKED: debug seed package or versionCode is unexpected" >&2; exit 3; }
 
+mkdir "$RUN_DIR/.journey-once" || { echo "BLOCKED: journey already claimed" >&2; exit 3; }
 STATE="$RUN_DIR/device-state-before.sh"; EVENTS="$RUN_DIR/journey-events.txt"; SCREENSHOT="$RUN_DIR/journey-phone.png"
 FIXTURE_DIR="$RUN_DIR/fixtures"; mkdir -p "$FIXTURE_DIR"; umask 077
 cp "$TEST_APK" "$RUN_DIR/artifacts/releaseLikeAndroidTest-journey.apk"

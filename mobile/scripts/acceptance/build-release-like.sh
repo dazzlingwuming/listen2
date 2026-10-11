@@ -73,12 +73,7 @@ node "$SCRIPT_DIR/verify-phase8-prerequisites.mjs" --check --untracked-manifest 
   ./gradlew --offline --no-daemon :app:dependencies --configuration debugRuntimeClasspath :app:dependencies --configuration releaseLikeRuntimeClasspath
 )
 
-npm --prefix "$MOBILE_ROOT" test -- --runInBand
-(
-  cd "$MOBILE_ROOT"
-  ./node_modules/.bin/tsc --noEmit
-)
-npm --prefix "$MOBILE_ROOT" run lint -- --quiet
+bash "$SCRIPT_DIR/run-android-source-checks.sh"
 git -C "$REPO_ROOT" diff --check
 node "$MOBILE_ROOT/scripts/verify-phase7-security.mjs"
 

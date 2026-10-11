@@ -52,7 +52,13 @@ function parseArgs() {
   for (let index = 0; index < args.length; index += 1) {
     const item = args[index];
     if (!item.startsWith('--')) fail(`invalid argument: ${item}`);
+    const valueOptions = new Set(['--phase-dir', '--head', '--validate', '--run-dir', '--input', '--name']);
+    const flagOptions = new Set(['--self-test-containment', '--resolve-current-run', '--ensure-current-run', '--write', '--write-prerequisites', '--write-build']);
+    if (!valueOptions.has(item) && !flagOptions.has(item)) fail(`unknown argument: ${item}`);
+    if (values.has(item) || flags.has(item)) fail(`duplicate argument: ${item}`);
     const next = args[index + 1];
+    if (valueOptions.has(item) && (!next || next.startsWith('--'))) fail(`missing value: ${item}`);
+    if (flagOptions.has(item) && next && !next.startsWith('--')) fail(`flag does not accept a value: ${item}`);
     if (next && !next.startsWith('--')) {
       values.set(item, next);
       index += 1;
@@ -136,7 +142,7 @@ function assertRecord(record, runRoot) {
   const keys = Object.keys(record).sort();
   if (keys.length !== REQUIRED_KEYS.length || keys.some((key, index) => key !== [...REQUIRED_KEYS].sort()[index]))
     fail('record has unknown or missing keys');
-  if (record.schemaVersion !== 1 || !RUN_ID.test(record.runId)) fail('invalid schema or run ID');
+  if (record.schemaVersion !== 1 || !RUN_ID.test(record.runId) || record.runId !== basename(runRoot)) fail('invalid schema or run ID');
   if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(record.recordId)) fail('invalid record ID');
   if (Number.isNaN(Date.parse(record.recordedAt))) fail('invalid record timestamp');
   if (!OUTCOMES.has(record.outcome)) fail('invalid terminal outcome');
@@ -228,7 +234,18 @@ function makePrerequisitesRecord(runRoot) {
   writeRecord(runRoot, '08-prerequisites.json', record);
 }
 
+function verifiedSigner(file) {
+  const sdk = process.env.ANDROID_SDK_ROOT || process.env.ANDROID_HOME;
+  if (!sdk) fail('ANDROID_SDK_ROOT is required to seal signer identity');
+  const text = execFileSync(resolve(sdk, 'build-tools/37.0.0/apksigner'), ['verify', '--verbose', '--print-certs', file], { encoding: 'utf8' });
+  const digest = text.match(/(?:Signer #1|V[0-9.]+ Signer): certificate SHA-256 digest: ([a-f0-9]{64})/i)?.[1]?.toLowerCase();
+  if (!digest) fail('verified certificate digest is missing');
+  return digest;
+}
+
 function makeBuildRecord(runRoot) {
+  git(['diff', '--quiet']); git(['diff', '--cached', '--quiet']);
+  if (!basename(runRoot).endsWith(`-${git(['rev-parse', 'HEAD']).slice(0, 12)}`)) fail('build run HEAD mismatch');
   const release = pathWithinRun(runRoot, 'artifacts/releaseLike.apk');
   const debug = pathWithinRun(runRoot, 'artifacts/debug.apk');
   const androidTest = pathWithinRun(runRoot, 'artifacts/releaseLikeAndroidTest.apk');
@@ -236,13 +253,15 @@ function makeBuildRecord(runRoot) {
   record.build = {
     variant: 'releaseLike', applicationId: 'com.dazzlingwuming.listen2', versionCode: 1000001,
     versionName: '2.34.0-android', apkRelativePath: 'artifacts/releaseLike.apk', bytes: statSync(release).size,
-    sha256: sha256(release), signerSha256: 'development-debug', zipAligned16KiB: true,
+    sha256: sha256(release), signerSha256: verifiedSigner(release), zipAligned16KiB: true,
     minified: true, debuggable: false,
   };
   record.artifacts = [
     ['debug-apk', debug], ['release-like-apk', release], ['release-like-android-test-apk', androidTest],
   ].map(([kind, file]) => ({ kind, relativePath: relative(runRoot, file), sha256: sha256(file), bytes: statSync(file).size, sanitized: true }));
+  if (verifiedSigner(androidTest) !== record.build.signerSha256) fail('app/test certificate differs');
   writeRecord(runRoot, '08-build.json', record);
+  writeFileSync(resolve(runRoot, '08-build.sha256'), `${sha256(resolve(runRoot, '08-build.json'))}\n`, { flag: 'wx', mode: 0o400 });
 }
 
 function selfTestContainment() {
@@ -271,6 +290,7 @@ function main() {
   if (flags.has('--self-test-containment')) return selfTestContainment();
   const phase = phaseDir(values.get('--phase-dir'));
   const head = values.get('--head') || git(['rev-parse', 'HEAD']);
+  if (head !== git(['rev-parse', 'HEAD'])) fail('requested HEAD is not the current HEAD');
   if (flags.has('--resolve-current-run')) {
     console.log(currentRun(phase, head, false));
     return;
@@ -305,9 +325,11 @@ function main() {
   fail('unsupported evidence command');
 }
 
-try {
-  main();
-} catch (error) {
-  console.error(`Phase 8 evidence error: ${error.message}`);
-  process.exitCode = 1;
+export { assertRecord, baseRecord, pathWithinRun, runRootFor, sha256, writeRecord };
+
+if (resolve(process.argv[1] || '') === resolve(import.meta.filename)) {
+  try { main(); } catch (error) {
+    console.error(`Phase 8 evidence error: ${error.message}`);
+    process.exitCode = 1;
+  }
 }
