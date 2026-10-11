@@ -139,10 +139,18 @@ public final class Phase08Instrumentation extends Instrumentation {
             PerformanceRecoveryTest.startupProbe(this, progress, requestedArguments);
             return;
         }
+        if ("com.listen2mobile.acceptance.PerformanceRecoveryTest#prepareLocal".equals(scenarioClass)) {
+            PerformanceRecoveryTest.prepareLocal(this, progress); return;
+        }
+        if ("com.listen2mobile.acceptance.PerformanceRecoveryTest#resumeLocal".equals(scenarioClass)) {
+            PerformanceRecoveryTest.resumeLocal(this, progress); return;
+        }
         throw new IllegalArgumentException("unapproved Phase 8 instrumentation class");
     }
 
     private static long timeoutFor(String scenarioClass) {
+        if ("com.listen2mobile.acceptance.PerformanceRecoveryTest#api35Full".equals(scenarioClass)) return 900_000L;
+        if ("com.listen2mobile.acceptance.PerformanceRecoveryTest#prepareLocal".equals(scenarioClass)) return 120_000L;
         if ("com.listen2mobile.acceptance.LiveBilibiliPlaybackMvSmokeTest".equals(scenarioClass)) {
             return LIVE_BILIBILI_TIMEOUT_MILLIS;
         }

@@ -43,13 +43,17 @@ RELEASE_APK="${BUILD_INFO[0]}"; RELEASE_SHA="${BUILD_INFO[1]}"; BUILD_HEAD="${BU
 "$APKANALYZER" dex packages "$TEST_APK" | grep -Fq 'com.listen2mobile.acceptance.PerformanceRecoveryTest' || fail 'test payload lacks PerformanceRecoveryTest'
 for forbidden in kotlin androidx.test.runner InstrumentationRegistry ActivityScenario; do ! "$APKANALYZER" dex code --class com.listen2mobile.acceptance.PerformanceRecoveryTest "$TEST_APK" | grep -Fqi "$forbidden" || fail 'test payload contains forbidden runtime dependency'; done
 
-DEVICE_API="$("$ADB" -s "$SERIAL" shell getprop ro.build.version.sdk | tr -d '\r')"; STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; TEST_SHA="$(sha_file "$TEST_APK")"; FIXTURE_SHA="$(sha_file "$RUN_DIR/fixture.json")"
+ORIGINAL_WIFI="$($ADB -s "$SERIAL" shell settings get global wifi_on | tr -d '\r')"
+DEVICE_API="$("$ADB" -s "$SERIAL" shell getprop ro.build.version.sdk | tr -d '\r')"; STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; TEST_SHA="$(sha_file "$TEST_APK")"; FIXTURE_SHA='generated-in-performance-lane'
 mkdir -p "$RUN_DIR/performance"; chmod 700 "$RUN_DIR/performance"
-cleanup() { "$ADB" -s "$SERIAL" shell svc wifi enable >/dev/null 2>&1 || true; "$ADB" -s "$SERIAL" shell input keyevent KEYCODE_WAKEUP >/dev/null 2>&1 || true; }
+cleanup() { if [[ "$ORIGINAL_WIFI" == 0 ]]; then wifi_action=disable; else wifi_action=enable; fi; "$ADB" -s "$SERIAL" shell svc wifi "$wifi_action" >/dev/null 2>&1 || true; "$ADB" -s "$SERIAL" shell input keyevent KEYCODE_WAKEUP >/dev/null 2>&1 || true; }
 trap cleanup EXIT INT TERM
 now_ms() { node -p 'Date.now()'; }
-instrument() { local class="$1" out="$2"; "$ADB" -s "$SERIAL" shell am instrument -w -r -e class "$class" -e phase08Api "$DEVICE_API" -e phase08Attempts 20 ${3:-} "$TEST_PACKAGE/com.listen2mobile.acceptance.Phase08Instrumentation" > "$out" 2>&1; ! grep -Eq 'INSTRUMENTATION_STATUS_CODE: -1|failureType=|shortMsg=' "$out"; }
-sample_cold_start() { local id="$1"; local file="$RUN_DIR/performance/${DEVICE_API}-cold-${id}.txt"; "$ADB" -s "$SERIAL" shell am force-stop "$PACKAGE"; local started="$(now_ms)"; if "$ADB" -s "$SERIAL" shell am start -W -n "$PACKAGE/com.listen2mobile.MainActivity" > "$file" 2>&1; then local ended="$(now_ms)"; printf '%s|PASS|%s\n' "$id" "$((ended-started))"; else local ended="$(now_ms)"; printf '%s|FAIL|%s\n' "$id" "$((ended-started))"; fi; }
+instrument() {
+  local class="$1" out="$2" command_status=0
+  "$ADB" -s "$SERIAL" shell am instrument -w -r -e class "$class" -e phase08Api "$DEVICE_API" -e phase08Attempts 20 ${3:-} "$TEST_PACKAGE/com.listen2mobile.acceptance.Phase08Instrumentation" > "$out" 2>&1 || command_status=$?
+  [[ "$command_status" == 0 ]] && ! grep -Eq 'INSTRUMENTATION_STATUS_CODE: -1|failureType=|shortMsg=' "$out" && grep -Eq '^INSTRUMENTATION_CODE: (-1|0)[[:space:]]*$' "$out"
+}
 
 # The startup probe is deliberately separate from the fixed 20-attempt acceptance paths below.
 # It keeps host ADB transport time only as diagnostics; primary TTID/TTFD are emitted by the
@@ -165,6 +169,16 @@ sample_startup_probe() {
   printf '%s|%s|%s|%s|%s|%s|%s|%s|%s\n' "$id" "$status" "$pidAbsent" "$hostElapsed" "$total" "$wait" "$a11y" "$launchState" "$reason"
 }
 
+snapshot_native() {
+  local destination="$1" elapsed
+  elapsed="$(device_elapsed_millis)"
+  "$ADB" -s "$SERIAL" shell dumpsys media_session | node --input-type=module -e '
+import { readFileSync, writeFileSync } from "node:fs";
+import { nativeSnapshot } from "./mobile/scripts/acceptance/performance-evidence.mjs";
+writeFileSync(process.argv[1], JSON.stringify(nativeSnapshot(readFileSync(0, "utf8"), Number(process.argv[2])), null, 2));
+' "$destination" "$elapsed"
+}
+
 if [[ "$MODE" == startup-probe ]]; then
   [[ "$DEVICE_API" =~ ^(35|36)$ && ( "$ATTEMPTS" == 3 || "$ATTEMPTS" == 5 ) && "$FILTER" == 'com.listen2mobile.acceptance.PerformanceRecoveryTest#startupProbe' && ${#API_VALUES[@]} == 0 && "$RECOVERY_CYCLES" == 0 && "$SOAK_SECONDS" == 0 ]] || fail 'startup probe requires one API35/API36 serial, 3 or 5 attempts, and only the startupProbe filter'
   mkdir "$RUN_DIR/.startup-probe-api${DEVICE_API}-once" || fail 'startup probe window already consumed'
@@ -191,31 +205,87 @@ if [[ "$MODE" == api35 ]]; then
   [[ ! -e "$RUN_DIR/08-api35-performance.json" ]] || fail 'API35 record already exists and is sealed'
   "$ADB" -s "$SERIAL" install -r "$RELEASE_APK" >/dev/null || fail 'releaseLike install failed'
   "$ADB" -s "$SERIAL" install -r "$TEST_APK" >/dev/null || fail 'AndroidTest install failed'
-  instrument "$FILTER" "$RUN_DIR/performance/api35-instrumentation.txt" '-e phase08RecoveryCycles 5 -e phase08SoakSeconds 600' || fail 'api35 instrumentation failed'
-  COLD="$RUN_DIR/performance/api35-cold.tsv"; : > "$COLD"; for number in $(seq -w 1 20); do sample_cold_start "$number" >> "$COLD"; done
-  for cycle in $(seq 1 5); do "$ADB" -s "$SERIAL" shell am force-stop "$PACKAGE"; "$ADB" -s "$SERIAL" shell am start -W -n "$PACKAGE/com.listen2mobile.MainActivity" > "$RUN_DIR/performance/recovery-${cycle}.txt" 2>&1 || true; done
-  "$ADB" -s "$SERIAL" shell svc wifi disable || true; sleep 3; "$ADB" -s "$SERIAL" shell svc wifi enable || true
-  "$ADB" -s "$SERIAL" shell dumpsys meminfo "$PACKAGE" > "$RUN_DIR/performance/resources-meminfo.txt" 2>&1 || true
-  "$ADB" -s "$SERIAL" shell top -b -n 1 > "$RUN_DIR/performance/resources-top.txt" 2>&1 || true
-  "$ADB" -s "$SERIAL" shell dumpsys batterystats "$PACKAGE" > "$RUN_DIR/performance/resources-battery.txt" 2>&1 || true
-  "$ADB" -s "$SERIAL" shell dumpsys netstats > "$RUN_DIR/performance/resources-netstats.txt" 2>&1 || true
-  SOAK_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  SOAK_DEADLINE_EPOCH="$(( $(date +%s) + SOAK_SECONDS ))"
-  printf 'runner_pid=%s\ninstrumentation=completed-sync-adb\nstarted_at=%s\ndeadline_epoch=%s\nserial=%s\n' "$$" "$SOAK_STARTED_AT" "$SOAK_DEADLINE_EPOCH" "$SERIAL" > "$RUN_DIR/performance/api35-soak-window.txt"
-  "$ADB" -s "$SERIAL" shell input keyevent KEYCODE_SLEEP || fail 'could not start screen-off soak'
-  sleep "$SOAK_SECONDS"
-  [[ "$("$ADB" -s "$SERIAL" get-state 2>/dev/null || true)" == device ]] || fail 'API35 soak interrupted: explicit serial is unavailable after deadline'
-  "$ADB" -s "$SERIAL" shell input keyevent KEYCODE_WAKEUP || fail 'could not finish screen-off soak'
-  node --input-type=module - "$RUN_DIR" "$BUILD_HEAD" "$RELEASE_SHA" "$TEST_SHA" "$FIXTURE_SHA" "$STARTED_AT" "$DEVICE_API" "$COLD" <<'NODE' > "$RUN_DIR/.api35-performance.json"
-import { readFileSync } from 'node:fs'; import { createHash } from 'node:crypto';
-const [run, head, productSha, testSha, fixtureSha, started, api, cold] = process.argv.slice(2); const hash = file => createHash('sha256').update(readFileSync(file)).digest('hex');
-const samples = readFileSync(cold, 'utf8').trim().split('\n').map(line => { const [id,status,elapsedMs] = line.split('|'); return { id, status, elapsedMs: Number(elapsedMs), stage: 'activity-display-and-interactive-node' }; });
-const summarize = rows => { const values = rows.map(row => row.elapsedMs).sort((a,b) => a-b); return { p50: values[Math.ceil(values.length * .5) - 1], p95: values[Math.ceil(values.length * .95) - 1], max: values.at(-1) }; };
-const family = (name, budget, rows) => ({ name, budget, samples: rows, status: rows.every(row => row.status === 'PASS') && summarize(rows).p95 <= budget ? 'PASS' : 'FAIL', ...summarize(rows) });
-const unavailable = stage => samples.map(row => ({ ...row, status:'FAIL', stage, reasonCode:'LIVE_PROVIDER_AND_MEDIA_NOT_AUTHORIZED' }));
-console.log(JSON.stringify({ schemaVersion:1, runId:run.split('/').pop(), recordId:'api35-performance-sealed', recordedAt:new Date().toISOString(), git:{branch:'agent/android-mobile-rebuild',sha:head,trackedClean:true,allowedUntracked:[]}, toolchain:{os:process.platform,arch:process.arch,node:process.version,java:'recorded-by-run',gradle:'recorded-by-run',buildTools:'37.0.0',targetSdk:36}, build:{variant:'releaseLike',applicationId:'com.dazzlingwuming.listen2',versionCode:1000001,sha256:productSha,testPayloadSha256:testSha}, device:{serialHash:'redacted',apiLevel:Number(api),image:'google_apis',abi:'host-matched'}, network:{mode:'wifi-toggle-recovery',transport:'emulator',offlineWindows:['one-3-second-window'],proxyConfigured:false}, fixture:{id:'phase08',revision:'1',manifestSha256:fixtureSha,queryIds:['qinghuaci'],generatedMediaSha256:fixtureSha,accountLane:'none'}, command:{id:'api35-full-once',argvRedacted:['explicit-api35-serial','20-fixed-attempts','5-process-recovery','one-network-cycle','600-second-soak'],startedAt:started,endedAt:new Date().toISOString(),timezone:'Asia/Shanghai',exitCode:0}, outcome:'NOT_VERIFIED',requirements:['PERF-001','PERF-002','PERF-003','TEST-004'],metrics:[family('ttid',3000,samples),family('ttfd',4000,samples),family('first-search',5000,unavailable('provider-network-terminal-not-authorized')),family('first-audio',6000,unavailable('media3-advancing-position-not-authorized'))],artifacts:[{kind:'cold-start-ledger',relativePath:'performance/api35-cold.tsv',sha256:hash(cold),bytes:readFileSync(cold).length,sanitized:true}],uncovered:[{requirement:'PERF-002',reasonCode:'LIVE_PROVIDER_AND_MEDIA_NOT_AUTHORIZED',safeDetail:'Visible shell attempts are retained. Provider result and Media3 advancing audio measurements are non-pass, not substituted by shell timing.',ownerAction:'Run a future credential-authorized user acceptance session.'}],recovery:{cleanupStatus:'restored',deviceStateRestored:true,rollbackArtifactSha256:productSha,steps:['five force-stop recovery cycles','one wifi disable/restore','600-second screen-off soak','wifi restored']}},null,2));
+  LIVE_STARTED_AT="$(now_ms)"
+  if ! instrument "$FILTER" "$RUN_DIR/performance/api35-instrumentation.txt" '-e phase08RecoveryCycles 5 -e phase08SoakSeconds 600'; then echo 'Live instrumentation ended non-pass; retain every emitted attempt and mark missing slots NOT_VERIFIED.' >&2; fi
+  LIVE_ENDED_AT="$(now_ms)"; LIVE_DURATION_MS="$(( LIVE_ENDED_AT - LIVE_STARTED_AT ))"
+  COLD="$RUN_DIR/performance/api35-cold.tsv"; : > "$COLD"
+  for number in $(seq 1 20); do printf -v id '%02d' "$number"; sample_startup_probe "$id" >> "$COLD"; done
+  node --input-type=module - "$RUN_DIR" <<'NODE'
+import { writeFileSync } from 'node:fs';
+import { generateSignal } from './mobile/scripts/acceptance/performance-evidence.mjs';
+const run = process.argv[2];
+writeFileSync(`${run}/performance/synthetic-media.json`, JSON.stringify(generateSignal(`${run}/performance/listen2-performance-signal.wav`), null, 2));
 NODE
-  node mobile/scripts/acceptance/evidence.mjs --run-dir "$RUN_DIR" --write --name 08-api35-performance.json --input "$RUN_DIR/.api35-performance.json"; rm -f "$RUN_DIR/.api35-performance.json"; chmod a-w "$RUN_DIR/08-api35-performance.json"; exit 0
+  "$ADB" -s "$SERIAL" push "$RUN_DIR/performance/listen2-performance-signal.wav" /sdcard/Download/listen2-performance-signal.wav >/dev/null || fail 'could not place generated file in Downloads'
+  LOCAL_READY=false
+  if instrument 'com.listen2mobile.acceptance.PerformanceRecoveryTest#prepareLocal' "$RUN_DIR/performance/local-saf-instrumentation.txt"; then LOCAL_READY=true; fi
+  printf '[]' > "$RUN_DIR/performance/recovery.json"
+  printf '[]' > "$RUN_DIR/performance/soak.json"
+  printf '{}' > "$RUN_DIR/performance/network.json"
+  if [[ "$LOCAL_READY" == true ]]; then
+    for cycle in $(seq 1 5); do
+      "$ADB" -s "$SERIAL" shell input keyevent KEYCODE_MEDIA_PAUSE >/dev/null
+      sleep 1
+      snapshot_native "$RUN_DIR/performance/recovery-before.json"
+      "$ADB" -s "$SERIAL" shell am force-stop "$PACKAGE" >/dev/null
+      resumed=false
+      if instrument 'com.listen2mobile.acceptance.PerformanceRecoveryTest#resumeLocal' "$RUN_DIR/performance/recovery-${cycle}-instrumentation.txt"; then resumed=true; fi
+      # Pause immediately after UI restoration to bound the measured recovery position error.
+      "$ADB" -s "$SERIAL" shell input keyevent KEYCODE_MEDIA_PAUSE >/dev/null
+      snapshot_native "$RUN_DIR/performance/recovery-after.json"
+      node --input-type=module - "$RUN_DIR" "$cycle" "$resumed" <<'NODE'
+import { readFileSync, writeFileSync } from 'node:fs';
+const [run, cycle, resumed] = process.argv.slice(2); const file = `${run}/performance/recovery.json`;
+const rows = JSON.parse(readFileSync(file)); rows.push({ cycle: Number(cycle), resumeVerified: resumed === 'true', before: JSON.parse(readFileSync(`${run}/performance/recovery-before.json`)), after: JSON.parse(readFileSync(`${run}/performance/recovery-after.json`)) }); writeFileSync(file, JSON.stringify(rows, null, 2));
+NODE
+    done
+    instrument 'com.listen2mobile.acceptance.PerformanceRecoveryTest#resumeLocal' "$RUN_DIR/performance/network-resume-instrumentation.txt" || LOCAL_READY=false
+    snapshot_native "$RUN_DIR/performance/network-before.json"
+    "$ADB" -s "$SERIAL" shell svc wifi disable >/dev/null
+    WIFI_DISABLED="$("$ADB" -s "$SERIAL" shell settings get global wifi_on | tr -d '\r')"
+    sleep 4; snapshot_native "$RUN_DIR/performance/network-offline.json"
+    "$ADB" -s "$SERIAL" shell svc wifi enable >/dev/null
+    WIFI_ENABLED="$("$ADB" -s "$SERIAL" shell settings get global wifi_on | tr -d '\r')"
+    sleep 4; snapshot_native "$RUN_DIR/performance/network-after.json"
+    node --input-type=module - "$RUN_DIR" "$WIFI_DISABLED" "$WIFI_ENABLED" <<'NODE'
+import { readFileSync, writeFileSync } from 'node:fs'; const [run, disabled, enabled] = process.argv.slice(2);
+const read = name => JSON.parse(readFileSync(`${run}/performance/network-${name}.json`));
+writeFileSync(`${run}/performance/network.json`, JSON.stringify({ disabledConfirmed: disabled === '0', enabledConfirmed: enabled === '1', before: read('before'), offline: read('offline'), after: read('after'), lane: 'generated-local-continuity-only', providerNetworkRecovery: 'NOT_VERIFIED' }, null, 2));
+NODE
+    "$ADB" -s "$SERIAL" shell input keyevent KEYCODE_SLEEP >/dev/null || fail 'could not enter screen-off playback window'
+    SOAK_START="$(device_elapsed_millis)"
+    for sample in $(seq 0 60); do
+      snapshot_native "$RUN_DIR/performance/soak-current.json"
+      if [[ "$sample" == 0 ]]; then SOAK_START="$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8')).elapsedMs" "$RUN_DIR/performance/soak-current.json")"; fi
+      node --input-type=module - "$RUN_DIR" <<'NODE'
+import { readFileSync, writeFileSync } from 'node:fs'; const run = process.argv[2], file = `${run}/performance/soak.json`;
+const rows = JSON.parse(readFileSync(file)); rows.push(JSON.parse(readFileSync(`${run}/performance/soak-current.json`))); writeFileSync(file, JSON.stringify(rows, null, 2));
+NODE
+      [[ "$sample" == 60 ]] && break
+      # Device monotonic deadlines prevent host transport from shortening the playback window.
+      deadline="$(( SOAK_START + (sample + 1) * 10000 ))"
+      while [[ "$(device_elapsed_millis)" -lt "$deadline" ]]; do sleep 1; done
+    done
+    "$ADB" -s "$SERIAL" shell input keyevent KEYCODE_WAKEUP >/dev/null
+  fi
+  "$ADB" -s "$SERIAL" shell dumpsys meminfo "$PACKAGE" > "$RUN_DIR/performance/resources-meminfo.txt"
+  cleanup
+  native_cleanup='restore-failed'; [[ "$("$ADB" -s "$SERIAL" shell settings get global wifi_on | tr -d '\r')" == "$ORIGINAL_WIFI" ]] && native_cleanup='restored'
+  node --input-type=module - "$RUN_DIR" "$STARTED_AT" "$SERIAL" "$LIVE_DURATION_MS" "$native_cleanup" <<'NODE'
+import { createHash } from 'node:crypto'; import { readFileSync, writeFileSync } from 'node:fs';
+import { assessContinuity, writePerformanceRecord } from './mobile/scripts/acceptance/performance-evidence.mjs';
+const [run, startedAt, serial, duration, cleanup] = process.argv.slice(2);
+const status = assessContinuity(JSON.parse(readFileSync(`${run}/performance/soak.json`)));
+writeFileSync(`${run}/performance/continuity-status.json`, JSON.stringify({ generatedPlaybackSoak: status, providerNetworkRecovery: 'NOT_VERIFIED', duplicateQueueHistoryMutation: 'NOT_VERIFIED', anrCrashMonitoring: 'NOT_VERIFIED' }, null, 2));
+writePerformanceRecord(run, startedAt, createHash('sha256').update(serial).digest('hex'), duration, cleanup);
+NODE
+  node mobile/scripts/acceptance/evidence.mjs --run-dir "$RUN_DIR" --write --name 08-api35-performance.json --input "$RUN_DIR/.api35-performance.json"
+  rm -f "$RUN_DIR/.api35-performance.json"
+  chmod a-w "$RUN_DIR/08-api35-performance.json"
+  echo 'Performance samples sealed; inspect each metric and continuity limitation before claiming any requirement.'
+  OUTCOME="$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8')).outcome" "$RUN_DIR/08-api35-performance.json")"
+  [[ "$OUTCOME" == PASS ]] || { echo "CHECKPOINT: performance outcome $OUTCOME; no attempts were replaced." >&2; exit 4; }
+  exit 0
 fi
 
 [[ "$MODE" == compatibility && "$ATTEMPTS" == 20 && ${#API_VALUES[@]} == 2 && " ${API_VALUES[*]} " == *' 26 '* && " ${API_VALUES[*]} " == *' 36 '* ]] || fail 'compatibility requires API 26 and API 36 only'
@@ -225,6 +295,10 @@ mkdir "$RUN_DIR/.compatibility-api${DEVICE_API}-once" || fail 'compatibility win
 API35_HASH="$(sha_file "$RUN_DIR/08-api35-performance.json")"
 [[ "$DEVICE_API" == 26 || "$DEVICE_API" == 36 ]] || fail 'this explicit serial must be API26 or API36'
 "$ADB" -s "$SERIAL" install -r "$RELEASE_APK" >/dev/null || fail 'releaseLike install failed'; "$ADB" -s "$SERIAL" install -r "$TEST_APK" >/dev/null || fail 'AndroidTest install failed'; instrument "$FILTER" "$RUN_DIR/performance/api${DEVICE_API}-compatibility.txt" || fail 'compatibility instrumentation failed'
-COLD="$RUN_DIR/performance/api${DEVICE_API}-cold.tsv"; : > "$COLD"; for number in $(seq -w 1 20); do sample_cold_start "$number" >> "$COLD"; done
+COLD="$RUN_DIR/performance/api${DEVICE_API}-cold.tsv"; : > "$COLD"; for number in $(seq 1 20); do printf -v id '%02d' "$number"; sample_startup_probe "$id" >> "$COLD"; done
 [[ "$API35_HASH" == "$(sha_file "$RUN_DIR/08-api35-performance.json")" ]] || fail 'sealed API35 bytes changed'
-echo "compatibility lane ${DEVICE_API} complete; rerun only the other explicit compatibility serial" >&2
+if [[ -f "$RUN_DIR/performance/api26-cold.tsv" && -f "$RUN_DIR/performance/api36-cold.tsv" ]]; then
+  node mobile/scripts/acceptance/performance-evidence.mjs --aggregate-compatibility --run-dir "$RUN_DIR"
+else
+  echo "compatibility lane ${DEVICE_API} retained; run only the other explicit compatibility serial before aggregation" >&2
+fi

@@ -794,6 +794,130 @@ public final class AccessibilityDriver {
         return value.length() > 80 ? value.substring(0, 80) : (value.isEmpty() ? "untitled" : value);
     }
 
+    /** Fixed public Kugou lane; only real semantic rows satisfy the search sample. */
+    PerformanceSample measureLiveSearch() {
+        long setupStarted = SystemClock.elapsedRealtime();
+        try {
+            if (hasClickableTarget("关闭播放器")) tapLabel("关闭播放器");
+            if (hasClickableTarget("搜索")) tapLabel("搜索");
+            require(waitForLabel("搜索歌曲、歌手或歌单", 5_000L), "search field missing");
+            enterText("搜索歌曲、歌手或歌单", "青花瓷");
+            selectLiveSource("QQ音乐");
+            selectLiveSource("酷狗音乐");
+        } catch (AssertionError error) {
+            return new PerformanceSample("FAIL", SystemClock.elapsedRealtime() - setupStarted, "search-setup-failed", null);
+        }
+        long started = SystemClock.elapsedRealtime();
+        tapLabel("搜索音乐");
+        while (SystemClock.elapsedRealtime() - started < 5_000L) {
+            String window = dumpWindow();
+            for (String title : visiblePlayableTitles(window)) {
+                if (title.contains("青花瓷")) return new PerformanceSample("PASS", SystemClock.elapsedRealtime() - started, "semantic-live-result", title);
+            }
+            if (!window.contains("正在搜索") && "provider-error".equals(liveSearchTerminal(window))) {
+                return new PerformanceSample("DEGRADED", SystemClock.elapsedRealtime() - started, "visible-provider-error", null);
+            }
+            SystemClock.sleep(100L);
+        }
+        return new PerformanceSample("TIMEOUT", SystemClock.elapsedRealtime() - started, "no-matching-live-result", null);
+    }
+
+    PerformanceSample measureVisibleAudio(String title) {
+        long started = SystemClock.elapsedRealtime();
+        try {
+            tapLabel("播放" + title);
+            Long first = null;
+            while (SystemClock.elapsedRealtime() - started < 6_000L) {
+                if (dumpWindow().contains("Allow Listen2 to send you notifications?")) allowNotificationPermissionIfPrompted();
+                if (hasClickableTarget("打开播放器")) tapLabel("打开播放器");
+                Long current = progressPosition(dumpWindow());
+                if (first == null && current != null) first = current;
+                if (first != null && current != null && current > first && targetSessionPlaying(shell("dumpsys media_session"), title)) {
+                    return new PerformanceSample("PASS", SystemClock.elapsedRealtime() - started, "visible-and-native-position-advancing", null);
+                }
+                SystemClock.sleep(100L);
+            }
+            return new PerformanceSample("TIMEOUT", SystemClock.elapsedRealtime() - started, "audio-not-advancing", null);
+        } catch (AssertionError error) {
+            return new PerformanceSample("FAIL", SystemClock.elapsedRealtime() - started, "audio-ui-action-failed", null);
+        }
+    }
+
+    /** Imports only the generated file through the ordinary system SAF picker. */
+    void prepareSyntheticLocalAudio() {
+        launchTarget();
+        if (hasClickableTarget("关闭播放器")) tapLabel("关闭播放器");
+        tapLabel("我的");
+        if (!waitForLabel("Listen2AcceptanceSignal", 500L)) {
+            require(scrollToLabel("导入本地音频"), "local importer not visible");
+            tapLabel("导入本地音频");
+            require(waitForLabel("listen2-performance-signal.wav", 2_000L) || openDownloads(), "SAF Downloads route not visible");
+            require(waitForLabel("listen2-performance-signal.wav", 5_000L), "generated WAV not visible in SAF");
+            tapLabel("listen2-performance-signal.wav");
+            if (hasClickableTarget("Open")) tapLabel("Open");
+            else if (hasClickableTarget("打开")) tapLabel("打开");
+            require(waitForLabel("已导入", 10_000L), "SAF import did not report completion");
+        }
+        require(scrollToLabel("打开本地音乐"), "local library tile not visible");
+        tapLabel("打开本地音乐");
+        require(waitForLabel("Listen2AcceptanceSignal", 5_000L), "generated title cannot be identified; refusing another local track");
+        PerformanceSample sample = measureVisibleAudio("Listen2AcceptanceSignal");
+        require("PASS".equals(sample.status), "generated local media did not advance");
+    }
+
+    private static boolean targetSessionPlaying(String sessions, String title) {
+        int start = sessions.indexOf("package=" + TARGET_PACKAGE);
+        if (start < 0) return false;
+        int end = sessions.indexOf("package=", start + 8);
+        String target = sessions.substring(start, end < 0 ? sessions.length() : end);
+        return target.contains(title) && isNativePlayingState(target);
+    }
+
+    private boolean openDownloads() {
+        for (String label : new String[] { "Show roots", "显示根目录", "显示导航抽屉" }) {
+            if (hasClickableTarget(label)) { tapLabel(label); break; }
+        }
+        for (String label : new String[] { "Downloads", "下载" }) {
+            if (hasClickableTarget(label)) { tapLabel(label); return true; }
+        }
+        return false;
+    }
+
+    private boolean scrollToLabel(String label) {
+        for (int attempt = 0; attempt < 8; attempt++) {
+            if (hasClickableTarget(label)) return true;
+            AccessibilityNodeInfo root = instrumentation.getUiAutomation().getRootInActiveWindow();
+            if (root == null) return false;
+            try { scrollVisible(root, attempt >= 4); } finally { root.recycle(); }
+            SystemClock.sleep(150L);
+        }
+        return hasClickableTarget(label);
+    }
+
+    private boolean scrollVisible(AccessibilityNodeInfo node, boolean backward) {
+        if (node.isScrollable() && node.performAction(backward ? AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD : AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)) return true;
+        for (int index = 0; index < node.getChildCount(); index++) {
+            AccessibilityNodeInfo child = node.getChild(index);
+            if (child == null) continue;
+            try { if (scrollVisible(child, backward)) return true; } finally { child.recycle(); }
+        }
+        return false;
+    }
+
+    void resumeVisiblePlayer() {
+        launchTarget();
+        if (hasClickableTarget("打开播放器")) tapLabel("打开播放器");
+        if (hasClickableTarget("继续播放")) tapLabel("继续播放");
+        require(waitForLabel("暂停播放", 5_000L), "recovered player is not playing");
+    }
+
+    static final class PerformanceSample {
+        final String status; final long elapsedMillis; final String reason; final String title;
+        PerformanceSample(String status, long elapsedMillis, String reason, String title) {
+            this.status = status; this.elapsedMillis = elapsedMillis; this.reason = reason; this.title = title;
+        }
+    }
+
     private static String liveSearchTerminal(String view) {
         if (view.contains("还没有搜索结果")) {
             return "empty";

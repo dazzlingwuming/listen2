@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const REQUIRED_IDS = Array.from({ length: 20 }, (_, index) => String(index + 1).padStart(2, '0'));
 const PROBE_IDS = count => Array.from({ length: count }, (_, index) => String(index + 1).padStart(2, '0'));
@@ -22,7 +23,7 @@ export function summarizeFamily(samples, budget) {
   if (new Set(ids).size !== REQUIRED_IDS.length || !REQUIRED_IDS.every((id, index) => ids[index] === id))
     fail('attempt IDs must be immutable and exactly 01 through 20');
   for (const sample of samples) {
-    if (!['PASS', 'FAIL', 'TIMEOUT'].includes(sample.status)) fail('attempt status must be terminal');
+    if (!['PASS', 'FAIL', 'TIMEOUT', 'DEGRADED', 'NOT_VERIFIED'].includes(sample.status)) fail('attempt status must be terminal');
     if (!Number.isFinite(sample.elapsedMs) || sample.elapsedMs < 0) fail('attempt elapsed time is invalid');
   }
   const durations = samples.map(sample => sample.elapsedMs);
@@ -128,6 +129,7 @@ function selfTestProbe() {
   console.log('Performance startup-probe self-test passed.');
 }
 
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
 if (process.argv.includes('--self-test-exact-20')) {
   selfTest();
 } else if (process.argv.includes('--self-test-startup-probe')) {
@@ -140,4 +142,6 @@ if (process.argv.includes('--self-test-exact-20')) {
 } else {
   console.error('usage: summarize-performance.mjs --self-test-exact-20 | --self-test-startup-probe | --startup-probe-ledger LEDGER | RECORD.json');
   process.exitCode = 2;
+}
+
 }

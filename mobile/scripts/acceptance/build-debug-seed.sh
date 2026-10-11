@@ -28,7 +28,7 @@ APKSIGNER="$SDK/build-tools/37.0.0/apksigner"; AAPT="$SDK/build-tools/37.0.0/aap
 [[ -x "$APKSIGNER" && -x "$AAPT" ]] || { echo 'Android Build Tools 37.0.0 are required' >&2; exit 3; }
 
 signer() {
-  "$APKSIGNER" verify --verbose --print-certs "$1" | awk -F': ' '/(Signer #1|V[0-9.]+ Signer): certificate SHA-256 digest/ { print $NF; exit }'
+  "$APKSIGNER" verify --verbose --print-certs "$1" | awk -F': ' '/(Signer #1|V[0-9.]+ Signer):? certificate SHA-256 digest/ { print $NF; exit }'
 }
 
 (

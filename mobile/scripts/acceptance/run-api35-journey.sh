@@ -170,9 +170,9 @@ TEST_TARGET_PACKAGE="$(printf '%s\n' "$TEST_MANIFEST" | sed -n '/E: instrumentat
 "$APKANALYZER" dex packages "$TEST_APK" | grep -Fq "$TEST_RUNNER" || { echo "BLOCKED: AndroidTest APK does not package manifest runner $TEST_RUNNER" >&2; exit 3; }
 APKSIGNER="$SDK/build-tools/37.0.0/apksigner"
 [[ -x "$APKSIGNER" ]] || { echo "BLOCKED: Android Build Tools 37.0.0 apksigner is unavailable" >&2; exit 3; }
-TEST_SIGNER="$($APKSIGNER verify --verbose --print-certs "$TEST_APK" | awk -F': ' '/(Signer #1|V[0-9.]+ Signer): certificate SHA-256 digest/ { print $NF; exit }')"
+TEST_SIGNER="$($APKSIGNER verify --verbose --print-certs "$TEST_APK" | awk -F': ' '/(Signer #1|V[0-9.]+ Signer):? certificate SHA-256 digest/ { print $NF; exit }')"
 [[ "$TEST_SIGNER" =~ ^[a-f0-9]{64}$ ]] || { echo "BLOCKED: AndroidTest signer was not verified" >&2; exit 3; }
-apk_signer() { "$APKSIGNER" verify --verbose --print-certs "$1" | awk -F': ' '/(Signer #1|V[0-9.]+ Signer): certificate SHA-256 digest/ { print $NF; exit }'; }
+apk_signer() { "$APKSIGNER" verify --verbose --print-certs "$1" | awk -F': ' '/(Signer #1|V[0-9.]+ Signer):? certificate SHA-256 digest/ { print $NF; exit }'; }
 DEBUG_SIGNER="$(apk_signer "$DEBUG_APK")"; RELEASE_SIGNER="$(apk_signer "$RELEASE_APK")"
 [[ "$DEBUG_SIGNER" =~ ^[a-f0-9]{64}$ && "$DEBUG_SIGNER" == "$RELEASE_SIGNER" && "$DEBUG_SIGNER" == "$TEST_SIGNER" ]] || { echo "BLOCKED: debug seed, releaseLike, and AndroidTest signer lineage differs" >&2; exit 3; }
 unzip -Z1 "$DEBUG_APK" | grep -Fx 'assets/index.android.bundle' >/dev/null || { echo "BLOCKED: debug seed lacks assets/index.android.bundle before reset" >&2; exit 3; }
@@ -275,7 +275,7 @@ console.log(JSON.stringify({ schemaVersion: 1, runId: basename(run), recordId: '
   device: { serialHash: createHash('sha256').update(serial).digest('hex'), avdName: 'recorded-api35', image: 'google_apis', apiLevel: 35, abi: 'host-matched', ramMiB: 0, cores: 0, resolution: 'recorded-by-device', density: 0, locale: 'recorded-by-device', fontScale: 0, navigationMode: 'recorded-by-device' },
   network: { mode: 'production-routes', transport: 'emulator', offlineWindows: [], proxyConfigured: false },
   fixture: { id: 'phase08', revision: '1', manifestSha256: hash('fixture.json'), queryIds: ['qinghuaci'], generatedMediaSha256: fixtureSha, accountLane: 'none' },
-  command: { id: 'api35-integrated-journey-once', argvRedacted: ['explicit-api35-serial', 'debug-install', 'one-clear', 'upgrade-seed', 'release-like-install', 'integrated-journey'], startedAt: started, endedAt: ended, timezone: 'Asia/Shanghai', exitCode: outcome === 'FAIL' ? 1 : 0 },
+  command: { id: 'api35-integrated-journey-once', evidenceKinds: ['INSTRUMENTATION', 'API35_E2E', 'API35_ACCESSIBILITY'], argvRedacted: ['explicit-api35-serial', 'debug-install', 'one-clear', 'upgrade-seed', 'release-like-install', 'integrated-journey'], startedAt: started, endedAt: ended, timezone: 'Asia/Shanghai', exitCode: outcome === 'FAIL' ? 1 : 0 },
   outcome, requirements: ['TEST-002', 'TEST-003', 'TEST-004', 'REL-002'], metrics: [], artifacts,
   uncovered: outcome === 'PASS' ? [] : [{ requirement: 'TEST-003', reasonCode: outcome === 'NOT_VERIFIED' ? 'NO_CREDENTIAL_UI_INTERACTION' : 'INTEGRATED_JOURNEY_FAILURE', safeDetail: detail, ownerAction: 'Review retained device evidence and run only an authorized future acceptance session.' }],
   recovery: { cleanupStatus: cleanup, deviceStateRestored: cleanup === 'restored', rollbackArtifactSha256: sha, steps: ['restored animation, font-scale, and rotation settings from the pre-run snapshot'] }

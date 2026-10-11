@@ -82,8 +82,8 @@ for class in "$RUNNER" com.listen2mobile.acceptance.AccessibilityDriver "$SCENAR
 done
 manifest="$($SDK/build-tools/37.0.0/aapt dump xmltree "$TEST_APK" AndroidManifest.xml)"
 grep -Fq "$RUNNER" <<< "$manifest" || fail 'AndroidTest manifest does not name self-contained runner'
-product_signer="$($APKSIGNER verify --verbose --print-certs "$PRODUCT_APK" | awk -F': ' '/(Signer #1|V[0-9.]+ Signer): certificate SHA-256 digest/ {digest=$NF} END {print digest}')"
-test_signer="$($APKSIGNER verify --verbose --print-certs "$TEST_APK" | awk -F': ' '/(Signer #1|V[0-9.]+ Signer): certificate SHA-256 digest/ {digest=$NF} END {print digest}')"
+product_signer="$($APKSIGNER verify --verbose --print-certs "$PRODUCT_APK" | awk -F': ' '/(Signer #1|V[0-9.]+ Signer):? certificate SHA-256 digest/ {digest=$NF} END {print digest}')"
+test_signer="$($APKSIGNER verify --verbose --print-certs "$TEST_APK" | awk -F': ' '/(Signer #1|V[0-9.]+ Signer):? certificate SHA-256 digest/ {digest=$NF} END {print digest}')"
 [[ "$product_signer" =~ ^[a-f0-9]{64}$ && "$product_signer" == "$test_signer" ]] || fail 'product and test signer lineage differs'
 
 mkdir "$RUN_DIR/.live-provider-once" || fail 'live window already claimed'
@@ -165,7 +165,7 @@ console.log(JSON.stringify({ schemaVersion: 1, runId: basename(run), recordId: l
   device: { serialHash: createHash('sha256').update(serial).digest('hex'), avdName: 'recorded-api35', image: 'google_apis', apiLevel: 35, abi: 'host-matched', ramMiB: 0, cores: 0, resolution: 'recorded-by-device', density: 0, locale: 'recorded-by-device', fontScale: 0, navigationMode: 'recorded-by-device' },
   network: { mode: 'production-routes-fixture-free', transport: 'emulator', offlineWindows: [], proxyConfigured: false },
   fixture: { id: 'none', revision: '0', manifestSha256: '0000000000000000000000000000000000000000000000000000000000000000', queryIds: ['qinghuaci'], generatedMediaSha256: '0000000000000000000000000000000000000000000000000000000000000000', accountLane: 'none' },
-  command: { id: `api35-${lane}-once`, argvRedacted: ['explicit-api35-serial', 'sealed-product-path', 'release-like-android-test-only', lane], startedAt, endedAt: new Date().toISOString(), timezone: 'Asia/Shanghai', exitCode: outcome === 'FAIL' ? 1 : 0 },
+  command: { id: `api35-${lane}-once`, evidenceKinds: ['INSTRUMENTATION', 'LIVE_PUBLIC_PROVIDER', ...(safePlayback.startsWith('live-playback=PASS-') ? ['SYSTEM_MEDIA'] : [])], argvRedacted: ['explicit-api35-serial', 'sealed-product-path', 'release-like-android-test-only', lane], startedAt, endedAt: new Date().toISOString(), timezone: 'Asia/Shanghai', exitCode: outcome === 'FAIL' ? 1 : 0 },
   outcome, requirements: ['TEST-002', 'TEST-003', 'REL-002'], metrics: [],
   artifacts: files.map(file => ({ kind: basename(file), relativePath: file, sha256: hash(file), bytes: statSync(`${run}/${file}`).size, sanitized: true })),
   uncovered: outcome === 'PASS' ? [] : [{ requirement: 'TEST-003', reasonCode: outcome === 'FAIL' ? 'LIVE_PROVIDER_SEARCH_FAILED' : outcome === 'DEGRADED' ? 'LIVE_PROVIDER_UPSTREAM_RESTRICTION' : 'ANONYMOUS_PLAYBACK_NOT_VERIFIED', safeDetail: `${classification};${httpStatus};${safePlayback}`, ownerAction: 'Review the retained sanitized evidence; do not retry automatically or bypass provider access limits.' }],

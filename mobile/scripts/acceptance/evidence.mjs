@@ -218,7 +218,7 @@ function baseRecord(runRoot, recordId, requirements) {
 }
 
 function writeRecord(runRoot, name, record) {
-  if (!/^(?:08-(?:prerequisites|build|journey|api35-performance|performance|live-provider|evidence-index)\.json)$/.test(name))
+  if (!/^(?:08-(?:prerequisites|build|journey|api35-performance|performance|live-provider|reproducibility|evidence-index)\.json)$/.test(name))
     fail('record filename is not a permitted Phase 8 evidence record');
   const destination = resolve(runRoot, name);
   if (existsSync(destination)) fail('evidence record already exists and is immutable');
@@ -238,7 +238,7 @@ function verifiedSigner(file) {
   const sdk = process.env.ANDROID_SDK_ROOT || process.env.ANDROID_HOME;
   if (!sdk) fail('ANDROID_SDK_ROOT is required to seal signer identity');
   const text = execFileSync(resolve(sdk, 'build-tools/37.0.0/apksigner'), ['verify', '--verbose', '--print-certs', file], { encoding: 'utf8' });
-  const digest = text.match(/(?:Signer #1|V[0-9.]+ Signer): certificate SHA-256 digest: ([a-f0-9]{64})/i)?.[1]?.toLowerCase();
+  const digest = text.match(/(?:Signer #1|V[0-9.]+ Signer):? certificate SHA-256 digest: ([a-f0-9]{64})/i)?.[1]?.toLowerCase();
   if (!digest) fail('verified certificate digest is missing');
   return digest;
 }
@@ -259,6 +259,7 @@ function makeBuildRecord(runRoot) {
   record.artifacts = [
     ['debug-apk', debug], ['release-like-apk', release], ['release-like-android-test-apk', androidTest],
   ].map(([kind, file]) => ({ kind, relativePath: relative(runRoot, file), sha256: sha256(file), bytes: statSync(file).size, sanitized: true }));
+  record.build.testPayloadSha256 = sha256(androidTest);
   if (verifiedSigner(androidTest) !== record.build.signerSha256) fail('app/test certificate differs');
   writeRecord(runRoot, '08-build.json', record);
   writeFileSync(resolve(runRoot, '08-build.sha256'), `${sha256(resolve(runRoot, '08-build.json'))}\n`, { flag: 'wx', mode: 0o400 });
@@ -305,7 +306,7 @@ function main() {
     const candidate = resolve(process.cwd(), recordFile);
     const run = runRootFor(dirname(candidate));
     const canonicalRecord = canonicalExistingFile(run, candidate, 'evidence record');
-    if (!/^08-(?:prerequisites|build|journey|api35-performance|performance|live-provider|evidence-index)\.json$/.test(basename(canonicalRecord)))
+    if (!/^08-(?:prerequisites|build|journey|api35-performance|performance|live-provider|reproducibility|evidence-index)\.json$/.test(basename(canonicalRecord)))
       fail('evidence record filename is not permitted');
     assertRecord(JSON.parse(readFileSync(canonicalRecord, 'utf8')), run);
     console.log('Phase 8 evidence record is valid.');

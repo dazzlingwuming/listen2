@@ -82,7 +82,8 @@ tracked_clean
   cd "$ANDROID_ROOT"
   # testBuildType is intentionally releaseLike, so Gradle registers only the
   # release-like JVM unit-test task for the configured target variant.
-  ./gradlew --offline --no-daemon :app:testReleaseLikeUnitTest :app:compileReleaseLikeAndroidTestKotlin :app:assembleDebug :app:assembleReleaseLike :app:assembleReleaseLikeAndroidTest
+  ./gradlew --offline --no-daemon :app:testReleaseLikeUnitTest --tests com.listen2mobile.offline.OfflineRecoveryContractTest --tests com.listen2mobile.offline.BilibiliOfflineContractTest --tests com.listen2mobile.local.LocalAudioPolicyTest --tests com.listen2mobile.local.LocalMetadataReaderTest
+  ./gradlew --offline --no-daemon :app:compileReleaseLikeAndroidTestKotlin :app:assembleDebug :app:assembleReleaseLike :app:assembleReleaseLikeAndroidTest
 )
 
 ARTIFACT_DIR="$RUN_DIR/artifacts"

@@ -13,7 +13,7 @@ function clean() {
 }
 function signer(file, apksigner) {
   const output = execFileSync(apksigner, ['verify', '--verbose', '--print-certs', file], { encoding: 'utf8' });
-  const digest = output.match(/(?:Signer #1|V[0-9.]+ Signer): certificate SHA-256 digest: ([a-f0-9]{64})/i)?.[1]?.toLowerCase();
+  const digest = output.match(/(?:Signer #1|V[0-9.]+ Signer):? certificate SHA-256 digest: ([a-f0-9]{64})/i)?.[1]?.toLowerCase();
   if (!digest) reject('verified certificate SHA-256 is missing');
   return digest;
 }
@@ -29,6 +29,7 @@ export function verify(run, head, apksigner, product, test) {
     if (matches.length !== 1) reject(`missing or duplicate ${kind}`);
     return matches[0];
   });
+  if (record.build.testPayloadSha256 !== artifacts[1].sha256) reject('candidate test payload identity mismatch');
   if (record.build.sha256 !== artifacts[0].sha256 || record.build.bytes !== artifacts[0].bytes || record.build.apkRelativePath !== artifacts[0].relativePath) reject('candidate build/artifact mismatch');
   const paths = artifacts.map(item => pathWithinRun(run, item.relativePath));
   for (const [index, input] of [product, test].entries()) {
@@ -52,7 +53,7 @@ function seal(run, head, apksigner, product, test, debug) {
     return { kind, relativePath: `artifacts/${name}`, sha256: sha256(file), bytes: statSync(file).size, sanitized: true };
   });
   const apk = record.artifacts[0];
-  record.build = { variant: 'releaseLike', applicationId: 'com.dazzlingwuming.listen2', versionCode: 1000001, versionName: '2.34.0-android', apkRelativePath: apk.relativePath, sha256: apk.sha256, bytes: apk.bytes, signerSha256: digest, zipAligned16KiB: true, minified: true, debuggable: false };
+  record.build = { variant: 'releaseLike', applicationId: 'com.dazzlingwuming.listen2', versionCode: 1000001, versionName: '2.34.0-android', apkRelativePath: apk.relativePath, sha256: apk.sha256, bytes: apk.bytes, testPayloadSha256: record.artifacts[1].sha256, signerSha256: digest, zipAligned16KiB: true, minified: true, debuggable: false };
   record.command.argvRedacted = ['verified-single-build-candidate'];
   record.outcome = 'NOT_VERIFIED';
   record.uncovered = [{ requirement: 'REL-001', reasonCode: 'REPRODUCIBILITY_PENDING', safeDetail: 'Candidate sealed for device validation; final two-build reproducibility remains pending.', ownerAction: 'Run the final reproducibility gate after functional acceptance.' }];

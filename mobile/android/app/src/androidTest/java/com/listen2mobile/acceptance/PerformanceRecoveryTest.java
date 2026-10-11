@@ -23,7 +23,20 @@ public final class PerformanceRecoveryTest {
         requireInteger(arguments, "phase08Attempts", REQUIRED_ATTEMPTS);
         requireInteger(arguments, "phase08RecoveryCycles", 5);
         requireInteger(arguments, "phase08SoakSeconds", 600);
-        observeVisibleShell(instrumentation, progress, "api35-full");
+        AccessibilityDriver driver = new AccessibilityDriver(instrumentation);
+        driver.launchTarget();
+        for (int attempt = 1; attempt <= REQUIRED_ATTEMPTS; attempt++) {
+            progress.step("live-performance-attempt-" + attempt);
+            String id = String.format(java.util.Locale.ROOT, "%02d", attempt);
+            AccessibilityDriver.PerformanceSample search;
+            try { search = driver.measureLiveSearch(); }
+            catch (AssertionError error) { search = new AccessibilityDriver.PerformanceSample("FAIL", 0L, "search-action-failed", null); }
+            emit(instrumentation, "first-search", id, search);
+            AccessibilityDriver.PerformanceSample audio = search.title == null
+                ? new AccessibilityDriver.PerformanceSample("NOT_VERIFIED", 0L, "no-matching-live-track", null)
+                : driver.measureVisibleAudio(search.title);
+            emit(instrumentation, "first-audio", id, audio);
+        }
     }
 
     public static void compatibilityColdStart(Instrumentation instrumentation, ScenarioProgress progress, Bundle arguments) {
@@ -65,6 +78,23 @@ public final class PerformanceRecoveryTest {
         );
         instrumentation.sendStatus(1, status);
         progress.step("startup-probe-complete");
+    }
+
+    public static void prepareLocal(Instrumentation instrumentation, ScenarioProgress progress) {
+        progress.step("saf-generated-local-import");
+        new AccessibilityDriver(instrumentation).prepareSyntheticLocalAudio();
+        progress.step("saf-generated-local-playing");
+    }
+
+    public static void resumeLocal(Instrumentation instrumentation, ScenarioProgress progress) {
+        progress.step("resume-local-player");
+        new AccessibilityDriver(instrumentation).resumeVisiblePlayer();
+    }
+
+    private static void emit(Instrumentation instrumentation, String metric, String id, AccessibilityDriver.PerformanceSample sample) {
+        Bundle status = new Bundle();
+        status.putString("phase08Metric", metric + "|" + id + "|" + sample.status + "|" + sample.elapsedMillis + "|" + sample.reason);
+        instrumentation.sendStatus(1, status);
     }
 
     private static void observeVisibleShell(Instrumentation instrumentation, ScenarioProgress progress, String stage) {

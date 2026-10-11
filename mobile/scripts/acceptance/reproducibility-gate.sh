@@ -30,7 +30,7 @@ phase8_signer_manifest() {
     local apk="$2"
     "$apksigner" verify --verbose --print-certs "$apk" >/dev/null
     "$apksigner" verify --verbose --print-certs "$apk" |
-        awk '/^Verified using v[0-9.]+ scheme/ || /^Verified for SourceStamp/ || /^Number of signers:/ || /^V[0-9.]+ Signer: certificate SHA-256 digest:/ || /^V[0-9.]+ Signer: public key SHA-256 digest:/'
+        awk '/^Verified using v[0-9.]+ scheme/ || /^Verified for SourceStamp/ || /^Number of signers:/ || /^(Signer #[0-9]+|V[0-9.]+ Signer):? certificate SHA-256 digest:/ || /^(Signer #[0-9]+|V[0-9.]+ Signer):? public key SHA-256 digest:/'
 }
 
 phase8_strip_apk_signing_block() {
