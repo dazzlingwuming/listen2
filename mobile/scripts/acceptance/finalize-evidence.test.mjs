@@ -154,7 +154,7 @@ test('actual live record emitter accepts explicit public fixture-free lane but f
   record.command.evidenceKinds.push('CREDENTIAL_LIVE');record.outcome='NOT_VERIFIED';writeFileSync(resolve(run,'08-live-provider.json'),JSON.stringify(record));assert.throws(()=>evaluateFixture(),/FIXTURE_FREE_SCOPE_INVALID/);
 }));
 
-const retainedObservations = serialHash => ({schemaVersion:1,serialHash,startedAt:new Date().toISOString(),baseline:{account:'AUTHENTICATED',configuration:'CONFIGURED',connection:'PASS',translation:'PASS'},resume:{account:'AUTHENTICATED',configuration:'CONFIGURED'}});
+const retainedObservations = serialHash => ({schemaVersion:1,serialHash,startedAt:new Date().toISOString(),baseline:{account:'AUTHENTICATED',configuration:'CONFIGURED',connection:'PASS',translation:'PASS'},resume:{account:'AUTHENTICATED',configuration:'CONFIGURED'},playback:{account:'AUTHENTICATED',selection:'UNIQUE_P1',playback:'PLAYING_ADVANCING',download:'READY_CHECKED',positionstartms:1000,positionendms:4000},offline:{playback:'PLAYING_ADVANCING',download:'READY_CHECKED',positionstartms:4000,positionendms:7000},network:{originalWifi:1,originalData:1,offlineWifi:0,offlineData:0,defaultNetworkAbsent:true,restoredWifi:1,restoredData:1,restoreStatus:'RESTORED',signal:'NONE'}});
 test('append-only credential writer integrates with finalizer and cannot erase lifecycle gaps',()=>fixture(({run,original,evaluateFixture})=>{
   const observations=retainedObservations(original[2].device.serialHash);
   const first=writeCredentialEvidence(run,nextCredentialAttempt(run),observations);
@@ -162,7 +162,7 @@ test('append-only credential writer integrates with finalizer and cannot erase l
   assert.throws(()=>writeCredentialEvidence(run,'001',observations),/IMMUTABLE/);
   writeCredentialEvidence(run,nextCredentialAttempt(run),observations);
   const model=evaluateFixture();assert.equal(model.records.filter(r=>r.recordId.startsWith('phase8-credential-live-')).length,2);
-  for(const id of ['AUTH-002','AI-001','AI-003'])assert.equal(model.requirements.find(r=>r.id===id).status,'NOT_VERIFIED');
+  for(const id of ['AUTH-002','AI-001','AI-003','PLAY-001','CACHE-001','CACHE-002'])assert.equal(model.requirements.find(r=>r.id===id).status,'NOT_VERIFIED');
   first.uncovered=[];writeFileSync(resolve(run,'08-credential-live-001.json'),JSON.stringify(first));
   assert.throws(()=>evaluateFixture(),/CREDENTIAL_LIFECYCLE_GAP_REMOVED/);
 }));
