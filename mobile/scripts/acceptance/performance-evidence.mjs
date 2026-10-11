@@ -7,6 +7,50 @@ import { runRootFor, writeRecord } from './evidence.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const ids = Array.from({ length: 20 }, (_, index) => String(index + 1).padStart(2, '0'));
+const LIVE_REASONS = new Set(['semantic-live-result', 'visible-and-native-position-advancing', 'search-setup-failed', 'visible-provider-error', 'no-matching-live-result', 'audio-not-advancing', 'audio-ui-action-failed', 'search-action-failed', 'no-matching-live-track']);
+const LIVE_STATUS = new Set(['PASS', 'FAIL', 'TIMEOUT', 'DEGRADED', 'NOT_VERIFIED']);
+export function sanitizePerformanceInstrumentation(raw, commandExitCode) {
+  const retained = []; let rejected = false;
+  for (const original of raw.split(/\r?\n/u)) {
+    const line = original.trim();
+    const metric = line.match(/^(?:INSTRUMENTATION_STATUS: )?phase08Metric=(first-search|first-audio)\|([0-9]{2})\|([A-Z_]+)\|([0-9]{1,12})\|([a-z-]+)$/u);
+    if (metric && ids.includes(metric[2]) && LIVE_STATUS.has(metric[3]) && LIVE_REASONS.has(metric[5])) retained.push(`phase08Metric=${metric.slice(1).join('|')}`);
+    else if (line.includes('phase08Metric=')) rejected = true;
+    else if (/^INSTRUMENTATION_(?:STATUS_CODE|CODE): -?[0-9]{1,3}$/u.test(line)) retained.push(line);
+    else if (/^performanceCommandExitCode=[0-9]{1,3}$/u.test(line)) retained.push(line);
+    else if (/^INSTRUMENTATION_STATUS: stream=Phase08Instrumentation (?:started|completed)$/u.test(line)) retained.push(line);
+    else if (/^INSTRUMENTATION_STATUS: stage=(?:runner-start|live-performance-attempt-(?:[1-9]|1[0-9]|20)|saf-generated-local-(?:import|playing)|resume-local-player|compatibility-cold-start-(?:launch|shell|complete)|startup-probe-(?:launch|complete))$/u.test(line)) retained.push(line);
+    else if (line === 'INSTRUMENTATION_STATUS: failureType=EvidencePrivacyOrScenarioFailure') retained.push(line);
+    else if (/INSTRUMENTATION_FAILED|INSTRUMENTATION_ABORTED|failureType=|shortMsg=|FAILURES!!!|AssertionError/u.test(line)) rejected = true;
+  }
+  if (rejected) retained.push('INSTRUMENTATION_STATUS: failureType=EvidencePrivacyOrScenarioFailure');
+  if (commandExitCode !== undefined) {
+    if (!Number.isInteger(commandExitCode) || commandExitCode < 0 || commandExitCode > 255) throw new Error('invalid command exit status');
+    retained.push(`performanceCommandExitCode=${commandExitCode}`);
+  }
+  return `${retained.join('\n')}\n`;
+}
+export function performanceInstrumentationOk(text) {
+  const terminal = [...text.matchAll(/^INSTRUMENTATION_CODE: (-?[0-9]+)$/gmu)];
+  const exit = [...text.matchAll(/^performanceCommandExitCode=([0-9]+)$/gmu)];
+  return !/failureType=|INSTRUMENTATION_STATUS_CODE: -1/u.test(text) && terminal.length === 1 && ['-1','0'].includes(terminal[0][1]) && exit.length === 1 && exit[0][1] === '0';
+}
+const MEMORY_KEYS = ['Java Heap', 'Native Heap', 'Code', 'Stack', 'Graphics', 'Private Other', 'System', 'TOTAL PSS', 'TOTAL RSS', 'TOTAL SWAP PSS'];
+export function sanitizePerformanceMemory(raw) {
+  const target = raw.split(/(?=\*\* MEMINFO in pid )/u).find(section => /^\*\* MEMINFO in pid [0-9]+ \[com\.dazzlingwuming\.listen2\] \*\*/u.test(section));
+  const values = {};
+  if (target) for (const line of target.split(/\r?\n/u)) {
+    const row = line.trim().match(/^([A-Za-z ]+):\s*([0-9]{1,12})(?:\s+([0-9]{1,12}))?$/u);
+    if (row && MEMORY_KEYS.includes(row[1])) values[row[1]] = Number(row[2]);
+    else if (/^(?:TOTAL (?:PSS|RSS|SWAP PSS):\s*[0-9]{1,12}\s*)+$/u.test(line.trim())) for (const total of line.matchAll(/(TOTAL (?:PSS|RSS|SWAP PSS)):\s*([0-9]{1,12})/gu)) values[total[1]] = Number(total[2]);
+  }
+  return { schemaVersion: 1, scope: 'com.dazzlingwuming.listen2', status: target && Object.hasOwn(values, 'TOTAL PSS') ? 'PASS' : 'NOT_VERIFIED', unit: 'KiB', values };
+}
+export function assertPerformanceMemory(value) {
+  if (!value || Object.keys(value).sort().join(',') !== 'schemaVersion,scope,status,unit,values' || value.schemaVersion !== 1 || value.scope !== 'com.dazzlingwuming.listen2' || value.unit !== 'KiB' || !['PASS','NOT_VERIFIED'].includes(value.status) || !value.values || typeof value.values !== 'object' || Array.isArray(value.values)) throw new Error('memory evidence is not sanitized');
+  for (const [key, row] of Object.entries(value.values)) if (!MEMORY_KEYS.includes(key) || !Number.isSafeInteger(row) || row < 0) throw new Error('memory evidence is not sanitized');
+  if (value.status === 'PASS' && !Object.hasOwn(value.values, 'TOTAL PSS')) throw new Error('memory evidence false pass');
+}
 export function nativeSnapshot(raw, elapsedMs) {
   // Consume only the exact target package's section; never persist raw sessions.
   const sections = raw.split(/\bpackage=/u).slice(1);
@@ -64,20 +108,24 @@ export function generateSignal(file) {
 export function writePerformanceRecord(run, startedAt, serialHash, liveDuration, cleanupStatus) {
   const build = JSON.parse(readFileSync(resolve(run, '08-build.json'), 'utf8'));
   const read = name => readFileSync(resolve(run, 'performance', name), 'utf8');
-  const metrics = [...coldFamilies(read('api35-cold.tsv')), ...liveFamilies(read('api35-instrumentation.txt'), Number(liveDuration))];
+  const instrumentation = read('api35-instrumentation.txt');
+  if (sanitizePerformanceInstrumentation(instrumentation) !== instrumentation) throw new Error('instrumentation evidence is not sanitized');
+  assertPerformanceMemory(JSON.parse(read('resources-meminfo.txt')));
+  const instrumentationPass = performanceInstrumentationOk(instrumentation);
+  const metrics = [...coldFamilies(read('api35-cold.tsv')), ...liveFamilies(instrumentation, Number(liveDuration))];
   const recovery = JSON.parse(read('recovery.json'));
   const soak = JSON.parse(read('soak.json'));
   const network = JSON.parse(read('network.json'));
   const continuity = assessContinuity(soak);
   const recovered = recovery.length === 5 && recovery.every(row => row.resumeVerified === true && assessRecovery(row.before, row.after) === 'PASS');
   const networkPass = network.disabledConfirmed && network.enabledConfirmed && [network.before, network.offline, network.after].every(row => row?.status === 'PASS' && row.state === 3 && row.synthetic && row.identitySha256 === network.before?.identitySha256) && network.offline.positionMs > network.before.positionMs && network.after.positionMs > network.offline.positionMs;
-  const measuredPass = metrics.every(metric => metric.status === 'PASS') && recovered && continuity === 'PASS' && networkPass && cleanupStatus === 'restored';
+  const measuredPass = instrumentationPass && metrics.every(metric => metric.status === 'PASS') && recovered && continuity === 'PASS' && networkPass && cleanupStatus === 'restored';
   const files = ['api35-cold.tsv', 'api35-instrumentation.txt', 'synthetic-media.json', 'listen2-performance-signal.wav', 'recovery.json', 'soak.json', 'network.json', 'continuity-status.json', 'resources-meminfo.txt'].filter(name => existsSync(resolve(run, 'performance', name)));
   const record = { ...build, recordId: 'api35-performance-sealed', recordedAt: new Date().toISOString(),
     device: { ...build.device, serialHash, apiLevel: 35 }, network: { mode: 'live-public-search-and-generated-local-continuity', transport: 'emulator', offlineWindows: ['recorded-wifi-off-window'], proxyConfigured: false },
     fixture: { ...build.fixture, id: 'phase08-performance-local', revision: '1', manifestSha256: hash(readFileSync(resolve(run, 'performance/synthetic-media.json'))), queryIds: ['qinghuaci-kugou-live'], generatedMediaSha256: JSON.parse(read('synthetic-media.json')).sha256 },
     command: { id: 'api35-performance-once', argvRedacted: ['explicit-api35-serial', '20-fixed-cold-live-search-live-audio-attempts', 'generated-local-saf', 'five-process-recovery', '600-second-native-position-soak'], startedAt, endedAt: new Date().toISOString(), timezone: 'Asia/Shanghai', exitCode: measuredPass ? 0 : 4, evidenceKinds: ['PERFORMANCE', 'LIVE_PUBLIC_PROVIDER', 'RECOVERY_SOAK'] },
-    requirements: ['PERF-001', 'PERF-002', 'PERF-003', 'TEST-004'], metrics, outcome: metrics.some(metric => metric.samples.some(sample => ['FAIL', 'TIMEOUT'].includes(sample.status)) || metric.samples.every(sample => sample.status === 'PASS') && metric.status === 'FAIL') || continuity === 'FAIL' ? 'FAIL' : 'NOT_VERIFIED',
+    requirements: ['PERF-001', 'PERF-002', 'PERF-003', 'TEST-004'], metrics, outcome: !instrumentationPass || metrics.some(metric => metric.samples.some(sample => ['FAIL', 'TIMEOUT'].includes(sample.status)) || metric.samples.every(sample => sample.status === 'PASS') && metric.status === 'FAIL') || continuity === 'FAIL' ? 'FAIL' : 'NOT_VERIFIED',
     artifacts: files.map(name => { const file = resolve(run, 'performance', name); return { kind: name, relativePath: `performance/${name}`, sha256: hash(readFileSync(file)), bytes: statSync(file).size, sanitized: true }; }),
     uncovered: [{ requirement: 'PERF-001', reasonCode: 'COMPATIBILITY_MATRIX_PENDING', safeDetail: 'This record covers API35 measurements only; API26 and API36 device metrics are separate.', ownerAction: 'Consume separately sealed compatibility lanes before claiming PERF-001.' }, { requirement: 'PERF-002', reasonCode: 'LIVE_METRICS_REQUIRE_INDIVIDUAL_REVIEW', safeDetail: `liveSearch=${metrics[2].status};liveAudio=${metrics[3].status};bridgeNetworkMedia3Substages=NOT_VERIFIED`, ownerAction: 'Review actual terminal samples; no local fixture may replace a live sample.' }, { requirement: 'PERF-003', reasonCode: 'PERFORMANCE_OR_CONTINUITY_NON_PASS', safeDetail: `compatibilityMatrix=NOT_VERIFIED;providerNetworkRecovery=NOT_VERIFIED;duplicateMutationAndAnrCrash=NOT_VERIFIED;coldLiveMetricsPass=${metrics.every(metric => metric.status === 'PASS')};fiveRecoveryPass=${recovered};generatedPlaybackSoak=${continuity};networkLocalContinuityPass=${Boolean(networkPass)};cleanup=${cleanupStatus}`, ownerAction: 'Inspect immutable attempt and state evidence; fix the cause before a new candidate run. Local continuity does not establish provider network recovery.' }],
     recovery: { cleanupStatus, deviceStateRestored: cleanupStatus === 'restored', rollbackArtifactSha256: build.build.sha256, steps: ['original wifi setting restored', 'screen woken', 'retained immutable native position observations'] } };

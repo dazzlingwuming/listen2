@@ -50,9 +50,16 @@ cleanup() { if [[ "$ORIGINAL_WIFI" == 0 ]]; then wifi_action=disable; else wifi_
 trap cleanup EXIT INT TERM
 now_ms() { node -p 'Date.now()'; }
 instrument() {
-  local class="$1" out="$2" command_status=0
-  "$ADB" -s "$SERIAL" shell am instrument -w -r -e class "$class" -e phase08Api "$DEVICE_API" -e phase08Attempts 20 ${3:-} "$TEST_PACKAGE/com.listen2mobile.acceptance.Phase08Instrumentation" > "$out" 2>&1 || command_status=$?
-  [[ "$command_status" == 0 ]] && ! grep -Eq 'INSTRUMENTATION_STATUS_CODE: -1|failureType=|shortMsg=' "$out" && grep -Eq '^INSTRUMENTATION_CODE: (-1|0)[[:space:]]*$' "$out"
+  local class="$1" out="$2" command_status=0 sanitize_status=0 raw
+  raw="$(mktemp "${TMPDIR:-/tmp}/listen2-performance-instrumentation.XXXXXX")"
+  "$ADB" -s "$SERIAL" shell am instrument -w -r -e class "$class" -e phase08Api "$DEVICE_API" -e phase08Attempts 20 ${3:-} "$TEST_PACKAGE/com.listen2mobile.acceptance.Phase08Instrumentation" > "$raw" 2>&1 || command_status=$?
+  node --input-type=module - "$raw" "$out" "$command_status" <<'NODE' || sanitize_status=$?
+import { readFileSync, writeFileSync } from 'node:fs';
+import { sanitizePerformanceInstrumentation } from './mobile/scripts/acceptance/performance-evidence.mjs';
+writeFileSync(process.argv[3], sanitizePerformanceInstrumentation(readFileSync(process.argv[2], 'utf8'), Number(process.argv[4])), { flag: 'wx', mode: 0o600 });
+NODE
+  rm -f "$raw"
+  [[ "$sanitize_status" == 0 && "$command_status" == 0 ]] && ! grep -Eq 'INSTRUMENTATION_STATUS_CODE: -1|failureType=' "$out" && grep -Eq '^INSTRUMENTATION_CODE: (-1|0)[[:space:]]*$' "$out"
 }
 
 # The startup probe is deliberately separate from the fixed 20-attempt acceptance paths below.
@@ -268,7 +275,11 @@ NODE
     done
     "$ADB" -s "$SERIAL" shell input keyevent KEYCODE_WAKEUP >/dev/null
   fi
-  "$ADB" -s "$SERIAL" shell dumpsys meminfo "$PACKAGE" > "$RUN_DIR/performance/resources-meminfo.txt"
+  "$ADB" -s "$SERIAL" shell dumpsys meminfo "$PACKAGE" | node --input-type=module -e '
+import { readFileSync, writeFileSync } from "node:fs";
+import { sanitizePerformanceMemory } from "./mobile/scripts/acceptance/performance-evidence.mjs";
+writeFileSync(process.argv[1], JSON.stringify(sanitizePerformanceMemory(readFileSync(0, "utf8"))), { flag: "wx", mode: 0o600 });
+' "$RUN_DIR/performance/resources-meminfo.txt"
   cleanup
   native_cleanup='restore-failed'; [[ "$("$ADB" -s "$SERIAL" shell settings get global wifi_on | tr -d '\r')" == "$ORIGINAL_WIFI" ]] && native_cleanup='restored'
   node --input-type=module - "$RUN_DIR" "$STARTED_AT" "$SERIAL" "$LIVE_DURATION_MS" "$native_cleanup" <<'NODE'
