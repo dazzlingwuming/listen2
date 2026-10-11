@@ -8787,3 +8787,13 @@ body.modern-white .audio-effects-summary p {
     grid-template-columns: minmax(0, 1fr) minmax(220px, 1.25fr) max-content;
   }
 }
+
+/* Transfers remain visible independently of completed cache filters. */
+.page .audio-cache-policy { line-height: 1.7; opacity: .75; margin: 12px 0 20px; }
+.page .audio-cache-tasks { margin: 16px 0 24px; }
+.page .audio-cache-task { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0; border-bottom: 1px solid rgba(128,128,128,.2); }
+.page .audio-cache-task-info { display: flex; flex-direction: column; gap: 5px; min-width: 0; flex: 1; }
+.page .audio-cache-task-info strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.page .audio-cache-task-info span { font-size: 12px; }
+.page .audio-cache-task-info progress { width: 100%; max-width: 420px; height: 6px; accent-color: var(--ui-accent, #9574cc); }
+.page .audio-cache-task-actions { display: flex; flex-wrap: wrap; gap: 8px; }

@@ -58,7 +58,7 @@
       const reduced = query.matches || mode === 'reduced';
       return {
         reduced,
-        fps: reduced ? 0 : { quality: 60, balanced: 30 }[mode] || 30,
+        fps: reduced ? 15 : { quality: 60, balanced: 30 }[mode] || 30,
         dpr: mode === 'quality' ? 2 : 1.5,
       };
     },

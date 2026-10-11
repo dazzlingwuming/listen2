@@ -380,39 +380,54 @@ const MediaService = {
     else if (getMyPlaylistTrackIds().has(identity.trackId)) {
       retention = 'playlist';
     }
-    return ipcRenderer.invoke('audio-cache:schedule-bilibili', {
-      ...(descriptor.kind === 'audio'
-        ? {
-            trackId: identity.trackId,
-            kind: 'audio',
-            sid: String(descriptor.sid || identity.sid || ''),
-          }
-        : {
-            trackId: identity.trackId,
-            kind: 'video',
-            bvid: String(descriptor.bvid || identity.bvid),
-            cid: Number(descriptor.cid || 0),
-            audioId: Number(descriptor.audioId || 0),
-            codecs: String(descriptor.codecs || ''),
-            mimeType: String(descriptor.mimeType || ''),
-          }),
-      title: String(track.title || ''),
-      artist: String(track.artist || ''),
-      coverUrl: String(track.img_url || track.imgUrl || ''),
-      duration: Number(track.duration || 0),
-      retention,
-    });
+    return ipcRenderer
+      .invoke('audio-cache:schedule-bilibili', {
+        ...(descriptor.kind === 'audio'
+          ? {
+              trackId: identity.trackId,
+              kind: 'audio',
+              sid: String(descriptor.sid || identity.sid || ''),
+            }
+          : {
+              trackId: identity.trackId,
+              kind: 'video',
+              bvid: String(descriptor.bvid || identity.bvid),
+              cid: Number(descriptor.cid || 0),
+              audioId: Number(descriptor.audioId || 0),
+              codecs: String(descriptor.codecs || ''),
+              mimeType: String(descriptor.mimeType || ''),
+            }),
+        title: String(track.title || ''),
+        artist: String(track.artist || ''),
+        coverUrl: String(track.img_url || track.imgUrl || ''),
+        duration: Number(track.duration || 0),
+        retention,
+      })
+      .then((response) => {
+        window.dispatchEvent(new Event('listen2-audio-cache-changed'));
+        return response;
+      });
   },
 
-  downloadBilibiliTrack(track) {
+  async downloadBilibiliTrack(track) {
     if (
       !getDesktopLocalDataIpcRenderer() ||
       !getBilibiliVideoCacheIdentity(track)
     ) {
       return Promise.resolve({ ok: false, status: 'unsupported' });
     }
+    const cached = await MediaService.getAudioCacheLookup(track);
+    if (cached && cached.hit && cached.entry) {
+      const result = await MediaService.setAudioCacheRetention(
+        cached.entry.cacheKey,
+        'download'
+      );
+      return result && result.ok
+        ? { ok: true, status: 'already-ready' }
+        : result;
+    }
     return new Promise((resolve) => {
-      MediaService.bootstrapTrack(
+      getProviderByName('bilibili').bootstrap_track(
         track,
         (bootinfo) => {
           if (!bootinfo || !bootinfo.audioCacheDescriptor) {
@@ -482,6 +497,18 @@ const MediaService = {
       return Promise.resolve({ ok: false, status: 'invalid-input' });
     }
     return ipcRenderer.invoke('audio-cache:delete', { cacheKey });
+  },
+
+  updateAudioCacheTask(cacheKey, action) {
+    const ipcRenderer = getDesktopLocalDataIpcRenderer();
+    if (
+      !ipcRenderer ||
+      !/^[a-f0-9]{64}$/.test(String(cacheKey || '')) ||
+      !['cancel', 'retry'].includes(action)
+    ) {
+      return Promise.resolve({ ok: false, status: 'invalid-input' });
+    }
+    return ipcRenderer.invoke(`audio-cache:${action}-task`, { cacheKey });
   },
 
   syncAudioCachePlaylistMembership() {

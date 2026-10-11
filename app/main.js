@@ -97,6 +97,7 @@ if (protocol && typeof protocol.registerSchemesAsPrivileged === "function") {
         secure: true,
         stream: true,
         supportFetchAPI: true,
+        corsEnabled: true,
       },
     },
   ]);
@@ -516,6 +517,12 @@ registerLocalDataHandler("audio-cache:invalidate", (payload) =>
 );
 registerLocalDataHandler("audio-cache:delete", (payload) =>
   ensureAudioCacheAvailable().delete(payload.cacheKey)
+);
+registerLocalDataHandler("audio-cache:cancel-task", (payload) =>
+  ensureAudioCacheAvailable().cancelTask(payload.cacheKey)
+);
+registerLocalDataHandler("audio-cache:retry-task", (payload) =>
+  ensureAudioCacheAvailable().retryTask(payload.cacheKey)
 );
 registerLocalDataHandler("audio-cache:list", async () => {
   const history = getListeningHistoryStore().read();

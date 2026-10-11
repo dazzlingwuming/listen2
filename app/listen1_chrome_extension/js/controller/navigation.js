@@ -480,20 +480,43 @@ angular.module('listenone').controller('NavigationController', [
       });
     };
 
+    const pendingDownloads = new Set();
     $scope.downloadTrackForOffline = (song) => {
-      if (!isElectron() || !song || song.source !== 'bilibili') return;
+      if (
+        !isElectron() ||
+        !song ||
+        song.source !== 'bilibili' ||
+        pendingDownloads.has(song.id)
+      )
+        return;
+      pendingDownloads.add(song.id);
       notyf.info(i18next.t('_AUDIO_CACHE_DOWNLOAD_STARTING'));
-      MediaService.downloadBilibiliTrack(song).then((response) => {
-        if (
-          response &&
-          response.ok === true &&
-          ['queued', 'downloading', 'already-ready'].includes(response.status)
-        ) {
-          notyf.success(i18next.t('_AUDIO_CACHE_DOWNLOAD_ADDED'));
-          return;
-        }
-        notyf.error(i18next.t('_AUDIO_CACHE_FAILURE_NOTICE'));
-      });
+      MediaService.downloadBilibiliTrack(song)
+        .then((response) => {
+          if (
+            response &&
+            response.ok === true &&
+            ['queued', 'downloading', 'already-ready'].includes(response.status)
+          ) {
+            notyf.success(
+              i18next.t(
+                response.status === 'already-ready'
+                  ? '_AUDIO_CACHE_DOWNLOAD_READY'
+                  : '_AUDIO_CACHE_DOWNLOAD_ADDED'
+              )
+            );
+          } else {
+            notyf.error(i18next.t('_AUDIO_CACHE_FAILURE_NOTICE'));
+          }
+        })
+        .catch(() => notyf.error(i18next.t('_AUDIO_CACHE_FAILURE_NOTICE')))
+        .finally(() => {
+          pendingDownloads.delete(song.id);
+          $scope.$evalAsync(() => {
+            $scope.refreshAudioCacheStatus();
+            $scope.refreshAudioCacheInventory();
+          });
+        });
     };
 
     $scope.chooseDialogOption = (option_id) => {

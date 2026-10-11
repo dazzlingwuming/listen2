@@ -1256,7 +1256,7 @@
         const budget = () =>
           $window.Listen2Appearance
             ? $window.Listen2Appearance.budget
-            : { reduced: reducedMotion, fps: 60, dpr: 2 };
+            : { reduced: reducedMotion, fps: reducedMotion ? 15 : 60, dpr: 2 };
         let lastDrawAt = -Infinity;
         let lastFrameAt = now();
         let progress = 0;
@@ -1291,8 +1291,7 @@
           return Number.isFinite(value) ? value : 0;
         };
         const isActiveStage = () => stageIsOpen && hasTrack && isVisible;
-        const shouldAnimate = () =>
-          isActiveStage() && isPlaying && !reducedMotion && !budget().reduced;
+        const shouldAnimate = () => isActiveStage() && isPlaying;
         const maxLevel = () => Math.max(...latestFrame.bars);
 
         const resolveCurrentHowl = () => {
@@ -1573,10 +1572,7 @@
         };
 
         const needsAnotherFrame = () =>
-          isActiveStage() &&
-          !reducedMotion &&
-          !budget().reduced &&
-          (isPlaying || maxLevel() > MIN_ACTIVE_LEVEL);
+          isActiveStage() && (isPlaying || maxLevel() > MIN_ACTIVE_LEVEL);
 
         const scheduleFrame = () => {
           if (
@@ -1675,7 +1671,7 @@
             );
             refreshState();
           });
-          intersectionObserver.observe(host);
+          intersectionObserver.observe(canvas);
         }
 
         if ($window.ResizeObserver) {
