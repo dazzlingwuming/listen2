@@ -5,7 +5,7 @@
 ### 把 Bilibili 与多平台音乐内容，整理成更好用的桌面播放器
 
 [![License](https://img.shields.io/badge/license-MIT-7c5cff.svg)](./LICENSE.md)
-[![Version](https://img.shields.io/badge/version-2.35.1-8b5cf6.svg)](https://github.com/dazzlingwuming/listen2/releases/tag/v2.35.1)
+[![Version](https://img.shields.io/badge/version-2.35.2-8b5cf6.svg)](https://github.com/dazzlingwuming/listen2/releases/tag/v2.35.2)
 [![Electron](https://img.shields.io/badge/Electron-32-38bdf8.svg)](https://www.electronjs.org/)
 [![Windows](https://img.shields.io/badge/Windows-x64-2563eb.svg)](https://github.com/dazzlingwuming/listen2/releases/latest)
 [![macOS](https://img.shields.io/badge/macOS-Universal-111827.svg)](#平台支持)
@@ -19,11 +19,20 @@ Listen2 是 [Listen1](https://github.com/listen1/listen1) 的社区增强版本�
 
 > Listen2 只整理和播放用户本来就有权访问的内容，不解锁会员、付费、DRM、地区限制或其他受限资源。
 
-## 本地开发版本：外观与 Windows 优化
+## v2.35.2 更新
 
-保留现代黑白，新增樱花来信、薄荷放学后、星夜电台三套原创插画主题；新增动态效果档位、长列表可视区域渲染，并改善手动歌词搜索与 Windows 缓存持久化。
+- 保留现代黑白，新增樱花来信、薄荷放学后、星夜电台三套原创动漫插画主题。
+- 新增动态效果档位和长列表可视区域渲染；均衡模式频谱 30fps，减少动态模式仍保留 15fps 真实频谱。
+- 修正本地缓存音频的频谱分析通路，以及 Windows 音频、歌词缓存的持久化。
+- 手动歌词检索支持多来源、取消和重试，部分来源失败不会清空其他结果。
+- 缓存与下载新增任务进度、取消、失败重试；自动缓存任务可升级为永久下载，已有缓存直接保留。
+- 普通清理保留永久下载，删除失败保留索引并提示，网络下载不再阻塞索引管理。
 
-主题预览、实测结果和构建说明见 [交付记录](docs/APPEARANCE_AND_WINDOWS.md)。这些改动尚未发布为 GitHub Release。
+### 下载与已知限制
+
+Windows 安装版选择 `listen1_2.35.2_win_x64.exe`，免安装压缩包选择 `.7z`。macOS 提供 x64、arm64、universal DMG。
+
+本版本未进行代码签名。频谱与缓存后续修正通过语法和前端静态检查；未执行本轮自动化回归或实机播放回归。主题预览、首版实测数据及具体修正记录见 [交付记录](docs/APPEARANCE_AND_WINDOWS.md)，其中首版性能数字不代表本次全部改动的回归结果。
 
 ## v2.35.1 更新
 

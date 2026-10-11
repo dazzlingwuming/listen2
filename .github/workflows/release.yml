@@ -43,3 +43,38 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
           GH_TOKEN: ${{ github.token }}
+
+
+  publish-release:
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish completed release with notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const version = require('./package.json').version;
+          if (process.env.RELEASE_TAG !== `v${version}`) throw new Error('Tag/version mismatch');
+          const readme = fs.readFileSync('README.md', 'utf8');
+          const heading = `## v${version} 更新`;
+          const start = readme.indexOf(heading);
+          if (start < 0) throw new Error('Release notes missing');
+          const content = readme.slice(start + heading.length).split('\n## ')[0].trim();
+          fs.writeFileSync(`${process.env.RUNNER_TEMP}/release-notes.md`, content + '\n');
+          NODE
+          gh release view "$RELEASE_TAG" --json assets > "$RUNNER_TEMP/release-assets.json"
+          node <<'NODE'
+          const fs = require('fs');
+          const version = require('./package.json').version;
+          const assets = JSON.parse(fs.readFileSync(`${process.env.RUNNER_TEMP}/release-assets.json`)).assets;
+          const names = new Set(assets.filter(a => a.size > 0).map(a => a.name));
+          const required = [`listen1_${version}_win_x64.exe`, `listen1_${version}_win_x64.7z`, `listen1_${version}_win_x64.exe.blockmap`, 'latest.yml', 'latest-mac.yml', ...['x64','arm64','universal'].map(a => `listen1_${version}_mac_${a}.dmg`)];
+          for (const name of required) if (!names.has(name)) throw new Error(`Missing release asset: ${name}`);
+          NODE
+          gh release edit "$RELEASE_TAG" --title "Listen2 $RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md" --draft=false
