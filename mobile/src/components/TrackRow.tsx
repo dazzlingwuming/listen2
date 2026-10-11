@@ -88,7 +88,11 @@ export function TrackRow({
         <Text numberOfLines={1} style={styles.meta}>
           {providerLabels[source] || source} · {track.kind || '歌曲'}
           {track.duration || track.durationMs
-            ? ` · ${formatDuration(track.duration || track.durationMs || 0)}`
+            ? ` · ${
+                track.duration
+                  ? formatDuration(track.duration)
+                  : formatDurationSeconds((track.durationMs || 0) / 1000)
+              }`
             : ' · 时长未知'}
         </Text>
       </View>
@@ -161,6 +165,12 @@ export function TrackRow({
       ) : null}
     </Pressable>
   );
+}
+
+/** Explicit seconds for RNTP state and already-normalized canonical durationMs. */
+export function formatDurationSeconds(value: number) {
+  const seconds = Number.isFinite(value) ? Math.floor(Math.max(0, value)) : 0;
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
 export function formatDuration(value: number) {

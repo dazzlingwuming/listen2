@@ -26,7 +26,7 @@ import { offlineDownloadErrorCopy } from '../offline/offlineErrorCopy';
 import { playerErrorCopy } from '../player/playerErrorCopy';
 import {
   artwork,
-  formatDuration,
+  formatDurationSeconds,
   trackArtist,
   trackSource,
   trackTitle,
@@ -1150,7 +1150,12 @@ export function PlayerScreen() {
           <Progress
             position={currentPosition}
             duration={
-              state.duration ?? current.duration ?? current.durationMs ?? 0
+              state.duration ??
+              (typeof current.duration === 'number'
+                ? current.duration > 1000
+                  ? current.duration / 1000
+                  : current.duration
+                : (current.durationMs ?? 0) / 1000)
             }
             onSeek={position => invoke(dispatch, ['seekTo'], position)}
           />
@@ -1594,24 +1599,26 @@ function Progress({
   duration: number;
   onSeek: (position: number) => void;
 }) {
-  const safeDuration = duration > 1000 ? duration / 1000 : duration;
-  const safePosition = position > 1000 ? position / 1000 : position;
+  // RNTP state and this component use seconds. Legacy and canonical track
+  // metadata are normalized at the call site, never inferred from magnitude here.
+  const safeDuration = Number.isFinite(duration) ? Math.max(0, duration) : 0;
+  const safePosition = Number.isFinite(position) ? Math.max(0, position) : 0;
   const fraction = safeDuration
     ? Math.min(1, Math.max(0, safePosition / safeDuration))
     : 0;
   return (
     <View style={styles.progressBlock}>
       <Pressable
-        accessibilityLabel={`播放进度 ${formatDuration(
-          safePosition * 1000,
-        )} / ${formatDuration(safeDuration * 1000)}`}
+        accessibilityLabel={`播放进度 ${formatDurationSeconds(
+          safePosition,
+        )} / ${formatDurationSeconds(safeDuration)}`}
         accessibilityRole="adjustable"
         accessibilityValue={{
           min: 0,
           max: safeDuration,
           now: safePosition,
-          text: `${formatDuration(safePosition * 1000)} / ${formatDuration(
-            safeDuration * 1000,
+          text: `${formatDurationSeconds(safePosition)} / ${formatDurationSeconds(
+            safeDuration,
           )}`,
         }}
         accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
@@ -1625,8 +1632,8 @@ function Progress({
         <View style={[styles.progress, { width: `${fraction * 100}%` }]} />
       </Pressable>
       <View style={styles.times}>
-        <Text style={text.meta}>{formatDuration(safePosition)}</Text>
-        <Text style={text.meta}>{formatDuration(safeDuration)}</Text>
+        <Text style={text.meta}>{formatDurationSeconds(safePosition)}</Text>
+        <Text style={text.meta}>{formatDurationSeconds(safeDuration)}</Text>
       </View>
     </View>
   );

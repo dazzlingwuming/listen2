@@ -1,6 +1,6 @@
 import React from 'react';
 import renderer, { act } from 'react-test-renderer';
-import { Alert } from 'react-native';
+import { Alert, Text } from 'react-native';
 
 const mockDispatch = jest.fn();
 let mockPlayerState: any;
@@ -71,13 +71,7 @@ jest.mock('../../store/librarySlice', () => ({ toggleFavorite: jest.fn() }));
 jest.mock('../../types/music', () => ({ isLocalTrack: () => false }));
 jest.mock('../../components/TrackRow', () => ({
   artwork: () => undefined,
-  formatDuration: (value: number) => {
-    const seconds = value > 1000 ? Math.floor(value / 1000) : Math.floor(value);
-    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(
-      2,
-      '0',
-    )}`;
-  },
+  formatDurationSeconds: jest.requireActual('../../components/TrackRow').formatDurationSeconds,
   trackArtist: (track: any) => track.artist,
   trackSource: (track: any) => track.source,
   trackTitle: (track: any) => track.title,
@@ -246,6 +240,65 @@ describe('PlayerScreen play-next queue', () => {
         type: 'player/clearPlayNextQueue',
       }),
     );
+  });
+
+  it.each([
+    [0, '0:00', 15, 0],
+    [0.964, '0:00', 15.964, 0],
+    [1, '0:01', 16, 0],
+    [60, '1:00', 75, 45],
+    [1000, '16:40', 1015, 985],
+    [1001, '16:41', 1016, 986],
+  ])('keeps %s playback seconds consistent across UI, accessibility and seek', async (position, label, increment, decrement) => {
+    mockPlayerState = { ...mockPlayerState, position, duration: 2000, playNextQueue: [] };
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => { tree = renderer.create(<PlayerScreen />); });
+    const slider = tree.root.findByProps({ accessibilityRole: 'adjustable' });
+    expect(slider.props.accessibilityLabel).toBe(`播放进度 ${label} / 33:20`);
+    expect(slider.props.accessibilityValue).toEqual({ min: 0, max: 2000, now: position, text: `${label} / 33:20` });
+    const clockTexts = tree.root.findAllByType(Text).map(node => node.props.children);
+    expect(clockTexts).toContain(label);
+    expect(clockTexts).toContain('33:20');
+    await act(async () => { slider.props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } }); });
+    expect(mockDispatch).toHaveBeenLastCalledWith({ type: 'player/seekTo', payload: increment });
+    await act(async () => { slider.props.onAccessibilityAction({ nativeEvent: { actionName: 'decrement' } }); });
+    expect(mockDispatch).toHaveBeenLastCalledWith({ type: 'player/seekTo', payload: decrement });
+    await act(async () => { tree.unmount(); });
+  });
+
+  it.each([
+    [964, 0.964, '0:00'], [1000, 1, '0:01'], [60000, 60, '1:00'], [720000, 720, '12:00'],
+  ])('normalizes canonical durationMs=%s only at the Progress entrance', async (durationMs, seconds, label) => {
+    mockPlayerState = { ...mockPlayerState, duration: undefined, position: 0, playNextQueue: [], currentTrack: { ...mockPlayerState.currentTrack, durationMs } };
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => { tree = renderer.create(<PlayerScreen />); });
+    const slider = tree.root.findByProps({ accessibilityRole: 'adjustable' });
+    expect(slider.props.accessibilityValue).toEqual({ min: 0, max: seconds, now: 0, text: `0:00 / ${label}` });
+    await act(async () => { slider.props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } }); });
+    expect(mockDispatch).toHaveBeenLastCalledWith({ type: 'player/seekTo', payload: Math.min(15, seconds) });
+    await act(async () => { tree.unmount(); });
+  });
+
+  it('preserves a 1001-second RNTP duration and clamps seeking at its actual endpoint', async () => {
+    mockPlayerState = { ...mockPlayerState, duration: 1001, position: 1000, playNextQueue: [] };
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => { tree = renderer.create(<PlayerScreen />); });
+    const slider = tree.root.findByProps({ accessibilityRole: 'adjustable' });
+    expect(slider.props.accessibilityValue).toEqual({ min: 0, max: 1001, now: 1000, text: '16:40 / 16:41' });
+    await act(async () => { slider.props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } }); });
+    expect(mockDispatch).toHaveBeenLastCalledWith({ type: 'player/seekTo', payload: 1001 });
+    await act(async () => { tree.unmount(); });
+  });
+
+  it.each([120, 120000])('preserves the legacy track duration=%s compatibility entrance', async duration => {
+    mockPlayerState = { ...mockPlayerState, duration: undefined, position: 110, playNextQueue: [], currentTrack: { ...mockPlayerState.currentTrack, duration } };
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => { tree = renderer.create(<PlayerScreen />); });
+    const slider = tree.root.findByProps({ accessibilityRole: 'adjustable' });
+    expect(slider.props.accessibilityValue).toEqual({ min: 0, max: 120, now: 110, text: '1:50 / 2:00' });
+    await act(async () => { slider.props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } }); });
+    expect(mockDispatch).toHaveBeenLastCalledWith({ type: 'player/seekTo', payload: 120 });
+    await act(async () => { tree.unmount(); });
   });
 
   it('exposes a controlled adjustable seek surface with confirmed value and actions', async () => {

@@ -68,6 +68,8 @@ jest.mock('../../store/librarySlice', () => ({ toggleFavorite: jest.fn() }));
 jest.mock('../../components/TrackRow', () => ({
   artwork: () => undefined,
   formatDuration: () => '0:00',
+  formatDurationSeconds:
+    jest.requireActual('../../components/TrackRow').formatDurationSeconds,
   trackArtist: (track: any) => track.artist,
   trackSource: (track: any) => track.source,
   trackTitle: (track: any) => track.title,

@@ -20,6 +20,8 @@ jest.mock('../../bilibili/mvClient', () => ({ bilibiliMvClient: {} }));
 jest.mock('../../components/TrackRow', () => ({
   artwork: () => undefined,
   formatDuration: () => '0:00',
+  formatDurationSeconds:
+    jest.requireActual('../../components/TrackRow').formatDurationSeconds,
   trackArtist: (track: { artist: string }) => track.artist,
   trackSource: (track: { source: string }) => track.source,
   trackTitle: (track: { title: string }) => track.title,
