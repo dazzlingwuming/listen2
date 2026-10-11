@@ -1,5 +1,5 @@
 import {
-  dormantLyricAdapters,
+  PROVIDER_CAPABILITIES,
   providerClient,
   ProviderClientError,
 } from '../client';
@@ -517,9 +517,6 @@ describe('providerClient', () => {
       source: 'qq',
     });
     await expect(
-      providerClient.getLyric('kgtrack_AABBCCDDEEFF0011'),
-    ).rejects.toMatchObject({ code: 'LYRIC_UNAVAILABLE', source: 'kugou' });
-    await expect(
       providerClient.getLyric('bitrack_v_BV1xx411c7mD-12'),
     ).rejects.toMatchObject({ code: 'LYRIC_UNAVAILABLE', source: 'bilibili' });
     expect(
@@ -528,7 +525,7 @@ describe('providerClient', () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it('keeps Kugou/Kuwo lyric dispatch closed while the fixed dormant adapters parse fixtures safely', async () => {
+  it('dispatches Kugou and Kuwo lyrics through their fixed routes', async () => {
     globalThis.fetch = jest
       .fn()
       .mockResolvedValueOnce(
@@ -543,7 +540,7 @@ describe('providerClient', () => {
         }),
       );
     await expect(
-      dormantLyricAdapters.getKugouLyric({
+      providerClient.getLyric({
         id: 'kgtrack_AABBCCDDEEFF0011',
         source: 'kugou',
         title: 'Song',
@@ -552,16 +549,129 @@ describe('providerClient', () => {
       }),
     ).resolves.toMatchObject({ text: '[00:01.00]Kugou' });
     await expect(
-      dormantLyricAdapters.getKuwoLyric('kwtrack_12'),
+      providerClient.getLyric({
+        id: 'kwtrack_12',
+        source: 'kuwo',
+        title: 'Song',
+        artist: 'Artist',
+      }),
     ).resolves.toMatchObject({
       text: '[00:01.00]Kuwo',
     });
+    const [kugouUrl, kuwoUrl] = (globalThis.fetch as jest.Mock).mock.calls.map(
+      ([url]) => url as string,
+    );
+    expect(kugouUrl).toContain('https://wwwapi.kugou.com/yy/index.php?');
+    expect(kugouUrl).toContain('r=play%2Fgetdata');
+    expect(kugouUrl).toContain('hash=AABBCCDDEEFF0011');
+    expect(kugouUrl).toContain('album_id=12');
+    expect(kuwoUrl).toBe(
+      'https://m.kuwo.cn/newh5/singles/songinfoandlrc?musicId=12',
+    );
+    expect(PROVIDER_CAPABILITIES.kugou.lyric).toBe(true);
+    expect(PROVIDER_CAPABILITIES.kugou.operations.lyrics.status).toBe(
+      'available',
+    );
+    expect(PROVIDER_CAPABILITIES.kugou.operations.lyric.status).toBe(
+      'available',
+    );
+    expect(PROVIDER_CAPABILITIES.kuwo.lyric).toBe(true);
+    expect(PROVIDER_CAPABILITIES.kuwo.operations.lyrics.status).toBe(
+      'available',
+    );
+    expect(PROVIDER_CAPABILITIES.kuwo.operations.lyric.status).toBe(
+      'available',
+    );
+  });
+
+  it.each([
+    [
+      'kugou',
+      {
+        id: 'kgtrack_AABBCCDDEEFF0011',
+        source: 'kugou',
+        title: 'Song',
+        artist: 'Artist',
+        providerAlbumId: '12',
+      },
+    ],
+    [
+      'kuwo',
+      {
+        id: 'kwtrack_12',
+        source: 'kuwo',
+        title: 'Song',
+        artist: 'Artist',
+      },
+    ],
+  ] as const)(
+    'normalizes an empty %s lyric response as unavailable',
+    async (_source, track) => {
+      globalThis.fetch = jest.fn().mockResolvedValue(
+        _source === 'kugou'
+          ? new Response(
+              'jQuery({"data":{"lyrics":""}});',
+              { status: 200 },
+            )
+          : jsonResponse({ status: 200, data: { lrclist: [] } }),
+      );
+      await expect(providerClient.getLyric(track as any)).rejects.toMatchObject({
+        code: 'LYRIC_UNAVAILABLE',
+      });
+    },
+  );
+
+  it('requires the Kugou track metadata needed by its fixed lyric route', async () => {
+    globalThis.fetch = jest.fn();
     await expect(
       providerClient.getLyric('kgtrack_AABBCCDDEEFF0011'),
-    ).rejects.toMatchObject({
-      code: 'LYRIC_UNAVAILABLE',
-    });
+    ).rejects.toMatchObject({ code: 'UNKNOWN_TRACK', source: 'kugou' });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
+
+  it.each([
+    [
+      'kugou',
+      {
+        id: 'kgtrack_AABBCCDDEEFF0011',
+        source: 'kugou',
+        title: 'Song',
+        artist: 'Artist',
+        providerAlbumId: '12',
+      },
+    ],
+    [
+      'kuwo',
+      {
+        id: 'kwtrack_12',
+        source: 'kuwo',
+        title: 'Song',
+        artist: 'Artist',
+      },
+    ],
+  ] as const)(
+    'preserves cancellation for %s lyric requests',
+    async (source, track) => {
+      globalThis.fetch = jest.fn().mockImplementation(
+        (_url, init) =>
+          new Promise((_resolve, reject) => {
+            const error = new Error('aborted');
+            error.name = 'AbortError';
+            init.signal.addEventListener('abort', () => reject(error));
+          }),
+      );
+      const controller = new AbortController();
+      const pending = providerClient.getLyric(track as any, {
+        signal: controller.signal,
+      });
+      controller.abort();
+      await expect(pending).rejects.toMatchObject({
+        code: 'CANCELLED',
+        source,
+        operation: 'lyric',
+      });
+    },
+  );
 
   it('uses fixed bounded NetEase discovery routes and semantic chart identities', async () => {
     globalThis.fetch = jest

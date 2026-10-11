@@ -117,11 +117,23 @@ export const PROVIDER_CAPABILITIES: Readonly<
       detail: available,
       ...(isNativePlaybackReady('kugou') ? { playback: available } : {}),
       ...(isNativePlaybackReady('kugou') ? { bootstrap: available } : {}),
+      lyrics: available,
+      lyric: available,
       download: available,
     }),
   },
   kuwo: {
-    ...capabilityProjection(isNativePlaybackReady('kuwo') ? { search: available, playback: available, bootstrap: available } : { search: available }),
+    ...capabilityProjection(
+      isNativePlaybackReady('kuwo')
+        ? {
+            search: available,
+            playback: available,
+            bootstrap: available,
+            lyrics: available,
+            lyric: available,
+          }
+        : { search: available, lyrics: available, lyric: available },
+    ),
   },
   qq: {
     ...capabilityProjection({
@@ -219,18 +231,14 @@ export const providerClient = {
       }
       return resolveBilibiliLyric(trackOrId, options);
     }
-    // Deliberately dormant until device evidence validates each fixed route.
-    if (source === 'kugou' || source === 'kuwo') {
-      throw unavailable(source, 'lyric', 'LYRIC_UNAVAILABLE');
+    if (source === 'kugou') {
+      if (typeof trackOrId === 'string')
+        throw new ProviderClientError('UNKNOWN_TRACK', source, 'lyric');
+      return getKugouLyric(trackOrId, options);
     }
+    if (source === 'kuwo') return getKuwoLyric(id, options);
     throw unavailable(source, 'lyric', 'LYRIC_UNAVAILABLE');
   },
 };
-
-/** Internal test seam; it is intentionally not used by production dispatch. */
-export const dormantLyricAdapters = Object.freeze({
-  getKugouLyric,
-  getKuwoLyric,
-});
 
 export { ProviderClientError } from './errors';
