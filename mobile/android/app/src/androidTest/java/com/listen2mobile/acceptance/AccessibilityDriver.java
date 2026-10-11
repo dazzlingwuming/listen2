@@ -112,18 +112,56 @@ public final class AccessibilityDriver {
         require("青花瓷".equals(value), "only the fixed sanitized fixture query is allowed");
         AccessibilityNodeInfo editable = findEditableNode(label);
         if (editable == null) {
-            throw new AssertionError("missing editable search field: " + label);
+            emitFixedInput("field-unavailable");
+            throw new AssertionError("fixed-search-field-unavailable");
         }
         try {
-            require(editable.performAction(AccessibilityNodeInfo.ACTION_FOCUS), "search field refused accessibility focus");
-            Bundle arguments = new Bundle();
-            arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value);
-            require(editable.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments), "search field refused Unicode accessibility text");
+            require(editable.isVisibleToUser() && editable.isEnabled() && !editable.isPassword(), "fixed-search-field-unavailable");
+            // ACTION_FOCUS returns false for an already focused view. An exact public
+            // fixture value is already the required state; never treat that noop as failure.
+            if (value.contentEquals(editable.getText())) {
+                emitFixedInput("existing-fixed-query");
+            } else {
+                boolean focused = editable.isFocused();
+                emitFixedInput(focused ? "focus-already" : "focus-requested");
+                if (!focused && !editable.performAction(AccessibilityNodeInfo.ACTION_FOCUS)) {
+                    emitFixedInput("focus-action-failed");
+                    throw new AssertionError("fixed-search-focus-action-failed");
+                }
+                Bundle arguments = new Bundle();
+                arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value);
+                if (!editable.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)) {
+                    emitFixedInput("set-action-failed");
+                    throw new AssertionError("fixed-search-set-action-failed");
+                }
+                emitFixedInput("set-action-complete");
+            }
         } finally {
             editable.recycle();
         }
         instrumentation.waitForIdleSync();
-        require(waitForExactEditableText(label, value, 5_000L), "search field did not retain exact Unicode text");
+        boolean retained = waitForExactEditableText(label, value, 5_000L);
+        emitFixedInput(retained ? "retained" : "retained-mismatch");
+        require(retained, "fixed-search-retained-mismatch");
+    }
+
+    private void emitFixedInput(String step) {
+        Bundle status = new Bundle();
+        status.putString("phase08FixedInput", step);
+        instrumentation.sendStatus(1, status);
+    }
+
+    void verifyFixedSearchInputPreparation() {
+        returnToPhoneShellForPreparation("phase08SearchPreparation");
+        tapLabel("搜索");
+        require(waitForLabel("搜索歌曲、歌手或歌单", 5_000L), "fixed-search-field-unavailable");
+        if (hasClickableTarget("清除关键词")) tapLabel("清除关键词");
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            enterText("搜索歌曲、歌手或歌单", "青花瓷");
+            Bundle status = new Bundle();
+            status.putString("phase08FixedInputSample", attempt + "|PASS");
+            instrumentation.sendStatus(1, status);
+        }
     }
 
     void assertFiveSourceTabs() {
@@ -599,39 +637,29 @@ public final class AccessibilityDriver {
      */
     private AccessibilityNodeInfo findEditableNode(String label) {
         AccessibilityNodeInfo root = instrumentation.getUiAutomation().getRootInActiveWindow();
-        if (root == null) {
-            return null;
-        }
+        List<AccessibilityNodeInfo> matches = new ArrayList<>();
         try {
-            return findEditableNode(root, label, 0, new int[] { 0 });
+            boolean[] complete = { true };
+            if (root != null) collectEditableNodes(root, label, 0, new int[] { 0 }, matches, complete);
+            return complete[0] && matches.size() == 1 ? AccessibilityNodeInfo.obtain(matches.get(0)) : null;
         } finally {
-            root.recycle();
+            if (root != null) root.recycle();
+            for (AccessibilityNodeInfo node : matches) node.recycle();
         }
     }
 
-    private AccessibilityNodeInfo findEditableNode(AccessibilityNodeInfo node, String label, int depth, int[] visited) {
-        if (visited[0] >= MAX_NODES_PER_DUMP || depth > MAX_DUMP_DEPTH) {
-            return null;
+    private void collectEditableNodes(AccessibilityNodeInfo node, String label, int depth, int[] visited, List<AccessibilityNodeInfo> matches, boolean[] complete) {
+        if (visited[0]++ >= MAX_NODES_PER_DUMP || depth > MAX_DUMP_DEPTH) { complete[0] = false; return; }
+        if (node.isVisibleToUser() && node.isEnabled() && !node.isPassword() && node.isEditable() &&
+            TARGET_PACKAGE.contentEquals(node.getPackageName() == null ? "" : node.getPackageName()) && labelMatches(node, label)) {
+            matches.add(AccessibilityNodeInfo.obtain(node));
         }
-        visited[0] += 1;
-        if (node.isEditable() && labelMatches(node, label)) {
-            return AccessibilityNodeInfo.obtain(node);
-        }
-        for (int index = 0; index < node.getChildCount(); index += 1) {
+        for (int index = 0; index < node.getChildCount(); index++) {
             AccessibilityNodeInfo child = node.getChild(index);
-            if (child == null) {
-                continue;
-            }
-            try {
-                AccessibilityNodeInfo found = findEditableNode(child, label, depth + 1, visited);
-                if (found != null) {
-                    return found;
-                }
-            } finally {
-                child.recycle();
-            }
+            if (child == null) { complete[0] = false; continue; }
+            try { collectEditableNodes(child, label, depth + 1, visited, matches, complete); }
+            finally { child.recycle(); }
         }
-        return null;
     }
 
     private ClickTarget clickableTargetFor(String label) {
@@ -914,32 +942,40 @@ public final class AccessibilityDriver {
             if (localDiagnostic) emitLocalAudioTiming("first-observation", started);
             while (SystemClock.elapsedRealtime() - started < 6_000L) {
                 operation = "audio-unknown-assert";
-                if (dumpWindow().contains("Allow Listen2 to send you notifications?")) {
+                String playerWindow = dumpWindow();
+                if (playerWindow.contains("Allow Listen2 to send you notifications?")) {
                     operation = "audio-notification-failed";
                     allowNotificationPermissionIfPrompted();
+                    playerWindow = dumpWindow();
                 }
                 operation = "audio-mini-tap-failed";
-                if (!localDiagnostic && hasClickableTarget("打开播放器")) tapLabel("打开播放器");
+                if (!localDiagnostic && hasClickableTarget("打开播放器")) {
+                    tapLabel("打开播放器");
+                    playerWindow = dumpWindow();
+                }
                 operation = "audio-unknown-assert";
-                String playerWindow = dumpWindow();
                 long uiAt = SystemClock.elapsedRealtime();
                 Long current = progressPosition(playerWindow);
-                uiObserved |= current != null;
-
-                NativePlaybackObservation.Sample currentNative = NativePlaybackObservation.read(instrumentation);
-                getterObserved |= currentNative.observed();
+                boolean fullPlayer = localDiagnostic ? playerWindow.contains("关闭播放器") && playerWindow.contains(title) : GenericAudioObservation.fullPlayerTitle(playerWindow, title);
+                uiObserved |= fullPlayer && current != null;
                 operation = "audio-native-shell-failed";
                 String sessions = shell("dumpsys media_session");
                 operation = "audio-unknown-assert";
                 BilibiliPlaybackObservation.Snapshot currentSession = BilibiliPlaybackObservation.snapshot(sessions, title);
                 playingIdentityObserved |= currentSession != null;
+                // Binding an uninitialized service can consume its bounded two-second timeout.
+                // Wait for the real UI and target PLAYING identity first; the tap's 6s clock
+                // continues throughout, and success still requires the actual Exo getter.
+                NativePlaybackObservation.Sample currentNative = fullPlayer && current != null && currentSession != null
+                    ? NativePlaybackObservation.read(instrumentation) : NativePlaybackObservation.Sample.unavailable();
+                getterObserved |= currentNative.observed();
 
                 SyntheticAudioObservation.Result pairedResult = SyntheticAudioObservation.Result.WAIT;
                 if (!localDiagnostic && currentSession != null && !GenericAudioObservation.exactMetadataTitle(currentSession.metadata, title)) return new PerformanceSample("NOT_VERIFIED", SystemClock.elapsedRealtime() - started, "audio-metadata-unverified", null);
                 {
                     pairedResult = paired.observe(SystemClock.elapsedRealtime() - started, current,
                         currentNative.observed() ? currentNative.positionMs : null, uiAt, currentNative.elapsedMs,
-                        localDiagnostic ? playerWindow.contains("关闭播放器") && playerWindow.contains(title) : GenericAudioObservation.fullPlayerTitle(playerWindow, title), currentSession != null, currentSession == null ? null : currentSession.metadata);
+                        fullPlayer, currentSession != null, currentSession == null ? null : currentSession.metadata);
                     first = paired.firstUiSeconds;
                     if (pairedResult == SyntheticAudioObservation.Result.ROLLBACK) return new PerformanceSample("FAIL", SystemClock.elapsedRealtime() - started, "audio-resume-position-rollback", null);
                     if (pairedResult == SyntheticAudioObservation.Result.INVALID_CLOCK) return new PerformanceSample("NOT_VERIFIED", SystemClock.elapsedRealtime() - started, "audio-observation-clock-invalid", null);
@@ -965,8 +1001,8 @@ public final class AccessibilityDriver {
                 SystemClock.sleep(100L);
             }
             String reason = !uiObserved ? "audio-ui-progress-unavailable" :
-                !getterObserved ? "audio-native-getter-unavailable" :
                 !playingIdentityObserved ? "audio-playing-identity-unavailable" :
+                !getterObserved ? "audio-native-getter-unavailable" :
                 paired.firstNativeMs == null ? "audio-pair-unavailable" : "audio-not-advancing";
             return new PerformanceSample("TIMEOUT", SystemClock.elapsedRealtime() - started, reason, null);
         } catch (AssertionError error) {

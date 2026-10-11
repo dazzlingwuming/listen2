@@ -26,7 +26,10 @@ export function sanitizePerformanceInstrumentation(raw, commandExitCode) {
     const local = line.match(/^(?:INSTRUMENTATION_STATUS: )?phase08LocalAudio=(PASS|FAIL|TIMEOUT|NOT_VERIFIED)\|([0-9]{1,6})\|([a-z-]+)$/u);
     const timing = line.match(/^(?:INSTRUMENTATION_STATUS: )?phase08LocalTiming=(initial-tap-complete|first-observation)\|([0-9]{1,6})\|([0-9]{1,12})$/u);
     const validLocal = local && Number(local[2]) <= 120000 && (local[1] === 'PASS' && local[3] === 'visible-and-native-position-advancing' || local[1] === 'FAIL' && AUDIO_FAILURES.has(local[3]) || local[1] === 'TIMEOUT' && AUDIO_TIMEOUTS.has(local[3]) || local[1] === 'NOT_VERIFIED' && (local[3] === 'audio-observation-clock-invalid' || local[2] === '0' && ['diagnostic-elapsed-out-of-range', 'audio-resume-anchor-unavailable'].includes(local[3])));
-    if (validObservation) retained.push(`phase08LocalObservation=${observation.slice(1).join('|')}`);
+    if (/^(?:INSTRUMENTATION_STATUS: )?phase08FixedInput=(?:field-unavailable|existing-fixed-query|focus-already|focus-requested|focus-action-failed|set-action-failed|set-action-complete|retained|retained-mismatch)$/u.test(line)) retained.push(line.replace(/^INSTRUMENTATION_STATUS: /u, ''));
+    else if (/^(?:INSTRUMENTATION_STATUS: )?phase08FixedInputSample=[12]\|PASS$/u.test(line)) retained.push(line.replace(/^INSTRUMENTATION_STATUS: /u, ''));
+    else if (line.includes('phase08FixedInput=') || line.includes('phase08FixedInputSample=')) rejected = true;
+    else if (validObservation) retained.push(`phase08LocalObservation=${observation.slice(1).join('|')}`);
     else if (/^(?:INSTRUMENTATION_STATUS: )?phase08LocalObservationStatus=NOT_VERIFIED\|(?:sample-limit|diagnostic-values-out-of-range)$/u.test(line)) retained.push(line.replace(/^INSTRUMENTATION_STATUS: /u, ''));
     else if (line.includes('phase08LocalObservation=') || line.includes('phase08LocalObservationStatus=')) rejected = true;
     else if (/^(?:INSTRUMENTATION_STATUS: )?phase08AudioPrecondition=(?:paused-existing|no-existing-session)$/u.test(line)) retained.push(line.replace(/^INSTRUMENTATION_STATUS: /u, ''));
@@ -48,7 +51,7 @@ export function sanitizePerformanceInstrumentation(raw, commandExitCode) {
     else if (/^performanceCommandExitCode=[0-9]{1,3}$/u.test(line)) retained.push(line);
     else if (/^performanceLifecycle=(?:PASS-same-process|FAIL-launch|FAIL-process-unavailable|FAIL-process-changed)$/u.test(line)) retained.push(line);
     else if (/^INSTRUMENTATION_STATUS: stream=Phase08Instrumentation (?:started|completed)$/u.test(line)) retained.push(line);
-    else if (/^INSTRUMENTATION_STATUS: stage=(?:runner-start|live-performance-attempt-(?:[1-9]|1[0-9]|20)|saf-generated-local-(?:import|playing)|resume-local-player|native-read-only-sample|compatibility-cold-start-(?:launch|shell|complete)|startup-probe-(?:launch|complete))$/u.test(line)) retained.push(line);
+    else if (/^INSTRUMENTATION_STATUS: stage=(?:runner-start|fixed-input-preparation|live-performance-attempt-(?:[1-9]|1[0-9]|20)|saf-generated-local-(?:import|playing)|resume-local-player|native-read-only-sample|compatibility-cold-start-(?:launch|shell|complete)|startup-probe-(?:launch|complete))$/u.test(line)) retained.push(line);
     else if (line === 'INSTRUMENTATION_STATUS: failureType=EvidencePrivacyOrScenarioFailure') retained.push(line);
     else if (/INSTRUMENTATION_FAILED|INSTRUMENTATION_ABORTED|failureType=|shortMsg=|FAILURES!!!|AssertionError/u.test(line)) rejected = true;
   }
@@ -145,9 +148,22 @@ export function liveFamilies(output, terminalDurationMs) {
 export function coldFamilies(ledger) {
   const rows = ledger.trim().split('\n').filter(Boolean).map(line => line.split('|'));
   return [['ttid', 3000, 4, 'device-am-start-total-time'], ['ttfd', 4000, 6, 'device-monotonic-visible-upper-bound-including-uiautomator-observer']].map(([name, budget, index, stage]) => {
-    const samples = rows.map(row => ({ id: row[0], status: row[1], elapsedMs: row[index] ? Number(row[index]) : Number(row[3]), stage: row[index] ? stage : 'terminal-command-duration-only', reasonCode: row[8] }));
-    return { name, unit: 'ms', samples, ...summarizeFamily(samples, budget) };
+    const samples = rows.map(row => {
+      const amVerified = row[2] === 'true' && row[7] === 'COLD' && /^[0-9]{1,9}$/u.test(row[4]) && /^[0-9]{1,9}$/u.test(row[5]) && Number(row[4]) <= Number(row[5]);
+      return { id: row[0], status: name === 'ttid' ? amVerified ? 'PASS' : 'NOT_VERIFIED' : row[1],
+        elapsedMs: row[index] ? Number(row[index]) : Number(row[3]), stage: row[index] ? stage : 'terminal-command-duration-only',
+        reasonCode: name === 'ttid' ? amVerified ? 'verified-am-cold-timing' : 'missing-verified-am-cold-timing' : row[8], observationStatus: row[1] };
+    });
+    const summary = summarizeFamily(samples, budget);
+    // Host UiAutomator process/idle overhead is included in this upper bound;
+    // neither a fast nor slow observer establishes the isolated product TTFD.
+    return { name, unit: 'ms', samples, ...summary, ...(name === 'ttfd' ? { status: 'NOT_VERIFIED', reasonCode: 'HOST_UI_DUMP_OBSERVER_OVERHEAD' } : samples.some(sample => sample.status === 'NOT_VERIFIED') ? { status: 'NOT_VERIFIED' } : {}) };
   });
+}
+export function metricHasDecidableFailure(metric) {
+  const name = metric.name.replace(/^api(?:26|35|36)-/u, '');
+  if (name === 'ttfd' && metric.status === 'NOT_VERIFIED' && metric.reasonCode === 'HOST_UI_DUMP_OBSERVER_OVERHEAD') return false;
+  return metric.samples.some(sample => ['FAIL', 'TIMEOUT'].includes(sample.status)) || metric.samples.every(sample => sample.status === 'PASS') && metric.status === 'FAIL';
 }
 export function assessContinuity(rows, seconds = 600) {
   if (!rows.length || rows.some(row => row.status !== 'PASS' || row.state !== 3 || row.screenOffConfirmed !== true || row.screenOffState !== 'ASLEEP' || row.positionStatus !== 'OBSERVED' || row.positionSource !== 'exoplayer-current-position' || !row.synthetic)) return 'NOT_VERIFIED';
@@ -225,9 +241,9 @@ export function writePerformanceRecord(run, startedAt, serialHash, liveDuration,
     device: { ...build.device, serialHash, apiLevel: 35 }, network: { mode: 'live-public-search-and-generated-local-continuity', transport: 'emulator', offlineWindows: ['recorded-wifi-off-window'], proxyConfigured: false },
     fixture: { ...build.fixture, id: 'phase08-performance-local', revision: '1', manifestSha256: hash(readFileSync(resolve(run, 'performance/synthetic-media.json'))), queryIds: ['qinghuaci-kugou-live'], generatedMediaSha256: JSON.parse(read('synthetic-media.json')).sha256 },
     command: { id: 'api35-performance-once', argvRedacted: ['explicit-api35-serial', '20-fixed-cold-live-search-live-audio-attempts', 'generated-local-saf', 'five-process-recovery', '600-second-native-position-soak'], startedAt, endedAt: new Date().toISOString(), timezone: 'Asia/Shanghai', exitCode: measuredPass ? 0 : 4, evidenceKinds: ['PERFORMANCE', 'LIVE_PUBLIC_PROVIDER', 'RECOVERY_SOAK'] },
-    requirements: ['PERF-001', 'PERF-002', 'PERF-003', 'TEST-004'], metrics, outcome: !instrumentationPass || metrics.some(metric => metric.samples.some(sample => ['FAIL', 'TIMEOUT'].includes(sample.status)) || metric.samples.every(sample => sample.status === 'PASS') && metric.status === 'FAIL') || continuity === 'FAIL' ? 'FAIL' : 'NOT_VERIFIED',
+    requirements: ['PERF-001', 'PERF-002', 'PERF-003', 'TEST-004'], metrics, outcome: !instrumentationPass || metrics.some(metricHasDecidableFailure) || continuity === 'FAIL' ? 'FAIL' : 'NOT_VERIFIED',
     artifacts: files.map(name => { const file = resolve(run, 'performance', name); return { kind: name, relativePath: `performance/${name}`, sha256: hash(readFileSync(file)), bytes: statSync(file).size, sanitized: true }; }),
-    uncovered: [{ requirement: 'PERF-001', reasonCode: 'COMPATIBILITY_MATRIX_PENDING', safeDetail: 'This record covers API35 measurements only; API26 and API36 device metrics are separate.', ownerAction: 'Consume separately sealed compatibility lanes before claiming PERF-001.' }, { requirement: 'PERF-002', reasonCode: 'LIVE_METRICS_REQUIRE_INDIVIDUAL_REVIEW', safeDetail: `liveSearch=${metrics[2].status};liveAudio=${metrics[3].status};bridgeNetworkMedia3Substages=NOT_VERIFIED`, ownerAction: 'Review actual terminal samples; no local fixture may replace a live sample.' }, { requirement: 'PERF-003', reasonCode: 'PERFORMANCE_OR_CONTINUITY_NON_PASS', safeDetail: `compatibilityMatrix=NOT_VERIFIED;providerNetworkRecovery=NOT_VERIFIED;duplicateMutationAndAnrCrash=NOT_VERIFIED;coldLiveMetricsPass=${metrics.every(metric => metric.status === 'PASS')};fiveRecoveryPass=${recovered};generatedPlaybackSoak=${continuity};networkLocalContinuityPass=${Boolean(networkPass)};cleanup=${cleanupStatus}`, ownerAction: 'Inspect immutable attempt and state evidence; fix the cause before a new candidate run. Local continuity does not establish provider network recovery.' }],
+    uncovered: [{ requirement: 'PERF-001', reasonCode: 'HOST_UI_DUMP_OBSERVER_OVERHEAD', safeDetail: 'Host-observed TTFD upper bounds are retained but measurement-limited NOT_VERIFIED; AM TotalTime remains separately assessed.', ownerAction: 'Provide an independently validated startup observer before claiming TTFD.' }, { requirement: 'PERF-001', reasonCode: 'COMPATIBILITY_MATRIX_PENDING', safeDetail: 'This record covers API35 measurements only; API26 and API36 device metrics are separate.', ownerAction: 'Consume separately sealed compatibility lanes before claiming PERF-001.' }, { requirement: 'PERF-002', reasonCode: 'LIVE_METRICS_REQUIRE_INDIVIDUAL_REVIEW', safeDetail: `liveSearch=${metrics[2].status};liveAudio=${metrics[3].status};bridgeNetworkMedia3Substages=NOT_VERIFIED`, ownerAction: 'Review actual terminal samples; no local fixture may replace a live sample.' }, { requirement: 'PERF-003', reasonCode: 'PERFORMANCE_OR_CONTINUITY_NON_PASS', safeDetail: `compatibilityMatrix=NOT_VERIFIED;providerNetworkRecovery=NOT_VERIFIED;duplicateMutationAndAnrCrash=NOT_VERIFIED;coldLiveMetricsPass=${metrics.every(metric => metric.status === 'PASS')};fiveRecoveryPass=${recovered};generatedPlaybackSoak=${continuity};networkLocalContinuityPass=${Boolean(networkPass)};cleanup=${cleanupStatus}`, ownerAction: 'Inspect immutable attempt and state evidence; fix the cause before a new candidate run. Local continuity does not establish provider network recovery.' }],
     recovery: { cleanupStatus, deviceStateRestored: cleanupStatus === 'restored', rollbackArtifactSha256: build.build.sha256, steps: ['original wifi setting restored', 'screen woken', 'retained immutable native position observations'] } };
   writeFileSync(resolve(run, '.api35-performance.json'), JSON.stringify(record, null, 2), { flag: 'wx', mode: 0o600 });
   return measuredPass;
@@ -240,7 +256,11 @@ export function writeCompatibilityRecord(run) {
   const api35Metrics = api35.metrics.filter(metric => ['ttid', 'ttfd'].includes(metric.name));
   if (api35Metrics.length !== 2 || api35.git.sha !== build.git.sha || api35.runId !== build.runId || api35.build.sha256 !== build.build.sha256) throw new Error('API35 performance provenance is inconsistent');
   const metrics = [
-    ...api35Metrics.map(metric => ({ ...metric, name: `api35-${metric.name}`, ...summarizeFamily(metric.samples, metric.budget) })),
+    ...api35Metrics.map(metric => {
+      const summary = summarizeFamily(metric.samples, metric.budget);
+      if (['p50', 'p95', 'max', 'budget'].some(key => metric[key] !== summary[key]) || metric.status === 'PASS' && summary.status !== 'PASS') throw new Error('API35 performance summary is inconsistent');
+      return { ...metric, name: `api35-${metric.name}`, ...summary, status: metric.status };
+    }),
     ...[26, 36].flatMap(api => coldFamilies(read(`performance/api${api}-cold.tsv`)).map(metric => ({ ...metric, name: `api${api}-${metric.name}` }))),
   ];
   const pass = metrics.every(metric => metric.status === 'PASS');
@@ -248,9 +268,9 @@ export function writeCompatibilityRecord(run) {
   const now = new Date().toISOString();
   const record = { ...build, recordId: 'phase8-performance-matrix', recordedAt: now, fixture: { id: 'none', revision: '0', manifestSha256: '0'.repeat(64), generatedMediaSha256: '0'.repeat(64), queryIds: [], accountLane: 'none' }, requirements: ['PERF-001', 'TEST-004'], metrics,
     command: { id: 'aggregate-sealed-compatibility-matrix', argvRedacted: ['aggregate-compatibility', 'immutable-api26-api35-api36-ledgers'], startedAt: now, endedAt: now, timezone: 'Asia/Shanghai', exitCode: pass ? 0 : 4, evidenceKinds: ['PERFORMANCE'] },
-    outcome: pass ? 'PASS' : metrics.some(metric => metric.samples.some(sample => ['FAIL', 'TIMEOUT'].includes(sample.status))) ? 'FAIL' : 'NOT_VERIFIED',
+    outcome: pass ? 'PASS' : metrics.some(metricHasDecidableFailure) ? 'FAIL' : 'NOT_VERIFIED',
     artifacts: files.map(name => ({ kind: name.split('/').pop(), relativePath: name, sha256: hash(readFileSync(resolve(run, name))), bytes: statSync(resolve(run, name)).size, sanitized: true })),
-    uncovered: pass ? [] : [{ requirement: 'PERF-001', reasonCode: 'COLD_MATRIX_NON_PASS', safeDetail: 'Every API retains all 20 terminal slots. TTFD is a visible-shell upper bound including UiAutomator observer overhead, not an isolated render duration.', ownerAction: 'Review all immutable device timing samples before a new candidate run.' }],
+    uncovered: pass ? [] : [{ requirement: 'PERF-001', reasonCode: 'COLD_MATRIX_NON_PASS', safeDetail: 'Every API retains all 20 terminal slots. TTFD is NOT_VERIFIED: the retained visible-shell upper bound includes host UiAutomator observer overhead and cannot isolate product startup.', ownerAction: 'Review all immutable device timing samples before a new candidate run.' }],
   };
   writeRecord(run, '08-performance.json', record);
   return record;

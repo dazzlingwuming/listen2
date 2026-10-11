@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { baseRecord } from './evidence.mjs';
-import { assessContinuity, assessRecovery, coldFamilies, generateSignal, liveFamilies, nativeSnapshot, writeCompatibilityRecord } from './performance-evidence.mjs';
+import { assessContinuity, assessRecovery, coldFamilies, generateSignal, liveFamilies, nativeSnapshot, writeCompatibilityRecord, metricHasDecidableFailure } from './performance-evidence.mjs';
 const ids = Array.from({ length: 20 }, (_, i) => String(i + 1).padStart(2, '0'));
 const output = ids.flatMap(id => [`phase08Metric=first-search|${id}|PASS|4900|semantic-live-result`, `phase08Metric=first-audio|${id}|PASS|5900|visible-and-native-position-advancing`]).join('\n');
 assert.equal(liveFamilies(output, 900000).every(metric => metric.status === 'PASS'), true);
@@ -12,8 +12,13 @@ assert.equal(liveFamilies(output.replace('phase08Metric=first-audio|20|PASS|5900
 assert.equal(liveFamilies('', 1234).every(metric => metric.status === 'FAIL'), true);
 assert.throws(() => liveFamilies(`${output}\nphase08Metric=first-search|01|PASS|1|duplicate`, 1), /duplicate/);
 const cold = ids.map(id => `${id}|PASS|true|9000|2900|3000|3900|COLD|none`).join('\n');
-const metrics = coldFamilies(cold); assert.equal(metrics[0].p95, 2900); assert.equal(metrics[1].p95, 3900); assert.equal(metrics.every(row => row.status === 'PASS'), true);
-assert.equal(coldFamilies(cold.replace('20|PASS', '20|FAIL'))[0].status, 'FAIL');
+const metrics = coldFamilies(cold); assert.equal(metrics[0].p95, 2900); assert.equal(metrics[1].p95, 3900); assert.equal(metrics[0].status, 'PASS'); assert.equal(metrics[1].status, 'NOT_VERIFIED'); assert.equal(metrics[1].reasonCode, 'HOST_UI_DUMP_OBSERVER_OVERHEAD'); assert.equal(metrics[1].samples.every(row => row.status === 'PASS'), true);
+assert.equal(coldFamilies(cold.replaceAll('|3900|', '|5350|'))[1].status, 'NOT_VERIFIED'); assert.equal(coldFamilies(cold.replaceAll('|3900|', '|5350|'))[1].p95, 5350);
+assert.equal(coldFamilies(cold.replace('20|PASS', '20|FAIL'))[0].status, 'PASS');
+const hostFailure=coldFamilies(cold.replaceAll('|PASS|','|FAIL|')); assert.equal(hostFailure[1].samples.every(sample=>sample.status==='FAIL'),true); assert.equal(metricHasDecidableFailure(hostFailure[1]),false);
+assert.equal(metricHasDecidableFailure(coldFamilies(cold.replaceAll('|2900|3000|','|3100|3200|'))[0]),true);
+assert.equal(metricHasDecidableFailure({...hostFailure[1],name:'first-audio'}),true);
+for(const invalid of [cold.replaceAll('|true|','|false|'),cold.replaceAll('|COLD|','|WARM|'),cold.replaceAll('|2900|','||'),cold.replaceAll('|3000|','||')])assert.equal(coldFamilies(invalid)[0].status,'NOT_VERIFIED');
 const raw = 'package=other.app\nstate=PlaybackState {state=3, position=999999}\nmetadata: other\npackage=com.dazzlingwuming.listen2\nstate=PlaybackState {state=3, position=1000, buffered position=5000}\nmetadata: size=3, description=Listen2AcceptanceSignal, unknown, null\npackage=another.app\nstate=PlaybackState {state=2, position=1}';
 const probeOutput = (position = 1000, elapsed = 1000, state = 'OBSERVED') => `phase08Native=PASS|${state}|${position}|${elapsed}\nINSTRUMENTATION_CODE: -1\nperformanceCommandExitCode=0\nperformanceLifecycle=PASS-same-process\n`;
 const native = nativeSnapshot(raw, 1000, probeOutput()); assert.equal(native.positionMs, 1000); assert.equal(native.state, 3); assert.equal(native.synthetic, true); assert.equal(JSON.stringify(native).includes('description='), false);
@@ -45,10 +50,11 @@ try { const file = resolve(directory, 'signal.flac'), generated = generateSignal
   const build = baseRecord(run, 'phase8-build', ['REL-001']); build.build.testPayloadSha256 = 'c'.repeat(64);
   writeFileSync(resolve(run, '08-build.json'), JSON.stringify(build)); writeFileSync(resolve(run, '08-build.sha256'), 'synthetic-test-seal');
   writeFileSync(resolve(run, '08-api35-performance.json'), JSON.stringify({ ...build, metrics: coldFamilies(cold) }));
-  writeFileSync(resolve(run, 'performance/api26-cold.tsv'), cold);
+  writeFileSync(resolve(run, 'performance/api26-cold.tsv'), cold.replaceAll('|PASS|','|FAIL|').replaceAll('|3900|COLD|none','||COLD|phone-shell-not-ready'));
   assert.throws(() => writeCompatibilityRecord(run), /ENOENT/);
   writeFileSync(resolve(run, 'performance/api36-cold.tsv'), cold);
-  const matrix = writeCompatibilityRecord(run); assert.equal(matrix.outcome, 'PASS'); assert.equal(matrix.metrics.length, 6); assert.equal(matrix.fixture.id, 'none'); assert.equal(matrix.fixture.generatedMediaSha256, '0'.repeat(64)); assert.equal(matrix.build.testPayloadSha256, build.build.testPayloadSha256);
+  const api35File=resolve(run,'08-api35-performance.json'), originalApi35=readFileSync(api35File,'utf8'), invalidApi35=JSON.parse(originalApi35); invalidApi35.metrics[0].p95-=1; writeFileSync(api35File,JSON.stringify(invalidApi35)); assert.throws(()=>writeCompatibilityRecord(run),/summary is inconsistent/); writeFileSync(api35File,originalApi35);
+  const matrix = writeCompatibilityRecord(run); assert.equal(matrix.outcome, 'NOT_VERIFIED'); assert.equal(matrix.metrics.filter(metric => metric.name.endsWith('-ttfd')).every(metric => metric.reasonCode === 'HOST_UI_DUMP_OBSERVER_OVERHEAD'), true); assert.equal(matrix.metrics.length, 6); assert.equal(matrix.fixture.id, 'none'); assert.equal(matrix.fixture.generatedMediaSha256, '0'.repeat(64)); assert.equal(matrix.build.testPayloadSha256, build.build.testPayloadSha256);
   assert.equal(matrix.artifacts.some(item => item.relativePath === '08-build.sha256'), true);
   assert.throws(() => writeCompatibilityRecord(run), /immutable/);
  } finally { rmSync(directory, { recursive: true, force: true }); }

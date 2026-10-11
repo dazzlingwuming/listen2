@@ -201,10 +201,14 @@ sample_startup_probe() {
       activity_wait="$(sed -nE 's/^WaitTime:[[:space:]]*([0-9]+)[[:space:]]*$/\1/p' "$activity_raw" | tail -n 1)"
       if [[ ! "$activity_total" =~ ^[0-9]+$ || ! "$activity_wait" =~ ^[0-9]+$ ]]; then
         reason='missing-device-activity-timing'
-      elif shell_ready="$(wait_for_phone_shell "$launch_started_elapsed_ms")"; then
-        status=PASS; reason='none'; total="$activity_total"; wait="$activity_wait"; a11y="$shell_ready"; launchState=COLD
       else
-        reason='phone-shell-not-ready'
+        # Preserve independently verified AM timing even if the host UI observer fails.
+        total="$activity_total"; wait="$activity_wait"; launchState=COLD
+        if shell_ready="$(wait_for_phone_shell "$launch_started_elapsed_ms")"; then
+          status=PASS; reason='none'; a11y="$shell_ready"
+        else
+          reason='phone-shell-not-ready'
+        fi
       fi
     fi
   fi

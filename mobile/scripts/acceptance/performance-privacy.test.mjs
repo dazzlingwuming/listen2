@@ -84,3 +84,10 @@ test('synthetic observation diagnostics contain bounded numeric and boolean tupl
   for (const stage of ['start','close-player','back-detail','shell-ready','navigation-limit','action-failed','deadline-exceeded','search-tab-tap','input-wait','input-ready','source-qq','source-kugou','sources-ready']) assert.match(sanitizePerformanceInstrumentation(`phase08SearchPreparation=${stage}|12345`,0), /phase08SearchPreparation=/);
   for (const row of ['private-sentinel|12345','input-ready|private-sentinel','input-ready|1234567890123']) {const safe=sanitizePerformanceInstrumentation(`phase08SearchPreparation=${row}`,0);assert.doesNotMatch(safe,/private-sentinel|phase08SearchPreparation=/);assert.match(safe,/EvidencePrivacyOrScenarioFailure/);}
  });
+
+test('fixed public input diagnostics reject unknown values and never carry input text',()=>{
+ for(const value of ['field-unavailable','existing-fixed-query','focus-already','focus-requested','focus-action-failed','set-action-failed','set-action-complete','retained','retained-mismatch'])assert.match(sanitizePerformanceInstrumentation('phase08FixedInput='+value,0),/phase08FixedInput=/);
+ for(const value of ['private-sentinel','retained private-sentinel','青花瓷']){const safe=sanitizePerformanceInstrumentation('phase08FixedInput='+value,0);assert.doesNotMatch(safe,/phase08FixedInput=|private-sentinel|青花瓷/);assert.match(safe,/EvidencePrivacyOrScenarioFailure/);}
+ for(const value of ['1|PASS','2|PASS'])assert.match(sanitizePerformanceInstrumentation('phase08FixedInputSample='+value,0),/phase08FixedInputSample=/);
+ for(const value of ['0|PASS','3|PASS','1|private-sentinel','1|PASS|private-sentinel'])assert.doesNotMatch(sanitizePerformanceInstrumentation('phase08FixedInputSample='+value,0),/phase08FixedInputSample=|private-sentinel/);
+});

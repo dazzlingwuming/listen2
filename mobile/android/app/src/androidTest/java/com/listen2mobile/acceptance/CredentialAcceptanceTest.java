@@ -184,7 +184,7 @@ public final class CredentialAcceptanceTest {
                 if (inputs.size() != 1) return false;
                 Bundle arguments = new Bundle();
                 arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "青花瓷");
-                return inputs.get(0).performAction(AccessibilityNodeInfo.ACTION_FOCUS) && inputs.get(0).performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments);
+                return (inputs.get(0).isFocused() || inputs.get(0).performAction(AccessibilityNodeInfo.ACTION_FOCUS)) && inputs.get(0).performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments);
             } finally { if (root != null) root.recycle(); for (AccessibilityNodeInfo input : inputs) input.recycle(); }
         }
         void collectInputs(AccessibilityNodeInfo node, List<AccessibilityNodeInfo> result, int depth, int[] count) {

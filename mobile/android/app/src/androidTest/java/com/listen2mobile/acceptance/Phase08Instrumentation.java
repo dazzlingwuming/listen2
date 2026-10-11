@@ -131,6 +131,9 @@ public final class Phase08Instrumentation extends Instrumentation {
             LiveAllProviderSearchSmokeTest.run(this, progress);
             return;
         }
+        if ("com.listen2mobile.acceptance.PerformanceRecoveryTest#inputPreparationRepresentative".equals(scenarioClass)) {
+            PerformanceRecoveryTest.inputPreparationRepresentative(this, progress); return;
+        }
         if ("com.listen2mobile.acceptance.PerformanceRecoveryTest#genericAudioRepresentative".equals(scenarioClass)) {
             PerformanceRecoveryTest.genericAudioRepresentative(this, progress); return;
         }

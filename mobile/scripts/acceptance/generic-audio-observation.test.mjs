@@ -17,7 +17,7 @@ public class GenericFixture {
  static class Bundle{String value;void putString(String k,String v){value=k+"="+v;}}
  static class Recorder{List<String> rows=new ArrayList<>();void sendStatus(int c,Bundle b){rows.add(b.value);}}
  static class PerformanceSample{String status,reason;long elapsedMillis;PerformanceSample(String s,long e,String r,Object ignored){status=s;elapsedMillis=e;reason=r;}}
- static class NativePlaybackObservation{static class Sample{long positionMs=started?tick-playAt:100000;long elapsedMs=tick;boolean observed(){return !mode.equals("missing-getter") && !(mode.equals("no-session") && !started);}}static Sample read(Recorder r){return new Sample();}}
+ static class NativePlaybackObservation{static class Sample{long positionMs=started?tick-playAt:100000;long elapsedMs=tick;boolean available=true;boolean observed(){return available && !mode.equals("missing-getter") && !(mode.equals("no-session") && !started);}static Sample unavailable(){Sample s=new Sample();s.available=false;return s;}}static Sample read(Recorder r){return new Sample();}}
  static class BilibiliPlaybackObservation{static class Snapshot{String metadata="size=3, description=title, artist, null";}static Snapshot snapshot(String s,String t){return playing?new Snapshot():null;}}
  static String control(String label){return "<node content-desc=\\\""+label+"\\\" enabled=\\\"true\\\" clickable=\\\"true\\\"/>";}
  void tapLabel(String label){if(label.equals("暂停播放")){if(!mode.equals("pause-failed"))playing=false;}else if(label.equals("播放title")){started=true;playing=true;playAt=tick;}else if(label.equals("打开播放器"))full=true;}

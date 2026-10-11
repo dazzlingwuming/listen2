@@ -39,6 +39,14 @@ public final class PerformanceRecoveryTest {
         }
     }
 
+    /** Two fixed public input preparations, without submitting a provider request. */
+    public static void inputPreparationRepresentative(Instrumentation instrumentation, ScenarioProgress progress) {
+        progress.step("fixed-input-preparation");
+        AccessibilityDriver driver = new AccessibilityDriver(instrumentation);
+        driver.launchTarget();
+        driver.verifyFixedSearchInputPreparation();
+    }
+
     /** Two public UI samples only; deliberately separate from the immutable twenty-attempt lane. */
     public static void genericAudioRepresentative(Instrumentation instrumentation, ScenarioProgress progress) {
         AccessibilityDriver driver = new AccessibilityDriver(instrumentation);

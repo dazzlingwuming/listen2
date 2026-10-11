@@ -2,18 +2,13 @@ package com.listen2mobile.acceptance;
 
 import android.app.Instrumentation;
 
-/**
- * API-35, UI-only matrix for the five anonymous production search sources.
- * It accepts only the exact, visible upstream restrictions documented for
- * NetEase and Bilibili; every other source must visibly return a relevant
- * result for 青花瓷.
- */
+/** UI-only five-source matrix; independent failures never promote the matrix to success. */
 public final class LiveAllProviderSearchSmokeTest {
-    private static final String[] AVAILABLE_SOURCES = {
-        "酷狗音乐",
-        "酷我音乐",
-        "QQ音乐",
-        "哔哩哔哩",
+    private static final String[] SOURCES = {
+        "网易云音乐", "酷狗音乐", "酷我音乐", "QQ音乐", "哔哩哔哩",
+    };
+    private static final String[] SOURCE_KEYS = {
+        "netease", "kugou", "kuwo", "qq", "bilibili",
     };
 
     private LiveAllProviderSearchSmokeTest() {
@@ -24,32 +19,53 @@ public final class LiveAllProviderSearchSmokeTest {
         progress.step("live-all-launch");
         driver.launchTarget();
         require(driver.waitForLabel("搜索", 20_000L), "search tab was not visible");
-        driver.tapLabel("搜索");
-        require(driver.waitForLabel("搜索歌曲、歌手或歌单", 10_000L), "search field was not visible");
-        driver.enterText("搜索歌曲、歌手或歌单", "青花瓷");
-
-        progress.step("live-all-netease");
-        driver.selectLiveSource("网易云音乐");
-        driver.submitLiveSearch();
-        driver.requireLiveNeteaseSearchOutcome();
-
-        for (int index = 0; index < AVAILABLE_SOURCES.length; index++) {
-            String source = AVAILABLE_SOURCES[index];
-            // ScenarioProgress is intentionally limited to ASCII so that it
-            // remains a bounded diagnostic channel. Keep the user-visible
-            // source label out of that channel while preserving it for the
-            // actual accessibility assertions below.
-            progress.step("live-all-source-" + (index + 1));
-            driver.selectLiveSource(source);
-            driver.submitLiveSearch();
-            if ("哔哩哔哩".equals(source)) {
-                driver.requireLiveBilibiliSearchOutcome();
-            } else {
-                driver.requireLiveSearchResults(source);
+        boolean failed = false;
+        for (int index = 0; index < SOURCES.length; index++) {
+            String source = SOURCES[index];
+            String marker = "live-all-source-" + SOURCE_KEYS[index];
+            String step = "search-tab";
+            progress.step(marker + "-start");
+            try {
+                // Search errors remain on this tab. Restore only normal UI state;
+                // selecting the next source cancels the prior request and clears its rows.
+                driver.tapLabel("搜索");
+                require(driver.waitForLabel("搜索歌曲、歌手或歌单", 10_000L), "search field was not visible");
+                step = "query";
+                driver.enterText("搜索歌曲、歌手或歌单", "青花瓷");
+                step = "source";
+                driver.selectLiveSource(source);
+                step = "submit";
+                driver.submitLiveSearch();
+                step = "outcome";
+                if (index == 0) {
+                    driver.requireLiveNeteaseSearchOutcome();
+                } else if (index == SOURCES.length - 1) {
+                    driver.requireLiveBilibiliSearchOutcome();
+                } else {
+                    driver.requireLiveSearchResults(source);
+                }
+                driver.record(marker + "-completed");
+            } catch (AssertionError | RuntimeException error) {
+                failed = true;
+                // All values are closed source/stage/type constants. Never serialize
+                // exception messages, stacks, visible titles or the UI tree here.
+                String reason = error instanceof AssertionError ? "assertion" : "runtime";
+                String failure = marker + "-failed-" + step + "-" + reason;
+                progress.step(failure);
+                driver.record(failure);
             }
         }
         progress.step("live-all-capture");
-        driver.captureLiveProviderEvidence();
+        try {
+            driver.captureLiveProviderEvidence();
+        } catch (AssertionError | RuntimeException error) {
+            failed = true;
+            driver.record("live-all-capture-failed");
+        }
+        if (failed) {
+            progress.step("live-all-aggregate-failed");
+            throw new AssertionError("live-all-provider-matrix-failed");
+        }
     }
 
     private static void require(boolean condition, String message) {

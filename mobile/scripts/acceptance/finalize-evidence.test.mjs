@@ -130,7 +130,9 @@ test('actual compatibility writer integrates six cold families without exempting
   for(const api of [26,36])writeFileSync(resolve(run,`performance/api${api}-cold.tsv`),cold);
   const matrix=writeCompatibilityRecord(run);assert.equal(matrix.recordId,'phase8-performance-matrix');assert.equal(matrix.metrics.length,6);assert.equal(matrix.fixture.id,'none');
   assert.doesNotThrow(()=>loadRecords(run,head));
-  let model=evaluateFixture();assert.equal(model.requirements.find(row=>row.id==='PERF-001').status,'PASS');
+  for (const api of [26,36]) { const ttfd=matrix.metrics.find(metric=>metric.name===`api${api}-ttfd`); assert.equal(ttfd.status,'NOT_VERIFIED'); assert.equal(ttfd.reasonCode,'HOST_UI_DUMP_OBSERVER_OVERHEAD'); assert.equal(ttfd.samples.every(sample=>sample.status==='PASS'),true); assert.equal(ttfd.p95,100); }
+  assert.equal(matrix.metrics.find(metric=>metric.name==='api35-ttfd').status,'PASS'); // Existing independent fixture metric is separately trusted.
+  let model=evaluateFixture();assert.equal(model.requirements.find(row=>row.id==='PERF-001').status,'NOT_VERIFIED');
   const invalid=structuredClone(matrix);invalid.metrics.find(m=>m.name==='api35-ttid').p95=99;assert.throws(()=>checkMetrics(invalid),/PERFORMANCE_SUMMARY_MISMATCH/);
   invalid.metrics.find(m=>m.name==='api35-ttid').p95=100;invalid.command.evidenceKinds.push('LIVE_PUBLIC_PROVIDER');assert.throws(()=>checkMetrics(invalid),/PERFORMANCE_MATRIX_SCOPE_INVALID/);
   const api35=JSON.parse(readFileSync(resolve(run,'08-api35-performance.json')));api35.outcome='NOT_VERIFIED';api35.fixture=structuredClone(matrix.fixture);writeFileSync(resolve(run,'08-api35-performance.json'),JSON.stringify(api35));
