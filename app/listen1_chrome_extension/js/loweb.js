@@ -1,4 +1,4 @@
-/* global async LRUCache setPrototypeOfLocalStorage getLocalStorageValue */
+/* global Listen2LyricSearch async LRUCache setPrototypeOfLocalStorage getLocalStorageValue */
 /* global netease xiami qq kugou kuwo bilibili migu taihe localmusic myplaylist */
 /* global isElectron require */
 /* eslint-disable global-require */
@@ -704,6 +704,26 @@ const MediaService = {
         ),
       Promise.resolve({ ok: true, migrated: 0, skipped: 0 })
     );
+  },
+
+  searchLyrics(trackInfo, query, options = {}) {
+    const hints = {
+      query,
+      title: query,
+      artist: '',
+      duration: 0,
+      manual: true,
+    };
+    const providers = [
+      ['QQ', 'search_qq_lyric_candidates'],
+      ['网易云', 'search_netease_lyric_candidates'],
+      ['LRCLIB', 'search_lrclib_lyric_candidates'],
+      ['KUWO', 'search_kuwo_lyric_candidates'],
+    ].map(([id, method]) => ({
+      id,
+      load: (request) => bilibili[method]({ ...hints, ...request }),
+    }));
+    return Listen2LyricSearch.search(providers, query, options);
   },
 
   searchLyricCandidates(trackInfo, query) {

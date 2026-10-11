@@ -1,3 +1,4 @@
+/* eslint-disable import/no-extraneous-dependencies */
 /* eslint-disable import/no-unresolved */
 /* eslint-disable global-require */
 /* eslint-disable no-undef */
@@ -128,41 +129,53 @@ angular.module('listenone').controller('ProfileController', [
       white: 'white2',
       black: 'black2',
     };
-    const supportedThemes = ['white2', 'black2'];
+    $scope.themeOptions = window.Listen2Appearance.themes;
+    const supportedThemes = $scope.themeOptions.map((item) => item.id);
     const savedTheme = localStorage.getObject('theme');
-    let defaultTheme = 'black2';
-    if (savedTheme === null) {
-      localStorage.setObject(themeMigrationKey, true);
-    } else if (legacyThemeMap[savedTheme]) {
-      defaultTheme = legacyThemeMap[savedTheme];
-      localStorage.setObject(themeMigrationKey, true);
-    } else if (supportedThemes.includes(savedTheme)) {
-      defaultTheme = savedTheme;
-      localStorage.setObject(themeMigrationKey, true);
-    }
+    const fallbackTheme = savedTheme === null ? 'sakura' : 'black2';
+    const defaultTheme =
+      legacyThemeMap[savedTheme] ||
+      (supportedThemes.includes(savedTheme) ? savedTheme : fallbackTheme);
+    localStorage.setObject(themeMigrationKey, true);
+    $scope.performanceMode = window.Listen2Appearance.mode;
+    $scope.showCharacterArt =
+      localStorage.getObject('showCharacterArt') !== false;
+    $scope.setPerformanceMode = (value) => {
+      window.Listen2Appearance.setMode(value);
+      $scope.performanceMode = window.Listen2Appearance.mode;
+    };
+    $scope.setCharacterArt = (value) => {
+      $scope.showCharacterArt = Boolean(value);
+      localStorage.setObject('showCharacterArt', $scope.showCharacterArt);
+    };
     $scope.setTheme = (theme) => {
       const normalizedTheme =
         legacyThemeMap[theme] ||
         (supportedThemes.includes(theme) ? theme : 'black2');
+      const selected = $scope.themeOptions.find(
+        (item) => item.id === normalizedTheme
+      );
       $scope.theme = normalizedTheme;
-
-      const themeFiles = {
-        white2: ['css/iparanoid2.css', 'css/common2.css'],
-        black2: ['css/origin2.css', 'css/common2.css'],
+      $scope.selectedTheme = selected;
+      $scope.themeClass = {
+        'theme-modern-light': selected.base === 'light',
+        'theme-modern-dark': selected.base === 'dark',
+        'theme-anime': Boolean(selected.assets),
+        [`theme-${selected.id}`]: true,
       };
-      // You can change the language during runtime
-      if (themeFiles[normalizedTheme] !== undefined) {
-        const keys = ['theme-css', 'common-css'];
-        for (let i = 0; i < themeFiles[normalizedTheme].length; i += 1) {
-          document.getElementById(keys[i]).href =
-            themeFiles[normalizedTheme][i];
-        }
-        localStorage.setObject('theme', normalizedTheme);
-      }
-      axios.get('images/feather-sprite.svg').then((res) => {
-        document.getElementById('feather-container').innerHTML = res.data;
-      });
+      document.getElementById('theme-css').href =
+        selected.base === 'light' ? 'css/iparanoid2.css' : 'css/origin2.css';
+      document.getElementById('common-css').href = 'css/common2.css';
+      localStorage.setObject('theme', normalizedTheme);
+      // Notify canvas palettes after Angular has applied the theme class.
+      $scope.$evalAsync(() =>
+        window.requestAnimationFrame(() => window.Listen2Appearance.publish())
+      );
     };
+    axios.get('images/feather-sprite.svg').then((res) => {
+      const container = document.getElementById('feather-container');
+      if (container) container.innerHTML = res.data;
+    });
     $scope.setTheme(defaultTheme);
   },
 ]);

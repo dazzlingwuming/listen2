@@ -31,7 +31,7 @@ function getCSSStringFromSetting(setting) {
 
 function useModernTheme() {
   const defaultTheme = localStorage.getObject('theme');
-  return defaultTheme === 'white2' || defaultTheme === 'black2';
+  return ['white2', 'black2', 'sakura', 'mint', 'night'].includes(defaultTheme);
 }
 
 function getSafeIndex(index, length) {
@@ -385,6 +385,9 @@ angular.module('listenone').controller('PlayController', [
     const MAX_LYRIC_OFFSET_MS = 60000;
     let lyricRequestToken = 0;
     let lyricSearchToken = 0;
+    let activeLyricSearch = null;
+    let activeLyricSearchKey = '';
+    $scope.lyricSearchSources = [];
     let manualLyricResolveToken = 0;
     let manualLyricSelectionToken = 0;
     let lyricTranslationRequestToken = 0;
@@ -1682,7 +1685,17 @@ angular.module('listenone').controller('PlayController', [
       const anchor = `song${l1Player.status.playing.id}`;
       $scope.menuHidden = !$scope.menuHidden;
       if (!$scope.menuHidden) {
-        $anchorScroll(anchor);
+        $timeout(() => {
+          const list = document.querySelector('.modern-body .menu-list');
+          const index = ($scope.playlist || []).findIndex(
+            (song) => song.id === l1Player.status.playing.id
+          );
+          if (list && index >= 0)
+            list.dispatchEvent(
+              new CustomEvent('listen2-scroll-index', { detail: index })
+            );
+          else $anchorScroll(anchor);
+        });
       }
     };
 
@@ -2669,6 +2682,7 @@ angular.module('listenone').controller('PlayController', [
     };
 
     $scope.closeLyricPicker = () => {
+      if (activeLyricSearch) activeLyricSearch.cancel();
       const shouldRestoreFocus = $scope.lyricPickerOpen;
       lyricSearchToken += 1;
       $scope.lyricPickerOpen = false;
@@ -2727,72 +2741,64 @@ angular.module('listenone').controller('PlayController', [
       }
     };
 
-    $scope.searchLyricCandidates = () => {
+    $scope.$on('$destroy', () => {
+      lyricSearchToken += 1;
+      if (activeLyricSearch) activeLyricSearch.cancel();
+    });
+
+    $scope.searchLyricCandidates = (force = false) => {
       const track = $scope.currentPlaying;
       const query = String($scope.lyricSearch.query || '').trim();
-      if (!isBilibiliTrack(track) || !query) {
-        $scope.lyricSearchResults = [];
-        $scope.lyricSearchState = 'empty';
-        $scope.lyricSearchPending = false;
+      if (!track || !query) return;
+      const key = `${track.id}:${query}`;
+      if (
+        !force &&
+        activeLyricSearch &&
+        activeLyricSearchKey === key &&
+        $scope.lyricSearchPending
+      )
         return;
-      }
+      if (activeLyricSearch) activeLyricSearch.cancel();
+      activeLyricSearchKey = key;
       lyricSearchToken += 1;
       const searchToken = lyricSearchToken;
-      const trackId = track.id;
-      const candidatesById = new Map();
-      let completedRequests = 0;
-      let failedRequests = 0;
       $scope.lyricSearchResults = [];
+      $scope.lyricSearchSources = [];
       $scope.lyricSearchState = 'loading';
       $scope.lyricSearchPending = true;
-
-      const requests = [
-        () => MediaService.searchLyricCandidates(track, query),
-        () => MediaService.searchSupplementalLyricCandidates(track, query),
-      ];
-      const settleRequest = (results, failed) => {
-        completedRequests += 1;
-        if (failed) {
-          failedRequests += 1;
-        }
-        if (Array.isArray(results)) {
-          results.forEach((candidate) => {
-            if (candidate && candidate.id) {
-              candidatesById.set(
-                candidate.id,
-                decorateLyricCandidate(candidate)
-              );
-            }
-          });
-        }
-        $scope.$evalAsync(() => {
-          if (
-            searchToken !== lyricSearchToken ||
-            !$scope.currentPlaying ||
-            $scope.currentPlaying.id !== trackId
-          ) {
-            return;
-          }
-          $scope.lyricSearchResults = Array.from(candidatesById.values());
-          $scope.lyricSearchResults.sort(compareLyricCandidates);
-          $scope.lyricSearchPending = completedRequests < requests.length;
-          if ($scope.lyricSearchResults.length > 0) {
-            $scope.lyricSearchState = 'results';
-          } else if ($scope.lyricSearchPending) {
-            $scope.lyricSearchState = 'loading';
-          } else {
-            $scope.lyricSearchState = failedRequests > 0 ? 'error' : 'empty';
-          }
-        });
-      };
-
-      requests.forEach((loadCandidates) => {
-        Promise.resolve()
-          .then(loadCandidates)
-          .then((results) => settleRequest(results, false))
-          .catch(() => settleRequest([], true));
+      $scope.lyricSearchPartial = false;
+      activeLyricSearch = MediaService.searchLyrics(track, query, {
+        force,
+        onUpdate: (result) =>
+          $scope.$evalAsync(() => {
+            if (
+              searchToken !== lyricSearchToken ||
+              !$scope.currentPlaying ||
+              $scope.currentPlaying.id !== track.id ||
+              !$scope.lyricPickerOpen
+            )
+              return;
+            $scope.lyricSearchResults = result.candidates
+              .map(decorateLyricCandidate)
+              .sort(compareLyricCandidates);
+            $scope.lyricSearchSources = result.sources;
+            $scope.lyricSearchPending = result.pending;
+            const failed = result.sources.filter(
+              (source) =>
+                !['loading', 'success', 'empty'].includes(source.status)
+            ).length;
+            $scope.lyricSearchPartial =
+              failed > 0 && failed < result.sources.length;
+            if (result.candidates.length) $scope.lyricSearchState = 'results';
+            else if (result.pending) $scope.lyricSearchState = 'loading';
+            else $scope.lyricSearchState = failed ? 'error' : 'empty';
+          }),
       });
     };
+    $scope.lyricSourceStatus = (source) =>
+      i18next.t(
+        `_LYRIC_SOURCE_${source.status.toUpperCase().replace('-', '_')}`
+      );
 
     $scope.chooseLyricCandidate = (candidate) => {
       const track = $scope.currentPlaying;
@@ -3024,12 +3030,13 @@ angular.module('listenone').controller('PlayController', [
                 '.playsong-detail .detail-songinfo .lyric'
               );
 
-              if (lineElement && lyricElement) {
-                let windowHeight = lyricElement.offsetHeight;
-                if (useModernTheme()) {
-                  windowHeight =
-                    document.querySelector('body').offsetHeight - 100;
-                }
+              if (
+                lineElement &&
+                lyricElement &&
+                lyricElement.offsetHeight > 0 &&
+                !document.hidden
+              ) {
+                const windowHeight = lyricElement.offsetHeight;
 
                 const adjustOffset = 30;
                 const offset =
@@ -3137,6 +3144,8 @@ angular.module('listenone').controller('PlayController', [
             $scope.lyricTranslationSourceSnapshot = null;
             $scope.lyricPickerOpen = false;
             $scope.lyricPickerModal = false;
+            if (activeLyricSearch) activeLyricSearch.cancel();
+            lyricSearchToken += 1;
             $scope.lyricPickerTrackId = '';
             $scope.lyricSearch.query = '';
             $scope.lyricSearchResults = [];

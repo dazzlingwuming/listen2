@@ -1,3 +1,4 @@
+/* global Listen2LyricHttp */
 let wbi_key = null;
 const bilibiliLyricCache = new Map();
 const bilibiliLyricSearchCache = new Map();
@@ -7,7 +8,7 @@ const bilibiliTrackDurationCache = new Map();
 const BILIBILI_LYRIC_REQUEST_TIMEOUT = 8000;
 const QQ_LYRIC_REQUEST_TIMEOUT = 8000;
 const NETEASE_LYRIC_REQUEST_TIMEOUT = 8000;
-const LRCLIB_LYRIC_REQUEST_TIMEOUT = 15000;
+const LRCLIB_LYRIC_REQUEST_TIMEOUT = 8000;
 const LRCLIB_SEARCH_CACHE_TTL = 10 * 60 * 1000;
 const QQ_LYRIC_SEARCH_CACHE_TTL = 10 * 60 * 1000;
 const NETEASE_LYRIC_SEARCH_CACHE_TTL = 10 * 60 * 1000;
@@ -825,9 +826,12 @@ class bilibili {
       .catch(() => ({ lyric: '' }));
   }
 
-  static fetch_qq_lyric_search(query) {
+  static fetch_qq_lyric_search(query, options = {}) {
     const cacheKey = this.normalize_match_text(query);
-    const cached = bilibiliQQLyricSearchCache.get(cacheKey);
+    const cached =
+      !options.signal &&
+      !options.force &&
+      bilibiliQQLyricSearchCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
       return cached.request;
     }
@@ -835,9 +839,12 @@ class bilibili {
       'https://c.y.qq.com/soso/fcgi-bin/client_search_cp' +
       '?p=1&n=20&format=json' +
       `&w=${encodeURIComponent(query)}`;
-    const request = axios
+    const request = (
+      typeof Listen2LyricHttp !== 'undefined' ? Listen2LyricHttp : axios
+    )
       .get(targetUrl, {
         timeout: QQ_LYRIC_REQUEST_TIMEOUT,
+        signal: options.signal,
       })
       .then((response) => {
         const payload = this.parse_json_payload(response.data);
@@ -855,10 +862,11 @@ class bilibili {
         bilibiliQQLyricSearchCache.delete(cacheKey);
         throw error;
       });
-    bilibiliQQLyricSearchCache.set(cacheKey, {
-      expiresAt: Date.now() + QQ_LYRIC_SEARCH_CACHE_TTL,
-      request,
-    });
+    if (!options.signal)
+      bilibiliQQLyricSearchCache.set(cacheKey, {
+        expiresAt: Date.now() + QQ_LYRIC_SEARCH_CACHE_TTL,
+        request,
+      });
     while (bilibiliQQLyricSearchCache.size > 40) {
       bilibiliQQLyricSearchCache.delete(
         bilibiliQQLyricSearchCache.keys().next().value
@@ -867,19 +875,20 @@ class bilibili {
     return request;
   }
 
-  static fetch_qq_lyric(songMid) {
+  static fetch_qq_lyric(songMid, options = {}) {
     const targetUrl =
       'https://i.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?' +
       `songmid=${encodeURIComponent(songMid)}` +
       '&g_tk=5381&format=json&inCharset=utf8&outCharset=utf-8&nobase64=1';
-    return axios
+    return (typeof Listen2LyricHttp !== 'undefined' ? Listen2LyricHttp : axios)
       .get(targetUrl, {
         timeout: QQ_LYRIC_REQUEST_TIMEOUT,
+        signal: options.signal,
       })
       .then((response) => {
         const payload = this.parse_json_payload(response.data);
         if (!payload || Number(payload.retcode) !== 0) {
-          return null;
+          throw new Error('Invalid QQ lyric response');
         }
         const lyric = this.normalize_lrclib_lyric(payload.lyric);
         if (!lyric) {
@@ -918,14 +927,14 @@ class bilibili {
       return Promise.resolve([]);
     }
 
-    return this.fetch_qq_lyric_search(searchText).then((items) => {
+    return this.fetch_qq_lyric_search(searchText, hints).then((items) => {
       const scoredCandidates = items
         .filter((item) => item && (item.mid || item.songmid))
         .map((item, index) => ({
           item,
           scored: this.score_qq_candidate(item, scoringHints, index),
         }))
-        .filter((candidate) => candidate.scored.score >= 0.3)
+        .filter((candidate) => hints.manual || candidate.scored.score >= 0.3)
         .sort((left, right) => right.scored.score - left.scored.score)
         .slice(0, 6);
       if (scoredCandidates.length === 0) {
@@ -934,7 +943,8 @@ class bilibili {
       return Promise.allSettled(
         scoredCandidates.map((candidate) =>
           this.fetch_qq_lyric(
-            candidate.item.mid || candidate.item.songmid
+            candidate.item.mid || candidate.item.songmid,
+            hints
           ).then((lyricResult) => {
             if (!lyricResult) {
               return null;
@@ -959,9 +969,17 @@ class bilibili {
           (result) => result.status === 'fulfilled'
         );
         if (fulfilled.length === 0) {
-          throw new Error('QQ lyric requests failed');
+          throw results.find((result) => result.status === 'rejected').reason;
         }
-        return fulfilled.map((result) => result.value).filter(Boolean);
+        const candidates = fulfilled
+          .map((result) => result.value)
+          .filter(Boolean);
+        if (
+          !candidates.length &&
+          results.some((result) => result.status === 'rejected')
+        )
+          throw results.find((result) => result.status === 'rejected').reason;
+        return candidates;
       });
     });
   }
@@ -1003,9 +1021,12 @@ class bilibili {
     return album.name || '';
   }
 
-  static fetch_netease_lyric_search(query) {
+  static fetch_netease_lyric_search(query, options = {}) {
     const cacheKey = this.normalize_match_text(query);
-    const cached = bilibiliNeteaseLyricSearchCache.get(cacheKey);
+    const cached =
+      !options.signal &&
+      !options.force &&
+      bilibiliNeteaseLyricSearchCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
       return cached.request;
     }
@@ -1013,13 +1034,23 @@ class bilibili {
       'https://music.163.com/api/search/get/web' +
       `?s=${encodeURIComponent(query)}` +
       '&type=1&offset=0&limit=20';
-    const request = axios
+    const request = (
+      typeof Listen2LyricHttp !== 'undefined' ? Listen2LyricHttp : axios
+    )
       .get(targetUrl, {
         timeout: NETEASE_LYRIC_REQUEST_TIMEOUT,
+        signal: options.signal,
       })
       .then((response) => {
         const payload = this.parse_json_payload(response.data);
         const items = payload && payload.result && payload.result.songs;
+        if (
+          payload &&
+          Number(payload.code) === 200 &&
+          payload.result &&
+          Number(payload.result.songCount) === 0
+        )
+          return [];
         if (!Array.isArray(items)) {
           throw new Error('NetEase lyric search returned an invalid response');
         }
@@ -1029,10 +1060,11 @@ class bilibili {
         bilibiliNeteaseLyricSearchCache.delete(cacheKey);
         throw error;
       });
-    bilibiliNeteaseLyricSearchCache.set(cacheKey, {
-      expiresAt: Date.now() + NETEASE_LYRIC_SEARCH_CACHE_TTL,
-      request,
-    });
+    if (!options.signal)
+      bilibiliNeteaseLyricSearchCache.set(cacheKey, {
+        expiresAt: Date.now() + NETEASE_LYRIC_SEARCH_CACHE_TTL,
+        request,
+      });
     while (bilibiliNeteaseLyricSearchCache.size > 40) {
       bilibiliNeteaseLyricSearchCache.delete(
         bilibiliNeteaseLyricSearchCache.keys().next().value
@@ -1041,17 +1073,23 @@ class bilibili {
     return request;
   }
 
-  static fetch_netease_lyric(songId) {
+  static fetch_netease_lyric(songId, options = {}) {
     const targetUrl =
       'https://music.163.com/api/song/lyric' +
       `?id=${encodeURIComponent(songId)}` +
       '&lv=-1&kv=-1&tv=-1';
-    return axios
+    return (typeof Listen2LyricHttp !== 'undefined' ? Listen2LyricHttp : axios)
       .get(targetUrl, {
         timeout: NETEASE_LYRIC_REQUEST_TIMEOUT,
+        signal: options.signal,
       })
       .then((response) => {
         const payload = this.parse_json_payload(response.data);
+        if (
+          !payload ||
+          (payload.code !== undefined && Number(payload.code) !== 200)
+        )
+          throw new Error('Invalid NetEase lyric response');
         const lyric = this.normalize_lrclib_lyric(
           payload && payload.lrc && payload.lrc.lyric
         );
@@ -1091,14 +1129,14 @@ class bilibili {
       return Promise.resolve([]);
     }
 
-    return this.fetch_netease_lyric_search(searchText).then((items) => {
+    return this.fetch_netease_lyric_search(searchText, hints).then((items) => {
       const scoredCandidates = items
         .filter((item) => item && item.id)
         .map((item, index) => ({
           item,
           scored: this.score_netease_candidate(item, scoringHints, index),
         }))
-        .filter((candidate) => candidate.scored.score >= 0.3)
+        .filter((candidate) => hints.manual || candidate.scored.score >= 0.3)
         .sort((left, right) => right.scored.score - left.scored.score)
         .slice(0, 6);
       if (scoredCandidates.length === 0) {
@@ -1106,32 +1144,42 @@ class bilibili {
       }
       return Promise.allSettled(
         scoredCandidates.map((candidate) =>
-          this.fetch_netease_lyric(candidate.item.id).then((lyricResult) => {
-            if (!lyricResult) {
-              return null;
+          this.fetch_netease_lyric(candidate.item.id, hints).then(
+            (lyricResult) => {
+              if (!lyricResult) {
+                return null;
+              }
+              const { item, scored } = candidate;
+              return {
+                id: `netease_${item.id}`,
+                provider: '网易云',
+                title: item.name || '',
+                artist: this.get_netease_artist(item),
+                album: this.get_netease_album(item),
+                duration: scored.candidateDuration,
+                lyric: lyricResult.lyric,
+                tlyric: lyricResult.tlyric,
+                matchScore: scored.score,
+              };
             }
-            const { item, scored } = candidate;
-            return {
-              id: `netease_${item.id}`,
-              provider: '网易云',
-              title: item.name || '',
-              artist: this.get_netease_artist(item),
-              album: this.get_netease_album(item),
-              duration: scored.candidateDuration,
-              lyric: lyricResult.lyric,
-              tlyric: lyricResult.tlyric,
-              matchScore: scored.score,
-            };
-          })
+          )
         )
       ).then((results) => {
         const fulfilled = results.filter(
           (result) => result.status === 'fulfilled'
         );
         if (fulfilled.length === 0) {
-          throw new Error('NetEase lyric requests failed');
+          throw results.find((result) => result.status === 'rejected').reason;
         }
-        return fulfilled.map((result) => result.value).filter(Boolean);
+        const candidates = fulfilled
+          .map((result) => result.value)
+          .filter(Boolean);
+        if (
+          !candidates.length &&
+          results.some((result) => result.status === 'rejected')
+        )
+          throw results.find((result) => result.status === 'rejected').reason;
+        return candidates;
       });
     });
   }
@@ -1283,25 +1331,32 @@ class bilibili {
       .join('\n');
   }
 
-  static fetch_lrclib_search(query) {
+  static fetch_lrclib_search(query, options = {}) {
     const cacheKey = this.normalize_match_text(query);
-    const cached = bilibiliLyricSearchCache.get(cacheKey);
+    const cached =
+      !options.signal &&
+      !options.force &&
+      bilibiliLyricSearchCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
       return cached.request;
     }
     const targetUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(
       query
     )}`;
-    const request = axios
+    const request = (
+      typeof Listen2LyricHttp !== 'undefined' ? Listen2LyricHttp : axios
+    )
       .get(targetUrl, {
         timeout: LRCLIB_LYRIC_REQUEST_TIMEOUT,
+        signal: options.signal,
         headers: {
           'Lrclib-Client': LRCLIB_CLIENT_ID,
         },
       })
       .then((response) => {
         const payload = this.parse_json_payload(response.data);
-        const items = Array.isArray(payload) ? payload : [];
+        if (!Array.isArray(payload)) throw new Error('Invalid LRCLIB response');
+        const items = payload;
         const expiresAt = Date.now() + LRCLIB_SEARCH_CACHE_TTL;
         const resolvedRequest = Promise.resolve(items);
         items.slice(0, 12).forEach((item) => {
@@ -1327,10 +1382,11 @@ class bilibili {
         bilibiliLyricSearchCache.delete(cacheKey);
         throw error;
       });
-    bilibiliLyricSearchCache.set(cacheKey, {
-      expiresAt: Date.now() + LRCLIB_SEARCH_CACHE_TTL,
-      request,
-    });
+    if (!options.signal)
+      bilibiliLyricSearchCache.set(cacheKey, {
+        expiresAt: Date.now() + LRCLIB_SEARCH_CACHE_TTL,
+        request,
+      });
     return request;
   }
 
@@ -1375,7 +1431,7 @@ class bilibili {
       return Promise.resolve([]);
     }
 
-    return this.fetch_lrclib_search(searchText).then((items) => {
+    return this.fetch_lrclib_search(searchText, hints).then((items) => {
       const seen = new Set();
       return items
         .filter((item) => item && item.syncedLyrics && !item.instrumental)
@@ -1426,18 +1482,19 @@ class bilibili {
       '&show_copyright_off=1&pn=0&rn=20' +
       `&all=${encodeURIComponent(searchText)}`;
 
-    return this.fetch_kuwo_search(targetUrl).then((response) => {
+    return this.fetch_kuwo_search(targetUrl, hints).then((response) => {
       if (!response) {
         throw new Error('Kuwo lyric search unavailable');
       }
       const payload = response && this.parse_json_payload(response.data);
-      const items =
-        payload && Array.isArray(payload.abslist) ? payload.abslist : [];
+      if (!payload || !Array.isArray(payload.abslist))
+        throw new Error('Invalid Kuwo response');
+      const items = payload.abslist;
       const candidates = items
         .map((item, index) =>
           this.score_kuwo_candidate(item, scoringHints, index)
         )
-        .filter((candidate) => candidate.score >= 0.35)
+        .filter((candidate) => hints.manual || candidate.score >= 0.35)
         .sort((left, right) => right.score - left.score)
         .slice(0, 2);
 
@@ -1455,9 +1512,12 @@ class bilibili {
             const lyricUrl = `https://m.kuwo.cn/newh5/singles/songinfoandlrc?musicId=${encodeURIComponent(
               musicId
             )}`;
-            return axios
+            return (
+              typeof Listen2LyricHttp !== 'undefined' ? Listen2LyricHttp : axios
+            )
               .get(lyricUrl, {
                 timeout: BILIBILI_LYRIC_REQUEST_TIMEOUT,
+                signal: hints.signal,
               })
               .then((lyricResponse) => {
                 const lyricPayload = this.parse_json_payload(
@@ -1484,7 +1544,10 @@ class bilibili {
                   },
                 ];
               })
-              .catch(() => results);
+              .catch((error) => {
+                if (hints.manual && !results.length) throw error;
+                return results;
+              });
           }),
         Promise.resolve([])
       );
@@ -1535,28 +1598,31 @@ class bilibili {
       .catch(() => ({ lyric: '' }));
   }
 
-  static fetch_kuwo_search(targetUrl) {
-    return axios
-      .get(targetUrl, { timeout: BILIBILI_LYRIC_REQUEST_TIMEOUT })
-      .catch(
-        () =>
-          new Promise((resolve) => {
-            let settled = false;
-            const timeout = setTimeout(() => {
-              if (!settled) {
-                settled = true;
-                resolve(undefined);
-              }
-            }, 4500);
-            kuwo.kw_cookie_get(targetUrl, (response) => {
-              if (!settled) {
-                settled = true;
-                clearTimeout(timeout);
-                resolve(response);
-              }
-            });
-          })
-      );
+  static fetch_kuwo_search(targetUrl, options = {}) {
+    return (typeof Listen2LyricHttp !== 'undefined' ? Listen2LyricHttp : axios)
+      .get(targetUrl, {
+        timeout: BILIBILI_LYRIC_REQUEST_TIMEOUT,
+        signal: options.signal,
+      })
+      .catch((error) => {
+        if (options.manual || options.signal) throw error;
+        return new Promise((resolve) => {
+          let settled = false;
+          const timeout = setTimeout(() => {
+            if (!settled) {
+              settled = true;
+              resolve(undefined);
+            }
+          }, 4500);
+          kuwo.kw_cookie_get(targetUrl, (response) => {
+            if (!settled) {
+              settled = true;
+              clearTimeout(timeout);
+              resolve(response);
+            }
+          });
+        });
+      });
   }
 
   static find_kuwo_lyric(hints) {

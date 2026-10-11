@@ -1,0 +1,559 @@
+/* Theme palettes inherit the existing light/dark components. */
+.modern-body.theme-sakura {
+  --ui-bg: #fff8f5;
+  --ui-surface: #fffdfb;
+  --ui-surface-raised: #ffffff;
+  --ui-surface-soft: #f7e9e7;
+  --ui-surface-hover: #f2dfdf;
+  --ui-text: #432e38;
+  --ui-muted: #785b68;
+  --ui-subtle: #856976;
+  --ui-control-muted: #785b68;
+  --ui-placeholder: #785b68;
+  --ui-accent: #ad3b65;
+  --ui-accent-rgb: 173, 59, 101;
+  --ui-accent-soft: #f6e2e8;
+  --ui-mint: #ad3b65;
+  --ui-border: #ead7d9;
+  --ui-border-strong: #d9b7c3;
+  --nav-background-color: #fffdfb;
+  --footer-background-color: #fffdfb;
+}
+.modern-body.theme-mint {
+  --ui-bg: #f3faf6;
+  --ui-surface: #fcfffd;
+  --ui-surface-raised: #ffffff;
+  --ui-surface-soft: #e3f0e8;
+  --ui-surface-hover: #d8eadd;
+  --ui-text: #203f35;
+  --ui-muted: #516e60;
+  --ui-subtle: #587468;
+  --ui-control-muted: #516e60;
+  --ui-placeholder: #516e60;
+  --ui-accent: #287d68;
+  --ui-accent-rgb: 40, 125, 104;
+  --ui-accent-soft: #dff0e7;
+  --ui-mint: #287d68;
+  --ui-border: #d5e5db;
+  --ui-border-strong: #b8d2c1;
+  --nav-background-color: #fcfffd;
+  --footer-background-color: #fcfffd;
+}
+.modern-body.theme-night {
+  --ui-bg: #151a2b;
+  --ui-surface: #1d2439;
+  --ui-surface-raised: #242c43;
+  --ui-surface-soft: #283149;
+  --ui-surface-hover: #313b57;
+  --ui-text: #f3f0ff;
+  --ui-muted: #b6b4d0;
+  --ui-subtle: #b0adc9;
+  --ui-control-muted: #b6b4d0;
+  --ui-placeholder: #b6b4d0;
+  --ui-accent: #b5a1f2;
+  --ui-accent-rgb: 181, 161, 242;
+  --ui-accent-soft: #34304f;
+  --ui-mint: #b5a1f2;
+  --ui-border: #343b53;
+  --ui-border-strong: #525576;
+  --nav-background-color: #1d2439;
+  --footer-background-color: #1d2439;
+}
+.modern-body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei',
+    sans-serif;
+  font-size: 14px;
+}
+.modern-body :is(button, a, input, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 3px;
+}
+.modern-body .theme-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 14px;
+  width: 100%;
+}
+.modern-body .theme-choice {
+  position: relative;
+  padding: 0 0 12px;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--ui-surface-soft);
+  color: var(--ui-text);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 140ms ease, border-color 140ms ease;
+}
+.modern-body .theme-choice:hover {
+  transform: translateY(-2px);
+}
+.modern-body .theme-choice.active {
+  border-color: var(--ui-accent);
+}
+.modern-body .theme-choice > span {
+  display: inline-block;
+  margin: 12px 12px 0;
+  font-weight: 600;
+}
+.modern-body .theme-choice .theme-selected {
+  float: right;
+  color: var(--ui-accent);
+}
+.modern-body .theme-preview {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 8 / 5;
+  object-fit: cover;
+  display: block;
+}
+.modern-body .appearance-toggle {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  margin: 22px 0 8px;
+}
+.modern-body input[type='checkbox'] {
+  accent-color: var(--ui-accent);
+}
+.modern-body .appearance-note {
+  color: var(--ui-muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.modern-body .performance-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 22px 0 10px;
+}
+.modern-body .performance-options strong {
+  margin-right: 12px;
+}
+.modern-body .performance-options button {
+  padding: 8px 16px;
+  background: var(--ui-surface-soft);
+  color: var(--ui-text);
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.modern-body .performance-options button.active {
+  background: var(--ui-accent-soft);
+  border-color: var(--ui-accent);
+  color: var(--ui-accent);
+}
+
+/* Artwork is a separate layer. Text always rests on an opaque surface. */
+.modern-body.theme-anime .editorial-hero {
+  position: relative;
+  min-height: 280px;
+  border-radius: 20px;
+  overflow: hidden;
+  background: var(--ui-surface-soft);
+  padding: 32px;
+  isolation: isolate;
+}
+.modern-body.theme-anime .editorial-hero::after {
+  display: none;
+}
+.modern-body.theme-anime .editorial-hero-art {
+  display: none;
+}
+.theme-hero-scene {
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 55%;
+  height: 100%;
+  object-fit: cover;
+  z-index: -2;
+}
+.theme-hero-character {
+  position: absolute;
+  right: 4%;
+  bottom: -24px;
+  height: 112%;
+  width: 38%;
+  object-fit: contain;
+  object-position: bottom;
+  z-index: -1;
+}
+.modern-body.theme-anime .editorial-hero-copy {
+  width: 51%;
+  box-sizing: border-box;
+  padding: 12px 24px 12px 0;
+  background: var(--ui-surface-soft);
+  border-radius: 0 45% 45% 0;
+}
+.modern-body.theme-anime .editorial-hero h1 {
+  font-size: clamp(24px, 2.5vw, 36px);
+  line-height: 1.45;
+  max-width: none;
+  color: var(--ui-text);
+  letter-spacing: -0.03em;
+}
+.modern-body.theme-anime .editorial-intro {
+  color: var(--ui-muted);
+}
+.modern-body.theme-anime .editorial-kicker {
+  color: var(--ui-accent);
+  letter-spacing: 0.14em;
+  font-size: 10px;
+}
+.modern-body.theme-anime .editorial-facts {
+  color: var(--ui-muted);
+}
+.modern-body.theme-mint .editorial-hero {
+  min-height: 225px;
+  border-radius: 8px 32px 8px 32px;
+}
+.modern-body.theme-night .editorial-hero {
+  min-height: 290px;
+}
+.modern-body.theme-anime .now-playing-ambient,
+.modern-body.theme-anime .now-playing-vignette,
+.modern-body.theme-anime .now-playing-atmosphere {
+  display: none;
+}
+.modern-body.theme-anime .now-playing-stage {
+  background: var(--ui-bg);
+}
+.modern-body.theme-anime .now-playing-layout {
+  min-height: 0;
+  grid-template-columns: minmax(300px, 0.9fr) minmax(320px, 1.1fr);
+  column-gap: 6%;
+  padding: 64px 6% calc(var(--now-playing-shelf-height) + 22px);
+}
+.modern-body.theme-anime .now-playing-layout .now-playing-left {
+  display: block;
+  max-width: 550px;
+  min-width: 0;
+}
+.modern-body.theme-anime .theme-stage-art {
+  width: 100%;
+  position: relative;
+  height: clamp(170px, 34vh, 340px);
+  overflow: hidden;
+  border-radius: 20px 20px 0 0;
+  background: var(--ui-surface-soft);
+}
+.modern-body.theme-anime .now-playing-layout .detail-head .theme-stage-scene {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.modern-body.theme-anime
+  .now-playing-layout
+  .detail-head
+  .theme-stage-character {
+  position: absolute;
+  right: 0;
+  top: -2%;
+  bottom: auto;
+  height: 125%;
+  width: 100%;
+  object-fit: contain;
+  object-position: center top;
+}
+.theme-stage-caption {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  color: var(--ui-text);
+  background: var(--ui-surface);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+}
+.modern-body.theme-anime .now-playing-card-core {
+  grid-template-columns: 96px minmax(0, 1fr);
+  padding: 22px;
+  gap: 22px;
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
+  border-radius: 0 0 20px 20px;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+.modern-body.theme-anime .now-playing-card-core::before,
+.modern-body.theme-anime .detail-head-cover::before,
+.modern-body.theme-anime .detail-head-cover::after,
+.modern-body.theme-anime .detail-head-cover .covershadow,
+.modern-body.theme-anime .now-playing-orbit-spectrum {
+  display: none;
+}
+.modern-body.theme-anime .now-playing-layout .detail-head-cover,
+.modern-body.theme-anime .now-playing-layout .detail-head-cover img {
+  width: 96px;
+  height: 96px;
+  border-radius: 12px;
+  box-shadow: none;
+  transform: none;
+}
+.modern-body.theme-anime
+  .modern-player-state.is-playing
+  .now-playing-layout
+  .title
+  h2,
+.modern-body.theme-anime .now-playing-layout .title h2 {
+  font-size: clamp(20px, 2vw, 28px);
+  color: var(--ui-text);
+  background: none;
+  -webkit-text-fill-color: var(--ui-text);
+  line-height: 1.3;
+}
+.modern-body.theme-anime .now-playing-layout .info,
+.modern-body.theme-anime .now-playing-eyebrow,
+.modern-body.theme-anime .now-playing-spectrum-caption {
+  color: var(--ui-muted);
+}
+.modern-body.theme-anime .now-playing-facts {
+  margin-top: 12px;
+}
+.modern-body.theme-anime .now-playing-fact {
+  color: var(--ui-muted);
+  background: var(--ui-surface-soft);
+  border-color: var(--ui-border);
+}
+.modern-body.theme-anime .now-playing-spectrum-shell {
+  margin-top: 16px;
+}
+.modern-body.theme-anime .now-playing-spectrum {
+  height: 48px;
+}
+.modern-body.theme-anime .now-playing-layout .now-playing-lyrics::before,
+.modern-body.theme-anime .now-playing-layout .now-playing-lyrics::after {
+  display: none;
+}
+.modern-body.theme-anime
+  .modern-player-state
+  .songdetail-wrapper
+  .now-playing-layout
+  .now-playing-lyrics
+  .lyric
+  p {
+  color: var(--ui-muted) !important;
+  -webkit-text-fill-color: var(--ui-muted) !important;
+  filter: none !important;
+  opacity: 1 !important;
+  font-size: 19px;
+  transform: none;
+}
+.modern-body.theme-anime
+  .modern-player-state
+  .songdetail-wrapper
+  .now-playing-layout
+  .now-playing-lyrics
+  .lyric
+  p.highlight {
+  color: var(--ui-accent) !important;
+  -webkit-text-fill-color: var(--ui-accent) !important;
+  background: none !important;
+  text-shadow: none;
+  font-size: 25px;
+  transform: none;
+}
+.modern-body.theme-night .theme-stage-art {
+  height: clamp(200px, 40vh, 380px);
+  border-radius: 20px;
+}
+.modern-body.theme-night .now-playing-card-core {
+  background: transparent;
+  border: none;
+  padding-left: 0;
+  padding-right: 0;
+}
+.modern-body.theme-mint .now-playing-layout {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(120px, 1fr);
+  row-gap: 20px;
+  padding-top: 58px;
+}
+.modern-body.theme-mint .now-playing-layout .now-playing-left {
+  display: grid;
+  max-width: none;
+  grid-template-columns: 0.9fr 1.1fr;
+  align-items: stretch;
+}
+.modern-body.theme-mint .theme-stage-art {
+  height: 190px;
+  border-radius: 20px 0 0 20px;
+}
+.modern-body.theme-mint .now-playing-card-core {
+  border-radius: 0 20px 20px 0;
+}
+.modern-body.theme-mint .now-playing-spectrum-shell {
+  display: none;
+}
+.modern-body.theme-mint .now-playing-layout .now-playing-lyrics {
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+}
+.modern-body.theme-mint .now-playing-layout .lyric {
+  text-align: center;
+  width: 100% !important;
+  max-width: none !important;
+}
+.modern-body.theme-mint .now-playing-layout .lyric p {
+  max-width: none !important;
+  width: 100% !important;
+  box-sizing: border-box;
+}
+.modern-body.theme-anime[data-art='off'] .editorial-hero {
+  min-height: 170px;
+}
+.modern-body.theme-anime[data-art='off'] .editorial-hero-copy {
+  width: 100%;
+}
+.modern-body.theme-anime[data-art='off'] .now-playing-card-core {
+  border-radius: 20px;
+}
+.modern-body.theme-mint[data-art='off'] .now-playing-left {
+  display: block;
+}
+.modern-body.theme-anime .lyric-picker,
+.modern-body.theme-anime .lyric-translation-confirm {
+  background: var(--ui-surface-raised);
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  backdrop-filter: none;
+}
+.modern-body .lyric-source-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 16px;
+  font-size: 11px;
+  color: var(--ui-muted);
+  border-bottom: 1px solid var(--ui-border);
+}
+.modern-body .lyric-source-status > span {
+  padding: 4px 7px;
+  background: var(--ui-surface-soft);
+  border-radius: 5px;
+}
+.modern-body .lyric-source-status [data-state='success'] {
+  color: var(--ui-accent);
+}
+.modern-body .lyric-partial-notice {
+  margin: 10px 16px;
+  color: var(--ui-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.modern-body .lyric-retry {
+  padding: 8px 14px;
+  margin: 8px 16px;
+  background: var(--ui-accent-soft);
+  color: var(--ui-accent);
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.modern-body.theme-anime .lyric-picker :is(input, button) {
+  color: var(--ui-text);
+}
+.modern-body.theme-anime
+  .lyric-picker
+  :is(.lyric-candidate-artist, .lyric-candidate-album, .lyric-candidate-meta, .lyric-picker-status) {
+  color: var(--ui-muted);
+}
+.modern-body.theme-anime .lyric-picker-search {
+  background: var(--ui-surface-soft);
+}
+.modern-body.theme-anime .lyric-picker-search input::placeholder {
+  color: var(--ui-placeholder);
+}
+.modern-body.theme-anime .lyric-picker-search > svg {
+  stroke: var(--ui-muted);
+}
+.modern-body.theme-anime .lyric-candidate:hover {
+  background: var(--ui-surface-hover);
+}
+.modern-body.theme-anime .lyric-search-trigger,
+.modern-body.theme-anime .lyric-sync-controls {
+  background: var(--ui-surface);
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+  backdrop-filter: none;
+}
+@media (max-width: 1050px) {
+  .modern-body.theme-anime .now-playing-layout {
+    padding-left: 30px;
+    padding-right: 30px;
+    column-gap: 28px;
+    grid-template-columns: minmax(230px, 0.85fr) minmax(270px, 1.15fr);
+  }
+  .modern-body.theme-anime .now-playing-card-core {
+    grid-template-columns: 64px minmax(0, 1fr);
+    padding: 16px;
+    gap: 14px;
+  }
+  .modern-body.theme-anime .now-playing-layout .detail-head-cover,
+  .modern-body.theme-anime .now-playing-layout .detail-head-cover img {
+    width: 64px;
+    height: 64px;
+  }
+  .modern-body.theme-mint .now-playing-layout {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 760px), (max-height: 620px) {
+  .modern-body.theme-anime .theme-stage-art {
+    display: none;
+  }
+  .modern-body.theme-anime .now-playing-layout {
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(100px, 1fr);
+    gap: 14px;
+    padding: 52px 24px calc(var(--now-playing-shelf-height) + 14px);
+  }
+  .modern-body.theme-anime .now-playing-layout .now-playing-left {
+    display: block;
+    max-width: none;
+  }
+  .modern-body.theme-anime .now-playing-card-core {
+    border-radius: 12px;
+  }
+  .modern-body.theme-anime .now-playing-spectrum-shell {
+    display: none;
+  }
+  .modern-body.theme-anime .now-playing-layout .now-playing-lyrics {
+    min-height: 0;
+    height: 100%;
+  }
+  .modern-body.theme-anime .editorial-hero {
+    min-height: 190px;
+    padding: 20px;
+  }
+  .modern-body.theme-anime .editorial-facts {
+    display: none;
+  }
+  .modern-body.theme-anime .editorial-hero-copy {
+    width: 60%;
+  }
+}
+
+.modern-body.theme-anime .now-playing-layout .now-playing-lyrics {
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
+}
+.modern-body.theme-anime .now-playing-layout .info {
+  color: var(--ui-muted);
+  opacity: 1;
+}
+.modern-body.theme-anime .footer .playstatus .b {
+  background: var(--ui-accent);
+  box-shadow: none;
+}
+.modern-body.theme-mint .lyric p.highlight::before {
+  display: none;
+}

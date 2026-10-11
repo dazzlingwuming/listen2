@@ -8,3 +8,6 @@ yarn.lock
 .env
 .env.*
 !.env.example
+
+output/
+.playwright-cli/

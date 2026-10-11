@@ -118,20 +118,37 @@ function easeInOutQuad(t, b, c, d) {
   return (-c / 2) * (t * (t - 2) - 1) + b;
 }
 
+const lyricScrollFrames = new WeakMap();
 function smoothScrollTo(element, to, duration) {
+  if (lyricScrollFrames.has(element))
+    cancelAnimationFrame(lyricScrollFrames.get(element));
+  if (
+    document.hidden ||
+    (window.Listen2Appearance && window.Listen2Appearance.budget.reduced) ||
+    duration <= 0
+  ) {
+    element.scrollTop = to;
+    lyricScrollFrames.delete(element);
+    return;
+  }
   const start = element.scrollTop;
   const change = to - start;
   const startTime = performance.now();
 
   const animateScroll = (currentTime) => {
+    if (!element.isConnected || document.hidden) {
+      lyricScrollFrames.delete(element);
+      return;
+    }
     const timeElapsed = currentTime - startTime;
     const val = easeInOutQuad(timeElapsed, start, change, duration);
     element.scrollTop = val;
     if (timeElapsed < duration) {
-      requestAnimationFrame(animateScroll);
+      lyricScrollFrames.set(element, requestAnimationFrame(animateScroll));
     } else {
       element.scrollTop = to; // Ensure it ends exactly at 'to'
+      lyricScrollFrames.delete(element);
     }
   };
-  requestAnimationFrame(animateScroll);
+  lyricScrollFrames.set(element, requestAnimationFrame(animateScroll));
 }

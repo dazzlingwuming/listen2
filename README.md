@@ -19,6 +19,12 @@ Listen2 是 [Listen1](https://github.com/listen1/listen1) 的社区增强版本�
 
 > Listen2 只整理和播放用户本来就有权访问的内容，不解锁会员、付费、DRM、地区限制或其他受限资源。
 
+## 本地开发版本：外观与 Windows 优化
+
+保留现代黑白，新增樱花来信、薄荷放学后、星夜电台三套原创插画主题；新增动态效果档位、长列表可视区域渲染，并改善手动歌词搜索与 Windows 缓存持久化。
+
+主题预览、实测结果和构建说明见 [交付记录](docs/APPEARANCE_AND_WINDOWS.md)。这些改动尚未发布为 GitHub Release。
+
 ## v2.35.1 更新
 
 - Windows 与 macOS 启动时发现新版本会显示版本号和 GitHub Release 更新内容。

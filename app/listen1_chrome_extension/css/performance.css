@@ -1,0 +1,59 @@
+/* Expensive decoration has one policy, independent of the selected theme. */
+.modern-body .songdetail-wrapper[aria-hidden='true'] {
+  visibility: hidden;
+  pointer-events: none;
+}
+html.app-hidden .modern-body *,
+html.app-hidden .modern-body *::before,
+html.app-hidden .modern-body *::after,
+.modern-body .songdetail-wrapper[aria-hidden='true'] *,
+.modern-body .songdetail-wrapper[aria-hidden='true'] *::before,
+.modern-body .songdetail-wrapper[aria-hidden='true'] *::after {
+  animation-play-state: paused !important;
+}
+
+html[data-performance='balanced'] .modern-body .now-playing-ambient,
+html[data-performance='reduced'] .modern-body .now-playing-ambient,
+html[data-performance='balanced'] .modern-body .now-playing-vignette,
+html[data-performance='reduced'] .modern-body .now-playing-vignette {
+  display: none;
+}
+html:not([data-performance='quality']) .modern-body .now-playing-atmosphere .bg,
+html:not([data-performance='quality'])
+  .modern-body
+  .detail-head-cover
+  .covershadow {
+  display: none;
+}
+html:not([data-performance='quality']) .modern-body *,
+html:not([data-performance='quality']) .modern-body *::before,
+html:not([data-performance='quality']) .modern-body *::after {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+html:not([data-performance='quality']) .modern-body .hero-record,
+html:not([data-performance='quality']) .modern-body .hero-orbit,
+html:not([data-performance='quality']) .modern-body .hero-wave b,
+html:not([data-performance='quality']) .modern-body .playbar .cur,
+html:not([data-performance='quality']) .modern-body .footerwrap::before,
+html:not([data-performance='quality']) .modern-body .detail-head-cover::before,
+html:not([data-performance='quality']) .modern-body .playstatus .b::before {
+  animation: none !important;
+  filter: none !important;
+}
+html:not([data-performance='quality']) .modern-body .now-playing-card-core,
+html:not([data-performance='quality']) .modern-body .footerwrap,
+html:not([data-performance='quality']) .modern-body .lyric-picker {
+  background: var(--ui-surface);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.08);
+}
+html[data-performance='reduced'] .modern-body *,
+html[data-performance='reduced'] .modern-body *::before,
+html[data-performance='reduced'] .modern-body *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+.modern-body img[loading='lazy'] {
+  content-visibility: auto;
+}

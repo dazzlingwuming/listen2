@@ -1244,6 +1244,8 @@
 
         let animationFrame = null;
         let resizeObserver = null;
+        let intersectionObserver = null;
+        let isVisible = true;
         let cssWidth = 0;
         let cssHeight = 0;
         let isDisposed = false;
@@ -1251,6 +1253,11 @@
         let hasTrack = false;
         let stageIsOpen = false;
         let reducedMotion = false;
+        const budget = () =>
+          $window.Listen2Appearance
+            ? $window.Listen2Appearance.budget
+            : { reduced: reducedMotion, fps: 60, dpr: 2 };
+        let lastDrawAt = -Infinity;
         let lastFrameAt = now();
         let progress = 0;
         let latestFrame = {
@@ -1283,9 +1290,9 @@
           const value = expression ? Number(scope.$eval(expression)) : 0;
           return Number.isFinite(value) ? value : 0;
         };
-        const isActiveStage = () => stageIsOpen && hasTrack;
+        const isActiveStage = () => stageIsOpen && hasTrack && isVisible;
         const shouldAnimate = () =>
-          isActiveStage() && isPlaying && !reducedMotion;
+          isActiveStage() && isPlaying && !reducedMotion && !budget().reduced;
         const maxLevel = () => Math.max(...latestFrame.bars);
 
         const resolveCurrentHowl = () => {
@@ -1543,7 +1550,7 @@
 
         const resizeCanvas = () => {
           const rect = canvas.getBoundingClientRect();
-          const dpr = Math.min($window.devicePixelRatio || 1, 2);
+          const dpr = Math.min($window.devicePixelRatio || 1, budget().dpr);
           cssWidth = Math.max(1, rect.width);
           cssHeight = Math.max(1, rect.height);
           const pixelWidth = Math.round(cssWidth * dpr);
@@ -1568,6 +1575,7 @@
         const needsAnotherFrame = () =>
           isActiveStage() &&
           !reducedMotion &&
+          !budget().reduced &&
           (isPlaying || maxLevel() > MIN_ACTIVE_LEVEL);
 
         const scheduleFrame = () => {
@@ -1589,6 +1597,13 @@
           if (isDisposed || $window.document.hidden) {
             return;
           }
+          if (!needsAnotherFrame()) return;
+          const interval = 1000 / budget().fps;
+          if (timestamp - lastDrawAt < interval - 0.5) {
+            scheduleFrame();
+            return;
+          }
+          lastDrawAt = timestamp;
           lastFrameAt = timestamp;
           progress = numericExpressionValue(attrs.audioVisualizerProgress);
           latestFrame = analysisHub.sample(
@@ -1618,6 +1633,7 @@
           if (needsAnotherFrame()) {
             scheduleFrame();
           } else {
+            stopAnimation();
             latestFrame = analysisHub.sample(
               lastFrameAt,
               resolveCurrentHowl(),
@@ -1643,6 +1659,24 @@
           reducedMotion = event.matches;
           refreshState();
         };
+        const onAppearanceChange = () => {
+          lastDrawAt = -Infinity;
+          resizeCanvas();
+          refreshState();
+        };
+        $window.addEventListener('listen2-appearance', onAppearanceChange);
+        if ($window.IntersectionObserver) {
+          intersectionObserver = new $window.IntersectionObserver((entries) => {
+            isVisible = entries.some(
+              (entry) =>
+                entry.isIntersecting &&
+                entry.intersectionRect.width > 0 &&
+                entry.intersectionRect.height > 0
+            );
+            refreshState();
+          });
+          intersectionObserver.observe(host);
+        }
 
         if ($window.ResizeObserver) {
           resizeObserver = new $window.ResizeObserver(resizeCanvas);
@@ -1684,6 +1718,8 @@
 
         scope.$on('$destroy', () => {
           isDisposed = true;
+          $window.removeEventListener('listen2-appearance', onAppearanceChange);
+          if (intersectionObserver) intersectionObserver.disconnect();
           stopAnimation();
           if (resizeObserver) {
             resizeObserver.disconnect();
@@ -1737,7 +1773,12 @@
         };
 
         const applyPointerPosition = (event) => {
-          if (motionQuery && motionQuery.matches) {
+          if (
+            (motionQuery && motionQuery.matches) ||
+            ($window.Listen2Appearance &&
+              $window.Listen2Appearance.mode !== 'quality') ||
+            host.closest('.theme-anime')
+          ) {
             return;
           }
           const rect = host.getBoundingClientRect();

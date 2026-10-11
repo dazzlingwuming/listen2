@@ -22,6 +22,9 @@
       rel="stylesheet"
     />
 
+    <link href="css/appearance.css" rel="stylesheet" />
+    <link href="css/performance.css" rel="stylesheet" />
+    <script src="js/appearance.js"></script>
     <link href="images/logo_16.png" rel="shortcut icon" />
     <link href="images/logo_16.png" rel="bookmark" />
     <script>
@@ -54,6 +57,8 @@
     <script type="text/javascript" src="js/provider/netease.js"></script>
     <script type="text/javascript" src="js/provider/kugou.js"></script>
     <script type="text/javascript" src="js/provider/kuwo.js"></script>
+    <script src="js/lyric_http.js"></script>
+    <script src="js/lyric_search.js"></script>
     <script type="text/javascript" src="js/provider/bilibili.js"></script>
     <script type="text/javascript" src="js/provider/migu.js"></script>
     <script type="text/javascript" src="js/provider/taihe.js"></script>
@@ -67,6 +72,7 @@
     <script type="text/javascript" src="js/loweb.js"></script>
     <script type="text/javascript" src="js/l1_player.js"></script>
     <script type="text/javascript" src="js/app.js"></script>
+    <script src="js/virtual_repeat.js"></script>
     <script
       type="text/javascript"
       src="js/audio_visualizer.js?v=audio-reactive-stage-7"
@@ -2937,8 +2943,9 @@
       </div>
       <div
         class="body modern-body"
-        ng-class="{ 'theme-modern-dark': theme === 'black2', 'theme-modern-light': theme === 'white2' }"
-        ng-if="theme==='white2' || theme==='black2' "
+        ng-class="themeClass"
+        ng-attr-data-art="{{showCharacterArt ? 'on' : 'off'}}"
+        ng-if="theme!=='white' &amp;&amp; theme!=='black' &amp;&amp; theme"
       >
         <div
           id="feather-container"
@@ -3947,15 +3954,31 @@
                               class="editorial-hero"
                               aria-labelledby="editorial-hero-title"
                             >
+                              <img
+                                class="theme-hero-scene"
+                                ng-if="selectedTheme.assets && showCharacterArt"
+                                ng-src="images/themes/{{selectedTheme.assets}}-scene.webp"
+                                alt=""
+                              />
+                              <img
+                                class="theme-hero-character"
+                                ng-if="selectedTheme.assets && showCharacterArt"
+                                ng-src="images/themes/{{selectedTheme.assets}}-character.webp"
+                                alt=""
+                              />
                               <div class="editorial-hero-copy">
                                 <p class="editorial-kicker">
-                                  {{_EDITORIAL_HERO_KICKER}}
+                                  {{selectedTheme.assets ? 'LISTEN2 / ' +
+                                  this[selectedTheme.label] :
+                                  _EDITORIAL_HERO_KICKER}}
                                 </p>
                                 <h1 id="editorial-hero-title">
-                                  {{_EDITORIAL_HERO_TITLE}}
+                                  {{selectedTheme.assets ? this['_HERO_' +
+                                  theme.toUpperCase()] : _EDITORIAL_HERO_TITLE}}
                                 </h1>
                                 <p class="editorial-intro">
-                                  {{_EDITORIAL_HERO_INTRO}}
+                                  {{selectedTheme.assets ? _ANIME_HERO_INTRO :
+                                  _EDITORIAL_HERO_INTRO}}
                                 </p>
                                 <div
                                   class="editorial-facts"
@@ -4374,8 +4397,8 @@
                                 </li> -->
                                   <li
                                     ng-class="{ 'isSearchType':isSearchType(0),'playing': currentPlaying.id == song.id }"
-                                    ng-if="searchType===0"
-                                    ng-repeat="song in result"
+                                    virtual-repeat="song in (searchType === 0 ? result : [])"
+                                    virtual-row-height="64"
                                     ng-mouseenter="options=true"
                                     ng-mouseleave="options=false"
                                     ng-dblclick="addAndPlay(song)"
@@ -4383,6 +4406,8 @@
                                     <img
                                       add-and-play="song"
                                       ng-src="{{ song.img_url }}?param=224y224"
+                                      loading="lazy"
+                                      decoding="async"
                                       err-src="https://y.gtimg.cn/mediastyle/global/img/playlist_300.png"
                                     />
                                     <div class="title-and-artist">
@@ -4649,25 +4674,63 @@
                               <div class="settings-title">
                                 <span>{{_THEME}}</span>
                               </div>
-                              <div class="settings-content">
-                                <div>
+                              <div class="settings-content appearance-settings">
+                                <div class="theme-gallery">
                                   <button
-                                    class="theme-button"
-                                    ng-class="{active: theme === 'white2'}"
-                                    ng-click="setTheme('white2')"
-                                    aria-pressed="{{theme === 'white2'}}"
+                                    type="button"
+                                    class="theme-choice"
+                                    ng-repeat="item in themeOptions track by item.id"
+                                    ng-class="{active: theme === item.id}"
+                                    ng-click="setTheme(item.id)"
+                                    aria-pressed="{{theme === item.id}}"
                                   >
-                                    {{_THEME_MODERN_WHITE}}
-                                  </button>
-                                  <button
-                                    class="theme-button"
-                                    ng-class="{active: theme === 'black2'}"
-                                    ng-click="setTheme('black2')"
-                                    aria-pressed="{{theme === 'black2'}}"
-                                  >
-                                    {{_THEME_MODERN_BLACK}}
+                                    <img
+                                      class="theme-preview"
+                                      ng-src="images/themes/{{item.id}}-preview.webp"
+                                      alt=""
+                                      loading="lazy"
+                                      width="240"
+                                      height="150"
+                                    />
+                                    <span>{{this[item.label]}}</span
+                                    ><span
+                                      class="theme-selected"
+                                      ng-if="theme === item.id"
+                                      >✓</span
+                                    >
                                   </button>
                                 </div>
+                                <label class="appearance-toggle"
+                                  ><input
+                                    type="checkbox"
+                                    ng-checked="showCharacterArt"
+                                    ng-click="setCharacterArt(!showCharacterArt)"
+                                  />
+                                  {{_SHOW_CHARACTER_ART}}</label
+                                >
+                                <p class="appearance-note">
+                                  {{_THEME_ART_NOTE}}
+                                </p>
+                                <div
+                                  class="performance-options"
+                                  role="group"
+                                  aria-label="{{_PERFORMANCE_MODE}}"
+                                >
+                                  <strong>{{_PERFORMANCE_MODE}}</strong>
+                                  <button
+                                    type="button"
+                                    ng-repeat="mode in ['balanced','quality','reduced']"
+                                    ng-click="setPerformanceMode(mode)"
+                                    ng-class="{active: performanceMode === mode}"
+                                    aria-pressed="{{performanceMode === mode}}"
+                                  >
+                                    {{this['_PERFORMANCE_' +
+                                    mode.toUpperCase()]}}
+                                  </button>
+                                </div>
+                                <p class="appearance-note">
+                                  {{_PERFORMANCE_NOTE}}
+                                </p>
                               </div>
                               <div class="settings-title">
                                 <span>{{_AUTO_CHOOSE_SOURCE}}</span>
@@ -5989,7 +6052,8 @@
                               <li
                                 class="isSearchType"
                                 ng-class="{ 'playing': currentPlaying.id == song.id }"
-                                ng-repeat="song in songs | filter: fieldFilter track by $index"
+                                virtual-repeat="song in songs | filter: fieldFilter"
+                                virtual-row-height="64"
                                 ng-mouseenter="options=true"
                                 ng-mouseleave="options=false"
                                 ng-dblclick="addAndPlay(song)"
@@ -6005,6 +6069,8 @@
                                   err-src="https://y.gtimg.cn/mediastyle/global/img/playlist_300.png"
                                   add-and-play="song"
                                   ng-src="{{ song.img_url }}?param=224y224"
+                                  loading="lazy"
+                                  decoding="async"
                                   alt=""
                                 />
                                 <div class="title-and-artist">
@@ -6161,6 +6227,7 @@
                       <div
                         ng-class="{slidedown: window_type!='track'}"
                         class="songdetail-wrapper now-playing-stage"
+                        ng-attr-aria-hidden="{{window_type !== 'track'}}"
                       >
                         <div class="draggable-zone"></div>
                         <div class="now-playing-vignette" aria-hidden="true"></div>
@@ -6220,6 +6287,25 @@
                             class="detail-head now-playing-left"
                             aria-label="{{_NOW_PLAYING_STAGE}}"
                           >
+                            <div
+                              class="theme-stage-art"
+                              ng-if="selectedTheme.assets && showCharacterArt"
+                              aria-hidden="true"
+                            >
+                              <img
+                                class="theme-stage-scene"
+                                ng-src="images/themes/{{selectedTheme.assets}}-scene.webp"
+                                alt=""
+                              />
+                              <img
+                                class="theme-stage-character"
+                                ng-src="images/themes/{{selectedTheme.assets}}-character.webp"
+                                alt=""
+                              />
+                              <span class="theme-stage-caption"
+                                >LISTEN2 / {{this[selectedTheme.label]}}</span
+                              >
+                            </div>
                             <div class="now-playing-card-core">
                               <div
                                 class="detail-head-cover"
@@ -6487,6 +6573,7 @@
                                 <button
                                   type="submit"
                                   class="lyric-picker-submit"
+                                  ng-disabled="!lyricSearch.query.trim()"
                                 >
                                   {{_LYRIC_SEARCH_ACTION}}
                                 </button>
@@ -6500,6 +6587,36 @@
                                   ×
                                 </button>
                               </form>
+                              <div
+                                class="lyric-source-status"
+                                ng-if="lyricSearchSources.length"
+                                aria-live="polite"
+                              >
+                                <span
+                                  ng-repeat="source in lyricSearchSources track by source.source"
+                                  ng-attr-data-state="{{source.status}}"
+                                  ><b>{{source.source}}</b>
+                                  {{lyricSourceStatus(source)}}<small
+                                    ng-if="source.count"
+                                  >
+                                    · {{source.count}}</small
+                                  ></span
+                                >
+                              </div>
+                              <p
+                                class="lyric-partial-notice"
+                                ng-if="lyricSearchPartial"
+                              >
+                                {{_LYRIC_SEARCH_PARTIAL}}
+                              </p>
+                              <button
+                                class="lyric-retry"
+                                type="button"
+                                ng-if="!lyricSearchPending && (lyricSearchState === 'error' || lyricSearchState === 'empty' || lyricSearchPartial)"
+                                ng-click="searchLyricCandidates(true)"
+                              >
+                                {{_LYRIC_SEARCH_RETRY}}
+                              </button>
                               <div
                                 class="lyric-picker-status is-loading"
                                 ng-if="lyricSearchState === 'loading'"
@@ -6520,7 +6637,9 @@
                                 ng-if="lyricSearchState === 'error'"
                                 role="status"
                               >
-                                {{_LYRIC_SEARCH_ERROR}}
+                                {{lyricSearchPartial ?
+                                _LYRIC_SEARCH_PARTIAL_EMPTY :
+                                _LYRIC_SEARCH_ERROR}}
                               </div>
                               <div
                                 class="lyric-picker-results"
@@ -7332,7 +7451,8 @@
                       <ul class="menu-list">
                         <li
                           id="song{{ song.id }}"
-                          ng-repeat="song in playlist track by $index"
+                          virtual-repeat="song in playlist"
+                          virtual-row-height="48"
                           ng-class="{ playing: currentPlaying.id == song.id }"
                           ng-mouseenter="playlist_highlight=true"
                           ng-mouseleave="playlist_highlight=false"
