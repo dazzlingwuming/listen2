@@ -21,11 +21,13 @@ application has passed integrated emulator acceptance.
 - Native foreground/background playback through `react-native-track-player`,
   including notification controls, audio interruptions, queue, previous/next,
   seek, volume and persisted position.
-- NetEase, Kugou and Bilibili playback bootstrap; NetEase remote playlist
-  detail and playback. QQ anonymous playback is unavailable, and Kuwo playback
-  still requires Cookie/Secret.
-- NetEase and QQ Music lyrics with bounded LRC timelines, timestamp-based
-  translation pairing, active-line highlighting and automatic scrolling.
+- Native playback bootstrap adapters for NetEase, Kugou, QQ Music, Kuwo and
+  Bilibili. QQ and Kuwo resolver code is present, but live playback on the
+  current acceptance device with real upstream/account authorization has not
+  been verified; search results do not establish playback access.
+- Production lyric dispatch for NetEase, QQ Music, Kugou and Kuwo, with bounded
+  LRC timelines, timestamp-based translation pairing, active-line highlighting
+  and automatic scrolling.
 - Versioned JSON backup for favorites, user-created playlists and the current
   queue. Export uses the native share sheet; import accepts pasted text,
   defaults to a non-destructive merge, and requires a second confirmation for
@@ -47,8 +49,12 @@ application has passed integrated emulator acceptance.
   excluded from portable JSON backups.
 - Explicit NetEase and Kugou downloads use an app-private, size-bounded native
   cache with atomic SHA-256 publication, sanitized progress/error state and
-  Settings controls. Playback checks verified offline media before provider
-  bootstrap; Bilibili is intentionally excluded from this cache path.
+  Settings controls. Bilibili has a separately authorization-gated exact-part
+  cache path: only the exact BVID/CID track with a current native account-bound
+  authorization is eligible; anonymous downloads are rejected. Playback checks
+  verified offline media before provider bootstrap. Bilibili download, restart
+  recovery and offline replay are not yet verified on the current acceptance
+  device.
 - Starting a discovered collection waits for the first native track to load.
   A destructive transition failure restores the prior bounded native item,
   position, volume, repeat mode and play/pause state before reporting failure.
@@ -114,6 +120,11 @@ npm --prefix mobile run lint -- --quiet
   returning anonymous HTTP 412. That terminal MV evidence remains
   `not verified`, and offline/background restart flows still require separate
   physical-device coverage.
+- QQ/Kuwo native playback adapters and Kugou/Kuwo production lyric dispatch are
+  present in source; current candidate-device live playback and upstream lyric
+  response acceptance have not been verified. Bilibili offline caching is
+  implemented only for an exact CID under current native account-bound
+  authorization; its live download and offline playback remain `not verified`.
 
 APK assembly is performed at integrated acceptance boundaries rather than
 after every source-level change.
