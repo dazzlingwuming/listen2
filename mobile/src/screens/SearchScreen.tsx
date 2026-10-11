@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   NativeScrollEvent,
   Pressable,
   ScrollView,
@@ -30,6 +31,7 @@ import { SourceTabs, providerLabels } from '../components/SourceTabs';
 import { TrackRow, type PresentableTrack } from '../components/TrackRow';
 import { sectionStyles } from './ScreenLayout';
 import { isOfflineDownloadEligible, offlineAudio } from '../offline/offlineAudio';
+import { offlineDownloadErrorCopy } from '../offline/offlineErrorCopy';
 import {
   createSearchJourneyRestoration,
   createSearchJourneyState,
@@ -544,7 +546,13 @@ export function SearchScreen() {
           onPlay={play}
           onAddNext={addNext}
           onRetry={retry}
-          onDownload={track => void offlineAudio.requestExplicit(track as Track)}
+          onDownload={track => {
+            void offlineAudio.requestExplicit(track as Track).then(snapshot => {
+              const entry = snapshot.entries.find(item => item.source === track.source && item.trackId === track.id);
+              if (entry?.status === 'failed') Alert.alert('无法离线下载', offlineDownloadErrorCopy(entry.errorCode) || '下载失败，请重试。');
+              else if (!entry) Alert.alert('无法离线下载', '下载服务暂不可用，请稍后重试。');
+            }).catch(() => Alert.alert('无法离线下载', '下载服务暂不可用，请稍后重试。'));
+          }}
           onSelectPlaylist={playlist => {
             if (!isOperationAvailable(playlist.source, 'detail')) return;
             const restorationScope = updateJourneyForNavigation(

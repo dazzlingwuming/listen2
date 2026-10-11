@@ -59,7 +59,7 @@ internal object OfflinePolicy {
     private val netease = Regex("^netrack_([1-9][0-9]{0,17})$")
     private val kugou = Regex("^kgtrack_([A-Za-z0-9]{8,128})$")
     private val keyPattern = Regex("^[0-9a-f]{64}$")
-    fun accepted(source: String, trackId: String) = (source == "netease" && netease.matches(trackId)) || (source == "kugou" && kugou.matches(trackId))
+    fun accepted(source: String, trackId: String) = (source == "netease" && netease.matches(trackId)) || (source == "kugou" && kugou.matches(trackId)) || (source == "bilibili" && BilibiliOfflinePolicy.partId(trackId) != null)
     fun key(source: String, trackId: String) = digest("$source:$trackId".toByteArray(StandardCharsets.UTF_8))
     fun validKey(value: String?) = value != null && keyPattern.matches(value)
     fun digest(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).hex()
@@ -166,6 +166,8 @@ internal class OfflineCoordinator(
     private val clock: () -> Long = { System.currentTimeMillis() }, private val limits: OfflineLimits = OfflineLimits.DEFAULT,
     private val monotonicClock: () -> Long = ::monotonicMillis,
     private val reserveAdmission: (String, Long) -> Boolean = { _, _ -> true },
+    private val authorizedBilibiliFetch: ((OfflineEntry, Long) -> OfflineResponse)? = null,
+    private val authorizationCurrent: (OfflineEntry) -> Boolean = { it.source != "bilibili" },
 ) {
     private val lock = Any()
     private val entries = LinkedHashMap<String, OfflineEntry>()
@@ -194,6 +196,19 @@ internal class OfflineCoordinator(
         publish(event)
         try { work.task = executor.submit { download(key, work) } } catch (_: RejectedExecutionException) { failIfActive(key, work, "QUEUE_FULL") }
         return result
+    }
+
+    /** Rejected admission is visible state, never an empty successful download request. */
+    fun rejectAdmission(source: String, trackId: String, title: String, artist: String, code: String) {
+        if (!OfflinePolicy.accepted(source, trackId)) return
+        val event = synchronized(lock) {
+            val key = OfflinePolicy.key(source, trackId)
+            if (active.containsKey(key) || entries[key]?.status == OfflineStatus.READY) return@synchronized null
+            entries[key] = failed(source, trackId, title, artist, code)
+            persistLocked()
+            snapshotLocked()
+        }
+        publish(event)
     }
 
     fun cancel(operationId: String) {
@@ -235,7 +250,10 @@ internal class OfflineCoordinator(
         if (!OfflinePolicy.validKey(validatedKey)) return null
         val result = synchronized(lock) {
             val entry = entries[validatedKey]
-            if (entry != null && entry.status == OfflineStatus.READY && validReadyLocked(validatedKey, entry)) Pair(File(root, validatedKey), null)
+            // A cache miss is read-only while transfer owns this semantic id.
+            // Only a completed blob with failed integrity is invalidated.
+            if (entry == null || entry.status != OfflineStatus.READY) Pair(null, null)
+            else if (validReadyLocked(validatedKey, entry)) Pair(File(root, validatedKey), null)
             else invalidateLocked(validatedKey)
         }
         publish(result.second); return result.first
@@ -246,7 +264,9 @@ internal class OfflineCoordinator(
         val key = OfflinePolicy.key(source, trackId)
         val result = synchronized(lock) {
             val entry = entries[key]
-            if (entry != null && entry.status == OfflineStatus.READY && validReadyLocked(key, entry)) Pair(entry.snapshot(), null) else invalidateLocked(key)
+            if (entry == null || entry.status != OfflineStatus.READY) Pair(null, null)
+            else if (validReadyLocked(key, entry)) Pair(entry.snapshot(), null)
+            else invalidateLocked(key)
         }
         publish(result.second); return result
     }
@@ -260,14 +280,20 @@ internal class OfflineCoordinator(
         val part = File(root, "$key.${work.operationId}.part")
         try {
             val deadline = monotonicClock() + limits.transferDeadlineMillis
-            val media = mediaUrl(entry, deadline)
-            transport.fetch(media, if (entry.source == "netease") OfflineRoute.NETEASE_MEDIA else OfflineRoute.KUGOU_MEDIA, deadline).use { response ->
+            requireAuthorization(entry)
+            val response = if (entry.source == "bilibili") {
+                authorizedBilibiliFetch?.invoke(entry, deadline) ?: throw IOException("ENTITLEMENT")
+            } else {
+                val media = mediaUrl(entry, deadline)
+                transport.fetch(media, if (entry.source == "netease") OfflineRoute.NETEASE_MEDIA else OfflineRoute.KUGOU_MEDIA, deadline)
+            }
+            response.use { response ->
                 val mime = response.contentType?.substringBefore(';')?.lowercase() ?: ""
                 if (mime !in AUDIO_TYPES) throw IOException("INVALID_MEDIA")
                 if (response.contentLength > limits.fileBytes) throw IOException("FILE_TOO_LARGE")
                 reserveKnown(key, work, response.contentLength)
                 stream(key, work, response.input, part, response.contentLength, deadline)
-                if (!mediaSignature(part)) throw IOException("INVALID_MEDIA")
+                if (!mediaSignature(part) || (entry.source == "bilibili" && !mp4Signature(part))) throw IOException("INVALID_MEDIA")
                 commitReady(key, work, entry, part, mime)
             }
         } catch (error: Exception) {
@@ -297,6 +323,7 @@ internal class OfflineCoordinator(
             val buffer = ByteArray(8192); var downloaded = 0L
             while (true) {
                 if (Thread.currentThread().isInterrupted) throw InterruptedIOException()
+                requireAuthorization(currentEntry(key, work))
                 checkDeadline(deadline, monotonicClock())
                 val count = input.read(buffer); checkDeadline(deadline, monotonicClock()); if (count < 0) break; downloaded += count
                 if (downloaded > limits.fileBytes) throw IOException("FILE_TOO_LARGE")
@@ -310,6 +337,7 @@ internal class OfflineCoordinator(
                 }
                 output.write(buffer, 0, count); publish(event)
             }
+            if (length > 0 && downloaded != length) throw IOException("PROVIDER_REJECTED")
             output.fd.sync()
         }
     }
@@ -318,6 +346,7 @@ internal class OfflineCoordinator(
         val event = synchronized(lock) {
             val entry = currentLocked(key, work) ?: throw InterruptedIOException()
             if (entry.operationId != downloaded.operationId) throw InterruptedIOException()
+            requireAuthorization(entry)
             atomicReplace(part, File(root, key)); entry.digest = digest; entry.mimeType = mime; entry.status = OfflineStatus.READY
             entry.downloadedBytes = File(root, key).length(); entry.totalBytes = entry.downloadedBytes; entry.errorCode = null; entry.updatedAt = clock()
             active.remove(key); work.reservation = 0; persistLocked(); snapshotLocked()
@@ -351,6 +380,12 @@ internal class OfflineCoordinator(
             return media.toString()
         }
     }
+    private fun requireAuthorization(entry: OfflineEntry) {
+        if (!authorizationCurrent(entry)) throw IOException("ENTITLEMENT")
+    }
+    private fun currentEntry(key: String, work: ActiveWork): OfflineEntry = synchronized(lock) {
+        currentLocked(key, work)?.snapshot() ?: throw InterruptedIOException()
+    }
     private fun currentLocked(key: String, work: ActiveWork) = entries[key]?.takeIf { active[key] === work && it.operationId == work.operationId }
     private fun committedLocked() = entries.values.filter { it.status == OfflineStatus.READY }.sumOf { it.downloadedBytes }
     private fun reservedLocked() = active.values.sumOf { it.reservation }
@@ -366,6 +401,10 @@ internal class OfflineCoordinator(
     private fun mediaSignature(file: File) = FileInputStream(file).use { input ->
         val bytes = ByteArray(12); val count = input.read(bytes)
         count >= 4 && (String(bytes, 0, 3, StandardCharsets.US_ASCII) == "ID3" || (bytes[0].toInt() and 0xff) == 0xff || String(bytes, 0, 4, StandardCharsets.US_ASCII) in setOf("fLaC", "OggS") || String(bytes, 4, 4, StandardCharsets.US_ASCII) == "ftyp")
+    }
+    private fun mp4Signature(file: File): Boolean = FileInputStream(file).use { input ->
+        val bytes = ByteArray(12)
+        input.read(bytes) >= 8 && String(bytes, 4, 4, StandardCharsets.US_ASCII) == "ftyp"
     }
     private fun validReadyLocked(key: String, entry: OfflineEntry): Boolean {
         val file = File(root, key)

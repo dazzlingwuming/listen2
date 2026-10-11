@@ -44,14 +44,17 @@ internal class OfflineCatalogRepository(private val database: Listen2Database, p
         purgeLegacyOwnerCopies()
     }
 
-    fun ready(identity: OfflineCatalogIdentity, expectedHash: String, expectedLength: Long, mimeType: String, codec: String, staged: File, owner: OfflineOwnerKind, playlistId: String? = null): OfflineCatalogResult {
+    fun ready(identity: OfflineCatalogIdentity, expectedHash: String, expectedLength: Long, mimeType: String, codec: String, staged: File, owner: OfflineOwnerKind, playlistId: String? = null, publicationAllowed: () -> Boolean = { true }): OfflineCatalogResult {
+        if (!publicationAllowed()) return OfflineCatalogResult("AUTHORIZATION_REQUIRED")
         if (expectedHash.length != 64 || expectedLength <= 0 || !staged.isFile || staged.length() != expectedLength || hash(staged) != expectedHash || !mediaSignature(staged)) return OfflineCatalogResult("VERIFY_FAILED")
         val blob = CacheBlobEntity.ready(identity, expectedHash, expectedLength, mimeType, codec)
         val destination = File(root, blob.privateRelativeKey)
         destination.parentFile?.mkdirs()
         try { if (!destination.exists()) atomicMove(staged, destination) else staged.delete() } catch (_: IOException) { return OfflineCatalogResult("STORAGE_FAILED") }
         if (!destination.isFile || destination.length() != expectedLength || !canRead(destination)) return OfflineCatalogResult("VERIFY_FAILED")
+        var published = false
         database.runInTransaction {
+            if (!publicationAllowed()) return@runInTransaction
             val dao = database.libraryDao()
             // A verified blob is not an authorization receipt. Only a native provider
             // descriptor may attach one after resolving the source entitlement.
@@ -59,6 +62,11 @@ internal class OfflineCatalogRepository(private val database: Listen2Database, p
             dao.putCacheBlob(blob.copy(lastUsedAt = now(), verifiedAt = now()))
             val row = when (owner) { OfflineOwnerKind.TEMPORARY -> CacheOwnerEntity.temporary(blob.blobKey, now()); OfflineOwnerKind.EXPLICIT -> CacheOwnerEntity.explicit(blob.blobKey, now()); OfflineOwnerKind.PLAYLIST -> CacheOwnerEntity.playlist(blob.blobKey, playlistId ?: return@runInTransaction, now()) }
             dao.putCacheOwner(row)
+            published = true
+        }
+        if (!published) {
+            if (database.libraryDao().cacheBlob(blob.blobKey) == null) destination.delete()
+            return OfflineCatalogResult("AUTHORIZATION_REQUIRED")
         }
         val ownerRow = database.libraryDao().cacheOwners(blob.blobKey).firstOrNull { it.kind == owner && (owner != OfflineOwnerKind.PLAYLIST || it.ownerKey == "playlist:$playlistId") }
             ?: return OfflineCatalogResult("OWNER_FAILED")
@@ -88,18 +96,26 @@ internal class OfflineCatalogRepository(private val database: Listen2Database, p
         return file.takeIf { canRead(it) && it.length() == blob.byteLength && hash(it) == blob.contentHash }
     }
 
-    fun recordAuthorization(blobKey: String, generation: Long, entitlementClass: String, expiresAt: Long) {
-        if (generation < 0 || entitlementClass !in AUTHORITY_CLASSES || expiresAt <= now()) return
+    fun recordAuthorization(blobKey: String, generation: Long, entitlementClass: String, expiresAt: Long, currentAuthorization: () -> Boolean): Boolean {
+        if (generation < 0 || entitlementClass !in AUTHORITY_CLASSES || expiresAt <= now()) return false
+        var recorded = false
         database.runInTransaction {
+            if (!currentAuthorization()) return@runInTransaction
             val dao = database.libraryDao(); val blob = dao.cacheBlob(blobKey) ?: return@runInTransaction
             val catalog = dao.cacheCatalog(blob.cacheId) ?: return@runInTransaction
+            // A logout can race with hashing/Room publication. A stale completion
+            // must not overwrite the source's newer revocation in this transaction.
+            val authority = dao.offlineAuthority(catalog.source)
+            if (!OfflineAuthorizationPolicy.mayRecord(authority, generation)) return@runInTransaction
             // Generation zero is safe only for a descriptor explicitly classified
             // anonymous-free by the source-native resolver.
             if (generation == 0L && entitlementClass != "anonymous-free") return@runInTransaction
             val issuedAt = now()
             dao.putOfflineAuthority(OfflineAuthorityEntity(catalog.source, generation, entitlementClass, issuedAt, expiresAt))
             dao.putCacheCatalog(catalog.copy(accountGeneration = generation, entitlementStatus = entitlementClass, authorizationIssuedAt = issuedAt, authorizationExpiresAt = expiresAt))
+            recorded = true
         }
+        return recorded
     }
 
     fun authorization(blobKey: String): CacheCatalogEntity? {
@@ -110,9 +126,31 @@ internal class OfflineCatalogRepository(private val database: Listen2Database, p
     fun authority(source: String): OfflineAuthorityEntity? = database.libraryDao().offlineAuthority(source)
 
     /** A restarted process cannot infer signed-in state from a stale receipt. */
-    fun markAccountAuthoritiesUnknown() = database.libraryDao().markAccountAuthoritiesUnknown(now())
+    fun markAccountAuthoritiesUnknown() {
+        database.runInTransaction {
+            val dao = database.libraryDao()
+            dao.markAccountAuthoritiesUnknown(now())
+            // Native generation counters restart with the process. Prior-process
+            // tombstones stay denied, but cannot block a fresh verified session forever.
+            listOf("bilibili", "netease", "kugou", "qq", "kuwo").forEach { source ->
+                val authority = dao.offlineAuthority(source)
+                if (authority?.authState == "revoked") dao.putOfflineAuthority(authority.copy(authState = "unknown", updatedAt = now()))
+            }
+        }
+    }
 
-    fun revokeAuthority(source: String, generation: Long) = database.libraryDao().revokeOfflineAuthority(source, generation, now())
+    fun revokeAuthority(source: String, generation: Long) {
+        database.runInTransaction {
+            val dao = database.libraryDao()
+            // Persist a tombstone even before this source's first completed download.
+            // UPDATE alone loses a logout racing with that first authorization write.
+            val previous = dao.offlineAuthority(source)
+            if (previous == null || previous.generation <= generation) {
+                val revokedAt = now()
+                dao.putOfflineAuthority(OfflineAuthorityEntity(source, generation, "revoked", revokedAt, revokedAt))
+            }
+        }
+    }
 
     private fun purgeLegacyOwnerCopies() {
         val aliases = File(root, "owners")

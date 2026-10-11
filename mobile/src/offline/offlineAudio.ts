@@ -39,11 +39,13 @@ const empty: CacheSnapshot = {
 };
 const safeId = (value: unknown): value is string =>
   typeof value === 'string' && /^[A-Za-z0-9_.:-]{1,128}$/.test(value);
-const cacheableSources = new Set(['netease', 'kugou']);
+const cacheableSources = new Set(['netease', 'kugou', 'bilibili']);
 export const isOfflineDownloadEligible = (track: PlayableTrack) =>
   !('local' in track && track.local === true) &&
   cacheableSources.has(track.source) &&
-  safeId(track.id);
+  safeId(track.id) &&
+  (track.source !== 'bilibili' ||
+    /^bitrack_v_BV[0-9A-Za-z]{6,32}-[1-9][0-9]{0,17}$/.test(track.id));
 function snapshot(value: unknown): CacheSnapshot {
   if (!value || typeof value !== 'object') return empty;
   const raw = value as Record<string, unknown>;
@@ -177,7 +179,11 @@ export const offlineAudio = {
         }
       : { status: 'miss' as const };
   },
-  async authorizeResolvedCache(source: string, trackId: string, requestId: string) {
+  async authorizeResolvedCache(
+    source: string,
+    trackId: string,
+    requestId: string,
+  ) {
     if (
       !safeId(source) ||
       !safeId(trackId) ||

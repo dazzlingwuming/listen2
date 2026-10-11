@@ -1,4 +1,6 @@
 const COPY: Readonly<Record<string, string>> = {
+  BILIBILI_AUTHORIZATION_REQUIRED:
+    '请先登录 Bilibili 并在线播放此分P，确认授权后再下载；当前不支持匿名离线下载。',
   QUEUE_FULL: '下载任务已满，请等待当前任务完成后重试。',
   CAPACITY_EXCEEDED: '离线空间不足，请删除已下载内容后重试。',
   QUOTA_EXCEEDED: '离线空间不足，请删除已下载内容后重试。',

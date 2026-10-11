@@ -91,6 +91,25 @@ class OfflineAudioContractTest {
         assertFalse(root.listFiles().orEmpty().any { it.name.endsWith(".part") || it.name.endsWith(".tmp") })
     }
 
+    @Test fun cacheMissLookupsPreserveTheCurrentQueuedTransfer() {
+        val root = Files.createTempDirectory("offline-readonly-miss").toFile()
+        val executor = ManualExecutor()
+        val transport = FakeTransport()
+        val coordinator = coordinator(root, transport, executor)
+        transport.afterFetch = {
+            assertNull(coordinator.resolve("netease", "netrack_1"))
+            assertNull(coordinator.file(OfflinePolicy.key("netease", "netrack_1")))
+            assertEquals(OfflineStatus.DOWNLOADING, coordinator.snapshot().single().status)
+        }
+        val operation = coordinator.enqueue("netease", "netrack_1", "title", "artist")
+        assertNull(coordinator.resolve("netease", "netrack_1"))
+        assertNull(coordinator.file(OfflinePolicy.key("netease", "netrack_1")))
+        assertEquals(operation.operationId, coordinator.snapshot().single().operationId)
+        assertEquals(OfflineStatus.QUEUED, coordinator.snapshot().single().status)
+        executor.runAll()
+        assertNotNull(coordinator.resolve("netease", "netrack_1"))
+    }
+
     @Test fun duplicateAdmissionConvergesAndTwoWorkersPlusEightWaitingIsEnforced() {
         val executor = ManualExecutor()
         val coordinator = coordinator(Files.createTempDirectory("offline-contract").toFile(), FakeTransport(), executor)

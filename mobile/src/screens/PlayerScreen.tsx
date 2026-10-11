@@ -6,6 +6,7 @@ import React, {
   useState,
 } from 'react';
 import {
+  Alert,
   Image,
   PermissionsAndroid,
   Platform,
@@ -20,6 +21,8 @@ import { useNavigation } from '@react-navigation/native';
 import type { RootState } from '../store';
 import * as playerActions from '../store/playerSlice';
 import { colors, spacing, text } from '../theme';
+import { isOfflineDownloadEligible, offlineAudio, type CacheEntry } from '../offline/offlineAudio';
+import { offlineDownloadErrorCopy } from '../offline/offlineErrorCopy';
 import { playerErrorCopy } from '../player/playerErrorCopy';
 import {
   artwork,
@@ -200,6 +203,41 @@ export function PlayerScreen() {
   );
   const favorites = useSelector((root: RootState) => root.library.favorites);
   const libraryRevision = useSelector((root: RootState) => root.library.revision || 0);
+  const [downloadEntries, setDownloadEntries] = useState<CacheEntry[]>([]);
+  const [downloadPending, setDownloadPending] = useState(false);
+  const currentDownload = current && downloadEntries.find(entry =>
+    entry.source === trackSource(current) && entry.trackId === current.id);
+  const canDownloadPart = Boolean(current && trackSource(current) === 'bilibili' &&
+    isOfflineDownloadEligible(current as Track));
+  const downloadInProgress = downloadPending || currentDownload?.status === 'queued' ||
+    currentDownload?.status === 'transferring';
+  useEffect(() => {
+    let active = true;
+    void offlineAudio.list().then(snapshot => {
+      if (active) setDownloadEntries(snapshot.entries);
+    }).catch(() => undefined);
+    const unsubscribe = offlineAudio.subscribe(snapshot => {
+      if (active) setDownloadEntries(snapshot.entries);
+    });
+    return () => { active = false; unsubscribe(); };
+  }, []);
+  const downloadCurrentPart = async () => {
+    if (!current || !canDownloadPart || downloadInProgress) return;
+    const selected = current as Track;
+    setDownloadPending(true);
+    try {
+      const snapshot = await offlineAudio.requestExplicit(selected);
+      setDownloadEntries(snapshot.entries);
+      const entry = snapshot.entries.find(item => item.source === selected.source && item.trackId === selected.id);
+      if (entry?.status === 'failed') {
+        Alert.alert('无法离线下载', offlineDownloadErrorCopy(entry.errorCode) || '下载失败，请重试。');
+      } else if (!entry) {
+        Alert.alert('无法离线下载', '下载服务暂不可用，请稍后重试。');
+      }
+    } catch {
+      Alert.alert('无法离线下载', '下载服务暂不可用，请稍后重试。');
+    } finally { setDownloadPending(false); }
+  };
   const [showQueue, setShowQueue] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
   const [lyrics, setLyrics] = useState<Lyric | null>(null);
@@ -1073,6 +1111,34 @@ export function PlayerScreen() {
               {trackArtist(current)}
             </Text>
           </View>
+          {canDownloadPart ? (
+            <View style={styles.audioEffects}>
+              <Pressable
+                accessibilityLabel="离线下载当前分P"
+                accessibilityRole="button"
+                accessibilityState={{ disabled: downloadInProgress || currentDownload?.status === 'ready' }}
+                disabled={downloadInProgress || currentDownload?.status === 'ready'}
+                onPress={() => void downloadCurrentPart()}
+                style={styles.effectButton}
+              >
+                <Text style={styles.actionText}>
+                  {currentDownload?.status === 'ready' ? '此分P已下载' : downloadInProgress ? '正在下载此分P…' : '下载此分P'}
+                </Text>
+              </Pressable>
+              {currentDownload ? (
+                <Text accessibilityLabel="当前分P下载状态" accessibilityLiveRegion="polite" style={text.meta}>
+                  {currentDownload.status === 'ready' ? '已下载并校验' :
+                    currentDownload.status === 'failed' ? offlineDownloadErrorCopy(currentDownload.errorCode) :
+                    currentDownload.status === 'cancelled' ? '下载已取消' :
+                    currentDownload.totalBytes > 0 ? `下载进度 ${Math.min(100, Math.floor(currentDownload.downloadedBytes * 100 / currentDownload.totalBytes))}%` : '正在准备下载…'}
+                </Text>
+              ) : null}
+              <Pressable accessibilityLabel="查看缓存与下载" accessibilityRole="button"
+                onPress={() => navigation.navigate('CacheLibrary')} style={styles.effectButton}>
+                <Text style={styles.actionText}>缓存与下载</Text>
+              </Pressable>
+            </View>
+          ) : null}
           {error ? (
             <View style={styles.error}>
               <Text style={styles.errorTitle}>这首歌暂时无法播放</Text>

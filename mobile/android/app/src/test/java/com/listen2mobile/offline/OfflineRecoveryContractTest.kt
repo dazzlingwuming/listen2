@@ -62,6 +62,16 @@ class OfflineRecoveryContractTest {
     }
 
     @Test
+    fun `logout tombstone cannot be replaced by an older completion`() {
+        val revoked = OfflineAuthorityEntity("bilibili", 8L, "revoked", 50L, 50L)
+        assertFalse(OfflineAuthorizationPolicy.mayRecord(revoked, 7L))
+        assertFalse(OfflineAuthorizationPolicy.mayRecord(revoked, 8L))
+        assertTrue(OfflineAuthorizationPolicy.mayRecord(revoked, 9L))
+        assertTrue(OfflineAuthorizationPolicy.mayRecord(null, 7L))
+        assertTrue(OfflineAuthorizationPolicy.mayRecord(revoked.copy(authState = "unknown"), 1L))
+    }
+
+    @Test
     fun `only explicitly verified anonymous free descriptor survives restart until expiry`() {
         val receipt = CacheCatalogEntity("cache", "kuwo", "track_1", null, "default", "revision", "ready", 10L, 0L, "anonymous-free", 10L, 100L)
         val anonymous = OfflineAuthorityEntity("kuwo", 0L, "anonymous-free", 10L, 100L)

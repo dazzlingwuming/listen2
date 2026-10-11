@@ -67,7 +67,7 @@ describe('offline cache adapter and native catalog projection', () => {
     );
   });
 
-  it('allows only semantic NetEase and Kugou requests', () => {
+  it('allows NetEase Kugou and exact Bilibili video parts', () => {
     expect(isOfflineDownloadEligible(track('netease', 'netrack_123'))).toBe(
       true,
     );
@@ -77,6 +77,12 @@ describe('offline cache adapter and native catalog projection', () => {
     expect(isOfflineDownloadEligible(track('bilibili', 'bitrack_1'))).toBe(
       false,
     );
+    expect(
+      isOfflineDownloadEligible(track('bilibili', 'bitrack_v_BV1234567890-1')),
+    ).toBe(true);
+    expect(
+      isOfflineDownloadEligible(track('bilibili', 'bitrack_v_BV1234567890-0')),
+    ).toBe(false);
     expect(isOfflineDownloadEligible(track('qq', 'qqtrack_1'))).toBe(false);
     expect(
       isOfflineDownloadEligible({ ...track('local', 'local_1'), local: true }),
@@ -108,6 +114,38 @@ describe('offline cache adapter and native catalog projection', () => {
       'operation',
     );
     expect(mockNativeModule.setCacheQuota).toHaveBeenCalledWith(2 * 1024 ** 3);
+  });
+
+  it('requests exact Bilibili parts using semantic metadata and preserves actionable denial', async () => {
+    const selected = track('bilibili', 'bitrack_v_BV1234567890-123');
+    mockNativeModule.requestExplicitCache.mockResolvedValueOnce({
+      ...readySnapshot,
+      usedBytes: 0,
+      entries: [
+        {
+          ...readySnapshot.entries[0],
+          source: selected.source,
+          trackId: selected.id,
+          status: 'failed',
+          errorCode: 'BILIBILI_AUTHORIZATION_REQUIRED',
+        },
+      ],
+    });
+    const denied = await offlineAudio.requestExplicit({
+      ...selected,
+      url: 'https://private.example/signed',
+      headers: { Cookie: 'forbidden' },
+    });
+    expect(mockNativeModule.requestExplicitCache).toHaveBeenCalledWith({
+      source: 'bilibili',
+      trackId: selected.id,
+      title: '歌',
+      artist: '艺人',
+    });
+    expect(denied.entries[0].status).toBe('failed');
+    expect(offlineDownloadErrorCopy(denied.entries[0].errorCode)).toContain(
+      '请先登录 Bilibili',
+    );
   });
 
   it('sanitizes catalog events without exposing transport or filesystem fields', () => {
@@ -145,6 +183,9 @@ describe('offline cache adapter and native catalog projection', () => {
   });
 
   it('maps stable failures to fixed actionable Chinese copy', () => {
+    expect(
+      offlineDownloadErrorCopy('BILIBILI_AUTHORIZATION_REQUIRED'),
+    ).toContain('当前不支持匿名离线下载');
     expect(offlineDownloadErrorCopy('QUEUE_FULL')).toBe(
       '下载任务已满，请等待当前任务完成后重试。',
     );

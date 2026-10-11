@@ -1,8 +1,23 @@
 import React from 'react';
 import renderer, { act } from 'react-test-renderer';
+import { Alert } from 'react-native';
 
 const mockDispatch = jest.fn();
 let mockPlayerState: any;
+const mockRequestDownload = jest.fn();
+const mockCacheList = jest.fn();
+let mockCacheListener: (snapshot: any) => void;
+jest.mock('../../offline/offlineAudio', () => ({
+  ...jest.requireActual('../../offline/offlineAudio'),
+  offlineAudio: {
+    list: () => mockCacheList(),
+    requestExplicit: (...args: unknown[]) => mockRequestDownload(...args),
+    subscribe: (listener: (snapshot: any) => void) => {
+      mockCacheListener = listener;
+      return jest.fn();
+    },
+  },
+}));
 
 jest.mock('@react-navigation/native', () => ({
   useNavigation: () => ({ goBack: jest.fn(), navigate: jest.fn() }),
@@ -19,7 +34,10 @@ jest.mock('../../bilibili/lyrics', () => ({
   findBilibiliLyricCandidates: jest.fn(),
 }));
 jest.mock('../../bilibili/mvClient', () => ({
-  bilibiliMvClient: { syncActive: jest.fn() },
+  bilibiliMvClient: { syncActive: jest.fn().mockResolvedValue(undefined) },
+}));
+jest.mock('../../lyrics/selectionStore', () => ({
+  lyricSelectionStore: { get: jest.fn().mockResolvedValue(null) },
 }));
 jest.mock('../../lyrics/cache', () => ({
   bilibiliLyricCache: { get: jest.fn(), put: jest.fn(), clear: jest.fn() },
@@ -55,7 +73,10 @@ jest.mock('../../components/TrackRow', () => ({
   artwork: () => undefined,
   formatDuration: (value: number) => {
     const seconds = value > 1000 ? Math.floor(value / 1000) : Math.floor(value);
-    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(
+      2,
+      '0',
+    )}`;
   },
   trackArtist: (track: any) => track.artist,
   trackSource: (track: any) => track.source,
@@ -79,6 +100,7 @@ const { PlayerScreen } = require('../PlayerScreen');
 describe('PlayerScreen play-next queue', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockCacheList.mockResolvedValue({ entries: [] });
     const track = {
       id: 'ne_1',
       source: 'netease',
@@ -95,6 +117,90 @@ describe('PlayerScreen play-next queue', () => {
         { ...track, occurrenceId: 'play-next-b', track },
       ],
     };
+  });
+
+  it('offers exact-part download and immediately explains missing Bilibili authorization', async () => {
+    const selected = {
+      id: 'bitrack_v_BV1234567890-123',
+      source: 'bilibili',
+      title: '分P',
+      artist: '作者',
+    };
+    mockPlayerState.currentTrack = selected;
+    const failed = {
+      source: selected.source,
+      trackId: selected.id,
+      status: 'failed',
+      errorCode: 'BILIBILI_AUTHORIZATION_REQUIRED',
+      downloadedBytes: 0,
+      totalBytes: 0,
+    };
+    mockRequestDownload.mockResolvedValue({ entries: [failed] });
+    const alert = jest
+      .spyOn(Alert, 'alert')
+      .mockImplementation(() => undefined);
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<PlayerScreen />);
+    });
+    await act(async () => {
+      tree.root
+        .findByProps({ accessibilityLabel: '离线下载当前分P' })
+        .props.onPress();
+    });
+    expect(mockRequestDownload).toHaveBeenCalledWith(selected);
+    expect(alert).toHaveBeenCalledWith(
+      '无法离线下载',
+      expect.stringContaining('当前不支持匿名离线下载'),
+    );
+    expect(
+      tree.root.findByProps({ accessibilityLabel: '当前分P下载状态' }).props
+        .children,
+    ).toContain('请先登录 Bilibili');
+    await act(async () => {
+      mockCacheListener({
+        entries: [
+          {
+            ...failed,
+            status: 'transferring',
+            downloadedBytes: 12,
+            totalBytes: 24,
+          },
+        ],
+      });
+    });
+    expect(
+      tree.root.findByProps({ accessibilityLabel: '当前分P下载状态' }).props
+        .children,
+    ).toBe('下载进度 50%');
+    expect(
+      tree.root.findByProps({ accessibilityLabel: '离线下载当前分P' }).props
+        .disabled,
+    ).toBe(true);
+    await act(async () => {
+      mockCacheListener({ entries: [{ ...failed, status: 'ready' }] });
+    });
+    expect(
+      tree.root.findByProps({ accessibilityLabel: '当前分P下载状态' }).props
+        .children,
+    ).toBe('已下载并校验');
+    alert.mockRestore();
+  });
+
+  it('does not offer an ambiguous Bilibili video download without a part id', async () => {
+    mockPlayerState.currentTrack = {
+      id: 'bitrack_v_BV1234567890',
+      source: 'bilibili',
+      title: '视频',
+      artist: '作者',
+    };
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<PlayerScreen />);
+    });
+    expect(
+      tree.root.findAllByProps({ accessibilityLabel: '离线下载当前分P' }),
+    ).toHaveLength(0);
   });
 
   it('addresses duplicate queue rows through occurrence-specific accessible actions', async () => {
@@ -164,10 +270,7 @@ describe('PlayerScreen play-next queue', () => {
       text: '0:30 / 2:00',
     });
     expect(slider.props.accessibilityActions).toEqual(
-      expect.arrayContaining([
-        { name: 'increment' },
-        { name: 'decrement' },
-      ]),
+      expect.arrayContaining([{ name: 'increment' }, { name: 'decrement' }]),
     );
 
     await act(async () => {

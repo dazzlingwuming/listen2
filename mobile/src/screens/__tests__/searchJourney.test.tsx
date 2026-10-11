@@ -1,6 +1,6 @@
 import React from 'react';
 import renderer, { act } from 'react-test-renderer';
-import { ScrollView } from 'react-native';
+import { Alert, ScrollView } from 'react-native';
 import type { SearchResult, SourceId } from '../../types';
 import {
   createSearchJourneyState,
@@ -16,6 +16,13 @@ const mockNavigate = jest.fn();
 const mockSetParams = jest.fn();
 const mockDispatch = jest.fn();
 const mockSearch = jest.fn();
+const mockRequestDownload = jest.fn();
+jest.mock('../../offline/offlineAudio', () => ({
+  ...jest.requireActual('../../offline/offlineAudio'),
+  offlineAudio: {
+    requestExplicit: (...args: unknown[]) => mockRequestDownload(...args),
+  },
+}));
 let mockRoute: { params?: Record<string, unknown> } = {};
 
 jest.mock('@react-navigation/native', () => ({
@@ -276,14 +283,14 @@ describe('search journey state', () => {
     async (_terminal, source, shouldFail) => {
       const query = '用户输入的关键词';
       mockSearch.mockImplementation(
-        (
-          requestedSource: SourceId,
-          requestedQuery: string,
-          page: number,
-        ) => {
+        (requestedSource: SourceId, requestedQuery: string, page: number) => {
           if (shouldFail) {
             return Promise.reject(
-              new ProviderClientError('REQUEST_TIMEOUT', requestedSource, 'search'),
+              new ProviderClientError(
+                'REQUEST_TIMEOUT',
+                requestedSource,
+                'search',
+              ),
             );
           }
           return Promise.resolve({
@@ -332,7 +339,9 @@ describe('search journey state', () => {
       expect(input().props.value).toBe(query);
 
       await act(async () => {
-        tree.root.findByProps({ accessibilityLabel: '搜索音乐' }).props.onPress();
+        tree.root
+          .findByProps({ accessibilityLabel: '搜索音乐' })
+          .props.onPress();
         await Promise.resolve();
       });
 
@@ -757,6 +766,69 @@ describe('search journey state', () => {
     expect(mockDispatch).toHaveBeenNthCalledWith(2, {
       type: 'player/addNextTrack',
     });
+  });
+
+  it('shows native download rejection immediately and hides ambiguous Bilibili downloads', async () => {
+    mockRoute = { params: { sourceId: 'bilibili', query: '视频' } };
+    const exact = {
+      kind: 'track',
+      track: {
+        id: 'bitrack_v_BV1234567890-123',
+        source: 'bilibili',
+        title: '精确分P',
+        artist: '作者',
+      },
+    };
+    const ambiguous = {
+      kind: 'track',
+      track: {
+        id: 'bitrack_v_BV1234567890',
+        source: 'bilibili',
+        title: '无分P视频',
+        artist: '作者',
+      },
+    };
+    mockSearch.mockResolvedValueOnce({
+      source: 'bilibili',
+      query: '视频',
+      page: 1,
+      kind: 'track',
+      total: 2,
+      hasMore: false,
+      results: [exact, ambiguous],
+    });
+    mockRequestDownload.mockResolvedValueOnce({
+      entries: [
+        {
+          source: 'bilibili',
+          trackId: exact.track.id,
+          status: 'failed',
+          errorCode: 'BILIBILI_AUTHORIZATION_REQUIRED',
+        },
+      ],
+    });
+    const alert = jest
+      .spyOn(Alert, 'alert')
+      .mockImplementation(() => undefined);
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<SearchScreen />);
+    });
+    const rows = tree.root.findAllByType(TrackRow);
+    expect(
+      rows.find(row => row.props.track.id === ambiguous.track.id)?.props
+        .onDownload,
+    ).toBeUndefined();
+    await act(async () => {
+      rows
+        .find(row => row.props.track.id === exact.track.id)
+        ?.props.onDownload();
+    });
+    expect(alert).toHaveBeenCalledWith(
+      '无法离线下载',
+      expect.stringContaining('请先登录 Bilibili'),
+    );
+    alert.mockRestore();
   });
 
   it('does not expose a next dispatch when playback is unverified', async () => {

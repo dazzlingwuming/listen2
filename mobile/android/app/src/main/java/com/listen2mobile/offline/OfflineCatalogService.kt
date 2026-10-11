@@ -24,6 +24,8 @@ internal class OfflineCatalogService private constructor(context: Context) {
         // its per-file safety cap and delegates every total reservation here.
         limits = OfflineLimits(128L * 1024 * 1024, Long.MAX_VALUE, 64 * 1024),
         reserveAdmission = ::admitReservation,
+        authorizedBilibiliFetch = ::fetchBilibili,
+        authorizationCurrent = ::isTransferAuthorizationCurrent,
     )
     private val legacy = OfflineRegistry.get(app)
     private val analysis = Executors.newSingleThreadExecutor()
@@ -78,7 +80,11 @@ internal class OfflineCatalogService private constructor(context: Context) {
 
     fun request(source: String, trackId: String, title: String, artist: String): CatalogCacheSnapshot {
         if (OfflinePolicy.accepted(source, trackId) && readyBlob(source, trackId) == null) {
-            val grant = freshTransferGrant(source, trackId) ?: return snapshot()
+            val grant = freshTransferGrant(source, trackId)
+            if (grant == null) {
+                if (source == "bilibili") transfer.rejectAdmission(source, trackId, title, artist, "BILIBILI_AUTHORIZATION_REQUIRED")
+                return snapshot()
+            }
             val active = transfer.snapshot().firstOrNull { it.source == source && it.trackId == trackId }
             if (active == null) enqueueAuthorized(source, trackId, title, artist, grant)
             else if (active.status in setOf(OfflineStatus.FAILED, OfflineStatus.CANCELLED)) retryAuthorized(active, grant)
@@ -183,12 +189,13 @@ internal class OfflineCatalogService private constructor(context: Context) {
     fun authorize(source: String, trackId: String, requestId: String): Boolean {
         val blob = readyBlob(source, trackId) ?: return false
         val grant = MediaLeaseRegistryHolder.current()?.cacheAuthorization(requestId, source, trackId) ?: return false
-        repository.recordAuthorization(
+        val recorded = repository.recordAuthorization(
             blob.blobKey,
             grant.accountGeneration,
             grant.entitlementClass.wire,
             System.currentTimeMillis() + RECEIPT_TTL_MILLIS,
-        )
+        ) { MediaLeaseRegistryHolder.current()?.isCurrentCacheAuthorization(grant) == true }
+        if (!recorded) return false
         synchronized(cacheAuthorizations) { cacheAuthorizations[blob.blobKey] = grant }
         return true
     }
@@ -247,7 +254,7 @@ internal class OfflineCatalogService private constructor(context: Context) {
         val mime = entry.mimeType ?: return
         val digest = entry.digest ?: return
         val committed = repository.ready(
-            OfflineCatalogIdentity(entry.source, entry.trackId, null, "default", "legacy"),
+            OfflineCatalogIdentity(entry.source, entry.trackId, grant.identity.partId, if (entry.source == "bilibili") "audio" else "default", if (entry.source == "bilibili") digest else "legacy"),
             digest,
             entry.downloadedBytes,
             mime,
@@ -255,14 +262,20 @@ internal class OfflineCatalogService private constructor(context: Context) {
             mime,
             staged,
             OfflineOwnerKind.EXPLICIT,
+            publicationAllowed = { MediaLeaseRegistryHolder.current()?.isCurrentCacheAuthorization(grant) == true },
         )
+        if (committed.status == "AUTHORIZATION_REQUIRED") {
+            transfer.remove(entry.source, entry.trackId)
+            if (entry.source == "bilibili") transfer.rejectAdmission(entry.source, entry.trackId, entry.title, entry.artist, "BILIBILI_AUTHORIZATION_REQUIRED")
+            return
+        }
         if (committed.status == "READY") {
             repository.recordAuthorization(
                 committed.blobKey ?: return,
                 grant.accountGeneration,
                 grant.entitlementClass.wire,
                 System.currentTimeMillis() + RECEIPT_TTL_MILLIS,
-            )
+            ) { MediaLeaseRegistryHolder.current()?.isCurrentCacheAuthorization(grant) == true }
             scheduleAnalysis(digest)
             evictToQuota()
         }
@@ -272,7 +285,25 @@ internal class OfflineCatalogService private constructor(context: Context) {
     private fun freshTransferGrant(source: String, trackId: String): CacheAuthorization? {
         val grant = MediaLeaseRegistryHolder.current()?.localCacheAuthorization(source, trackId) ?: return null
         if (grant.accountGeneration == 0L && grant.entitlementClass.wire != "anonymous-free") return null
-        return grant.takeIf { MediaLeaseRegistryHolder.current()?.isCurrentCacheAuthorization(it) == true }
+        return grant.takeIf {
+            MediaLeaseRegistryHolder.current()?.isCurrentCacheAuthorization(it) == true &&
+                (source != "bilibili" || BilibiliOfflinePolicy.matches(it, source, trackId))
+        }
+    }
+
+    private fun isTransferAuthorizationCurrent(entry: OfflineEntry): Boolean {
+        val grant = transferAuthorizations.peek(entry) ?: return false
+        return MediaLeaseRegistryHolder.current()?.isCurrentCacheAuthorization(grant) == true &&
+            (entry.source != "bilibili" || BilibiliOfflinePolicy.matches(grant, entry.source, entry.trackId))
+    }
+
+    /** Only the operation-bound lease can supply native transport. No URL comes from JS or disk. */
+    private fun fetchBilibili(entry: OfflineEntry, deadline: Long): OfflineResponse {
+        val grant = transferAuthorizations.peek(entry) ?: throw java.io.IOException("ENTITLEMENT")
+        val registry = MediaLeaseRegistryHolder.current() ?: throw java.io.IOException("ENTITLEMENT")
+        if (!BilibiliOfflinePolicy.matches(grant, entry.source, entry.trackId) || !registry.isCurrentCacheAuthorization(grant)) throw java.io.IOException("ENTITLEMENT")
+        val transport = registry.transportFor(grant.leaseId, grant.identity, grant.accountGeneration) ?: throw java.io.IOException("ENTITLEMENT")
+        return BilibiliOfflineTransport().fetch(transport, deadline)
     }
 
     private fun enqueueAuthorized(source: String, trackId: String, title: String, artist: String, grant: CacheAuthorization): OfflineEntry =
@@ -424,6 +455,9 @@ internal class TransferAuthorizationBook {
         return true
     }
 
+    @Synchronized fun peek(entry: OfflineEntry): CacheAuthorization? =
+        bindings[OfflinePolicy.key(entry.source, entry.trackId)]?.takeIf { it.operationId == entry.operationId }?.grant
+
     @Synchronized fun consume(entry: OfflineEntry): CacheAuthorization? {
         val key = OfflinePolicy.key(entry.source, entry.trackId)
         val binding = bindings[key] ?: return null
@@ -438,6 +472,10 @@ internal class TransferAuthorizationBook {
 
 /** Durable receipt policy is pure so reopen/TTL/account fixtures do not need a transport. */
 internal object OfflineAuthorizationPolicy {
+    fun mayRecord(authority: com.listen2mobile.library.OfflineAuthorityEntity?, generation: Long): Boolean =
+        authority == null || authority.authState == "unknown" || (authority.generation <= generation &&
+            !(authority.generation == generation && authority.authState == "revoked"))
+
     fun permits(
         receipt: com.listen2mobile.library.CacheCatalogEntity,
         authority: com.listen2mobile.library.OfflineAuthorityEntity?,
