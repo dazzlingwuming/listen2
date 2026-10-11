@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { configureStore } from '@reduxjs/toolkit';
 import { TypedUseSelectorHook, useDispatch, useSelector } from 'react-redux';
-import { createMigrate, persistReducer, persistStore } from 'redux-persist';
+import { createMigrate, createTransform, persistReducer, persistStore } from 'redux-persist';
 import {
   FLUSH,
   PAUSE,
@@ -14,7 +14,7 @@ import playerReducer from './playerSlice';
 import libraryReducer from './librarySlice';
 import { configurePlayerController } from '../player/playerController';
 import mvReducer from './mvSlice';
-import { migratePlayerState, sanitizePlayerState } from './playerPersistence';
+import { migratePlayerState, sanitizePersistedPlayerField, sanitizePlayerState } from './playerPersistence';
 import { history } from '../history/history';
 import { createContinuityCoordinator, continuitySignature, queueCheckpointFromPlayer } from '../library/continuityCoordinator';
 import { historyProjectionReceived, hydrationSucceeded } from './librarySlice';
@@ -27,6 +27,7 @@ const persistConfig = {
   // `isPlaying` deliberately remains volatile: reopening the app must not
   // unexpectedly begin audio, while position/queue/mode remain restorable.
   blacklist: ['isPlaying', 'duration', 'bufferedPosition', 'error'],
+  transforms: [createTransform((value, key, playerState) => sanitizePersistedPlayerField(value, String(key), playerState))],
   migrate: createMigrate({ 2: migratePlayerState as any }),
   // Migrations only run for older stored versions. Reconcile every inbound
   // snapshot through the same pure boundary to reject current-version junk.
@@ -71,6 +72,7 @@ let appliedNativeQueueCheckpoint = false;
 let attemptedNativeQueueRestore = false;
 let nativeQueueRestorePending = false;
 let playerRehydrated = false;
+let restoredLocalRecordsRebound = false;
 const reconcileContinuity = () => {
   let state = store.getState();
   const revision = state.library.revision;
@@ -94,6 +96,20 @@ const reconcileContinuity = () => {
     }
   }
   if (!playerRehydrated) return;
+  if (!restoredLocalRecordsRebound) {
+    restoredLocalRecordsRebound = true;
+    const hasRetainedLocal = state.player.nowPlaying?.source === 'local' ||
+      state.player.playlist.some(track => track.source === 'local') ||
+      state.player.playNextQueue.some(item => item.track.source === 'local') ||
+      state.player.history.some(item => item.track.source === 'local');
+    if (hasRetainedLocal) void import('../player/playerController').then(async ({ playerController }) => {
+      await playerController.rebindRestoredLocalRecords(state.library.localTracks || [], async () => {
+        const { libraryClient } = await import('../library/libraryClient');
+        store.dispatch(hydrationSucceeded(await libraryClient.getSnapshot()));
+        return store.getState().library.localTracks || [];
+      });
+    }).catch(() => undefined);
+  }
   if (!nativeQueue.length) {
     nativeQueueRestorePending = false;
     attemptedNativeQueueRestore = false;

@@ -20,6 +20,38 @@ const track = (id: string) => ({
 });
 
 describe('playerSlice', () => {
+  it('rebinds retained local semantics to native records without restoring grant fields or autoplay', () => {
+    const local = { id: '11111111-1111-4111-8111-111111111111', source: 'local' as const, title: 'Pending', artist: 'Me', accessStatus: 'needs-repair' as const };
+    let state = reducer(undefined, playerActions.replacePlaylist({ tracks: [track('ne_1'), local, track('ne_2')], startIndex: 1 }));
+    state = reducer(state, playerActions.setProgress({ position: 42, duration: 720, bufferedPosition: 43 }));
+    state = reducer(state, playerActions.enqueueNext(local));
+    const token = state.transitionToken;
+    state = reducer(state, playerActions.rebindLocalPlayerRecords({ records: [{ ...local, title: 'Native', accessStatus: 'available', seekable: true, privatePlaybackUri: 'content://forbidden' } as any], verifiedCurrentId: local.id, expectedCurrentId: local.id, expectedTransitionToken: token }));
+    expect(state.nowPlaying?.title).toBe('Native');
+    expect(state.currentIndex).toBe(1);
+    expect(state.position).toBe(42);
+    expect(state.nowPlaying?.source === 'local' && state.nowPlaying.accessStatus).toBe('available');
+    expect(state.isPlaying).toBe(false);
+    expect(JSON.stringify(state)).not.toContain('content://');
+    state = reducer(state, playerActions.rebindLocalPlayerRecords({ records: [{ ...local, accessStatus: 'available' }], verifiedCurrentId: null, expectedCurrentId: local.id, expectedTransitionToken: token }));
+    expect(state.nowPlaying?.source === 'local' && state.nowPlaying.accessStatus).toBe('unreadable');
+    state = reducer(state, playerActions.rebindLocalPlayerRecords({ records: [], verifiedCurrentId: null, expectedCurrentId: local.id, expectedTransitionToken: token }));
+    expect(state.nowPlaying).toBeNull();
+    expect(state.playlist.map(item => item.id)).toEqual(['ne_1', 'ne_2']);
+    expect(state.playNextQueue).toEqual([]);
+    expect(state.position).toBe(0);
+  });
+
+  it('does not let a late local recovery replace a new selection', () => {
+    const local = { id: '11111111-1111-4111-8111-111111111111', source: 'local' as const, title: 'Local', artist: 'Me' };
+    let state = reducer(undefined, playerActions.replacePlaylist({ tracks: [local] }));
+    const token = state.transitionToken;
+    state = reducer(state, playerActions.beginTransition(token + 1));
+    const before = state;
+    state = reducer(state, playerActions.rebindLocalPlayerRecords({ records: [], verifiedCurrentId: null, expectedCurrentId: local.id, expectedTransitionToken: token }));
+    expect(state).toEqual(before);
+  });
+
   it('keeps duplicate play-next requests in FIFO order', () => {
     const duplicate = track('ne_1');
     let state = reducer(undefined, playerActions.enqueueNext(duplicate));

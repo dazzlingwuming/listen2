@@ -26,6 +26,17 @@ import { isLocalTrack } from '../types/music';
 import { libraryClient } from '../library/libraryClient';
 import { persistRemoteCollectionRefresh } from '../library/remoteCollectionCoordinator';
 
+type LocalPlaybackStage =
+  | 'dispatch-start'
+  | 'dispatch-true'
+  | 'dispatch-false'
+  | 'dispatch-caught'
+  | 'navigate-ack';
+
+function localPlaybackStage(track: PresentableTrack, stage: LocalPlaybackStage) {
+  if (track.source === 'local') console.info(`[Listen2Local] detail-${stage}`);
+}
+
 type RemotePlaylistStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 export function PlaylistDetailScreen() {
@@ -68,6 +79,7 @@ export function PlaylistDetailScreen() {
   ) as PresentableTrack[];
   const [addTarget, setAddTarget] = useState<PlayableTrack | null>(null);
   const [startingPlayback, setStartingPlayback] = useState(false);
+  const playbackPending = useRef(false);
   const [renameVisible, setRenameVisible] = useState(false);
   const [renameDraft, setRenameDraft] = useState('');
   const remoteRequest = useRef<AbortController | null>(null);
@@ -126,17 +138,26 @@ export function PlaylistDetailScreen() {
     remoteRequest.current = controller;
     loadRemotePlaylist(controller.signal, ++remoteGeneration.current);
   };
-  const play = async (_track: PresentableTrack, index: number) => {
-    if (startingPlayback) return;
+  const play = async (track: PresentableTrack, index: number) => {
+    // Guard synchronously as two row presses can precede the next React render.
+    if (playbackPending.current) return;
+    playbackPending.current = true;
     setStartingPlayback(true);
+    localPlaybackStage(track, 'dispatch-start');
     try {
       const started = await dispatch(
         playerActions.playTracks(playableTracks as PlayableTrack[], index),
       );
-      if (started === true) navigation.navigate('Player');
+      localPlaybackStage(track, started === true ? 'dispatch-true' : 'dispatch-false');
+      if (started === true) {
+        navigation.navigate('Player');
+        localPlaybackStage(track, 'navigate-ack');
+      }
     } catch {
-      // The controller stores only a fixed product-safe error code.
+      // Preserve the controller's fixed product-safe error code; never log errors.
+      localPlaybackStage(track, 'dispatch-caught');
     } finally {
+      playbackPending.current = false;
       setStartingPlayback(false);
     }
   };
@@ -267,7 +288,9 @@ export function PlaylistDetailScreen() {
                   styles.playAllDisabled,
               ]}
             >
-              <Text style={sectionStyles.buttonText}>▶ 播放全部</Text>
+              <Text accessibilityLiveRegion="polite" style={sectionStyles.buttonText}>
+                {startingPlayback ? '正在准备播放…' : '▶ 播放全部'}
+              </Text>
             </Pressable>
           ) : null}
           {playableTracks.map((track, index) => {
@@ -279,20 +302,25 @@ export function PlaylistDetailScreen() {
               <View key={`${track.id || index}`} style={styles.trackBlock}>
                 <TrackRow
                   onPlay={
-                    canPlay
+                    canPlay && !startingPlayback
                       ? () => {
                           play(track, index).catch(() => undefined);
                         }
                       : undefined
                   }
                   onPress={
-                    canPlay
+                    canPlay && !startingPlayback
                       ? () => {
                           play(track, index).catch(() => undefined);
                         }
                       : undefined
                   }
                   track={track}
+                  action={startingPlayback && canPlay ? {
+                    kind: 'unavailable',
+                    label: '正在准备播放',
+                    explanation: '正在准备播放…',
+                  } : undefined}
                   onAddNext={
                     isLocalTrack(track) && track.accessStatus === 'available'
                       ? () => dispatch(playerActions.addNextTrack(track))

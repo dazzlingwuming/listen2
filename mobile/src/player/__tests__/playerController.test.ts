@@ -36,6 +36,8 @@ const mockAuthorizeLocalCache = jest.fn().mockResolvedValue(false);
 const mockMarkPlayed = jest.fn().mockResolvedValue({});
 const mockNormalizationGain = jest.fn().mockResolvedValue(1);
 const mockPrepareLocalPlayback = jest.fn();
+const mockVerifyLocalPlayback = jest.fn();
+const mockEndLocalPlayback = jest.fn();
 
 jest.mock('react-native-track-player', () => ({
   __esModule: true,
@@ -91,8 +93,11 @@ jest.mock('../../offline/offlineAudio', () => ({
   },
 }));
 
+import { sanitizePlayerState } from '../../store/playerPersistence';
+
 import reducer, {
   playerActions,
+  playTracks,
   type PlayerState,
 } from '../../store/playerSlice';
 import {
@@ -167,11 +172,15 @@ describe('PlayerController queue transitions', () => {
     mockMarkPlayed.mockResolvedValue({});
     mockNormalizationGain.mockResolvedValue(1);
     mockPrepareLocalPlayback.mockReset();
+    mockVerifyLocalPlayback.mockReset().mockImplementation((recordId: string, playbackRequestId: string) => Promise.resolve({ recordId, playbackRequestId, status: 'success' }));
+    mockEndLocalPlayback.mockReset().mockResolvedValue('released');
     Object.defineProperty(NativeModules, 'Listen2LocalAudio', {
       configurable: true,
       value: {
         prepareLocalPlayback: (...args: unknown[]) =>
           mockPrepareLocalPlayback(...args),
+        verifyLocalPlayback: (...args: unknown[]) => mockVerifyLocalPlayback(...args),
+        endLocalPlayback: (...args: unknown[]) => mockEndLocalPlayback(...args),
       },
     });
     Object.defineProperty(Platform, 'Version', {
@@ -629,6 +638,120 @@ describe('PlayerController queue transitions', () => {
         url: 'content://com.dazzlingwuming.listen2.local-media/play/abcdefghijklmnopqrstuvwxyzABCDEF',
       }),
     );
+    expect(JSON.stringify(state)).not.toContain('.local-media/play/');
+  });
+
+  it('recovers local UI paused then explicitly resumes with a fresh native receipt at the retained position', async () => {
+    const local = { ...localTrack('restart'), seekable: true };
+    state = sanitizePlayerState({ playlist: [local], currentTrack: local, currentIndex: 0, currentSource: 'playlist', position: 42, isPlaying: true });
+    mockPrepareLocalPlayback.mockImplementation((recordId: string, playbackRequestId: string) => Promise.resolve({ recordId, playbackRequestId, status: 'success', privatePlaybackUri: 'content://com.dazzlingwuming.listen2.local-media/play/abcdefghijklmnopqrstuvwxyzABCDEF', seekable: true }));
+    await playerController.restore();
+    expect(mockNativePlayer.setupPlayer).not.toHaveBeenCalled();
+    await playerController.rebindRestoredLocalRecords([local]);
+    expect(state.currentTrack?.id).toBe(local.id);
+    expect(state.position).toBe(42);
+    expect(state.isPlaying).toBe(false);
+    expect(mockNativePlayer.add).not.toHaveBeenCalled();
+    expect(mockNativePlayer.play).not.toHaveBeenCalled();
+    expect(JSON.stringify(state)).not.toContain('.local-media/play/');
+    expect(mockPrepareLocalPlayback).not.toHaveBeenCalled();
+    expect(mockEndLocalPlayback).not.toHaveBeenCalled();
+    await expect(playerController.play(dispatch)).resolves.toBe(true);
+    expect(mockVerifyLocalPlayback).toHaveBeenCalledTimes(1);
+    expect(mockPrepareLocalPlayback).toHaveBeenCalledTimes(1);
+    expect(mockEndLocalPlayback).toHaveBeenCalledWith(mockPrepareLocalPlayback.mock.calls[0][1]);
+    expect(mockNativePlayer.reset.mock.invocationCallOrder[0]).toBeLessThan(mockEndLocalPlayback.mock.invocationCallOrder[0]);
+    expect(mockEndLocalPlayback.mock.invocationCallOrder[0]).toBeLessThan(mockNativePlayer.add.mock.invocationCallOrder[0]);
+    expect(mockNativePlayer.seekTo).toHaveBeenCalledWith(42);
+    expect(mockNativePlayer.play).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps lost local grants unavailable and drops a record removed while access verification was pending', async () => {
+    const local = localTrack('revoked');
+    state = reducer(state, playerActions.replacePlaylist({ tracks: [local] }));
+    mockPrepareLocalPlayback.mockResolvedValue({ status: 'unavailable' });
+    mockVerifyLocalPlayback.mockResolvedValue({ status: 'unavailable' });
+    await playerController.rebindRestoredLocalRecords([local]);
+    expect(state.nowPlaying?.source === 'local' && state.nowPlaying.accessStatus).toBe('unreadable');
+    expect(state.isPlaying).toBe(false);
+    expect(mockNativePlayer.play).not.toHaveBeenCalled();
+    await expect(playerController.play(dispatch)).resolves.toBe(false);
+    expect(mockNativePlayer.play).not.toHaveBeenCalled();
+    await playerController.rebindRestoredLocalRecords([local], async () => []);
+    expect(state.nowPlaying).toBeNull();
+    expect(state.playlist).toEqual([]);
+  });
+
+  it('ignores a late local verification after a new live network selection owns the state', async () => {
+    const local = localTrack('late');
+    state = sanitizePlayerState({ playlist: [local], currentTrack: local, currentIndex: 0 });
+    let release!: (value: unknown) => void;
+    let requestId = '';
+    mockVerifyLocalPlayback.mockImplementation((_: string, playbackRequestId: string) => { requestId = playbackRequestId; return new Promise(resolve => { release = resolve; }); });
+    const pending = playerController.rebindRestoredLocalRecords([local]);
+    state = reducer(state, playerActions.beginTransition(state.transitionToken + 1));
+    const remote = track('ne_new_selection');
+    state = reducer(state, playerActions.replacePlaylist({ tracks: [remote] }));
+    state = reducer(state, playerActions.setPlaying(true));
+    release({ recordId: local.id, playbackRequestId: requestId, status: 'success' });
+    await pending;
+    expect(state.nowPlaying?.id).toBe(remote.id);
+    expect(state.isPlaying).toBe(true);
+    expect(mockNativePlayer.pause).not.toHaveBeenCalled();
+    expect(mockNativePlayer.play).not.toHaveBeenCalled();
+  });
+
+  it('returns true for local playlist playback and keeps session failure retryable without declaring grant loss', async () => {
+    const stages = jest.spyOn(console, 'info').mockImplementation(() => undefined);
+    const local = { ...localTrack('playlist success'), seekable: true };
+    mockPrepareLocalPlayback.mockImplementation((recordId: string, playbackRequestId: string) => Promise.resolve({ recordId, playbackRequestId, status: 'success', privatePlaybackUri: 'content://com.dazzlingwuming.listen2.local-media/play/abcdefghijklmnopqrstuvwxyzABCDEF', seekable: true }));
+    await expect(playTracks([local, track('netrack_next')], 0)(dispatch)).resolves.toBe(true);
+    expect(stages.mock.calls.map(call => call[0])).toEqual([
+      '[Listen2Local] playback-multi-resolve',
+      '[Listen2Local] playback-multi-ensure-player',
+      '[Listen2Local] playback-multi-snapshot',
+      '[Listen2Local] playback-replace-reset',
+      '[Listen2Local] playback-replace-add',
+      '[Listen2Local] playback-replace-configure',
+      '[Listen2Local] playback-replace-play',
+      '[Listen2Local] playback-replace-play-ack',
+      '[Listen2Local] playback-semantic-commit',
+      '[Listen2Local] playback-semantic-commit-ack',
+    ]);
+    stages.mockRestore();
+    expect(state.currentTrack?.id).toBe(local.id);
+    expect(state.isPlaying).toBe(true);
+    expect(mockNativePlayer.add).toHaveBeenCalledTimes(1);
+    const added = mockNativePlayer.add.mock.calls[0][0];
+    expect(added).not.toHaveProperty('localPlaybackRequestId');
+    expect(added).not.toHaveProperty('playbackRequestId');
+    const identity = playerController.onNativeActiveTrackChanged(added, 0);
+    playerController.onPlaybackError(identity ?? undefined);
+    expect(state.error).toBe('local-playback-retry-required');
+    expect(playerErrorCopy(state.error)).toBe('本地音频播放中断，请点击播放重试。');
+    expect(state.nowPlaying?.source === 'local' && state.nowPlaying.accessStatus).toBe('available');
+    await expect(playerController.play(dispatch)).resolves.toBe(true);
+    expect(mockPrepareLocalPlayback).toHaveBeenCalledTimes(2);
+    expect(state.error).toBeNull();
+    expect(JSON.stringify(state)).not.toContain('.local-media/play/');
+  });
+
+  it('rolls a failed replacement back using a fresh local bootstrap after the previous lease ended', async () => {
+    const local = { ...localTrack('rollback'), seekable: true };
+    state = reducer(state, playerActions.replacePlaylist({ tracks: [local] }));
+    state = reducer(state, playerActions.setPlaying(true));
+    const oldUri = 'content://com.dazzlingwuming.listen2.local-media/play/' + 'a'.repeat(48);
+    const freshUri = 'content://com.dazzlingwuming.listen2.local-media/play/' + 'b'.repeat(48);
+    mockNativePlayer.getActiveTrack.mockResolvedValue({ url: oldUri });
+    mockNativePlayer.getProgress.mockResolvedValue({ position: 547 });
+    mockNativePlayer.add.mockRejectedValueOnce(new Error('replacement-failed'));
+    mockPrepareLocalPlayback.mockImplementation((recordId: string, playbackRequestId: string) => Promise.resolve({ recordId, playbackRequestId, status: 'success', privatePlaybackUri: freshUri, seekable: true }));
+    await expect(playerController.playTracks(dispatch, [track('netrack_new')], 0)).resolves.toBe(false);
+    expect(mockPrepareLocalPlayback).toHaveBeenCalledTimes(1);
+    expect(mockNativePlayer.add).toHaveBeenLastCalledWith(expect.objectContaining({ url: freshUri }));
+    expect(mockNativePlayer.seekTo).toHaveBeenCalledWith(547);
+    expect(state.nowPlaying?.id).toBe(local.id);
+    expect(state.isPlaying).toBe(true);
     expect(JSON.stringify(state)).not.toContain('.local-media/play/');
   });
 

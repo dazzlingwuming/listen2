@@ -14,14 +14,24 @@ class LocalMediaProvider : ContentProvider() {
     override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor {
         if (!LocalMediaPolicy.validReadMode(mode)) throw FileNotFoundException("not-found")
         val token = LocalMediaPolicy.tokenFrom(uri) ?: throw FileNotFoundException("not-found")
-        val recordId = LocalPlaybackTokens.consume(token) ?: throw FileNotFoundException("not-found")
-        val source = LocalPrivateStore(requireNotNull(context)).document(recordId) ?: throw FileNotFoundException("not-found")
         return try {
-            requireNotNull(context).contentResolver.openFileDescriptor(source, "r") ?: throw FileNotFoundException("not-found")
+            LocalPlaybackTokens.open(token, closeRejected = { it: ParcelFileDescriptor -> it.close() }) { recordId ->
+                val app = requireNotNull(context)
+                val repository = LibraryRepository.open(app)
+                val source = LocalPrivateStore(app).document(recordId)
+                val descriptor = LocalPlaybackReadPolicy.open(
+                    { source != null && repository.localRecord(recordId)?.availability == "available" },
+                    { app.contentResolver.persistedUriPermissions.any { it.uri == source && it.isReadPermission } },
+                    { app.contentResolver.openFileDescriptor(requireNotNull(source), "r") ?: throw FileNotFoundException("not-found") },
+                )
+                if (descriptor == null) {
+                    runCatching { repository.markLocalAvailability(recordId, "unreadable") }
+                    throw FileNotFoundException("not-found")
+                }
+                descriptor
+            } ?: throw FileNotFoundException("not-found")
         } catch (_: Exception) {
-            // Keep the opaque row repairable; neither the raw document identity nor a provider
-            // exception crosses this boundary.
-            LibraryRepository.open(requireNotNull(context)).markLocalAvailability(recordId, "unreadable")
+            // Never expose a document identity or a resolver exception through RNTP.
             throw FileNotFoundException("not-found")
         }
     }

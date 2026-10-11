@@ -3,11 +3,13 @@ import TrackPlayer, {
   RepeatMode,
   State,
 } from 'react-native-track-player';
-import { NativeModules, PermissionsAndroid, Platform } from 'react-native';
+import { PermissionsAndroid, Platform } from 'react-native';
+import { endLocalPlayback, prepareLocalPlayback, verifyLocalPlayback } from '../localAudio/picker';
 import { providerClient } from '../api/client';
 import { ProviderClientError } from '../api/errors';
 import {
   isLocalTrack,
+  type LocalTrack,
   type MediaDescriptor,
   type PlayableTrack,
 } from '../types/music';
@@ -59,9 +61,22 @@ function normalizedVolume(state: PlayerState) {
  * Keep native hand-off diagnostics useful without exposing a provider URL,
  * lease, title, headers, or an unbounded error message to logcat.
  */
-function bilibiliPlaybackStage(track: PlayableTrack, stage: string) {
+const PLAYBACK_STAGES = [
+  'replace-reset', 'replace-add', 'replace-configure', 'replace-play',
+  'replace-play-ack', 'ensure-player', 'resolve-media', 'reset', 'add',
+  'configure', 'seek', 'play', 'play-ack', 'failed', 'multi-resolve',
+  'multi-resolve-failed', 'multi-ensure-player', 'multi-snapshot',
+  'multi-ensure-failed', 'replace-failed', 'semantic-commit',
+  'semantic-commit-ack',
+] as const;
+type PlaybackStage = typeof PLAYBACK_STAGES[number];
+
+function playbackStage(track: PlayableTrack, stage: PlaybackStage) {
+  if (!PLAYBACK_STAGES.includes(stage)) return;
   if (track.source === 'bilibili')
     console.info(`[Listen2Bilibili] playback-${stage}`);
+  if (track.source === 'local')
+    console.info(`[Listen2Local] playback-${stage}`);
 }
 
 function scheduleCachedNormalization(
@@ -118,6 +133,8 @@ type NativePlayableMedia = Readonly<{
   playableUri: string;
   durationMs?: number;
   mimeType?: string;
+  // Transient native bootstrap correlation; never copied into an RNTP Track.
+  localPlaybackRequestId?: string;
 }>;
 
 const APP_MEDIA_AUTHORITY = 'com.dazzlingwuming.listen2';
@@ -242,15 +259,9 @@ async function resolveTrackMedia(
 ): Promise<NativePlayableMedia> {
   if (isLocalTrack(track)) {
     if (signal?.aborted) throw Object.assign(new Error('cancelled'), { code: 'CANCELLED' });
-    const playbackRequestId = `local_play_${Date.now().toString(36)}`;
-    const module = NativeModules.Listen2LocalAudio as { prepareLocalPlayback?: (recordId: string, requestId: string) => Promise<unknown> } | undefined;
-    if (!module || typeof module.prepareLocalPlayback !== 'function') throw Object.assign(new Error('local-unavailable'), { code: 'local-media-unavailable' });
-    const value = await module.prepareLocalPlayback(track.id, playbackRequestId);
-    if (signal?.aborted || !value || typeof value !== 'object' || Array.isArray(value)) throw Object.assign(new Error('local-unavailable'), { code: signal?.aborted ? 'CANCELLED' : 'local-media-unavailable' });
-    const receipt = value as Record<string, unknown>;
-    const privateUri = receipt.privatePlaybackUri;
-    if (Object.keys(receipt).length !== 5 || Object.keys(receipt).some(key => !['recordId', 'playbackRequestId', 'status', 'privatePlaybackUri', 'seekable'].includes(key)) || receipt.recordId !== track.id || receipt.playbackRequestId !== playbackRequestId || receipt.status !== 'success' || typeof privateUri !== 'string' || !new RegExp(`^content://${APP_MEDIA_AUTHORITY}\\.local-media/play/[A-Za-z0-9_-]{32,128}$`).test(privateUri) || typeof receipt.seekable !== 'boolean') throw Object.assign(new Error('local-unavailable'), { code: 'local-media-unavailable' });
-    return { playableUri: privateUri, durationMs: track.durationMs };
+    const receipt = await prepareLocalPlayback(track.id);
+    if (signal?.aborted) throw Object.assign(new Error('cancelled'), { code: 'CANCELLED' });
+    return { playableUri: receipt.privatePlaybackUri, localPlaybackRequestId: receipt.playbackRequestId, durationMs: track.durationMs };
   }
   // A retained file can start with no network only when the native session
   // still holds a current provider/account entitlement for this exact track.
@@ -414,14 +425,23 @@ async function captureRollbackSnapshot(
   };
 }
 
+/** Reset the single native item, retaining only its exact prepared local replacement. */
+async function resetNativeQueue(media?: NativePlayableMedia | null): Promise<void> {
+  await TrackPlayer.reset();
+  await endLocalPlayback(media?.localPlaybackRequestId ?? null);
+}
+
 async function restoreRollbackSnapshot(
   snapshot: NativeRollbackSnapshot,
   context?: NativeOperationContext,
 ): Promise<string> {
   assertNativeOperationCurrent(context);
-  const nativeTrack = asNativeTrack(snapshot.track, snapshot.media);
+  // Reset ends the old local lease, so rollback needs a fresh native bootstrap.
+  const media = isLocalTrack(snapshot.track) ? await resolveTrackMedia(snapshot.track, context?.signal) : snapshot.media;
+  assertNativeOperationCurrent(context);
+  const nativeTrack = asNativeTrack(snapshot.track, media);
   context?.markMutation();
-  await TrackPlayer.reset();
+  await resetNativeQueue(media);
   assertNativeOperationCurrent(context);
   await TrackPlayer.add(nativeTrack as any);
   context?.markLoaded(nativeTrack.id, snapshot.track);
@@ -448,17 +468,18 @@ async function replaceNativeTrack(
   assertNativeOperationCurrent(context);
   const nativeTrack = asNativeTrack(track, media);
   context?.markMutation();
-  bilibiliPlaybackStage(track, 'replace-reset');
-  await TrackPlayer.reset();
+  playbackStage(track, 'replace-reset');
+  await resetNativeQueue(media);
   assertNativeOperationCurrent(context);
-  bilibiliPlaybackStage(track, 'replace-add');
+  playbackStage(track, 'replace-add');
   await TrackPlayer.add(nativeTrack as any);
   context?.markLoaded(nativeTrack.id, track);
-  bilibiliPlaybackStage(track, 'replace-configure');
+  playbackStage(track, 'replace-configure');
   await configureNativeSnapshot(state, context);
   assertNativeOperationCurrent(context);
-  bilibiliPlaybackStage(track, 'replace-play');
+  playbackStage(track, 'replace-play');
   await TrackPlayer.play();
+  playbackStage(track, 'replace-play-ack');
 }
 
 async function ensurePlayer(): Promise<void> {
@@ -541,10 +562,10 @@ async function loadAndPlay(
   let media: NativePlayableMedia | null = null;
   try {
     assertNativeOperationCurrent(context);
-    bilibiliPlaybackStage(track, 'ensure-player');
+    playbackStage(track, 'ensure-player');
     await ensurePlayer();
     assertNativeOperationCurrent(context);
-    bilibiliPlaybackStage(track, 'resolve-media');
+    playbackStage(track, 'resolve-media');
     const acceptedMedia =
       resolvedMedia ?? (await resolveTrackMedia(track, context?.signal));
     media = acceptedMedia;
@@ -552,23 +573,24 @@ async function loadAndPlay(
     const state = playerState();
     const nativeTrack = asNativeTrack(track, acceptedMedia);
     context?.markMutation();
-    bilibiliPlaybackStage(track, 'reset');
-    await TrackPlayer.reset();
+    playbackStage(track, 'reset');
+    await resetNativeQueue(acceptedMedia);
     assertNativeOperationCurrent(context);
-    bilibiliPlaybackStage(track, 'add');
+    playbackStage(track, 'add');
     await TrackPlayer.add(nativeTrack as any);
     context?.markLoaded(nativeTrack.id, track);
-    bilibiliPlaybackStage(track, 'configure');
+    playbackStage(track, 'configure');
     await configureNativeSnapshot(state, context);
     scheduleCachedNormalization(track, context);
     if (position > 0) {
       assertNativeOperationCurrent(context);
-      bilibiliPlaybackStage(track, 'seek');
+      playbackStage(track, 'seek');
       await TrackPlayer.seekTo(position);
     }
     assertNativeOperationCurrent(context);
-    bilibiliPlaybackStage(track, 'play');
+    playbackStage(track, 'play');
     await TrackPlayer.play();
+    playbackStage(track, 'play-ack');
     if (
       isAcceptedOfflineCacheMedia(track, acceptedMedia)
     )
@@ -576,7 +598,7 @@ async function loadAndPlay(
     emit(dispatch, 'player/setPlaying', true);
     return true;
   } catch (error) {
-    bilibiliPlaybackStage(track, 'failed');
+    playbackStage(track, 'failed');
     if (error === STALE_NATIVE_COMMAND) return false;
     if (!isNativeOperationCurrent(context)) return false;
     if (
@@ -602,7 +624,7 @@ async function loadAndPlay(
         assertNativeOperationCurrent(context);
         const nativeTrack = asNativeTrack(track, replacement);
         context?.markMutation();
-        await TrackPlayer.reset();
+        await resetNativeQueue();
         assertNativeOperationCurrent(context);
         await TrackPlayer.add(nativeTrack as any);
         context?.markLoaded(nativeTrack.id, track);
@@ -725,7 +747,7 @@ async function transition(
     if (context?.didMutate()) {
       try {
         await TrackPlayer.pause();
-        await TrackPlayer.reset();
+        await resetNativeQueue();
       } catch {
         // The newer command can still reload the authoritative semantic item.
       }
@@ -1045,11 +1067,11 @@ class PlayerController {
     if (!target) return false;
     let media: NativePlayableMedia;
     try {
-      bilibiliPlaybackStage(target, 'multi-resolve');
+      playbackStage(target, 'multi-resolve');
       media = await resolveTrackMedia(target, context.signal);
       assertNativeOperationCurrent(context);
     } catch (error) {
-      bilibiliPlaybackStage(target, 'multi-resolve-failed');
+      playbackStage(target, 'multi-resolve-failed');
       if (!isNativeOperationCurrent(context)) return false;
       emit(
         dispatch,
@@ -1062,13 +1084,13 @@ class PlayerController {
     const state = playerState();
     let snapshot: NativeRollbackSnapshot | null = null;
     try {
-      bilibiliPlaybackStage(target, 'multi-ensure-player');
+      playbackStage(target, 'multi-ensure-player');
       await ensurePlayer();
-      bilibiliPlaybackStage(target, 'multi-snapshot');
+      playbackStage(target, 'multi-snapshot');
       snapshot = await captureRollbackSnapshot(state);
       assertNativeOperationCurrent(context);
     } catch (error) {
-      bilibiliPlaybackStage(target, 'multi-ensure-failed');
+      playbackStage(target, 'multi-ensure-failed');
       if (
         error === NO_ACTIVE_NATIVE_SNAPSHOT &&
         this.canReplaceRestoredSemanticOnly()
@@ -1086,7 +1108,7 @@ class PlayerController {
     try {
       await replaceNativeTrack(target, media, state, context);
     } catch {
-      bilibiliPlaybackStage(target, 'replace-failed');
+      playbackStage(target, 'replace-failed');
       if (!isNativeOperationCurrent(context)) return false;
       if (!snapshot) {
         emit(dispatch, 'player/setPlaying', false);
@@ -1112,7 +1134,7 @@ class PlayerController {
       if (context.didMutate()) {
         try {
           await TrackPlayer.pause();
-          await TrackPlayer.reset();
+          await resetNativeQueue();
         } catch {
           // The authoritative transaction will reload the semantic item.
         }
@@ -1122,8 +1144,10 @@ class PlayerController {
       return false;
     }
     this.restoredNeedsLoad = false;
+    playbackStage(target, 'semantic-commit');
     emit(dispatch, 'player/setPlaying', true);
     emit(dispatch, 'player/replacePlaylist', { tracks, startIndex });
+    playbackStage(target, 'semantic-commit-ack');
     return true;
   }
 
@@ -1183,7 +1207,7 @@ class PlayerController {
       context.markMutation();
       await TrackPlayer.stop();
       assertNativeOperationCurrent(context);
-      await TrackPlayer.reset();
+      await resetNativeQueue(media);
       assertNativeOperationCurrent(context);
       if (target && media) {
         const nativeTrack = asNativeTrack(target, media);
@@ -1496,7 +1520,7 @@ class PlayerController {
       try {
         await ensurePlayer();
         await TrackPlayer.stop();
-        await TrackPlayer.reset();
+        await resetNativeQueue();
         this.markNativeQueueCleared();
         emit(dispatch, 'player/setPlaying', false);
         emit(dispatch, 'player/setProgress', { position: 0 });
@@ -1526,7 +1550,7 @@ class PlayerController {
         // deletion waited for the native queue. Do not reset that new item.
         if (this.hasPlaylistTrack(track)) return;
         await TrackPlayer.stop();
-        await TrackPlayer.reset();
+        await resetNativeQueue();
         this.markNativeQueueCleared();
       } catch {
         // The catalog must still forget an item if native playback is gone.
@@ -1559,7 +1583,7 @@ class PlayerController {
     if (!this.isNativeCallbackCurrent(identity)) return;
     this.restoredNeedsLoad = true;
     emit(undefined, 'player/setPlaying', false);
-    emit(undefined, 'player/setError', 'native-playback-error');
+    emit(undefined, 'player/setError', isLocalTrack(playerState().nowPlaying) ? 'local-playback-retry-required' : 'native-playback-error');
     history.observe(playerState().nowPlaying, 'failure');
   }
 
@@ -1625,6 +1649,30 @@ class PlayerController {
     this.activeNativeTrackIndex = null;
   }
 
+  /** Rebind semantic local identities only after the authoritative native catalog arrives. */
+  async rebindRestoredLocalRecords(records: LocalTrack[], reloadRecords?: () => Promise<LocalTrack[]>): Promise<void> {
+    const state = playerState();
+    const expectedCurrentId = state.nowPlaying?.id || null;
+    const expectedTransitionToken = state.transitionToken;
+    const current = isLocalTrack(state.nowPlaying) ? records.find(record => record.id === expectedCurrentId) : undefined;
+    let verifiedCurrentId: string | null = null;
+    if (current?.accessStatus === 'available') {
+      try {
+        // A probe cannot create or replace the already playing native lease.
+        if (await verifyLocalPlayback(current.id)) verifiedCurrentId = current.id;
+      } catch { /* Keep the retained semantic row visibly unavailable. */ }
+    }
+    if (reloadRecords) {
+      try { records = await reloadRecords(); }
+      catch {
+        verifiedCurrentId = null;
+        records = records.map(record => ({ ...record, accessStatus: 'needs-repair' as const, seekable: false }));
+      }
+    }
+    emit(undefined, 'player/rebindLocalPlayerRecords', { records, verifiedCurrentId, expectedCurrentId, expectedTransitionToken });
+    if (playerState().transitionToken === expectedTransitionToken) this.restoredNeedsLoad = Boolean(playerState().nowPlaying);
+  }
+
   async restore(): Promise<boolean> {
     return this.runNativeMutation(() => this.restoreInternal());
   }
@@ -1633,6 +1681,12 @@ class PlayerController {
     const state = playerState();
     if (!state.nowPlaying) return false;
     this.restoredNeedsLoad = true;
+    if (isLocalTrack(state.nowPlaying)) {
+      // Local restore is semantic and paused. Avoid player setup/permission UI
+      // until explicit resume, which revalidates native document access again.
+      emit(undefined, 'player/setPlaying', false);
+      return state.nowPlaying.accessStatus === 'available';
+    }
     // Rehydration restores semantic state for the UI only. Media resolution
     // and native loading wait for an explicit user play command.
     try {

@@ -8,6 +8,7 @@ const COPY: Readonly<Record<string, string>> = {
   PLAYBACK_UNAVAILABLE: '当前音源暂不可播放。',
   'offline-media-unavailable': '离线媒体不可用，正在尝试在线播放。',
   'local-media-unavailable': '本地音频无法访问，请重新授权文件访问。',
+  'local-playback-retry-required': '本地音频播放中断，请点击播放重试。',
   'playback-unavailable': '播放暂不可用，请稍后重试。',
   'native-playback-error': '播放器发生错误，请重试。',
   'seek-unavailable': '暂时无法跳转播放进度。',

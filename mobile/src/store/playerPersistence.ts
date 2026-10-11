@@ -44,9 +44,10 @@ function sanitizeTrack(value: unknown): PlayableTrack | null {
   if (!id || !title || !artist) return null;
 
   if (candidate.source === 'local') {
-    // Player Redux persistence is portable semantic state. A document URI is
-    // a revocable native grant, so a later launch must explicitly reselect it.
-    return null;
+    // Retain only a canonical opaque native identity. Availability and document
+    // access must be rebound from Room/native truth after every process launch.
+    if (!/^[A-Za-z0-9-]{16,64}$/.test(id) || title.length > 256 || artist.length > 256) return null;
+    return { id, source: 'local', title: '本地音频', artist: '本地音频', accessStatus: 'needs-repair', capabilities: [], seekable: false };
   }
 
   if (!isSourceId(candidate.source)) return null;
@@ -236,4 +237,13 @@ export function sanitizePlayerState(value: unknown): PlayerState {
 /** Named migration so tests and redux-persist use the exact same boundary. */
 export function migratePlayerState(value: unknown): PlayerState {
   return sanitizePlayerState(value);
+}
+
+const TRACK_STATE_FIELDS = new Set(['playlist', 'tracks', 'queue', 'nowPlaying', 'currentTrack', 'playNextQueue', 'history']);
+
+/** Apply the same semantic whitelist before writing disk, not only when reading it. */
+export function sanitizePersistedPlayerField(value: unknown, key: string, playerState: unknown): unknown {
+  return TRACK_STATE_FIELDS.has(key)
+    ? sanitizePlayerState(playerState)[key as keyof PlayerState]
+    : value;
 }

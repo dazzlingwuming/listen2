@@ -78,13 +78,54 @@ class LocalAudioModule(private val app: ReactApplicationContext) : ReactContextB
         }
     }
 
-    /** Issues a one-use app-private provider URI only for the current RNTP load. */
+    /** A verification probe never creates, activates, or ends a playback lease. */
+    @ReactMethod
+    fun verifyLocalPlayback(recordId: String, playbackRequestId: String, promise: Promise) {
+        if (!RECORD_ID.matches(recordId) || !REQUEST_ID.matches(playbackRequestId)) { promise.resolve(verification(recordId, playbackRequestId, "rejected")); return }
+        worker.execute { promise.resolve(verification(recordId, playbackRequestId, if (readablePlaybackRecord(recordId) != null) "success" else "unavailable")) }
+    }
+
+    /** Called after RNTP reset; only an exact validated replacement may remain pending. */
+    @ReactMethod
+    fun endLocalPlayback(preservePlaybackRequestId: String?, promise: Promise) {
+        // Pure in-memory revoke must not queue behind potentially slow SAF I/O.
+        if (preservePlaybackRequestId != null && !REQUEST_ID.matches(preservePlaybackRequestId)) {
+            LocalPlaybackTokens.endActive()
+            promise.resolve("rejected")
+            return
+        }
+        LocalPlaybackTokens.endActive(preservePlaybackRequestId)
+        promise.resolve("released")
+    }
+
+    private fun readablePlaybackRecord(recordId: String): SafeLocalRecord? {
+        try {
+            val repository = LibraryRepository.open(app)
+            val record = repository.localRecord(recordId)
+            val document = privateStore.document(recordId)
+            if (record == null || record.availability != "available" || document == null) return null
+            val readable = LocalPlaybackAccessPolicy.readable(
+                { app.contentResolver.persistedUriPermissions.any { it.uri == document && it.isReadPermission } },
+                { app.contentResolver.openFileDescriptor(document, "r")?.use { true } == true },
+            )
+            if (!readable) {
+                runCatching { repository.markLocalAvailability(recordId, "unreadable") }
+                return null
+            }
+            return record
+        } catch (_: Exception) {
+            // Storage failure is unavailable, not evidence that a grant expired.
+            return null
+        }
+    }
+
+    /** Issues an app-private bootstrap; only a successful provider open activates it. */
     @ReactMethod
     fun prepareLocalPlayback(recordId: String, playbackRequestId: String, promise: Promise) {
         if (!RECORD_ID.matches(recordId) || !REQUEST_ID.matches(playbackRequestId)) { promise.resolve(playback(recordId, playbackRequestId, "rejected", null, false)); return }
         worker.execute {
-            val record = LibraryRepository.open(app).localRecord(recordId)
-            if (record == null || record.availability != "available" || privateStore.document(recordId) == null) {
+            val record = readablePlaybackRecord(recordId)
+            if (record == null) {
                 promise.resolve(playback(recordId, playbackRequestId, "unavailable", null, false)); return@execute
             }
             val token = LocalPlaybackTokens.issue(recordId, playbackRequestId)
@@ -239,6 +280,7 @@ class LocalAudioModule(private val app: ReactApplicationContext) : ReactContextB
         val repository = LibraryRepository.open(app)
         val previous = privateStore.document(recordId)
         if (!repository.repairLocalRecord(recordId, replacement)) { releaseReadGrant(uri); current.promise.resolve(repairReceipt(current.requestId, recordId, "rejected")); return }
+        LocalPlaybackTokens.clearRecord(recordId)
         privateStore.rememberDocument(recordId, uri)
         if (previous != null && previous != uri) runCatching { app.contentResolver.releasePersistableUriPermission(previous, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
         current.promise.resolve(repairReceipt(current.requestId, recordId, "repaired"))
@@ -275,6 +317,9 @@ class LocalAudioModule(private val app: ReactApplicationContext) : ReactContextB
     private fun playback(recordId: String, requestId: String, status: String, uri: String?, seekable: Boolean) = Arguments.createMap().apply {
         putString("recordId", recordId); putString("playbackRequestId", requestId); putString("status", status); putString("privatePlaybackUri", uri); putBoolean("seekable", seekable)
     }
+    private fun verification(recordId: String, requestId: String, status: String) = Arguments.createMap().apply {
+        putString("recordId", recordId); putString("playbackRequestId", requestId); putString("status", status)
+    }
     private fun repairReceipt(requestId: String, recordId: String, status: String) = Arguments.createMap().apply {
         putString("requestId", requestId); putString("recordId", recordId); putString("status", status)
     }
@@ -284,4 +329,10 @@ class LocalAudioModule(private val app: ReactApplicationContext) : ReactContextB
 
     override fun onNewIntent(intent: Intent) = Unit
     override fun invalidate() { pending = null; worker.shutdownNow(); super.invalidate() }
+}
+
+/** Native-only probe: absence or any provider exception is never evidence of readable access. */
+internal object LocalPlaybackAccessPolicy {
+    fun readable(hasPersistedReadGrant: () -> Boolean, openAndCloseDescriptor: () -> Boolean): Boolean =
+        try { hasPersistedReadGrant() && openAndCloseDescriptor() } catch (_: Exception) { false }
 }

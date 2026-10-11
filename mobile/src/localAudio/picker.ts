@@ -4,12 +4,51 @@ export const MAX_LOCAL_AUDIO_IMPORTS = 500;
 export type LocalAudioImport = { status: 'success' | 'cancelled' | 'error'; imported: number; rejected: number };
 export type LocalArtwork = { status: 'success' | 'unavailable' | 'error'; data?: string };
 export type LocalRecordOperation = 'repaired' | 'mismatch' | 'cancelled' | 'rejected';
-type NativeLocal = { importAudio(requestId: string): Promise<unknown>; attachExplicitLrc(recordId: string, requestId: string): Promise<unknown>; loadArtwork(recordId: string): Promise<unknown>; cancelLocalRequest(requestId: string): Promise<unknown>; repairLocalAudio?(recordId: string, requestId: string): Promise<unknown>; removeLocalAudio?(recordId: string, requestId: string): Promise<unknown> };
+type NativeLocal = { importAudio(requestId: string): Promise<unknown>; attachExplicitLrc(recordId: string, requestId: string): Promise<unknown>; loadArtwork(recordId: string): Promise<unknown>; cancelLocalRequest(requestId: string): Promise<unknown>; repairLocalAudio?(recordId: string, requestId: string): Promise<unknown>; removeLocalAudio?(recordId: string, requestId: string): Promise<unknown>; prepareLocalPlayback?(recordId: string, requestId: string): Promise<unknown>; verifyLocalPlayback?(recordId: string, requestId: string): Promise<unknown>; endLocalPlayback?(preservePlaybackRequestId: string | null): Promise<unknown> };
 const native = (): NativeLocal => {
   const module = NativeModules.Listen2LocalAudio as NativeLocal | undefined;
   if (!module || typeof module.importAudio !== 'function') throw new Error('NATIVE_UNAVAILABLE');
   return module;
 };
+let playbackSequence = 0;
+const playbackRequestId = () => `local_play_${Date.now().toString(36)}_${++playbackSequence}`;
+const validLocalRecordId = (value: string) => /^[A-Za-z0-9-]{16,64}$/.test(value);
+function playbackUnavailable(): Error {
+  return Object.assign(new Error('local-media-unavailable'), { code: 'local-media-unavailable' });
+}
+/** Transient RNTP-only transport. Callers must never put this receipt in application state. */
+export async function prepareLocalPlayback(recordId: string): Promise<{ privatePlaybackUri: string; playbackRequestId: string; seekable: boolean }> {
+  const module = NativeModules?.Listen2LocalAudio as NativeLocal | undefined;
+  if (!validLocalRecordId(recordId) || typeof module?.prepareLocalPlayback !== 'function') throw playbackUnavailable();
+  const requestId = playbackRequestId();
+  let value: unknown;
+  try { value = await module.prepareLocalPlayback(recordId, requestId); } catch { throw playbackUnavailable(); }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw playbackUnavailable();
+  const receipt = value as Record<string, unknown>;
+  const keys = ['recordId', 'playbackRequestId', 'status', 'privatePlaybackUri', 'seekable'];
+  if (Object.keys(receipt).length !== keys.length || Object.keys(receipt).some(key => !keys.includes(key)) || receipt.recordId !== recordId || receipt.playbackRequestId !== requestId || receipt.status !== 'success' || typeof receipt.privatePlaybackUri !== 'string' || !/^content:\/\/com\.dazzlingwuming\.listen2\.local-media\/play\/[A-Za-z0-9_-]{32,128}$/.test(receipt.privatePlaybackUri) || typeof receipt.seekable !== 'boolean') throw playbackUnavailable();
+  return { privatePlaybackUri: receipt.privatePlaybackUri, playbackRequestId: requestId, seekable: receipt.seekable };
+}
+/** A restore probe receives only a semantic availability receipt, never a token. */
+export async function verifyLocalPlayback(recordId: string): Promise<boolean> {
+  const module = NativeModules?.Listen2LocalAudio as NativeLocal | undefined;
+  if (!validLocalRecordId(recordId) || typeof module?.verifyLocalPlayback !== 'function') return false;
+  const requestId = playbackRequestId();
+  try {
+    const value = await module.verifyLocalPlayback(recordId, requestId);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const receipt = value as Record<string, unknown>;
+    return Object.keys(receipt).length === 3 && Object.keys(receipt).every(key => ['recordId', 'playbackRequestId', 'status'].includes(key)) && receipt.recordId === recordId && receipt.playbackRequestId === requestId && receipt.status === 'success';
+  } catch { return false; }
+}
+/** RNTP cleared its one-item queue. Preserve only the exact unopened local replacement. */
+export async function endLocalPlayback(preservePlaybackRequestId: string | null = null): Promise<void> {
+  const module = NativeModules?.Listen2LocalAudio as NativeLocal | undefined;
+  if (!module) return;
+  if (typeof module.endLocalPlayback !== 'function') throw playbackUnavailable();
+  if (preservePlaybackRequestId !== null && !/^[A-Za-z0-9_-]{1,96}$/.test(preservePlaybackRequestId)) throw playbackUnavailable();
+  try { if (await module.endLocalPlayback(preservePlaybackRequestId) !== 'released') throw playbackUnavailable(); } catch { throw playbackUnavailable(); }
+}
 function parse(value: unknown, requestId: string): LocalAudioImport {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return { status: 'error', imported: 0, rejected: 0 };
   const item = value as Record<string, unknown>;

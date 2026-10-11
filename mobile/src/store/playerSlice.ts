@@ -1,5 +1,5 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
-import type { LocalTrack, PlayableTrack as Track } from '../types/music';
+import { isLocalTrack, type LocalTrack, type PlayableTrack as Track } from '../types/music';
 import { playerController } from '../player/playerController';
 import type { LibraryQueueCheckpoint } from '../library/types';
 
@@ -418,6 +418,61 @@ const playerSlice = createSlice({
       if (restored.length) {
         invalidateTransition(state);
         state.playNextQueue = restored;
+      }
+    },
+    rebindLocalPlayerRecords(state, action: PayloadAction<{
+      records: LocalTrack[];
+      verifiedCurrentId: string | null;
+      expectedCurrentId: string | null;
+      expectedTransitionToken: number;
+    }>) {
+      if (state.transitionToken !== action.payload.expectedTransitionToken ||
+          (state.nowPlaying?.id || null) !== action.payload.expectedCurrentId) return;
+      const records = new Map(action.payload.records.filter(isLocalTrack).map(record => {
+        const currentUnverified = state.nowPlaying?.source === 'local' && state.nowPlaying.id === record.id && action.payload.verifiedCurrentId !== record.id;
+        const local: LocalTrack = {
+          id: record.id, source: 'local', title: record.title, artist: record.artist,
+          ...(record.album ? { album: record.album } : {}),
+          ...(record.durationMs ? { durationMs: record.durationMs } : {}),
+          hasArtwork: record.hasArtwork === true,
+          lyricState: record.lyricState === 'attached' ? 'attached' : 'none',
+          accessStatus: currentUnverified && record.accessStatus === 'available' ? 'unreadable' : record.accessStatus || 'needs-repair',
+          capabilities: (record.capabilities || []).filter(value => ['playlist', 'queue', 'lyrics'].includes(value)),
+          seekable: !currentUnverified && record.seekable === true,
+        };
+        return [local.id, local] as const;
+      }));
+      const rebind = (track: Track): Track | null => track.source === 'local' ? records.get(track.id) || null : track;
+      const oldPlaylist = state.playlist;
+      const indexMap = new Map<number, number>();
+      const playlist = oldPlaylist.flatMap((track, index) => {
+        const rebound = rebind(track);
+        if (!rebound) return [];
+        indexMap.set(index, indexMap.size);
+        return [rebound];
+      });
+      const current = state.nowPlaying ? rebind(state.nowPlaying) : null;
+      state.playlist = playlist; state.tracks = playlist; state.queue = playlist;
+      state.nowPlaying = current; state.currentTrack = current;
+      state.currentIndex = current ? indexMap.get(state.currentIndex) ?? -1 : -1;
+      state.playNextQueue = state.playNextQueue.flatMap(item => {
+        const track = rebind(item.track);
+        if (!track) return [];
+        const occurrence = { ...item };
+        delete occurrence.resolutionState;
+        return [{ ...occurrence, ...track, track, ...(track.source === 'local' && track.accessStatus !== 'available' ? { resolutionState: 'unresolved' as const } : {}) }];
+      });
+      state.history = state.history.flatMap(entry => {
+        const track = rebind(entry.track);
+        if (!track) return [];
+        return [{ ...entry, track, playlistIndex: indexMap.get(entry.playlistIndex) ?? -1 }];
+      });
+      state.shuffleOrder = state.shuffleOrder.flatMap(index => indexMap.has(index) ? [indexMap.get(index)!] : []);
+      state.shuffleCursor = state.shuffleOrder.indexOf(state.currentIndex);
+      state.isPlaying = false;
+      if (!current) {
+        state.currentSource = 'playlist'; state.currentOccurrenceId = null;
+        state.position = 0; state.duration = 0; state.bufferedPosition = 0;
       }
     },
     beginTransition(state, action: PayloadAction<number>) {
