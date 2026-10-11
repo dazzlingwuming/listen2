@@ -21,6 +21,15 @@ choose_emulator_port() {
   return 1
 }
 
+avd_identity_matches() {
+  local api="$1" expected_name="$2" boot_name="$3" kernel_name="$4"
+  if [[ -n "$boot_name" ]]; then
+    [[ "$boot_name" == "$expected_name" ]]
+    return $?
+  fi
+  [[ "$api" == 26 && "$kernel_name" == "$expected_name" ]]
+}
+
 assert_self_test() {
   ADB=/bin/true
   port_has_listener() { [[ "$1" == 5556 ]]; }
@@ -29,10 +38,18 @@ assert_self_test() {
   port_has_listener() { return 1; }
   adb_serial_present() { return 1; }
   [[ "$(choose_emulator_port)" == 5554 ]] || { echo 'self-test failed: first free even port was not selected' >&2; exit 1; }
+  avd_identity_matches 35 expected expected other || { echo 'self-test failed: API 35 ro.boot identity was rejected' >&2; exit 1; }
+  avd_identity_matches 26 expected '' expected || { echo 'self-test failed: API 26 ro.kernel identity fallback was rejected' >&2; exit 1; }
+  avd_identity_matches 26 expected expected other || { echo 'self-test failed: API 26 ro.boot identity was rejected' >&2; exit 1; }
+  if avd_identity_matches 26 expected '' other; then echo 'self-test failed: mismatched API 26 identity was accepted' >&2; exit 1; fi
+  if avd_identity_matches 26 expected conflict expected; then echo 'self-test failed: conflicting API 26 properties were accepted' >&2; exit 1; fi
+  if avd_identity_matches 35 expected '' expected || avd_identity_matches 36 expected '' expected; then echo 'self-test failed: non-26 API accepted the fallback property' >&2; exit 1; fi
+  if avd_identity_matches unknown expected '' expected; then echo 'self-test failed: unknown API accepted the fallback property' >&2; exit 1; fi
   grep -Fq 'kill -0 "$EMULATOR_PID"' "$0" || { echo 'self-test failed: early process exit is not checked' >&2; exit 1; }
   grep -Fq '"$ADB" -s "$SERIAL"' "$0" || { echo 'self-test failed: adb calls are not serial-bound' >&2; exit 1; }
+  grep -Fq 'avd_identity_matches "$API" "$NAME" "$BOOT_AVD_NAME" "$KERNEL_AVD_NAME"' "$0" || { echo 'self-test failed: boot path does not apply API-specific AVD identity checks' >&2; exit 1; }
   grep -Fq '"$ADB" -s "$recorded_serial" emu kill' "$0" || { echo 'self-test failed: cleanup is not serial-bound' >&2; exit 1; }
-  echo 'API 35 AVD manager self-test passed.'
+  echo 'AVD manager self-test passed.'
 }
 
 if [[ "${1:-}" == '--self-test' ]]; then
@@ -125,7 +142,12 @@ while (( SECONDS < deadline )); do
   sleep 2
 done
 $BOOTED || { echo "BLOCKED: emulator did not boot on recorded serial $SERIAL; see $(basename "$LOG_FILE")" >&2; exit 3; }
-[[ "$("$ADB" -s "$SERIAL" shell getprop ro.boot.qemu.avd_name | tr -d '\r')" == "$NAME" ]] || { echo "BLOCKED: recorded serial does not name the launched AVD" >&2; exit 3; }
+BOOT_AVD_NAME="$("$ADB" -s "$SERIAL" shell getprop ro.boot.qemu.avd_name 2>/dev/null | tr -d '\r' || true)"
+KERNEL_AVD_NAME=""
+if [[ "$API" == 26 ]]; then
+  KERNEL_AVD_NAME="$("$ADB" -s "$SERIAL" shell getprop ro.kernel.qemu.avd_name 2>/dev/null | tr -d '\r' || true)"
+fi
+avd_identity_matches "$API" "$NAME" "$BOOT_AVD_NAME" "$KERNEL_AVD_NAME" || { echo "BLOCKED: recorded serial does not name the launched AVD" >&2; exit 3; }
 [[ "$("$ADB" -s "$SERIAL" shell getprop ro.build.version.sdk | tr -d '\r')" == "$API" ]] || { echo "BLOCKED: API mismatch" >&2; exit 3; }
 sleep 3
 kill -0 "$EMULATOR_PID" >/dev/null 2>&1 || { echo "BLOCKED: emulator process exited after boot; see $(basename "$LOG_FILE")" >&2; exit 3; }
