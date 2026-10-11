@@ -193,9 +193,34 @@ public final class AccessibilityDriver {
         long deadline = SystemClock.elapsedRealtime() + 15_000L;
         while (SystemClock.elapsedRealtime() < deadline) {
             String view = dumpWindow();
-            if (!view.contains("正在搜索") &&
-                (view.contains("还没有搜索结果") || view.contains("暂时无法完成") ||
-                    view.contains("重试搜索") || view.contains("播放") || view.contains("下一首"))) {
+            // These source-specific, complete product messages are truthful terminal
+            // restrictions, not live result or playback success.
+            boolean sourceRestriction =
+                (("网易".equals(source) || "网易云音乐".equals(source)) &&
+                    (view.contains("text=\"网易云要求完成验证\"") ||
+                        view.contains("content-desc=\"网易云要求完成验证\"")) &&
+                    (view.contains("text=\"当前匿名搜索被来源拦截，请先选择其他音乐来源。\"") ||
+                        view.contains("content-desc=\"当前匿名搜索被来源拦截，请先选择其他音乐来源。\""))) ||
+                ("哔哩哔哩".equals(source) &&
+                    (view.contains("text=\"来源安全策略拒绝了请求\"") ||
+                        view.contains("content-desc=\"来源安全策略拒绝了请求\"")) &&
+                    (view.contains("text=\"请选择其他来源，或稍后再试。\"") ||
+                        view.contains("content-desc=\"请选择其他来源，或稍后再试。\"")));
+            boolean queryResult = false;
+            for (String title : visiblePlayableTitles(view)) {
+                if (title.contains("青花瓷")) {
+                    queryResult = true;
+                    break;
+                }
+            }
+            String sourceLabel = "网易".equals(source) ? "网易云音乐" : source;
+            boolean fallbackError =
+                view.contains("text=\"" + sourceLabel + "暂时无法完成此操作\"") &&
+                view.contains("text=\"请检查网络后重试，或选择其他来源。\"");
+            boolean guide = view.contains("开始搜索") || view.contains("输入关键词后选择来源");
+            if (!view.contains("正在搜索") && !guide &&
+                (sourceRestriction || view.contains("text=\"还没有搜索结果\"") ||
+                    fallbackError || view.contains("content-desc=\"重试搜索\"") || queryResult)) {
                 record("terminal-" + source);
                 return;
             }

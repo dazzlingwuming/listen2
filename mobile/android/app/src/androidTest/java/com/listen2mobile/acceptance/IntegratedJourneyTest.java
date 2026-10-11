@@ -21,10 +21,12 @@ public final class IntegratedJourneyTest {
         driver.assertFiveSourceTabs();
         progress.step("journey-query");
         driver.enterText("搜索歌曲、歌手或歌单", "青花瓷");
-        driver.tapLabel("搜索音乐");
+        driver.selectLiveSource("网易云音乐");
+        driver.submitLiveSearch();
         progress.step("journey-netease-terminal");
         driver.assertSearchTerminal("网易");
-        driver.tapLabel("哔哩哔哩");
+        driver.selectLiveSource("哔哩哔哩");
+        driver.submitLiveSearch();
         progress.step("journey-bilibili-terminal");
         driver.assertSearchTerminal("哔哩哔哩");
         driver.exerciseVisibleSafeDomains();
