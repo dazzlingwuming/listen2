@@ -42,6 +42,50 @@ const { LoudnessAnalyzer } = require(`${__dirname}/loudnessAnalyzer`);
 const { LyricCacheStore } = require(`${__dirname}/lyricCacheStore`);
 const { ListeningHistoryStore } = require(`${__dirname}/listeningHistoryStore`);
 
+const { requestLyric, validateUrl } = require("./lyricTransport");
+const lyricRequests = new Map();
+ipcMain.handle("lyrics:request", async (event, request) => {
+  if (
+    !mainWindow ||
+    event.sender !== mainWindow.webContents ||
+    event.senderFrame !== mainWindow.webContents.mainFrame
+  )
+    return { ok: false, status: "unavailable" };
+  if (
+    !request ||
+    typeof request.id !== "string" ||
+    !/^lyric-[\d-]+$/.test(request.id) ||
+    request.id.length > 80
+  )
+    return { ok: false, status: "invalid-response" };
+  try {
+    validateUrl(request.url);
+  } catch (_) {
+    return { ok: false, status: "invalid-response" };
+  }
+  if (lyricRequests.size >= 24 || lyricRequests.has(request.id))
+    return { ok: false, status: "unavailable" };
+  const controller = new AbortController();
+  lyricRequests.set(request.id, controller);
+  try {
+    return await requestLyric(
+      electron.net.fetch.bind(electron.net),
+      request.url,
+      controller.signal
+    );
+  } finally {
+    lyricRequests.delete(request.id);
+  }
+});
+ipcMain.on("lyrics:cancel", (event, id) => {
+  if (
+    mainWindow &&
+    event.sender === mainWindow.webContents &&
+    lyricRequests.has(id)
+  )
+    lyricRequests.get(id).abort();
+});
+
 const store = new Store();
 const iconPath = join(__dirname, "/listen1_chrome_extension/images/logo.png");
 if (protocol && typeof protocol.registerSchemesAsPrivileged === "function") {
@@ -1204,6 +1248,10 @@ function createWindow() {
     hasShadow: true,
   });
 
+  mainWindow.webContents.on('render-process-gone', () => {
+    lyricRequests.forEach(controller => controller.abort());
+    lyricRequests.clear();
+  });
   mainWindow.on("ready-to-show", () => {
     if (windowState.maximized) {
       mainWindow.maximize();

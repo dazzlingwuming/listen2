@@ -111,7 +111,7 @@ class LyricCacheStore {
   async persist() {
     const temporary = `${this.indexPath}.${randomBytes(8).toString("hex")}.tmp`;
     await fsp.writeFile(temporary, JSON.stringify(this.index), { mode: 0o600 });
-    const handle = await fsp.open(temporary, "r");
+    const handle = await fsp.open(temporary, "r+");
     try {
       await handle.sync();
     } finally {

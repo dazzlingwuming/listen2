@@ -171,7 +171,8 @@ test("download becomes READY before background analysis and later exposes bound 
     );
   } finally {
     analyzer.cancelAll();
-    await rm(rootDir, { recursive: true, force: true });
+    await cache.waitForLoudnessIdle();
+    await rm(rootDir, { recursive: true, force: true, maxRetries: 3 });
   }
 });
 
@@ -201,7 +202,8 @@ test("disable prevents new analysis and re-enable scans missing READY entries", 
     assert.strictEqual((await lookup(cache)).entry.loudness.status, "ready");
   } finally {
     analyzer.cancelAll();
-    await rm(rootDir, { recursive: true, force: true });
+    await cache.waitForLoudnessIdle();
+    await rm(rootDir, { recursive: true, force: true, maxRetries: 3 });
   }
 });
 
@@ -225,7 +227,8 @@ test("analysis failure is persisted but never removes cache READY", async () => 
     assert.strictEqual(cache.status().loudnessFailedEntries, 1);
   } finally {
     analyzer.cancelAll();
-    await rm(rootDir, { recursive: true, force: true });
+    await cache.waitForLoudnessIdle();
+    await rm(rootDir, { recursive: true, force: true, maxRetries: 3 });
   }
 });
 
@@ -256,7 +259,8 @@ test("analyzer version upgrade automatically retries a persisted failure", async
     );
   } finally {
     analyzer.cancelAll();
-    await rm(rootDir, { recursive: true, force: true });
+    await cache.waitForLoudnessIdle();
+    await rm(rootDir, { recursive: true, force: true, maxRetries: 3 });
   }
 });
 
@@ -287,7 +291,8 @@ test("delete and clear remove the entry-bound loudness result", async () => {
     assert.strictEqual(cache.status().loudnessReadyEntries, 0);
   } finally {
     analyzer.cancelAll();
-    await rm(rootDir, { recursive: true, force: true });
+    await cache.waitForLoudnessIdle();
+    await rm(rootDir, { recursive: true, force: true, maxRetries: 3 });
   }
 });
 
@@ -351,6 +356,7 @@ test("v1 cache index migrates missing loudness settings and backfills in place",
     );
   } finally {
     analyzer.cancelAll();
-    await rm(rootDir, { recursive: true, force: true });
+    await cache.waitForLoudnessIdle();
+    await rm(rootDir, { recursive: true, force: true, maxRetries: 3 });
   }
 });

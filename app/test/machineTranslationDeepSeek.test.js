@@ -84,7 +84,7 @@ function loadTranslationHandlers() {
         return { BilibiliService: class {} };
       }
       if (id === './machineTranslation') return require('../machineTranslation');
-      return require(id);
+      return id.startsWith("./") ? require(path.join(__dirname, "..", id)) : require(id);
     },
     setTimeout,
     clearTimeout,
