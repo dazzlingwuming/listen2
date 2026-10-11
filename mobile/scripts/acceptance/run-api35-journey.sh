@@ -17,11 +17,19 @@ sanitize_diagnostic_log() {
   node --input-type=module - "$source" "$destination" <<'NODE'
 import { readFileSync, writeFileSync } from 'node:fs';
 const [source, destination] = process.argv.slice(2);
-const text = readFileSync(source, 'utf8')
-  .replace(/https?:\/\/[^\s"'<>]+/giu, '<redacted-url>')
-  .replace(/\b((?:api[_-]?key|authorization|cookie|password|secret|token)\b\s*[:=])\s*[^\s,;]+/giu, '$1 <redacted>')
-  .replace(/\bbearer\s+[^\s,;]+/giu, 'Bearer <redacted>');
-writeFileSync(destination, text, { mode: 0o600 });
+// Raw diagnostics can contain arbitrary account names, input and transport data.
+// Retain only fixed categories and counts; no original message text is copied.
+const text = readFileSync(source, 'utf8');
+const summary = {
+  schemaVersion: 1,
+  mode: 'fixed-category-counts-only',
+  lineCount: text ? text.split(/\r?\n/u).filter(Boolean).length : 0,
+  fatalExceptionCount: (text.match(/FATAL EXCEPTION/gu) || []).length,
+  applicationNotRespondingCount: (text.match(/\bANR in\b/gu) || []).length,
+  javascriptExceptionCount: (text.match(/JavascriptException|ReactNativeJS.*(?:Error|Exception)/gu) || []).length,
+  captureUnavailableCount: (text.match(/capture-unavailable=/gu) || []).length,
+};
+writeFileSync(destination, `${JSON.stringify(summary)}\n`, { mode: 0o600 });
 NODE
 }
 
@@ -50,7 +58,7 @@ if [[ "${1:-}" == "--self-test" ]]; then
   printf '%s\n' 'token=forbidden-value https://example.invalid/path' > "$self_test_dir/raw-logcat.txt"
   sanitize_diagnostic_log "$self_test_dir/raw-logcat.txt" "$self_test_dir/sanitized-logcat.txt"
   ! grep -Eq 'forbidden-value|https?://' "$self_test_dir/sanitized-logcat.txt" || { echo 'diagnostic sanitizer leaked a fixture secret or URL' >&2; exit 1; }
-  grep -Fq '<redacted-url>' "$self_test_dir/sanitized-logcat.txt" || { echo 'diagnostic sanitizer did not redact the fixture URL' >&2; exit 1; }
+  grep -Fq 'fixed-category-counts-only' "$self_test_dir/sanitized-logcat.txt" || { echo 'diagnostic sanitizer must retain only fixed categories' >&2; exit 1; }
   js_ready_phone_shell '<node text="我的"/><node text="设置"/><node text="搜索音乐"/>' || { echo 'phone shell fixture rejected' >&2; exit 1; }
   ! js_ready_phone_shell '<node text="我的"/><node text="设置"/>' || { echo 'incomplete shell fixture accepted' >&2; exit 1; }
   grep -Fq 'RELEASE_BYTES="$(wc -c < "$RELEASE_APK" | tr -d '\'' '\'')"' "$0" || { echo 'journey record must derive product bytes from the sealed APK' >&2; exit 1; }
@@ -195,8 +203,8 @@ NODE
 )"
 bash mobile/scripts/acceptance/device-state.sh snapshot --serial "$SERIAL" --file "$STATE"
 CLEANUP_STATUS="pending"; CLEAR_COUNT=0; STARTED_AT="$(date -Iseconds)"
-cleanup() { bash mobile/scripts/acceptance/device-state.sh restore --serial "$SERIAL" --file "$STATE" >/dev/null 2>&1 || CLEANUP_STATUS="restore-failed"; [[ "$CLEANUP_STATUS" == pending ]] && CLEANUP_STATUS="restored"; }
-CAPTURE_LOGCAT_PID=""; CAPTURE_WATCHDOG_PID=""; CAPTURE_DIR=""
+cleanup() { bash mobile/scripts/acceptance/device-state.sh restore --serial "$SERIAL" --file "$STATE" >/dev/null 2>&1 || CLEANUP_STATUS="restore-failed"; if [[ "$CLEANUP_STATUS" == pending ]]; then CLEANUP_STATUS="restored"; fi; return 0; }
+CAPTURE_LOGCAT_PID=""; CAPTURE_WATCHDOG_PID=""; CAPTURE_DIR=""; CAPTURE_RAW_DIR=""
 CAPTURE_MAX_SECONDS=75
 
 stop_diagnostic_capture() {
@@ -208,15 +216,21 @@ stop_diagnostic_capture() {
     kill "$CAPTURE_WATCHDOG_PID" >/dev/null 2>&1 || true
     wait "$CAPTURE_WATCHDOG_PID" >/dev/null 2>&1 || true
   fi
-  if [[ -n "$CAPTURE_DIR" ]]; then
-    "$ADB" -s "$SERIAL" shell dumpsys activity activities > "$CAPTURE_DIR/dumpsys-activity.txt" 2>&1 || printf '%s\n' 'capture-unavailable=dumpsys-activity' > "$CAPTURE_DIR/dumpsys-activity.txt"
-    "$ADB" -s "$SERIAL" shell dumpsys window > "$CAPTURE_DIR/dumpsys-window.txt" 2>&1 || printf '%s\n' 'capture-unavailable=dumpsys-window' > "$CAPTURE_DIR/dumpsys-window.txt"
-    "$ADB" -s "$SERIAL" shell dumpsys package "$PACKAGE" > "$CAPTURE_DIR/dumpsys-package.txt" 2>&1 || printf '%s\n' 'capture-unavailable=dumpsys-package' > "$CAPTURE_DIR/dumpsys-package.txt"
-    "$ADB" -s "$SERIAL" shell 'ls -1 /data/tombstones 2>/dev/null | tail -n 20' > "$CAPTURE_DIR/tombstone-references.txt" 2>&1 || printf '%s\n' 'capture-unavailable=tombstone-references' > "$CAPTURE_DIR/tombstone-references.txt"
-    "$ADB" -s "$SERIAL" shell 'dumpsys dropbox --print 2>/dev/null | grep -Ei "(system_app_crash|data_app_crash|SYSTEM_TOMBSTONE|listen2mobile)" | tail -n 80' > "$CAPTURE_DIR/dropbox-references.txt" 2>&1 || printf '%s\n' 'capture-unavailable=dropbox-references' > "$CAPTURE_DIR/dropbox-references.txt"
-    sanitize_diagnostic_log "$CAPTURE_DIR/logcat-raw.txt" "$CAPTURE_DIR/logcat-sanitized.txt" || printf '%s\n' 'capture-unavailable=logcat-sanitization' > "$CAPTURE_DIR/logcat-sanitized.txt"
+  if [[ -n "$CAPTURE_DIR" && -n "$CAPTURE_RAW_DIR" ]]; then
+    "$ADB" -s "$SERIAL" shell dumpsys activity activities > "$CAPTURE_RAW_DIR/dumpsys-activity.txt" 2>&1 || printf '%s\n' 'capture-unavailable=dumpsys-activity' > "$CAPTURE_RAW_DIR/dumpsys-activity.txt"
+    "$ADB" -s "$SERIAL" shell dumpsys window > "$CAPTURE_RAW_DIR/dumpsys-window.txt" 2>&1 || printf '%s\n' 'capture-unavailable=dumpsys-window' > "$CAPTURE_RAW_DIR/dumpsys-window.txt"
+    "$ADB" -s "$SERIAL" shell dumpsys package "$PACKAGE" > "$CAPTURE_RAW_DIR/dumpsys-package.txt" 2>&1 || printf '%s\n' 'capture-unavailable=dumpsys-package' > "$CAPTURE_RAW_DIR/dumpsys-package.txt"
+    "$ADB" -s "$SERIAL" shell 'ls -1 /data/tombstones 2>/dev/null | tail -n 20' > "$CAPTURE_RAW_DIR/tombstone-references.txt" 2>&1 || printf '%s\n' 'capture-unavailable=tombstone-references' > "$CAPTURE_RAW_DIR/tombstone-references.txt"
+    "$ADB" -s "$SERIAL" shell 'dumpsys dropbox --print 2>/dev/null | grep -Ei "(system_app_crash|data_app_crash|SYSTEM_TOMBSTONE|listen2mobile)" | tail -n 80' > "$CAPTURE_RAW_DIR/dropbox-references.txt" 2>&1 || printf '%s\n' 'capture-unavailable=dropbox-references' > "$CAPTURE_RAW_DIR/dropbox-references.txt"
+    local file
+    for file in logcat-clear.txt logcat-raw.txt dumpsys-activity.txt dumpsys-window.txt dumpsys-package.txt tombstone-references.txt dropbox-references.txt; do
+      local retained="$file"
+      if [[ "$file" == logcat-raw.txt ]]; then retained="logcat-sanitized.txt"; fi
+      sanitize_diagnostic_log "$CAPTURE_RAW_DIR/$file" "$CAPTURE_DIR/$retained" || printf '%s\n' 'capture-unavailable=diagnostic-sanitization' > "$CAPTURE_DIR/$retained"
+    done
+    rm -rf "$CAPTURE_RAW_DIR"
   fi
-  CAPTURE_LOGCAT_PID=""; CAPTURE_WATCHDOG_PID=""; CAPTURE_DIR=""
+  CAPTURE_LOGCAT_PID=""; CAPTURE_WATCHDOG_PID=""; CAPTURE_DIR=""; CAPTURE_RAW_DIR=""
 }
 
 start_diagnostic_capture() {
@@ -224,8 +238,9 @@ start_diagnostic_capture() {
   stop_diagnostic_capture >/dev/null 2>&1 || true
   CAPTURE_DIR="$RUN_DIR/diagnostics/$label"
   mkdir -p "$CAPTURE_DIR"
-  "$ADB" -s "$SERIAL" shell logcat -c > "$CAPTURE_DIR/logcat-clear.txt" 2>&1 || printf '%s\n' 'capture-unavailable=logcat-clear' > "$CAPTURE_DIR/logcat-clear.txt"
-  "$ADB" -s "$SERIAL" logcat -v threadtime AndroidRuntime:E ActivityManager:I ReactNative:V ReactNativeJS:V '*:S' > "$CAPTURE_DIR/logcat-raw.txt" 2>&1 &
+  CAPTURE_RAW_DIR="$(mktemp -d "${TMPDIR:-/tmp}/listen2-journey-diagnostics.XXXXXX")"
+  "$ADB" -s "$SERIAL" shell logcat -c > "$CAPTURE_RAW_DIR/logcat-clear.txt" 2>&1 || printf '%s\n' 'capture-unavailable=logcat-clear' > "$CAPTURE_RAW_DIR/logcat-clear.txt"
+  "$ADB" -s "$SERIAL" logcat -v threadtime AndroidRuntime:E ActivityManager:I ReactNative:V ReactNativeJS:V '*:S' > "$CAPTURE_RAW_DIR/logcat-raw.txt" 2>&1 &
   CAPTURE_LOGCAT_PID="$!"
   (
     sleep "$CAPTURE_MAX_SECONDS"
@@ -263,7 +278,7 @@ import { createHash } from 'node:crypto'; import { readFileSync, statSync } from
 const [run, sha, releaseBytes, fixtureSha, outcome, detail, started, ended, serial, cleanup, buildHead] = process.argv.slice(2);
 const hash = file => createHash('sha256').update(readFileSync(`${run}/${file}`)).digest('hex');
 const diagnosticFiles = ['upgrade-seed-instrumentation', 'integrated-journey-instrumentation'].flatMap(label => [
-  'logcat-clear.txt', 'logcat-raw.txt', 'logcat-sanitized.txt', 'dumpsys-activity.txt',
+  'logcat-clear.txt', 'logcat-sanitized.txt', 'dumpsys-activity.txt',
   'dumpsys-window.txt', 'dumpsys-package.txt', 'tombstone-references.txt', 'dropbox-references.txt',
 ].map(file => `diagnostics/${label}/${file}`));
 const listed = ['journey-events.txt', 'upgrade-seed-instrumentation.txt', 'integrated-journey-instrumentation.txt', 'smoke-phone.png', 'smoke-window.xml', 'failure-phone.png', 'failure-window.xml', 'integrated-phone.png', 'integrated-window.xml', 'postrun-phone.png', 'postrun-window.xml', 'fixture.json', 'fixtures/synthetic-phase08.wav', 'fixtures/synthetic-phase08.lrc', 'device-state-before.sh', 'journey-test-payload.json', 'artifacts/releaseLikeAndroidTest-journey.apk', ...diagnosticFiles].filter(file => { try { return statSync(`${run}/${file}`).isFile(); } catch { return false; } });
@@ -286,7 +301,7 @@ NODE
 }
 
 "$ADB" -s "$SERIAL" install -r "$DEBUG_APK" >/dev/null || { record_failure debug-install; exit 1; }
-((CLEAR_COUNT++)); "$ADB" -s "$SERIAL" shell pm clear "$PACKAGE" | tr -d '\r' > "$RUN_DIR/reset.txt" || { record_failure reset-failed; exit 1; }
+CLEAR_COUNT=$((CLEAR_COUNT + 1)); "$ADB" -s "$SERIAL" shell pm clear "$PACKAGE" | tr -d '\r' > "$RUN_DIR/reset.txt" || { record_failure reset-failed; exit 1; }
 [[ "$CLEAR_COUNT" == 1 ]] || { record_failure second-reset; exit 1; }
 "$ADB" -s "$SERIAL" install -r "$TEST_APK" >/dev/null || { record_failure test-install; exit 1; }
 run_instrumentation "$SEED_CLASS" "$RUN_DIR/upgrade-seed-instrumentation.txt" || { record_failure upgrade-seed; exit 1; }

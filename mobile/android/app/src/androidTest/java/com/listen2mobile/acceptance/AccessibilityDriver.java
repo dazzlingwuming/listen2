@@ -515,6 +515,13 @@ public final class AccessibilityDriver {
         tapLabel("打开歌单迁移验收歌单");
         require(waitForLabel("迁移验收曲目", 5_000L), "migrated playlist track was not visible");
         require(!dumpWindow().contains("音乐库恢复失败"), "library recovery failure banner appeared after opening migrated playlist");
+        // PlaylistDetail is above MainTabs in the real navigation stack.
+        // Complete this observation by returning through its visible control;
+        // the next journey step needs the shell's search tab to be available.
+        require(waitForLabel("返回上一页", 5_000L), "migrated playlist back control was not visible");
+        tapLabel("返回上一页");
+        require(waitForLabel("搜索", 5_000L), "search tab was not restored after migrated playlist inspection");
+        require(waitForLabel("我的", 5_000L), "library tab was not restored after migrated playlist inspection");
         record("legacy-library-visible-without-recovery-banner");
     }
 
