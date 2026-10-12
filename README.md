@@ -5,7 +5,7 @@
 ### 把 Bilibili 与多平台音乐内容，整理成更好用的桌面播放器
 
 [![License](https://img.shields.io/badge/license-MIT-7c5cff.svg)](./LICENSE.md)
-[![Version](https://img.shields.io/badge/version-2.35.2-8b5cf6.svg)](https://github.com/dazzlingwuming/listen2/releases/tag/v2.35.2)
+[![Version](https://img.shields.io/badge/version-2.35.3-8b5cf6.svg)](https://github.com/dazzlingwuming/listen2/releases/tag/v2.35.3)
 [![Electron](https://img.shields.io/badge/Electron-32-38bdf8.svg)](https://www.electronjs.org/)
 [![Windows](https://img.shields.io/badge/Windows-x64-2563eb.svg)](https://github.com/dazzlingwuming/listen2/releases/latest)
 [![macOS](https://img.shields.io/badge/macOS-Universal-111827.svg)](#平台支持)
@@ -18,6 +18,16 @@
 Listen2 是 [Listen1](https://github.com/listen1/listen1) 的社区增强版本。它保留多平台聚合搜索、播放和歌单能力，并重点改善 Bilibili 音乐播放、同步歌词、歌词翻译、桌面歌词、MV 和现代化桌面体验。
 
 > Listen2 只整理和播放用户本来就有权访问的内容，不解锁会员、付费、DRM、地区限制或其他受限资源。
+
+## v2.35.3 更新
+
+- 手动歌词搜索要求填写歌名，歌手可选；用户确认后才开始检索。修改输入会取消旧请求，避免旧结果覆盖新查询。
+- 按来源展示目录、歌词、平台验证和超时等阶段信息；酷狗纯歌名搜索补齐目录检索链路。
+- 对连接不可达地址增加有界的备用解析服务回退，限制额外尝试次数。
+- 网易歌词新增官方验证入口，并在验证后复用专用持久会话。真实用户账号认证未在本次验证中覆盖；平台风控仍可能影响访问。
+- macOS 延后 Keychain 检查，避免在启动阶段提前检查钥匙串。
+
+102 项相关测试与 6 项契约检查通过，并核对了《折风渡夜》《青花瓷》的公开歌词样例。本次未验证安装界面、网易真实账号认证或 Windows 实机；歌词来源与网络服务仍可能波动。macOS 沿用 v2.35.1 的打包配置，不新增签名证书，也不作 Apple 公证承诺；安装包状态以本版本 Release 页面为准。
 
 ## v2.35.2 更新
 
