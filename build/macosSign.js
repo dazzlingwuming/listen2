@@ -1,12 +1,14 @@
 const { signAsync } = require("@electron/osx-sign");
+const { loadLocalIdentity, unlockLocalIdentity } = require("./setupMacSigning");
 
-function createSignOptions(options, appId) {
+function createSignOptions(options, appId, localIdentity = null) {
   if (options.platform !== "darwin" || !appId) {
-    throw new Error("Ad-hoc signing requires a non-MAS macOS app and app ID");
+    throw new Error("Signing requires a non-MAS macOS app and app ID");
   }
   return {
     ...options,
-    identity: "-",
+    identity: localIdentity ? localIdentity.identity : "-",
+    ...(localIdentity ? { keychain: localIdentity.keychain } : {}),
     identityValidation: false,
     // osx-sign enables --strict by default; true becomes invalid --strict=true.
     strictVerify: undefined,
@@ -15,7 +17,7 @@ function createSignOptions(options, appId) {
       const fileOptions = options.optionsForFile(file);
       return {
         ...fileOptions,
-        // Ad-hoc signatures have no timestamp authority or Apple team ID.
+        // Local self-signed and ad-hoc signatures have no timestamp authority.
         timestamp: "none",
         additionalArguments: [
           ...(fileOptions.additionalArguments || []),
@@ -30,6 +32,13 @@ function createSignOptions(options, appId) {
 // electron-builder 25 skips signing when no certificate exists. Its custom
 // sign hook runs after universal merging and before DMG/blockmap generation.
 exports.sign = async (options, packager) => {
-  await signAsync(createSignOptions(options, packager.appInfo.id));
+  const localIdentity = loadLocalIdentity();
+  if (localIdentity) {
+    // Configured identities must be usable; never downgrade them to ad-hoc.
+    unlockLocalIdentity(localIdentity);
+  }
+  await signAsync(
+    createSignOptions(options, packager.appInfo.id, localIdentity)
+  );
 };
 exports.createSignOptions = createSignOptions;

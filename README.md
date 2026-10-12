@@ -216,7 +216,23 @@ npm run dist:win
 npm run dist:mac
 ```
 
-构建产物位于 `dist/`。macOS 的 `build/macosSign.js` 在架构合并完成后，对完整应用及嵌套代码进行 ad-hoc 签名并严格验证，随后才生成 DMG 与更新元数据；不需要商业签名证书。这不会移除首次下载时的 Gatekeeper 提示。公开分发前，请在目标系统实机测试。
+构建产物位于 `dist/`。macOS 的 `build/macosSign.js` 在架构合并完成后，对完整应用及嵌套代码签名并严格验证，随后才生成 DMG 与更新元数据。公开分发前，请在目标系统实机测试。
+
+#### 固定的本机 macOS 签名身份
+
+本机持续构建可使用免费的持久自签证书，让后续版本保持相同的代码身份。首次运行以下命令会创建十年有效的代码签名证书，并申请**当前用户、仅代码签名用途**的信任；系统可能要求用户确认一次：
+
+```bash
+node build/setupMacSigning.js --trust-code-signing
+```
+
+材料保存于用户目录的 `Library/Application Support/Listen2BuildSigning/`，使用独立 build keychain、目录 `0700` 和秘密文件 `0600`。密码通过 stdin 交给非交互的 Security.framework helper，不进入命令参数；原始私钥与 P12 导入后删除。不要提交、上传或打包该目录。重复运行复用同一证书，不重新生成；脚本会签名两个不同的测试应用，检查默认 designated requirement 一致且完整性验证通过，不运行测试应用。
+
+后续 `npm run dist:mac` 自动读取本机身份。存在配置但身份无效、未受信任或 setup 未完成时，构建失败并要求恢复本机签名材料，不会悄悄改用 ad-hoc。其他尚未配置身份的构建机器仍使用完整 ad-hoc 签名；其更新可能再次请求 Safe Storage 钥匙串授权。
+
+自签证书不会提供 Developer ID 或 Apple 公证，也不消除 Gatekeeper 首次下载提示。由 ad-hoc 首次迁移至固定身份仍可能要求一次钥匙串授权；连续安装后的真实 Safe Storage 行为须在目标用户环境另行验证。安装由其他证书或 ad-hoc 签名的包会再次改变身份。私钥丢失、证书替换或证书续期需要明确迁移，不应通过删除配置自动生成来掩盖。
+
+如需撤销本机建立的代码签名信任，先保留证书，再运行 `security remove-trusted-cert` 并传入该目录的 `certificate.pem`；只移除此证书的当前用户信任。不要修改 TLS、管理员域或 System/login 钥匙串设置。移除整个签名目录会丢失固定身份，操作前应先安排安全备份与迁移。
 
 ### 运行测试
 
