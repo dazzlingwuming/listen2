@@ -400,5 +400,11 @@
   "_AUDIO_EFFECT_SAVE_FAILED": "효과는 적용되었지만 이 설정을 저장하지 못했습니다.",
   "_AUDIO_EFFECT_INVALID_PRESET": "이 효과 프리셋은 사용할 수 없습니다.",
   "_AUDIO_EFFECT_DEGRADED": "이 기기에서는 이 효과를 사용할 수 없어 원음으로 안전하게 돌아갔습니다.",
- "_LYRIC_SOURCE_VERIFICATION_REQUIRED": "플랫폼 인증 필요"
+ "_LYRIC_SOURCE_VERIFICATION_REQUIRED": "플랫폼 인증 필요",
+ "_LYRIC_VERIFY_ACTION": "인증하기",
+ "_LYRIC_VERIFY_PENDING": "인증 창이 닫히기를 기다리는 중…",
+ "_LYRIC_VERIFY_HINT": "NetEase 공식 창에서 인증을 완료하세요. 창을 닫으면 다시 검색하며, 창을 닫는 것만으로 인증 성공을 의미하지는 않습니다.",
+ "_LYRIC_VERIFY_UNAVAILABLE": "NetEase 인증 창을 열 수 없습니다. 나중에 다시 시도하세요.",
+ "_LYRIC_VERIFY_ALREADY_OPEN": "NetEase 인증 창이 이미 열려 있습니다. 절차를 완료하고 창을 닫은 다음 다시 검색하세요.",
+ "_LYRIC_VERIFY_EXPIRED": "인증 링크가 없거나 만료되었습니다. 다시 검색한 후 시도하세요."
 }

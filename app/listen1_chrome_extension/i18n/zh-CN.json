@@ -440,5 +440,11 @@
  "_CACHE_ERROR_TIMEOUT": "下载超时，请检查网络后重试。",
  "_CACHE_ERROR_QUEUE": "下载队列已满，请等待部分任务完成。",
  "_CACHE_ERROR_GENERIC": "操作未完成，请刷新状态或重试；正常播放不受影响。",
- "_LYRIC_SOURCE_VERIFICATION_REQUIRED": "需要完成平台验证"
+ "_LYRIC_SOURCE_VERIFICATION_REQUIRED": "需要完成平台验证",
+ "_LYRIC_VERIFY_ACTION": "去验证",
+ "_LYRIC_VERIFY_PENDING": "等待验证窗口关闭…",
+ "_LYRIC_VERIFY_HINT": "请在网易云官方窗口完成验证。关闭窗口后将重新搜索；关闭窗口不代表验证成功。",
+ "_LYRIC_VERIFY_UNAVAILABLE": "无法打开网易云验证，请稍后重试。",
+ "_LYRIC_VERIFY_ALREADY_OPEN": "网易云验证窗口已打开，请完成操作并关闭窗口后重新搜索。",
+ "_LYRIC_VERIFY_EXPIRED": "验证入口已失效或尚未获取，请重新搜索后再试。"
 }

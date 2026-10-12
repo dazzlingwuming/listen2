@@ -194,6 +194,8 @@ angular.module('listenone').controller('PlayController', [
     $scope.lyricSearchResults = [];
     $scope.lyricSearchState = 'idle';
     $scope.lyricSearchPending = false;
+    $scope.neteaseLyricVerificationPending = false;
+    $scope.neteaseLyricVerificationError = '';
     $scope.lyricTranslationLookupPending = false;
     $scope.lyricTranslationConfirmOpen = false;
     $scope.lyricTranslationConfirmPending = false;
@@ -387,6 +389,7 @@ angular.module('listenone').controller('PlayController', [
     const MAX_LYRIC_OFFSET_MS = 60000;
     let lyricRequestToken = 0;
     let lyricSearchToken = 0;
+    let neteaseLyricVerificationToken = 0;
     let activeLyricSearch = null;
     let activeLyricSearchKey = '';
     $scope.lyricSearchSources = [];
@@ -2758,6 +2761,7 @@ angular.module('listenone').controller('PlayController', [
 
     $scope.closeLyricPicker = () => {
       if (activeLyricSearch) activeLyricSearch.cancel();
+      resetNeteaseLyricVerification();
       const shouldRestoreFocus = $scope.lyricPickerOpen;
       lyricSearchToken += 1;
       $scope.lyricPickerOpen = false;
@@ -2818,6 +2822,7 @@ angular.module('listenone').controller('PlayController', [
 
     $scope.$on('$destroy', () => {
       lyricSearchToken += 1;
+      resetNeteaseLyricVerification();
       if (activeLyricSearch) activeLyricSearch.cancel();
     });
 
@@ -2835,6 +2840,7 @@ angular.module('listenone').controller('PlayController', [
         return;
       if (activeLyricSearch) activeLyricSearch.cancel();
       activeLyricSearchKey = key;
+      resetNeteaseLyricVerification();
       lyricSearchToken += 1;
       const searchToken = lyricSearchToken;
       $scope.lyricSearchResults = [];
@@ -2874,6 +2880,66 @@ angular.module('listenone').controller('PlayController', [
       i18next.t(
         `_LYRIC_SOURCE_${source.status.toUpperCase().replace('-', '_')}`
       );
+
+    function resetNeteaseLyricVerification() {
+      neteaseLyricVerificationToken += 1;
+      $scope.neteaseLyricVerificationPending = false;
+      $scope.neteaseLyricVerificationError = '';
+    }
+
+    $scope.canVerifyNeteaseLyrics = (source) =>
+      !$scope.isChrome &&
+      source &&
+      source.source === '网易云' &&
+      source.status === 'verification-required';
+
+    $scope.verifyNeteaseLyrics = (source) => {
+      const track = $scope.currentPlaying;
+      const query = String($scope.lyricSearch.query || '');
+      if (
+        !$scope.canVerifyNeteaseLyrics(source) ||
+        $scope.neteaseLyricVerificationPending ||
+        !$scope.lyricPickerOpen ||
+        !isBilibiliTrack(track) ||
+        !query.trim() ||
+        !$scope.lyricSearchSources.includes(source)
+      ) {
+        return Promise.resolve(null);
+      }
+      const searchToken = lyricSearchToken;
+      neteaseLyricVerificationToken += 1;
+      const verificationToken = neteaseLyricVerificationToken;
+      $scope.neteaseLyricVerificationPending = true;
+      $scope.neteaseLyricVerificationError = '';
+      return MediaService.verifyNeteaseLyrics().then((response) => {
+        $scope.$evalAsync(() => {
+          if (verificationToken !== neteaseLyricVerificationToken) return;
+          $scope.neteaseLyricVerificationPending = false;
+          if (
+            searchToken !== lyricSearchToken ||
+            !$scope.lyricPickerOpen ||
+            !$scope.currentPlaying ||
+            $scope.currentPlaying.id !== track.id ||
+            String($scope.lyricSearch.query || '') !== query
+          ) {
+            return;
+          }
+          // Closing the official window only makes a retry possible; the new
+          // search must determine whether the platform accepted verification.
+          if (response && response.ok && response.status === 'retry-ready') {
+            $scope.searchLyricCandidates(true);
+            return;
+          }
+          let message = '_LYRIC_VERIFY_UNAVAILABLE';
+          if (response && response.status === 'verification-unavailable') {
+            message = '_LYRIC_VERIFY_EXPIRED';
+          } else if (response && response.status === 'already-open') {
+            message = '_LYRIC_VERIFY_ALREADY_OPEN';
+          }
+          $scope.neteaseLyricVerificationError = i18next.t(message);
+        });
+      });
+    };
 
     $scope.chooseLyricCandidate = (candidate) => {
       const track = $scope.currentPlaying;
@@ -3215,6 +3281,7 @@ angular.module('listenone').controller('PlayController', [
             const track = msg.data.currentPlaying;
             $scope.lyricOffsetMs = getTrackLyricOffset(track.id);
             lyricSearchToken += 1;
+            resetNeteaseLyricVerification();
             resetLyricTranslationConfirmation();
             $scope.lyricTranslationSourceSnapshot = null;
             $scope.lyricPickerOpen = false;

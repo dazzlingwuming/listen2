@@ -400,5 +400,11 @@
  "_AUDIO_EFFECT_SAVE_FAILED": "L’effet est actif, mais cette préférence n’a pas pu être enregistrée.",
  "_AUDIO_EFFECT_INVALID_PRESET": "Ce préréglage d'effet n'est pas disponible.",
  "_AUDIO_EFFECT_DEGRADED": "Cet effet n'est pas disponible sur cet appareil et est revenu à l'original en toute sécurité.",
- "_LYRIC_SOURCE_VERIFICATION_REQUIRED": "Vérification de la plateforme requise"
+ "_LYRIC_SOURCE_VERIFICATION_REQUIRED": "Vérification de la plateforme requise",
+ "_LYRIC_VERIFY_ACTION": "Vérifier",
+ "_LYRIC_VERIFY_PENDING": "En attente de la fermeture…",
+ "_LYRIC_VERIFY_HINT": "Terminez la vérification dans la fenêtre officielle NetEase. Sa fermeture relance la recherche sans confirmer la réussite de la vérification.",
+ "_LYRIC_VERIFY_UNAVAILABLE": "Impossible d’ouvrir la vérification NetEase. Réessayez plus tard.",
+ "_LYRIC_VERIFY_ALREADY_OPEN": "La fenêtre de vérification NetEase est déjà ouverte. Terminez les étapes, fermez-la, puis relancez la recherche.",
+ "_LYRIC_VERIFY_EXPIRED": "Le lien de vérification est absent ou a expiré. Relancez la recherche avant de réessayer."
 }

@@ -6632,9 +6632,27 @@
                                     ng-if="source.count"
                                   >
                                     · {{source.count}}</small
-                                  ></span
+                                  ><button
+                                    type="button"
+                                    class="lyric-retry"
+                                    ng-if="canVerifyNeteaseLyrics(source)"
+                                    ng-click="verifyNeteaseLyrics(source)"
+                                    ng-disabled="neteaseLyricVerificationPending"
+                                    ng-attr-aria-busy="{{neteaseLyricVerificationPending}}"
+                                  >
+                                    {{neteaseLyricVerificationPending ?
+                                    _LYRIC_VERIFY_PENDING : _LYRIC_VERIFY_ACTION}}
+                                  </button></span
                                 >
                               </div>
+                              <p
+                                class="lyric-partial-notice"
+                                ng-if="neteaseLyricVerificationPending || neteaseLyricVerificationError"
+                                role="status"
+                              >
+                                {{neteaseLyricVerificationError ||
+                                _LYRIC_VERIFY_HINT}}
+                              </p>
                               <p
                                 class="lyric-partial-notice"
                                 ng-if="lyricSearchPartial"

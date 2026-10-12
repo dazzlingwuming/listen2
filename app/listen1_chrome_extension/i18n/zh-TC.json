@@ -400,5 +400,11 @@
  "_AUDIO_EFFECT_SAVE_FAILED": "音效已生效，但本次選擇未能儲存。",
  "_AUDIO_EFFECT_INVALID_PRESET": "此音效預設不可用。",
  "_AUDIO_EFFECT_DEGRADED": "此效果在目前裝置上不可用，已安全回到原聲。",
- "_LYRIC_SOURCE_VERIFICATION_REQUIRED": "需要完成平台驗證"
+ "_LYRIC_SOURCE_VERIFICATION_REQUIRED": "需要完成平台驗證",
+ "_LYRIC_VERIFY_ACTION": "前往驗證",
+ "_LYRIC_VERIFY_PENDING": "等待驗證視窗關閉…",
+ "_LYRIC_VERIFY_HINT": "請在網易雲官方視窗完成驗證。關閉視窗後會重新搜尋；關閉視窗不代表驗證成功。",
+ "_LYRIC_VERIFY_UNAVAILABLE": "無法開啟網易雲驗證，請稍後重試。",
+ "_LYRIC_VERIFY_ALREADY_OPEN": "網易雲驗證視窗已開啟，請完成操作並關閉視窗後重新搜尋。",
+ "_LYRIC_VERIFY_EXPIRED": "驗證入口已失效或尚未取得，請重新搜尋後再試。"
 }

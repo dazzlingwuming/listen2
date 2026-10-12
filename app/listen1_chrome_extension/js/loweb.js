@@ -733,6 +733,41 @@ const MediaService = {
     );
   },
 
+  verifyNeteaseLyrics() {
+    const ipcRenderer = getDesktopLocalDataIpcRenderer();
+    if (!ipcRenderer) {
+      return Promise.resolve({ ok: false, status: 'unsupported' });
+    }
+    // The desktop process owns the official challenge and session. Never pass
+    // a renderer URL or return credentials from the verification window.
+    return Promise.resolve()
+      .then(() => ipcRenderer.invoke('lyrics:verify-netease'))
+      .then((response) => {
+        if (
+          response &&
+          response.ok === true &&
+          response.status === 'retry-ready'
+        ) {
+          return { ok: true, status: 'retry-ready' };
+        }
+        const failures = [
+          'unavailable',
+          'invalid-response',
+          'already-open',
+          'verification-unavailable',
+        ];
+        if (
+          response &&
+          response.ok === false &&
+          failures.includes(response.status)
+        ) {
+          return { ok: false, status: response.status };
+        }
+        return { ok: false, status: 'invalid-response' };
+      })
+      .catch(() => ({ ok: false, status: 'unavailable' }));
+  },
+
   searchLyrics(trackInfo, query, options = {}) {
     const hints = {
       query,

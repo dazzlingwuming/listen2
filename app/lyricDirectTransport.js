@@ -91,16 +91,29 @@ async function readDnsJson(response, signal) {
   }
 }
 
-function createPublicDnsResolver({ fetchImpl, now = Date.now }) {
+function createPublicDnsResolver({
+  fetchImpl,
+  now = Date.now,
+  isAllowedHostname = isLyricHostname,
+  dnsEndpoints = DNS_ENDPOINTS,
+}) {
+  if (
+    !Array.isArray(dnsEndpoints) ||
+    dnsEndpoints.length !== DNS_ENDPOINTS.length ||
+    new Set(dnsEndpoints).size !== DNS_ENDPOINTS.length ||
+    !dnsEndpoints.every((endpoint) => DNS_ENDPOINTS.includes(endpoint))
+  )
+    throw transportError("LYRIC_INVALID_RESPONSE");
+  const endpoints = [...dnsEndpoints];
   const cache = new Map();
   return async function resolveLyricHost(hostname, signal) {
-    if (!isLyricHostname(hostname))
+    if (!isAllowedHostname(hostname))
       throw transportError("LYRIC_INVALID_RESPONSE");
     if (signal && signal.aborted) throw abortError();
     const cached = cache.get(hostname);
     if (cached && cached.expiresAt > now()) return [...cached.addresses];
     let failure;
-    for (const endpoint of DNS_ENDPOINTS) {
+    for (const endpoint of endpoints) {
       if (signal && signal.aborted) throw abortError();
       try {
         const response = await withAbort(

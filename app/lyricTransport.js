@@ -28,6 +28,25 @@ function validateUrl(value) {
   const key = `${url.origin}${url.pathname}`;
   if (!ENDPOINTS.has(key) || url.username || url.password || url.hash)
     throw new Error("Invalid lyric endpoint");
+  if (url.hostname === "music.163.com") {
+    const query = url.searchParams;
+    const keys = [...query.keys()];
+    const exactKeys = (expected) =>
+      keys.length === expected.length &&
+      expected.every((name) => query.has(name));
+    const valid =
+      url.pathname === "/api/search/get/web"
+        ? exactKeys(["s", "type", "offset", "limit"]) &&
+          query.get("s").trim().length > 0 &&
+          query.get("s").length <= 256 &&
+          query.get("type") === "1" &&
+          query.get("offset") === "0" &&
+          query.get("limit") === "20"
+        : exactKeys(["id", "lv", "kv", "tv"]) &&
+          /^\d{1,20}$/.test(query.get("id")) &&
+          ["lv", "kv", "tv"].every((name) => query.get(name) === "-1");
+    if (!valid) throw new Error("Invalid NetEase lyric request contract");
+  }
   if (url.hostname === "u.y.qq.com") {
     let data;
     try {

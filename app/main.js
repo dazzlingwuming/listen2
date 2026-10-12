@@ -44,6 +44,12 @@ const { ListeningHistoryStore } = require(`${__dirname}/listeningHistoryStore`);
 
 const { requestLyric, validateUrl } = require("./lyricTransport");
 const { createDirectLyricFetch } = require("./lyricDirectTransport");
+const { createNeteaseVerificationSession } = require("./neteaseVerificationSession");
+const neteaseLyricSession = createNeteaseVerificationSession({
+  session,
+  BrowserWindow,
+  dnsFetch: (url, options) => electron.net.fetch(url, options),
+});
 const directLyricFetch = createDirectLyricFetch({
   dnsFetch: (url, options) => electron.net.fetch(url, options),
 });
@@ -72,6 +78,15 @@ ipcMain.handle("lyrics:request", async (event, request) => {
   const controller = new AbortController();
   lyricRequests.set(request.id, controller);
   try {
+    if (new URL(request.url).hostname === "music.163.com") {
+      const result = await requestLyric(
+        neteaseLyricSession.fetch.bind(neteaseLyricSession),
+        request.url,
+        controller.signal
+      );
+      if (controller.signal.aborted) return { ok: false, status: "timeout" };
+      return await neteaseLyricSession.observeResult(result, request.url);
+    }
     return await requestLyric(
       directLyricFetch,
       request.url,
@@ -88,6 +103,21 @@ ipcMain.on("lyrics:cancel", (event, id) => {
     lyricRequests.has(id)
   )
     lyricRequests.get(id).abort();
+});
+
+// Only the trusted local player may request the server-provided official page.
+// No renderer URL, Cookie, or challenge token is accepted by this IPC.
+ipcMain.handle("lyrics:verify-netease", async (event) => {
+  if (
+    !mainWindow ||
+    event.sender !== mainWindow.webContents ||
+    event.senderFrame !== mainWindow.webContents.mainFrame
+  ) return { ok: false, status: "unavailable" };
+  try {
+    return await neteaseLyricSession.openVerification(mainWindow);
+  } catch (_) {
+    return { ok: false, status: "unavailable" };
+  }
 });
 
 const store = new Store();
@@ -1754,6 +1784,8 @@ app.on("before-quit", (event) => {
 });
 
 app.on("will-quit", () => {
+  // Cleanup must not leak Cookie/challenge details through shutdown errors.
+  Promise.resolve(neteaseLyricSession.dispose()).catch(() => {});
   if (bilibiliService) {
     bilibiliService.shutdown();
   }
