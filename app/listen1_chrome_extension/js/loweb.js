@@ -768,21 +768,31 @@ const MediaService = {
       .catch(() => ({ ok: false, status: 'unavailable' }));
   },
 
-  searchLyrics(trackInfo, query, options = {}) {
+  searchLyrics(trackInfo, input, options = {}) {
+    const title = String(
+      input && typeof input === 'object' ? input.title || '' : input || ''
+    ).trim();
+    const artist = String(
+      input && typeof input === 'object' ? input.artist || '' : ''
+    ).trim();
     const hints = {
-      query,
-      title: query,
-      artist: '',
+      query: [title, artist].filter(Boolean).join(' '),
+      title,
+      artist,
       duration: 0,
       manual: true,
     };
-    const providers = [
-      ['QQ', 'search_qq_lyric_candidates'],
-      ['LRCLIB', 'search_lrclib_lyric_candidates'],
-      ['KUGOU', 'search_kugou_lyric_candidates'],
-      ['网易云', 'search_netease_lyric_candidates'],
-      ['KUWO', 'search_kuwo_lyric_candidates'],
-    ].map(([id, method]) => ({
+    const providers = (
+      title
+        ? [
+            ['QQ', 'search_qq_lyric_candidates'],
+            ['LRCLIB', 'search_lrclib_lyric_candidates'],
+            ['KUGOU', 'search_kugou_lyric_candidates'],
+            ['网易云', 'search_netease_lyric_candidates'],
+            ['KUWO', 'search_kuwo_lyric_candidates'],
+          ]
+        : []
+    ).map(([id, method]) => ({
       id,
       load: (request) =>
         bilibili[method]({
@@ -790,7 +800,7 @@ const MediaService = {
           ...request,
         }),
     }));
-    return Listen2LyricSearch.search(providers, query, options);
+    return Listen2LyricSearch.search(providers, { title, artist }, options);
   },
 
   searchLyricCandidates(trackInfo, query) {

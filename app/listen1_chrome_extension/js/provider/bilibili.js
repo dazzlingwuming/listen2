@@ -940,6 +940,7 @@ class bilibili {
   }
 
   static search_qq_lyric_candidates(hints) {
+    this.report_lyric_search_stage(hints, 'catalog');
     const scoringHints = this.build_lyric_scoring_hints(hints);
     const searchText = this.build_lyric_search_text(
       hints,
@@ -950,6 +951,7 @@ class bilibili {
     }
 
     return this.fetch_qq_lyric_search(searchText, hints).then((items) => {
+      if (items.length) this.report_lyric_search_stage(hints, 'lyrics');
       const scoredCandidates = items
         .filter((item) => item && (item.mid || item.songmid))
         .map((item, index) => ({
@@ -968,7 +970,10 @@ class bilibili {
             candidate.item.mid || candidate.item.songmid,
             hints
           ).then((lyricResult) => {
-            if (!lyricResult) {
+            if (
+              !lyricResult ||
+              (hints.manual && !this.has_synced_lyric(lyricResult.lyric))
+            ) {
               return null;
             }
             const { item, scored } = candidate;
@@ -1147,6 +1152,7 @@ class bilibili {
   }
 
   static search_netease_lyric_candidates(hints) {
+    this.report_lyric_search_stage(hints, 'catalog');
     const scoringHints = this.build_lyric_scoring_hints(hints);
     const searchText = this.build_lyric_search_text(
       hints,
@@ -1157,6 +1163,7 @@ class bilibili {
     }
 
     return this.fetch_netease_lyric_search(searchText, hints).then((items) => {
+      if (items.length) this.report_lyric_search_stage(hints, 'lyrics');
       const scoredCandidates = items
         .filter((item) => item && item.id)
         .map((item, index) => ({
@@ -1173,7 +1180,10 @@ class bilibili {
         scoredCandidates.map((candidate) =>
           this.fetch_netease_lyric(candidate.item.id, hints).then(
             (lyricResult) => {
-              if (!lyricResult) {
+              if (
+                !lyricResult ||
+                (hints.manual && !this.has_synced_lyric(lyricResult.lyric))
+              ) {
                 return null;
               }
               const { item, scored } = candidate;
@@ -1417,6 +1427,20 @@ class bilibili {
     return request;
   }
 
+  static report_lyric_search_stage(hints, stage) {
+    // Expose only the verified stage, never upstream messages or request data.
+    try {
+      if (typeof hints.onProgress === 'function') hints.onProgress({ stage });
+      else if (typeof hints.onStage === 'function') hints.onStage(stage);
+    } catch (error) {
+      // A view observer is optional and cannot invalidate provider results.
+    }
+  }
+
+  static has_synced_lyric(value) {
+    return /^\[\d{1,3}:\d{2}(?:\.\d{1,3})?\].*\S/m.test(String(value || ''));
+  }
+
   static build_lyric_search_text(hints, fallback) {
     // Manual input remains editable and authoritative. Automatic matching can
     // still clean video metadata; scoring normalization never changes requests.
@@ -1426,6 +1450,15 @@ class bilibili {
   }
 
   static build_lyric_scoring_hints(hints) {
+    if (hints.manual) {
+      const title = String(hints.title || hints.query || '').trim();
+      return {
+        variants: this.build_title_variants([title]),
+        artist: String(hints.artist || '').trim(),
+        duration: 0,
+        rawTitle: title,
+      };
+    }
     const explicitQuery = this.clean_music_title(hints.query);
     const scoringTitles = explicitQuery
       ? [explicitQuery]
@@ -1457,6 +1490,7 @@ class bilibili {
   }
 
   static search_lrclib_lyric_candidates(hints) {
+    this.report_lyric_search_stage(hints, 'catalog');
     const scoringHints = this.build_lyric_scoring_hints(hints);
     const searchText = this.build_lyric_search_text(
       hints,
@@ -1467,9 +1501,16 @@ class bilibili {
     }
 
     return this.fetch_lrclib_search(searchText, hints).then((items) => {
+      if (items.length) this.report_lyric_search_stage(hints, 'lyrics');
       const seen = new Set();
       return items
-        .filter((item) => item && item.syncedLyrics && !item.instrumental)
+        .filter(
+          (item) =>
+            item &&
+            item.syncedLyrics &&
+            !item.instrumental &&
+            (!hints.manual || this.has_synced_lyric(item.syncedLyrics))
+        )
         .map((item, index) => {
           const scored = this.score_lrclib_candidate(item, scoringHints, index);
           return {
@@ -1575,6 +1616,7 @@ class bilibili {
 
   static async search_kugou_catalog_lyrics(query, hints, scoringHints) {
     const songs = await this.fetch_kugou_song_search(query, hints);
+    if (songs.length) this.report_lyric_search_stage(hints, 'lyrics');
     const seen = new Set();
     const ranked = songs
       .filter((song) => {
@@ -1680,6 +1722,7 @@ class bilibili {
   }
 
   static search_kugou_lyric_candidates(hints) {
+    this.report_lyric_search_stage(hints, 'catalog');
     const scoringHints = this.build_lyric_scoring_hints(hints);
     const query = String(hints.query || '').trim();
     if (!query) return Promise.resolve([]);
@@ -1736,6 +1779,7 @@ class bilibili {
   }
 
   static async search_kuwo_lyric_candidates(hints) {
+    this.report_lyric_search_stage(hints, 'catalog');
     const scoringHints = this.build_lyric_scoring_hints(hints);
     const searchText = this.build_lyric_search_text(
       hints,
@@ -1758,6 +1802,7 @@ class bilibili {
       if (!payload || !Array.isArray(payload.abslist))
         throw new Error('Invalid Kuwo response');
       const items = payload.abslist;
+      if (items.length) this.report_lyric_search_stage(hints, 'lyrics');
       const candidates = items
         .map((item, index) =>
           this.score_kuwo_candidate(item, scoringHints, index)
@@ -1800,7 +1845,8 @@ class bilibili {
           const lyric = this.kuwo_lyric_to_lrc(
             lyricPayload.data && lyricPayload.data.lrclist
           );
-          if (!lyric) continue;
+          if (!lyric || (hints.manual && !this.has_synced_lyric(lyric)))
+            continue;
           results.push({
             id: `kuwo_${musicId}`,
             provider: 'KUWO',

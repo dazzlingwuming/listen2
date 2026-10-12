@@ -11,7 +11,7 @@ const play = fs.readFileSync(path.join(root, 'js/controller/play.js'), 'utf8');
 const html = fs.readFileSync(path.join(root, 'listen1.html'), 'utf8');
 const api = loweb.slice(
   loweb.indexOf('  verifyNeteaseLyrics() {'),
-  loweb.indexOf('  searchLyrics(trackInfo, query, options = {}) {')
+  loweb.indexOf('  searchLyrics(trackInfo,')
 );
 const handlers = play.slice(
   play.indexOf('    function resetNeteaseLyricVerification() {'),
@@ -63,7 +63,7 @@ function makeController() {
     isChrome: false,
     currentPlaying: { id: 'bitrack_123' },
     lyricPickerOpen: true,
-    lyricSearch: { query: 'Exact manual query' },
+    lyricSearch: { title: 'Exact manual title', artist: 'Exact manual artist' },
     lyricSearchSources: [source],
     $evalAsync: (callback) => callback(),
     searchLyricCandidates: (force) => retries.push(force),
@@ -179,7 +179,10 @@ async function run() {
       state.scope.currentPlaying = { id: 'bitrack_456' };
     },
     (state) => {
-      state.scope.lyricSearch.query = 'edited query';
+      state.scope.lyricSearch.title = 'edited title';
+    },
+    (state) => {
+      state.scope.lyricSearch.artist = 'edited artist';
     },
     (state) => state.lifecycle.changeSearch(),
     (state) => state.lifecycle.reset(),

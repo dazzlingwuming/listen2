@@ -6587,25 +6587,33 @@
                                 class="lyric-picker-search"
                                 ng-submit="searchLyricCandidates()"
                               >
-                                <svg
-                                  viewBox="0 0 24 24"
-                                  aria-hidden="true"
-                                  focusable="false"
-                                >
-                                  <circle cx="11" cy="11" r="6"></circle>
-                                  <path d="m16 16 4 4"></path>
-                                </svg>
-                                <input
-                                  type="search"
-                                  ng-model="lyricSearch.query"
-                                  placeholder="{{_LYRIC_SEARCH_PLACEHOLDER}}"
-                                  aria-label="{{_LYRIC_SEARCH_PLACEHOLDER}}"
-                                  autocomplete="off"
-                                />
+                                <label class="lyric-search-field">
+                                  <span>{{_LYRIC_SEARCH_TITLE_LABEL}}</span>
+                                  <input
+                                    type="search"
+                                    ng-model="lyricSearch.title"
+                                    ng-change="editLyricSearch()"
+                                    placeholder="{{_LYRIC_SEARCH_TITLE_PLACEHOLDER}}"
+                                    aria-describedby="lyric-search-help"
+                                    aria-required="true"
+                                    autocomplete="off"
+                                  />
+                                </label>
+                                <label class="lyric-search-field">
+                                  <span>{{_LYRIC_SEARCH_ARTIST_LABEL}}</span>
+                                  <input
+                                    type="search"
+                                    ng-model="lyricSearch.artist"
+                                    ng-change="editLyricSearch()"
+                                    placeholder="{{_LYRIC_SEARCH_ARTIST_PLACEHOLDER}}"
+                                    aria-describedby="lyric-search-help"
+                                    autocomplete="off"
+                                  />
+                                </label>
                                 <button
                                   type="submit"
                                   class="lyric-picker-submit"
-                                  ng-disabled="!lyricSearch.query.trim()"
+                                  ng-disabled="!lyricSearch.title.trim()"
                                 >
                                   {{_LYRIC_SEARCH_ACTION}}
                                 </button>
@@ -6619,6 +6627,34 @@
                                   ×
                                 </button>
                               </form>
+                              <p
+                                id="lyric-search-help"
+                                class="lyric-search-help"
+                              >
+                                {{_LYRIC_SEARCH_HELP}}
+                              </p>
+                              <p
+                                class="lyric-search-summary"
+                                ng-if="lyricSearchSubmitted"
+                                aria-live="polite"
+                              >
+                                {{_LYRIC_SEARCH_SUBMITTED}}:
+                                {{lyricSearchSubmitted.title}}<span
+                                  ng-if="lyricSearchSubmitted.artist"
+                                >
+                                  · {{lyricSearchSubmitted.artist}}</span
+                                >
+                              </p>
+                              <div
+                                class="lyric-picker-status"
+                                ng-if="lyricSearchState === 'idle' || lyricSearchState === 'edited' || lyricSearchState === 'required'"
+                                role="status"
+                              >
+                                {{lyricSearchState === 'required' ?
+                                _LYRIC_SEARCH_TITLE_REQUIRED : (lyricSearchState
+                                === 'edited' ? _LYRIC_SEARCH_EDITED :
+                                _LYRIC_SEARCH_IDLE)}}
+                              </div>
                               <div
                                 class="lyric-source-status"
                                 ng-if="lyricSearchSources.length"
@@ -6641,7 +6677,8 @@
                                     ng-attr-aria-busy="{{neteaseLyricVerificationPending}}"
                                   >
                                     {{neteaseLyricVerificationPending ?
-                                    _LYRIC_VERIFY_PENDING : _LYRIC_VERIFY_ACTION}}
+                                    _LYRIC_VERIFY_PENDING :
+                                    _LYRIC_VERIFY_ACTION}}
                                   </button></span
                                 >
                               </div>
@@ -6662,7 +6699,7 @@
                               <button
                                 class="lyric-retry"
                                 type="button"
-                                ng-if="!lyricSearchPending && (lyricSearchState === 'error' || lyricSearchState === 'empty' || lyricSearchPartial)"
+                                ng-if="!lyricSearchPending && (lyricSearchState === 'error' || lyricSearchState === 'empty' || lyricSearchState === 'no-synced' || lyricSearchPartial)"
                                 ng-click="searchLyricCandidates(true)"
                               >
                                 {{_LYRIC_SEARCH_RETRY}}
@@ -6677,10 +6714,12 @@
                               </div>
                               <div
                                 class="lyric-picker-status"
-                                ng-if="lyricSearchState === 'empty'"
+                                ng-if="lyricSearchState === 'empty' || lyricSearchState === 'no-synced'"
                                 role="status"
                               >
-                                {{_LYRIC_SEARCH_EMPTY}}
+                                {{lyricSearchState === 'no-synced' ?
+                                _LYRIC_SOURCE_NO_SYNCED_LYRICS :
+                                _LYRIC_SEARCH_EMPTY}}
                               </div>
                               <div
                                 class="lyric-picker-status is-error"
