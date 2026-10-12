@@ -439,5 +439,6 @@
  "_CACHE_ERROR_BUSY": "部分文件正在使用，已保留。请停止播放后重试。",
  "_CACHE_ERROR_TIMEOUT": "下载超时，请检查网络后重试。",
  "_CACHE_ERROR_QUEUE": "下载队列已满，请等待部分任务完成。",
- "_CACHE_ERROR_GENERIC": "操作未完成，请刷新状态或重试；正常播放不受影响。"
+ "_CACHE_ERROR_GENERIC": "操作未完成，请刷新状态或重试；正常播放不受影响。",
+ "_LYRIC_KUGOU_SEARCH_HINT": "酷狗有时需要歌手名称。可尝试“歌手 歌名”或“歌手 - 歌名”。"
 }

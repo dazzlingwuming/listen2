@@ -6637,6 +6637,13 @@
                               </div>
                               <p
                                 class="lyric-partial-notice"
+                                ng-repeat="source in lyricSearchSources track by source.source"
+                                ng-if="source.source === 'KUGOU' && source.status === 'empty'"
+                              >
+                                {{_LYRIC_KUGOU_SEARCH_HINT}}
+                              </p>
+                              <p
+                                class="lyric-partial-notice"
                                 ng-if="lyricSearchPartial"
                               >
                                 {{_LYRIC_SEARCH_PARTIAL}}

@@ -60,7 +60,9 @@
         next += 1;
         const provider = providers[index];
         const state = states[index];
-        const key = `${provider.id}:${query.trim().toLocaleLowerCase()}`;
+        const key = `${provider.id}:${query.trim().toLocaleLowerCase()}:${
+          provider.cacheKey || ''
+        }`;
         const time = Date.now();
         try {
           const saved = cache.get(key);

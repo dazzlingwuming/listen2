@@ -7,6 +7,8 @@ const ENDPOINTS = new Map([
   ["https://music.163.com/api/search/get/web", "https://music.163.com/"],
   ["https://music.163.com/api/song/lyric", "https://music.163.com/"],
   ["https://lrclib.net/api/search", "https://lrclib.net/"],
+  ["https://lyrics.kugou.com/search", "https://www.kugou.com/"],
+  ["https://lyrics.kugou.com/download", "https://www.kugou.com/"],
   ["https://www.kuwo.cn/search/searchMusicBykeyWord", "https://www.kuwo.cn/"],
   ["https://m.kuwo.cn/newh5/singles/songinfoandlrc", "https://www.kuwo.cn/"],
 ]);

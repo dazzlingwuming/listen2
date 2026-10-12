@@ -743,12 +743,24 @@ const MediaService = {
     };
     const providers = [
       ['QQ', 'search_qq_lyric_candidates'],
-      ['网易云', 'search_netease_lyric_candidates'],
       ['LRCLIB', 'search_lrclib_lyric_candidates'],
+      ['KUGOU', 'search_kugou_lyric_candidates'],
+      ['网易云', 'search_netease_lyric_candidates'],
       ['KUWO', 'search_kuwo_lyric_candidates'],
     ].map(([id, method]) => ({
       id,
-      load: (request) => bilibili[method]({ ...hints, ...request }),
+      cacheKey:
+        id === 'KUGOU'
+          ? String(trackInfo.artist || '')
+              .trim()
+              .toLocaleLowerCase()
+          : '',
+      load: (request) =>
+        bilibili[method]({
+          ...hints,
+          ...(id === 'KUGOU' ? { artist: trackInfo.artist || '' } : {}),
+          ...request,
+        }),
     }));
     return Listen2LyricSearch.search(providers, query, options);
   },
