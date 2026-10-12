@@ -1,5 +1,9 @@
 const { signAsync } = require("@electron/osx-sign");
-const { loadLocalIdentity, unlockLocalIdentity } = require("./setupMacSigning");
+const {
+  loadLocalIdentity,
+  unlockLocalIdentity,
+  withKeychainSearchListAsync,
+} = require("./setupMacSigning");
 
 function createSignOptions(options, appId, localIdentity = null) {
   if (options.platform !== "darwin" || !appId) {
@@ -35,7 +39,13 @@ exports.sign = async (options, packager) => {
   const localIdentity = loadLocalIdentity();
   if (localIdentity) {
     // Configured identities must be usable; never downgrade them to ad-hoc.
-    unlockLocalIdentity(localIdentity);
+    await withKeychainSearchListAsync(localIdentity.keychain, async () => {
+      unlockLocalIdentity(localIdentity);
+      await signAsync(
+        createSignOptions(options, packager.appInfo.id, localIdentity)
+      );
+    });
+    return;
   }
   await signAsync(
     createSignOptions(options, packager.appInfo.id, localIdentity)

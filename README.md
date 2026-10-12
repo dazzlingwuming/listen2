@@ -151,13 +151,13 @@ Windows 未使用商业代码签名；macOS 使用完整本地 ad-hoc 签名，�
 
 Intel Mac 下载 x64 DMG，Apple Silicon（M 系列）下载 arm64 DMG；Universal DMG 同时支持两者。打开 DMG 后将 Listen1 拖入“应用程序”。
 
-当前 macOS 构建使用完整的 ad-hoc（本地）签名来校验程序完整性，未使用 Apple Developer ID，也未经过 Apple 公证，因此首次从浏览器下载后仍会被 Gatekeeper 拦截。请先核对 [官方 Release](https://github.com/dazzlingwuming/listen2/releases/latest) 来源和 SHA-256，然后：
+本次 macOS 修订使用固定的本机自签证书校验程序完整性并保持更新时的代码身份，未使用 Apple Developer ID，也未经过 Apple 公证，因此首次从浏览器下载后仍可能被 Gatekeeper 拦截。请先核对 [官方 Release](https://github.com/dazzlingwuming/listen2/releases/latest) 来源和 SHA-256，然后：
 
 1. 从“应用程序”打开 Listen1 一次，关闭系统拦截提示。
 2. 打开“系统设置 → 隐私与安全性”，在安全性区域找到 Listen1 的提示，点击“仍要打开”（Open Anyway）。
 3. 按系统要求确认或输入管理员密码，再点击“打开”。此操作仅允许这份应用运行；后续通常可正常打开。更新后系统可能再次要求确认。
 
-ad-hoc 签名不代表 Apple 验证了开发者身份。如果系统未提供“仍要打开”，请保留提示文字并反馈，不要关闭 Gatekeeper。
+本机自签证书不代表 Apple 验证了开发者身份。如果系统未提供“仍要打开”，请保留提示文字并反馈，不要关闭 Gatekeeper。
 
 本版本只发布 Windows x64 的 NSIS 与 7z，以及 macOS x64、arm64 和 Universal DMG；不发布 Linux、Windows ia32 或 Windows arm64 制品。
 
@@ -168,7 +168,7 @@ ad-hoc 签名不代表 Apple 验证了开发者身份。如果系统未提供“
 | 平台                        | 状态         | 说明                                                                  |
 | --------------------------- | ------------ | --------------------------------------------------------------------- |
 | Windows 10/11 x64           | 发布目标     | 提供 NSIS 安装包与 7z；包含现代 UI、Bilibili、MV、桌面歌词与 DeepSeek 翻译 |
-| macOS Intel / Apple Silicon | 发布目标     | 提供 x64、arm64 与 Universal DMG；完整 ad-hoc 签名，无 Developer ID 或公证 |
+| macOS Intel / Apple Silicon | 发布目标     | 提供 x64、arm64 与 Universal DMG；固定本机自签证书，无 Developer ID 或公证 |
 | Windows ia32 / arm64        | 不发布       | 本版本不提供对应制品                                                  |
 | Linux                       | 不发布       | 本版本不提供 Linux 制品                                               |
 
@@ -235,6 +235,8 @@ node build/setupMacSigning.js --trust-code-signing
 材料保存于用户目录的 `Library/Application Support/Listen2BuildSigning/`，使用独立 build keychain、目录 `0700` 和秘密文件 `0600`。密码通过 stdin 交给非交互的 Security.framework helper，不进入命令参数；原始私钥与 P12 导入后删除。不要提交、上传或打包该目录。重复运行复用同一证书，不重新生成；脚本会签名两个不同的测试应用，检查默认 designated requirement 一致且完整性验证通过，不运行测试应用。
 
 后续 `npm run dist:mac` 自动读取本机身份。存在配置但身份无效、未受信任或 setup 未完成时，构建失败并要求恢复本机签名材料，不会悄悄改用 ad-hoc。其他尚未配置身份的构建机器仍使用完整 ad-hoc 签名；其更新可能再次请求 Safe Storage 钥匙串授权。
+
+构建工具仅在签名期间将专用钥匙串加入当前用户的查询列表，完成或失败后恢复原列表；并发签名会串行执行，不修改 login 钥匙串内容。
 
 自签证书不会提供 Developer ID 或 Apple 公证，也不消除 Gatekeeper 首次下载提示。由 ad-hoc 首次迁移至固定身份仍可能要求一次钥匙串授权；连续安装后的真实 Safe Storage 行为须在目标用户环境另行验证。安装由其他证书或 ad-hoc 签名的包会再次改变身份。私钥丢失、证书替换或证书续期需要明确迁移，不应通过删除配置自动生成来掩盖。
 

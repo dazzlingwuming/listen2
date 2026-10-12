@@ -146,7 +146,90 @@ function writePrivate(filename, data) {
   fs.writeFileSync(filename, data, { mode: 0o600, flag: "wx" });
 }
 
+function readSearchList(runCommand) {
+  const output = runCommand("/usr/bin/security", [
+    "list-keychains",
+    "-d",
+    "user",
+  ]);
+  return output
+    .split(/\r?\n/)
+    .filter((line) => line.trim())
+    .map((line) => {
+      const match = line.match(/^\s*"([^"\r\n]*)"\s*$/);
+      if (!match)
+        throw new Error("Cannot safely read user keychain search list");
+      return match[1];
+    });
+}
+
+function enterKeychainSearchList(keychain, runCommand) {
+  const original = readSearchList(runCommand);
+  if (original.includes(keychain)) return () => {};
+  const restore = () => {
+    runCommand("/usr/bin/security", [
+      "list-keychains",
+      "-d",
+      "user",
+      "-s",
+      ...original,
+    ]);
+    if (
+      JSON.stringify(readSearchList(runCommand)) !== JSON.stringify(original)
+    ) {
+      throw new Error("User keychain search list restoration failed");
+    }
+  };
+  try {
+    // codesign needs the dedicated keychain in the search list even when its
+    // --keychain option is present. Never leave this change after signing.
+    runCommand("/usr/bin/security", [
+      "list-keychains",
+      "-d",
+      "user",
+      "-s",
+      ...original,
+      keychain,
+    ]);
+  } catch (error) {
+    restore();
+    throw error;
+  }
+  return restore;
+}
+
+function withKeychainSearchList(keychain, operation, runCommand = run) {
+  const restore = enterKeychainSearchList(keychain, runCommand);
+  try {
+    return operation();
+  } finally {
+    restore();
+  }
+}
+
+let signingQueue = Promise.resolve();
+function withKeychainSearchListAsync(keychain, operation, runCommand = run) {
+  // Concurrent electron-builder sign hooks must not restore another hook's
+  // active search list. A failed sign must also allow the next hook to run.
+  const result = signingQueue.then(async () => {
+    const restore = enterKeychainSearchList(keychain, runCommand);
+    try {
+      return await operation();
+    } finally {
+      restore();
+    }
+  });
+  signingQueue = result.catch(() => {});
+  return result;
+}
+
 function verifyStableIdentity(identity) {
+  return withKeychainSearchList(identity.keychain, () =>
+    verifyStableIdentityInSearchList(identity)
+  );
+}
+
+function verifyStableIdentityInSearchList(identity) {
   const testDirectory = fs.mkdtempSync(
     path.join(os.tmpdir(), "listen2-fixed-dr-")
   );
@@ -183,12 +266,14 @@ function verifyStableIdentity(identity) {
         app,
       ]);
       run("/usr/bin/codesign", ["--verify", "--deep", "--strict", app]);
-      // codesign display writes to stderr; avoid exposing any unrelated output.
+      // macOS versions differ in which stream receives the requirement.
       const displayed = spawnSync("/usr/bin/codesign", ["-d", "-r-", app], {
         encoding: "utf8",
         timeout: 10000,
       });
-      const requirement = String(displayed.stderr).match(/designated => (.+)/);
+      const requirement = `${displayed.stdout}\n${displayed.stderr}`.match(
+        /designated => (.+)/
+      );
       if (
         displayed.status !== 0 ||
         !requirement ||
@@ -359,6 +444,8 @@ module.exports = {
   loadLocalIdentity,
   unlockLocalIdentity,
   verifyStableIdentity,
+  withKeychainSearchList,
+  withKeychainSearchListAsync,
   setup,
 };
 if (require.main === module) {
