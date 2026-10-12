@@ -12,7 +12,7 @@ const handlers = play.slice(
   play.indexOf('    $scope.chooseLyricCandidate = (candidate) => {')
 );
 
-function makeController() {
+function makeController(options = {}) {
   const calls = [];
   const scope = {
     currentPlaying: {
@@ -34,7 +34,7 @@ function makeController() {
       $scope: scope,
       $timeout: () => {},
       window: { matchMedia: () => ({ matches: false }) },
-      document: { querySelector: () => null },
+      document: options.document || { querySelector: () => null },
       MediaService: {
         getLyricSearchQuery: () => 'Suggested title',
         searchLyrics: (track, fields, options) => {
@@ -164,6 +164,72 @@ assert.strictEqual(
   }),
   '_LYRIC_SOURCE_NO_SYNCED_LYRICS'
 );
+// Native details must collapse for a fresh request, even before ng-if updates.
+const sourceDetails = { open: true };
+const detailsController = makeController({
+  document: { querySelector: () => sourceDetails },
+});
+detailsController.scope.openLyricPicker();
+assert.strictEqual(sourceDetails.open, false, 'reopening collapses sources');
+sourceDetails.open = true;
+detailsController.scope.searchLyricCandidates();
+assert.strictEqual(sourceDetails.open, false, 'new search collapses sources');
+sourceDetails.open = true;
+detailsController.scope.editLyricSearch();
+assert.strictEqual(sourceDetails.open, false, 'editing collapses sources');
+
+// The disclosure summary participates in the same keyboard cycle as inputs.
+let focused = '';
+const firstInput = {
+  offsetWidth: 100,
+  focus: () => {
+    focused = 'input';
+  },
+};
+const summary = {
+  offsetWidth: 100,
+  focus: () => {
+    focused = 'summary';
+  },
+};
+const focusDocument = {
+  activeElement: summary,
+  querySelector: () => ({
+    querySelectorAll: (selector) => {
+      assert(selector.includes('summary'), 'native summary is focusable');
+      return [firstInput, summary];
+    },
+  }),
+};
+const keyboard = makeController({ document: focusDocument });
+let prevented = 0;
+keyboard.scope.handleLyricPickerKeydown({
+  key: 'Tab',
+  preventDefault: () => {
+    prevented += 1;
+  },
+});
+assert.strictEqual(focused, 'input');
+focusDocument.activeElement = firstInput;
+keyboard.scope.handleLyricPickerKeydown({
+  key: 'Tab',
+  shiftKey: true,
+  preventDefault: () => {
+    prevented += 1;
+  },
+});
+assert.strictEqual(focused, 'summary');
+keyboard.scope.lyricPickerOpen = true;
+keyboard.scope.handleLyricPickerKeydown({
+  key: 'Escape',
+  preventDefault: () => {
+    prevented += 1;
+  },
+  stopPropagation: () => {},
+});
+assert.strictEqual(keyboard.scope.lyricPickerOpen, false);
+assert.strictEqual(prevented, 3);
+
 const html = fs.readFileSync(path.join(root, 'listen1.html'), 'utf8');
 assert.match(html, /ng-model="lyricSearch.title"/);
 assert.match(html, /ng-model="lyricSearch.artist"/);
@@ -183,6 +249,7 @@ for (const locale of ['zh-CN', 'zh-TC', 'en-US', 'fr-FR', 'ko-KR', 'pt-BR']) {
     'SEARCH_EDITED',
     'SEARCH_TITLE_REQUIRED',
     'SOURCE_NO_SYNCED_LYRICS',
+    'SOURCE_DETAILS',
     'CATALOG_UNAVAILABLE',
     'LYRICS_UNAVAILABLE',
   ]) {

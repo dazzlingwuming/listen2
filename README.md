@@ -5,7 +5,7 @@
 ### 把 Bilibili 与多平台音乐内容，整理成更好用的桌面播放器
 
 [![License](https://img.shields.io/badge/license-MIT-7c5cff.svg)](./LICENSE.md)
-[![Version](https://img.shields.io/badge/version-2.35.3-8b5cf6.svg)](https://github.com/dazzlingwuming/listen2/releases/tag/v2.35.3)
+[![Version](https://img.shields.io/badge/version-2.35.4-8b5cf6.svg)](https://github.com/dazzlingwuming/listen2/releases/tag/v2.35.4)
 [![Electron](https://img.shields.io/badge/Electron-32-38bdf8.svg)](https://www.electronjs.org/)
 [![Windows](https://img.shields.io/badge/Windows-x64-2563eb.svg)](https://github.com/dazzlingwuming/listen2/releases/latest)
 [![macOS](https://img.shields.io/badge/macOS-Universal-111827.svg)](#平台支持)
@@ -18,6 +18,14 @@
 Listen2 是 [Listen1](https://github.com/listen1/listen1) 的社区增强版本。它保留多平台聚合搜索、播放和歌单能力，并重点改善 Bilibili 音乐播放、同步歌词、歌词翻译、桌面歌词、MV 和现代化桌面体验。
 
 > Listen2 只整理和播放用户本来就有权访问的内容，不解锁会员、付费、DRM、地区限制或其他受限资源。
+
+## v2.35.4 更新
+
+- 手动歌词候选窗口保留右侧搜索区，并扩展候选列表可用高度。
+- 来源阶段信息默认折叠；候选列表直接显示歌名、歌手、来源和时长。
+- 窄窗口下仍可查看和操作候选，搜索与候选操作支持键盘使用。
+
+已通过 26 项相关测试、4 项前端契约检查，以及 6 种窗口尺寸的布局与操作检查。在 1112×802 窗口中默认可完整看到 4 条候选。界面验证使用隔离的模拟搜索结果，未启动或替换用户正在使用的应用；实际安装与平台账号验证未在本轮覆盖。
 
 ## v2.35.3 更新
 

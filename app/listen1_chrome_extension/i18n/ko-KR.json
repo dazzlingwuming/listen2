@@ -407,6 +407,7 @@
  "_LYRIC_VERIFY_UNAVAILABLE": "NetEase 인증 창을 열 수 없습니다. 나중에 다시 시도하세요.",
  "_LYRIC_VERIFY_ALREADY_OPEN": "NetEase 인증 창이 이미 열려 있습니다. 절차를 완료하고 창을 닫은 다음 다시 검색하세요.",
  "_LYRIC_VERIFY_EXPIRED": "인증 링크가 없거나 만료되었습니다. 다시 검색한 후 시도하세요.",
+ "_LYRIC_SOURCE_DETAILS": "검색 출처 정보",
  "_LYRIC_SEARCH_TITLE_LABEL": "곡 제목 (필수)",
  "_LYRIC_SEARCH_ARTIST_LABEL": "가수 (선택)",
  "_LYRIC_SEARCH_TITLE_PLACEHOLDER": "곡 제목 입력",

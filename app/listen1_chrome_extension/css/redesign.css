@@ -2355,13 +2355,14 @@
   z-index: 8;
   top: 50px;
   right: 0;
-  bottom: auto;
+  bottom: 8px;
   left: clamp(0px, 2.6vw, 30px);
   display: flex;
-  height: min(420px, calc(100% - 58px));
+  height: auto;
   min-height: 0;
   box-sizing: border-box;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   border: 1px solid rgba(255, 255, 255, 0.13);
   border-radius: 20px;
   background: radial-gradient(
@@ -2394,7 +2395,7 @@
   display: grid;
   flex: 0 0 auto;
   align-items: center;
-  padding: 12px;
+  padding: 9px 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.09);
   grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr) auto 34px;
   gap: 8px;
@@ -2469,11 +2470,11 @@
 
 .modern-body .lyric-picker-status {
   display: flex;
-  min-height: 140px;
-  flex: 1 1 auto;
+  min-height: 100px;
+  flex: 1 0 auto;
   align-items: center;
   justify-content: center;
-  padding: 24px;
+  padding: 16px;
   color: rgba(225, 229, 242, 0.55);
   font-size: 12px;
   line-height: 1.55;
@@ -2502,11 +2503,11 @@
 }
 
 .modern-body .lyric-picker-results {
-  min-height: 0;
-  flex: 1 1 auto;
+  min-height: 144px;
+  flex: 1 1 0;
   overflow-x: hidden;
   overflow-y: auto;
-  padding: 4px 12px 12px;
+  padding: 0 12px 4px;
   scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
   scrollbar-width: thin;
 }
@@ -2538,10 +2539,10 @@
 .modern-body .lyric-candidate {
   display: grid;
   width: 100%;
-  min-height: 78px;
+  min-height: 72px;
   box-sizing: border-box;
   align-items: center;
-  padding: 11px 8px;
+  padding: 9px 8px;
   border: 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.075);
   border-radius: 0;
@@ -2551,7 +2552,7 @@
   text-align: left;
   cursor: pointer;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 16px;
+  gap: 12px;
   transition: background 150ms ease, color 150ms ease;
 }
 
@@ -2590,7 +2591,7 @@
 
 .modern-body .lyric-candidate-artist {
   color: rgba(226, 230, 241, 0.68);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 620;
 }
 
@@ -2604,9 +2605,9 @@
   display: flex;
   align-items: flex-end;
   color: rgba(216, 220, 234, 0.42);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 650;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.02em;
   text-transform: uppercase;
   flex-direction: column;
   gap: 5px;
@@ -2637,14 +2638,14 @@
 
 .modern-body .lyric-picker-restore {
   align-self: flex-start;
-  margin: 0 20px 14px;
+  margin: 0;
   padding: 0;
   border: 0;
   border-bottom: 1px solid transparent;
   background: transparent;
   color: rgba(191, 178, 247, 0.72);
   font-family: inherit;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 650;
   cursor: pointer;
 }
@@ -5687,8 +5688,8 @@
   .modern-body .lyric-picker {
     top: 38px;
     left: 0;
-    bottom: auto;
-    height: min(420px, calc(100% - 38px));
+    bottom: 0;
+    height: auto;
     border-radius: 16px;
   }
 
@@ -8798,12 +8799,68 @@ body.modern-white .audio-effects-summary p {
 .page .audio-cache-task-info progress { width: 100%; max-width: 420px; height: 6px; accent-color: var(--ui-accent, #9574cc); }
 .page .audio-cache-task-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
+/* Reserve the lyric column for results; controls remain compact and reachable. */
+.modern-body .lyric-picker-tools {
+  min-height: 40px;
+  max-height: min(132px, 30%);
+  flex: 0 1 auto;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.modern-body .lyric-picker-context {
+  flex: 0 0 auto;
+  padding: 5px 14px;
+}
+
+.modern-body .lyric-picker-footer {
+  position: sticky;
+  z-index: 3;
+  bottom: 0;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  min-height: 38px;
+  box-sizing: border-box;
+  padding: 8px 16px;
+  border-top: 1px solid var(--stage-divider, var(--ui-border));
+  background: var(--stage-picker-bg, var(--ui-surface-raised));
+}
+
+.modern-body .lyric-source-details {
+  flex: 0 0 auto;
+  margin: 0 14px;
+  border-bottom: 1px solid var(--stage-divider, var(--ui-border));
+  font-size: 11px;
+}
+
+.modern-body .lyric-source-details summary {
+  width: fit-content;
+  padding: 6px 0;
+  color: var(--stage-muted, var(--ui-muted));
+  cursor: pointer;
+}
+
+.modern-body .lyric-source-details summary:focus-visible {
+  outline: 2px solid var(--ui-accent, #8b70f6);
+  outline-offset: 2px;
+}
+
+.modern-body .lyric-picker-notices {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 4px 14px;
+}
+
 /* Keep explicit lyric fields readable across themes and narrow dialogs. */
 .modern-body .lyric-search-field {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   color: inherit;
   font-size: 11px;
 }
@@ -8821,11 +8878,46 @@ body.modern-white .audio-effects-summary p {
 
 .modern-body .lyric-search-help,
 .modern-body .lyric-search-summary {
-  margin: 8px 14px;
+  margin: 0;
   color: inherit;
   font-size: 11px;
-  line-height: 1.5;
+  line-height: 1.45;
   overflow-wrap: anywhere;
+}
+
+/* Narrow screens use the stage as the containing block for the dialog. */
+@media screen and (max-width: 760px) {
+  .modern-body .now-playing-layout:has(.lyric-picker) {
+    overflow: hidden;
+  }
+
+  .modern-body .now-playing-layout:has(.lyric-picker) .now-playing-lyrics {
+    position: static;
+    overflow: visible;
+  }
+
+  .modern-body .lyric-picker {
+    position: absolute;
+    z-index: 120;
+    inset: 10px 10px calc(var(--now-playing-shelf-height) + 12px);
+    height: auto;
+    border-radius: 15px;
+  }
+
+  .modern-body .footer-main:has(.lyric-picker) .songdetail-wrapper > .close,
+  .modern-body .footer-main:has(.lyric-picker) .now-playing-left {
+    visibility: hidden;
+    pointer-events: none;
+  }
+}
+
+/* Very short windows scroll the panel as a whole, preserving usable results. */
+@media screen and (max-height: 560px) {
+  .modern-body .lyric-picker-results {
+    min-height: 144px;
+    flex: 1 0 144px;
+    max-height: 280px;
+  }
 }
 
 @media screen and (max-width: 520px) {

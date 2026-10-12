@@ -407,6 +407,7 @@
  "_LYRIC_VERIFY_UNAVAILABLE": "無法開啟網易雲驗證，請稍後重試。",
  "_LYRIC_VERIFY_ALREADY_OPEN": "網易雲驗證視窗已開啟，請完成操作並關閉視窗後重新搜尋。",
  "_LYRIC_VERIFY_EXPIRED": "驗證入口已失效或尚未取得，請重新搜尋後再試。",
+ "_LYRIC_SOURCE_DETAILS": "來源詳情",
  "_LYRIC_SEARCH_TITLE_LABEL": "歌名（必填）",
  "_LYRIC_SEARCH_ARTIST_LABEL": "歌手（選填）",
  "_LYRIC_SEARCH_TITLE_PLACEHOLDER": "輸入要尋找的歌名",
