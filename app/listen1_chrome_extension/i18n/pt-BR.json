@@ -399,6 +399,5 @@
  "_AUDIO_EFFECT_UNAVAILABLE": "Os efeitos não estão disponíveis; a saída original foi mantida com segurança.",
  "_AUDIO_EFFECT_SAVE_FAILED": "O efeito está ativo, mas não foi possível salvar esta preferência.",
  "_AUDIO_EFFECT_INVALID_PRESET": "Esta predefinição não está disponível.",
- "_AUDIO_EFFECT_DEGRADED": "Este efeito não está disponível neste dispositivo e voltou ao original com segurança.",
- "_LYRIC_KUGOU_SEARCH_HINT": "O Kugou pode precisar do artista. Tente “Artista Título” ou “Artista - Título”."
+ "_AUDIO_EFFECT_DEGRADED": "Este efeito não está disponível neste dispositivo e voltou ao original com segurança."
 }

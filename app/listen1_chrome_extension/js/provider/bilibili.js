@@ -919,10 +919,10 @@ class bilibili {
 
   static search_qq_lyric_candidates(hints) {
     const scoringHints = this.build_lyric_scoring_hints(hints);
-    const searchText =
-      this.clean_music_title(hints.query) ||
-      this.clean_music_title(hints.bgmTitle) ||
-      scoringHints.variants[0];
+    const searchText = this.build_lyric_search_text(
+      hints,
+      this.clean_music_title(hints.bgmTitle) || scoringHints.variants[0]
+    );
     if (!searchText) {
       return Promise.resolve([]);
     }
@@ -1121,10 +1121,10 @@ class bilibili {
 
   static search_netease_lyric_candidates(hints) {
     const scoringHints = this.build_lyric_scoring_hints(hints);
-    const searchText =
-      this.clean_music_title(hints.query) ||
-      this.clean_music_title(hints.bgmTitle) ||
-      scoringHints.variants[0];
+    const searchText = this.build_lyric_search_text(
+      hints,
+      this.clean_music_title(hints.bgmTitle) || scoringHints.variants[0]
+    );
     if (!searchText) {
       return Promise.resolve([]);
     }
@@ -1390,6 +1390,14 @@ class bilibili {
     return request;
   }
 
+  static build_lyric_search_text(hints, fallback) {
+    // Manual input remains editable and authoritative. Automatic matching can
+    // still clean video metadata; scoring normalization never changes requests.
+    return hints.manual
+      ? String(hints.query || '').trim()
+      : this.clean_music_title(hints.query) || fallback;
+  }
+
   static build_lyric_scoring_hints(hints) {
     const explicitQuery = this.clean_music_title(hints.query);
     const scoringTitles = explicitQuery
@@ -1423,10 +1431,10 @@ class bilibili {
 
   static search_lrclib_lyric_candidates(hints) {
     const scoringHints = this.build_lyric_scoring_hints(hints);
-    const searchText =
-      this.clean_music_title(hints.query) ||
-      this.clean_music_title(hints.bgmTitle) ||
-      scoringHints.variants[0];
+    const searchText = this.build_lyric_search_text(
+      hints,
+      this.clean_music_title(hints.bgmTitle) || scoringHints.variants[0]
+    );
     if (!searchText) {
       return Promise.resolve([]);
     }
@@ -1469,9 +1477,19 @@ class bilibili {
   }
 
   static fetch_kugou_lyric_search(query, options = {}) {
+    const hash = /^[a-fA-F0-9]{32}$/.test(String(options.hash || ''))
+      ? String(options.hash)
+      : '';
+    const duration = Number(options.duration || 0);
     const url =
-      'https://lyrics.kugou.com/search?ver=1&man=yes&client=pc&duration=0' +
-      `&keyword=${encodeURIComponent(query)}`;
+      'https://lyrics.kugou.com/search?ver=1&man=yes&client=pc' +
+      `&duration=${
+        Number.isFinite(duration) && duration > 0 && duration <= 86400
+          ? Math.round(duration * 1000)
+          : 0
+      }` +
+      `&keyword=${encodeURIComponent(query)}` +
+      (hash ? `&hash=${encodeURIComponent(hash)}` : '');
     return (typeof Listen2LyricHttp !== 'undefined' ? Listen2LyricHttp : axios)
       .get(url, {
         timeout: BILIBILI_LYRIC_REQUEST_TIMEOUT,
@@ -1487,6 +1505,99 @@ class bilibili {
         }
         return payload.candidates;
       });
+  }
+
+  static fetch_kugou_song_search(query, options = {}) {
+    const url =
+      'https://songsearch.kugou.com/song_search_v2' +
+      `?keyword=${encodeURIComponent(query)}&page=1&pagesize=5`;
+    return (typeof Listen2LyricHttp !== 'undefined' ? Listen2LyricHttp : axios)
+      .get(url, {
+        timeout: BILIBILI_LYRIC_REQUEST_TIMEOUT,
+        signal: options.signal,
+      })
+      .then((response) => {
+        const payload = this.parse_json_payload(response.data);
+        if (!payload || !payload.data || !Array.isArray(payload.data.lists)) {
+          throw new Error('Invalid Kugou song catalog payload');
+        }
+        if (Number(payload.status) !== 1 || Number(payload.error_code) !== 0) {
+          throw new Error('Kugou song catalog unavailable');
+        }
+        const items = payload.data.lists
+          .slice(0, 5)
+          .filter(
+            (item) =>
+              item &&
+              /^[a-fA-F0-9]{32}$/.test(String(item.FileHash || '')) &&
+              typeof item.SongName === 'string' &&
+              item.SongName.trim() &&
+              item.SongName.length <= 256 &&
+              typeof item.SingerName === 'string' &&
+              item.SingerName.length <= 256 &&
+              Number.isFinite(Number(item.Duration)) &&
+              Number(item.Duration) > 0 &&
+              Number(item.Duration) <= 86400
+          );
+        if (payload.data.lists.length && !items.length) {
+          throw new Error('Invalid Kugou song catalog rows');
+        }
+        return items;
+      });
+  }
+
+  static async search_kugou_catalog_lyrics(query, hints, scoringHints) {
+    const songs = await this.fetch_kugou_song_search(query, hints);
+    const seen = new Set();
+    const ranked = songs
+      .filter((song) => {
+        const hash = song.FileHash.toLowerCase();
+        const recording = `${this.normalize_match_text(
+          song.SongName
+        )}|${this.normalize_match_text(song.SingerName)}|${Math.round(
+          Number(song.Duration)
+        )}`;
+        if (seen.has(hash) || seen.has(recording)) return false;
+        seen.add(hash);
+        seen.add(recording);
+        return true;
+      })
+      .map((song, index) => ({
+        song,
+        scored: this.score_kuwo_candidate(
+          {
+            NAME: song.SongName,
+            ARTIST: song.SingerName,
+            DURATION: Number(song.Duration),
+          },
+          scoringHints,
+          index
+        ),
+      }))
+      .sort((left, right) => right.scored.score - left.scored.score)
+      .slice(0, 2);
+    const results = await Promise.allSettled(
+      ranked.map(({ song }) => {
+        if (hints.signal && hints.signal.aborted) {
+          const error = new Error('Kugou song catalog cancelled');
+          error.name = 'AbortError';
+          throw error;
+        }
+        // Only validated public catalog metadata identifies the song. A Bilibili
+        // uploader must never be substituted for the singer during title lookup.
+        return this.fetch_kugou_lyric_search(song.SongName, {
+          ...hints,
+          hash: song.FileHash,
+          duration: Number(song.Duration),
+        });
+      })
+    );
+    const items = results
+      .filter((result) => result.status === 'fulfilled')
+      .flatMap((result) => result.value);
+    const failure = results.find((result) => result.status === 'rejected');
+    if (!items.length && failure) throw failure.reason;
+    return items;
   }
 
   static fetch_kugou_lyric(item, options = {}) {
@@ -1543,46 +1654,10 @@ class bilibili {
 
   static search_kugou_lyric_candidates(hints) {
     const scoringHints = this.build_lyric_scoring_hints(hints);
-    const query =
-      this.clean_music_title(hints.query) || scoringHints.variants[0];
+    const query = String(hints.query || '').trim();
     if (!query) return Promise.resolve([]);
-    return this.fetch_kugou_lyric_search(query, hints)
-      .then(async (items) => {
-        // This catalog sometimes needs the singer and a different separator.
-        // Expand only a valid empty response, with at most three searches.
-        const artist = this.clean_music_title(hints.artist);
-        if (!items.length) {
-          const title =
-            artist && query.startsWith(artist)
-              ? query.slice(artist.length).replace(/^[\s-]+/, '')
-              : query;
-          const variants =
-            artist && title
-              ? [`${artist} ${title}`, `${artist} - ${title}`]
-              : [
-                  query.includes(' - ')
-                    ? query.replace(' - ', ' ')
-                    : query.replace(/\s+/, ' - '),
-                ];
-          const queries = [...new Set(variants)]
-            .filter((value) => value !== query)
-            .slice(0, 2);
-          // The bounded sequential fallback stops as soon as one query works.
-          // eslint-disable-next-line no-restricted-syntax
-          for (const fullQuery of queries) {
-            if (hints.signal && hints.signal.aborted) {
-              const error = new Error('Kugou lyric search cancelled');
-              error.name = 'AbortError';
-              throw error;
-            }
-            // eslint-disable-next-line no-await-in-loop
-            const found = await this.fetch_kugou_lyric_search(fullQuery, hints);
-            if (found.length) return found;
-          }
-        }
-        return items;
-      })
-      .then(async (items) => {
+    return this.search_kugou_catalog_lyrics(query, hints, scoringHints).then(
+      async (items) => {
         const seen = new Set();
         const ranked = items
           .filter(
@@ -1629,13 +1704,16 @@ class bilibili {
         const failure = results.find((result) => result.status === 'rejected');
         if (!candidates.length && failure) throw failure.reason;
         return candidates;
-      });
+      }
+    );
   }
 
   static search_kuwo_lyric_candidates(hints) {
     const scoringHints = this.build_lyric_scoring_hints(hints);
-    const searchText =
-      this.clean_music_title(hints.query) || scoringHints.variants[0];
+    const searchText = this.build_lyric_search_text(
+      hints,
+      scoringHints.variants[0]
+    );
     if (!searchText) {
       return Promise.resolve([]);
     }

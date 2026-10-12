@@ -9,6 +9,7 @@ const ENDPOINTS = new Map([
   ["https://lrclib.net/api/search", "https://lrclib.net/"],
   ["https://lyrics.kugou.com/search", "https://www.kugou.com/"],
   ["https://lyrics.kugou.com/download", "https://www.kugou.com/"],
+  ["https://songsearch.kugou.com/song_search_v2", "https://www.kugou.com/"],
   ["https://www.kuwo.cn/search/searchMusicBykeyWord", "https://www.kuwo.cn/"],
   ["https://m.kuwo.cn/newh5/singles/songinfoandlrc", "https://www.kuwo.cn/"],
 ]);

@@ -439,6 +439,5 @@
  "_CACHE_ERROR_BUSY": "Some files are in use and were kept. Stop playback and retry.",
  "_CACHE_ERROR_TIMEOUT": "Download timed out. Check the connection and retry.",
  "_CACHE_ERROR_QUEUE": "The transfer queue is full. Wait for some tasks to finish.",
- "_CACHE_ERROR_GENERIC": "The operation did not complete. Refresh or retry; playback is unaffected.",
- "_LYRIC_KUGOU_SEARCH_HINT": "Kugou sometimes needs the artist. Try “Artist Title” or “Artist - Title”."
+ "_CACHE_ERROR_GENERIC": "The operation did not complete. Refresh or retry; playback is unaffected."
 }

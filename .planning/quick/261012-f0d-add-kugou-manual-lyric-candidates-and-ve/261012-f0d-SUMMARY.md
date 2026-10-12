@@ -5,9 +5,33 @@ status: incomplete
 
 # Kugou manual lyric implementation handoff
 
-Product implementation and scoped local checks complete. Version remains 2.35.2. Root generated a local arm64 preview installer and verified its mounted app signature, DMG checksum and six packaged source files. No merge or Release replacement performed.
+Pure-title correction and scoped local checks complete at source level. Version remains 2.35.2. Default proxy/DNS route acceptance remains degraded; no GUI launch/restart, new installer, commit, push, merge or Release action performed by the resumed executor. The earlier preview installer described below predates the pure-title correction.
 
-## Changes
+## Current correction: authoritative editable query (2026-10-12)
+
+The user clarified that the search field is authoritative. Automatic prefill may remain editable, but changing songs, Bilibili uploader names or track singer metadata must not alter the submitted query. Root confirmed the current Bilibili artist is the uploader, not the singer.
+
+- All five manual provider requests now preserve the entered text, including singer text, quotation marks, hyphens and version words, with only surrounding whitespace trimmed. Automatic lyric matching keeps its existing cleanup. Scoring normalization is independent of the network query.
+- KUGOU now performs one exact-input HTTPS catalog search at `songsearch.kugou.com/song_search_v2` (page 1, pagesize 5, at most 5 parsed rows). It validates public song hashes, titles, singers and second-based duration, deduplicates hash/recording metadata, then requests lyrics for at most two catalog songs with their validated hash and explicit millisecond duration. It downloads at most two synced LRC candidates: maximum five requests, same cancellation signal and overall 12-second deadline.
+- Removed automatic singer appending, generated separator variants, KUGOU artist cache context, and the six-language artist-required hint. Singer is display metadata only. Generic optional provider cache-context support remains unused by this query-only registration.
+- Exact catalog route added to the bounded HTTPS transport. Malformed catalog responses/rows and transport errors stay distinct from valid empty responses; partial lyrics and other providers survive isolated failures.
+
+Live verification without any GUI: the real provider source and real `requestLyric` policy were evaluated in Node; a diagnostic curl transport used `--noproxy '*' --resolve <host>:443:<independently-DoH-resolved-address>` and the product Referer/Accept/User-Agent headers, retaining hostname/certificate verification. No mock bodies, product IP pins, system DNS/proxy changes or TLS bypass. Exact input `折风渡夜`, with a deliberately wrong uploader supplied but ignored, returned two synced candidates; final post-dedup run used five requests, completed in 3,781 ms, with 49 timed lines per candidate. Earlier same-pipeline `青花瓷` run completed in 4,270 ms, two candidates with 37 timed lines each. This proves the pure-title catalog/hash/download path under diagnostic routing; it does not prove the user's configured `127.0.0.1:7897` route.
+
+Catalog diagnostics also showed valid-empty responses on another independently resolved edge and intermittent empty results; no fabricated fallback results were introduced. The user's default route still fails TLS in root's audit and remains **DEGRADED / NOT VERIFIED**. No additional preview installation should be presented as complete end-to-end recovery.
+
+Scoped local CI for the resumed source: branch `agent/kugou-lyrics-20261012`, HEAD before/after `89939102fe0efc219398d99489a26f9898374c47`; macOS, Asia/Shanghai; 2026-10-12 11:22:47–11:22:48 +0800; intentional task-only dirty tree. Run-local-ci skill applied, no Docker stage. All following commands exit 0:
+
+- `node --test app/test/lyricSearch.test.js app/test/lyricCacheStore.test.js app/test/mainLocalDataCache.test.js` — 27 passed.
+- `node app/listen1_chrome_extension/test/bilibili_lyric_translation.test.js`
+- `node app/listen1_chrome_extension/test/deepseek_lyric_translation_ui_contract.test.js`
+- `node app/listen1_chrome_extension/test/desktop_cache_renderer_contract.test.js`
+- `./node_modules/.bin/prettier --check app/lyricTransport.js app/test/lyricSearch.test.js app/listen1_chrome_extension/js/provider/bilibili.js app/listen1_chrome_extension/js/loweb.js`
+- `node --check` on the three changed production JavaScript files, six locale JSON parse checks, and `git diff --check`.
+
+Coverage limits: no full repository gate, frontend ESLint dependencies absent, default-route/user-existing-player UI acceptance not completed. Root owns the task record, commit/push and further decisions. Restore only this resumed diff to return to the previously committed preview; that preview still has the reported pure-title limitation.
+
+## Initial implementation history (query fallback now superseded)
 
 - Register KUGOU among the initial three manual-search workers; existing concurrency and 12-second overall cancellation deadline remain in force.
 - Allow only exact HTTPS `lyrics.kugou.com/search` and `/download` routes through existing 8-second, 2-MiB, no-redirect/no-cookie desktop transport.

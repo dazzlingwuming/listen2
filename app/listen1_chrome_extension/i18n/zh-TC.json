@@ -399,6 +399,5 @@
  "_AUDIO_EFFECT_UNAVAILABLE": "音效暫時不可用，已安全維持原聲。",
  "_AUDIO_EFFECT_SAVE_FAILED": "音效已生效，但本次選擇未能儲存。",
  "_AUDIO_EFFECT_INVALID_PRESET": "此音效預設不可用。",
- "_AUDIO_EFFECT_DEGRADED": "此效果在目前裝置上不可用，已安全回到原聲。",
- "_LYRIC_KUGOU_SEARCH_HINT": "酷狗有時需要歌手名稱。可嘗試「歌手 歌名」或「歌手 - 歌名」。"
+ "_AUDIO_EFFECT_DEGRADED": "此效果在目前裝置上不可用，已安全回到原聲。"
 }

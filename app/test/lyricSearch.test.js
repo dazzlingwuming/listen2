@@ -109,96 +109,242 @@ test("Kugou malformed base64, UTF-8 and oversized payloads fail explicitly", asy
     ""
   );
 });
-test("Kugou uses singer hints after empty search, deduplicates and preserves partial downloads", async () => {
-  const provider = providerFixture();
-  const queries = [];
-  const item = (id) => ({
-    id,
-    song: "Song",
-    singer: "Singer",
-    duration: 208000,
-    accesskey: "publicToken",
-  });
-  provider.fetch_kugou_lyric_search = async (query) => {
-    queries.push(query);
-    return query === "Singer Song"
-      ? [item("1"), item("1"), item("2"), item("3")]
-      : [];
-  };
-  let downloads = 0;
-  provider.fetch_kugou_lyric = async ({ id }) => {
-    downloads++;
-    if (id === "2") throw new Error("Unavailable");
-    return "[00:01.00]Hello";
-  };
-  const result = await provider.search_kugou_lyric_candidates({
-    query: "Song",
-    artist: "Singer",
-    manual: true,
-  });
-  assert.deepEqual(queries, ["Song", "Singer Song"]);
-  assert.equal(downloads, 2);
-  assert.equal(result.length, 1);
-  assert.equal(result[0].provider, "KUGOU");
-  assert.equal(result[0].duration, 208);
-  assert.equal(result[0].accesskey, undefined);
-  const record = provider.build_manual_lyric_record(result[0]);
-  assert.equal(record.matchedProvider, "KUGOU");
-  assert.equal(record.candidateId, "kugou_1");
-  assert.equal(JSON.stringify(record).includes("publicToken"), false);
+const catalogSong = (id, title = "折风渡夜") => ({
+  FileHash: id.toString(16).padStart(32, "0"),
+  SongName: title,
+  SingerName: `Catalog Singer ${id}`,
+  Duration: 208,
 });
-test("Kugou search rejects malformed payloads and propagates cancellation", async () => {
-  const controller = new AbortController();
+test("every manual provider preserves edited title, singer and version text", async () => {
+  const provider = providerFixture();
+  const query = "歌手 - 《歌名》 (Official Video Live 版本)";
+  const received = [];
+  for (const method of [
+    "fetch_qq_lyric_search",
+    "fetch_netease_lyric_search",
+    "fetch_lrclib_search",
+    "fetch_kugou_song_search",
+  ]) {
+    provider[method] = async (value) => {
+      received.push(value);
+      return [];
+    };
+  }
+  provider.fetch_kuwo_search = async (url) => {
+    received.push(new URL(url).searchParams.get("all"));
+    return { data: { abslist: [] } };
+  };
+  for (const method of [
+    "search_qq_lyric_candidates",
+    "search_netease_lyric_candidates",
+    "search_lrclib_lyric_candidates",
+    "search_kugou_lyric_candidates",
+    "search_kuwo_lyric_candidates",
+  ]) {
+    await provider[method]({
+      query: `  ${query}  `,
+      manual: true,
+      title: "Wrong title",
+      artist: "Wrong singer",
+    });
+    await provider[method]({
+      query: "  ",
+      manual: true,
+      title: "Must not replace input",
+    });
+  }
+  assert.deepEqual(received, Array(5).fill(query));
+  await provider.search_qq_lyric_candidates({ query, manual: false });
+  assert.equal(received.at(-1), provider.clean_music_title(query));
+});
+test("Kugou lyric lookup sends catalog hash and explicit millisecond duration", async () => {
+  const calls = [];
   const provider = providerFixture({
     Listen2LyricHttp: {
-      get: async (url, options) => {
-        assert.equal(options.signal, controller.signal);
-        options.signal.throwIfAborted();
-        return { data: { status: 200 } };
+      get: async (value) => {
+        calls.push(new URL(value));
+        return { data: { status: 200, candidates: [] } };
       },
     },
   });
-  await assert.rejects(
-    provider.fetch_kugou_lyric_search("Song", { signal: controller.signal }),
-    /Invalid/
+  await provider.fetch_kugou_lyric_search("Catalog title", {
+    hash: catalogSong(1).FileHash,
+    duration: 208,
+  });
+  assert.equal(calls[0].searchParams.get("hash"), catalogSong(1).FileHash);
+  assert.equal(calls[0].searchParams.get("duration"), "208000");
+  await provider.fetch_kugou_lyric_search("Catalog title", {
+    hash: "bad",
+    duration: Infinity,
+  });
+  assert.equal(calls[1].searchParams.has("hash"), false);
+  assert.equal(calls[1].searchParams.get("duration"), "0");
+});
+test("pure title resolves catalog hashes without using the Bilibili uploader", async () => {
+  const queries = [];
+  const lookups = [];
+  const controller = new AbortController();
+  const provider = providerFixture();
+  provider.fetch_kugou_song_search = async (query, options) => {
+    queries.push(query);
+    assert.equal(options.signal, controller.signal);
+    return [catalogSong(1), catalogSong(1), catalogSong(2), catalogSong(3)];
+  };
+  provider.fetch_kugou_lyric_search = async (query, options) => {
+    lookups.push({ query, hash: options.hash, duration: options.duration });
+    assert.equal(options.signal, controller.signal);
+    return [
+      {
+        id: options.hash.endsWith("1") ? "1" : "2",
+        song: query,
+        singer: "Catalog Singer",
+        duration: 208000,
+      },
+    ];
+  };
+  provider.fetch_kugou_lyric = async ({ id }) => {
+    if (id === "2") throw new Error("Download unavailable");
+    return "[00:01.00]Hello";
+  };
+  const result = await provider.search_kugou_lyric_candidates({
+    query: "折风渡夜",
+    artist: "Wrong Bilibili uploader",
+    signal: controller.signal,
+  });
+  assert.deepEqual(queries, ["折风渡夜"]);
+  assert.equal(lookups.length, 2);
+  assert(
+    lookups.every(
+      (value) => value.duration === 208 && /^[a-f0-9]{32}$/.test(value.hash)
+    )
   );
-  controller.abort();
+  assert.equal(result.length, 1);
+  assert.equal(result[0].provider, "KUGOU");
+  assert.equal(result[0].duration, 208);
+  const record = provider.build_manual_lyric_record(result[0]);
+  assert.equal(record.matchedProvider, "KUGOU");
+  assert.equal(record.candidateId, "kugou_1");
+});
+test("catalog transport preserves exact edited query and validates catalog rows", async () => {
+  const controller = new AbortController();
+  const query = "歌手 - 《歌名》 (Live 版本)";
+  const provider = providerFixture({
+    Listen2LyricHttp: {
+      get: async (value, options) => {
+        const url = new URL(value);
+        assert.equal(
+          url.origin + url.pathname,
+          "https://songsearch.kugou.com/song_search_v2"
+        );
+        assert.equal(url.searchParams.get("keyword"), query);
+        assert.equal(url.searchParams.get("pagesize"), "5");
+        assert.equal(options.timeout, 8000);
+        assert.equal(options.signal, controller.signal);
+        return {
+          data: {
+            status: 1,
+            error_code: 0,
+            data: {
+              lists: [
+                catalogSong(1),
+                { ...catalogSong(2), FileHash: "bad" },
+                { ...catalogSong(3), Duration: Infinity },
+                { ...catalogSong(4), SongName: "" },
+              ],
+            },
+          },
+        };
+      },
+    },
+  });
+  assert.equal(
+    (
+      await provider.fetch_kugou_song_search(query, {
+        signal: controller.signal,
+      })
+    ).length,
+    1
+  );
+  const queries = [];
+  provider.fetch_kugou_song_search = async (value) => {
+    queries.push(value);
+    return [];
+  };
+  await provider.search_kugou_lyric_candidates({
+    query: `  ${query}  `,
+    artist: "Never append this",
+  });
+  assert.deepEqual(queries, [query]);
+});
+test("catalog malformed/failing responses stay distinct from valid empty results", async () => {
+  for (const data of [
+    { status: 1, error_code: 0 },
+    { status: 0, error_code: 1, data: { lists: [] } },
+    "not-json",
+  ]) {
+    const provider = providerFixture({
+      Listen2LyricHttp: { get: async () => ({ data }) },
+    });
+    await assert.rejects(
+      provider.fetch_kugou_song_search("折风渡夜"),
+      /Invalid|unavailable/
+    );
+  }
+  const provider = providerFixture();
+  provider.fetch_kugou_song_search = async () => [];
+  assert.equal(
+    (await provider.search_kugou_lyric_candidates({ query: "折风渡夜" }))
+      .length,
+    0
+  );
+  provider.fetch_kugou_song_search = async () => [catalogSong(1)];
+  provider.fetch_kugou_lyric_search = async () => {
+    throw new Error("Lookup unavailable");
+  };
+  await assert.rejects(
+    provider.search_kugou_lyric_candidates({ query: "折风渡夜" }),
+    /Lookup unavailable/
+  );
+});
+test("catalog cancellation stops before lyric lookups and other sources survive failures", async () => {
+  const controller = new AbortController();
+  const provider = providerFixture();
+  let lookups = 0;
+  provider.fetch_kugou_song_search = async () => {
+    controller.abort();
+    return [catalogSong(1)];
+  };
+  provider.fetch_kugou_lyric_search = async () => {
+    lookups++;
+    return [];
+  };
   await assert.rejects(
     provider.search_kugou_lyric_candidates({
-      query: "Song",
+      query: "折风渡夜",
       signal: controller.signal,
     }),
     { name: "AbortError" }
   );
-  provider.fetch_kugou_lyric_search = async () => [{ id: "1" }];
-  provider.fetch_kugou_lyric = async () => {
-    throw new Error("Download unavailable");
+  assert.equal(lookups, 0);
+  provider.fetch_kugou_song_search = async () => {
+    throw new Error("Catalog unavailable");
   };
-  await assert.rejects(
-    provider.search_kugou_lyric_candidates({ query: "Song" }),
-    /Download unavailable/
-  );
-});
-test("Kugou retries the hyphen variant and never repeats a supplied combined query", async () => {
-  for (const query of ["Song", "Singer Song"]) {
-    const provider = providerFixture();
-    const queries = [];
-    provider.fetch_kugou_lyric_search = async (value) => {
-      queries.push(value);
-      return value === "Singer - Song"
-        ? [{ id: "1", song: "Song", singer: "Singer" }]
-        : [];
-    };
-    provider.fetch_kugou_lyric = async () => "[00:01]Hello";
-    const result = await provider.search_kugou_lyric_candidates({
-      query,
-      artist: "Singer",
-    });
-    assert.equal(result.length, 1);
-    assert.equal(new Set(queries).size, queries.length);
-    assert.equal(queries.at(-1), "Singer - Song");
-    assert(queries.length <= 3);
-  }
+  const result = await search(
+    [
+      {
+        id: "KUGOU-catalog-failure",
+        load: () =>
+          provider.search_kugou_lyric_candidates({ query: "折风渡夜" }),
+      },
+      {
+        id: "LRCLIB-catalog-survivor",
+        load: async () => [candidate("survivor")],
+      },
+    ],
+    "catalog-failure"
+  ).promise;
+  assert.equal(result.sources[0].status, "unavailable");
+  assert.equal(result.candidates[0].id, "survivor");
 });
 test("artist-dependent provider cache is isolated and forced retry bypasses it", async () => {
   let calls = 0;
@@ -222,7 +368,7 @@ test("artist-dependent provider cache is isolated and forced retry bypasses it",
   await search(provider("singer-a"), "context-song", { force: true }).promise;
   assert.equal(calls, 4);
 });
-test("manual registry schedules Kugou immediately and supplies track artist", async () => {
+test("manual registry uses entered query only, independently of track artist", async () => {
   const calls = [];
   const provider = new Proxy(
     {},
@@ -265,9 +411,22 @@ test("manual registry schedules Kugou immediately and supplies track artist", as
     )}\nthis.service = MediaService;`,
     context
   );
-  await context.service.searchLyrics({ artist: "Singer" }, "Song");
+  await context.service.searchLyrics(
+    { id: "bitrack_1", source: "bilibili", artist: "Wrong uploader" },
+    "Song"
+  );
+  await context.service.searchLyrics(
+    { id: "bitrack_2", artist: "Different artist" },
+    "Song"
+  );
   const call = calls.find((c) => c.method === "search_kugou_lyric_candidates");
-  assert.equal(call.hints.artist, "Singer");
+  assert.equal(call.hints.artist, "");
+  assert.equal(call.hints.query, "Song");
+  assert(
+    calls.every(
+      (value) => value.hints.artist === "" && value.hints.query === "Song"
+    )
+  );
   assert.equal(call.hints.signal, "request-signal");
 });
 test("failed lyric downloads cannot become a valid empty result", async () => {
@@ -416,6 +575,11 @@ test("desktop transport permits only exact public lyric endpoints", () => {
     validateUrl("https://lrclib.net/api/search?q=test").referer,
     "https://lrclib.net/"
   );
+  assert.equal(
+    validateUrl("https://songsearch.kugou.com/song_search_v2?keyword=test")
+      .referer,
+    "https://www.kugou.com/"
+  );
   for (const route of ["search", "download"]) {
     assert.equal(
       validateUrl(`https://lyrics.kugou.com/${route}?id=123`).referer,
@@ -424,6 +588,8 @@ test("desktop transport permits only exact public lyric endpoints", () => {
   }
   for (const url of [
     "https://lyrics.kugou.com/other",
+    "https://songsearch.kugou.com/private",
+    "https://songsearch.kugou.com.evil.test/song_search_v2",
     "https://lyrics.kugou.com.evil.test/download",
     "http://lyrics.kugou.com/search",
     "http://lrclib.net/api/search",

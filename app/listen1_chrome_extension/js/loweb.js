@@ -749,16 +749,9 @@ const MediaService = {
       ['KUWO', 'search_kuwo_lyric_candidates'],
     ].map(([id, method]) => ({
       id,
-      cacheKey:
-        id === 'KUGOU'
-          ? String(trackInfo.artist || '')
-              .trim()
-              .toLocaleLowerCase()
-          : '',
       load: (request) =>
         bilibili[method]({
           ...hints,
-          ...(id === 'KUGOU' ? { artist: trackInfo.artist || '' } : {}),
           ...request,
         }),
     }));
