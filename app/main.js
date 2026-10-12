@@ -43,6 +43,16 @@ const { LyricCacheStore } = require(`${__dirname}/lyricCacheStore`);
 const { ListeningHistoryStore } = require(`${__dirname}/listeningHistoryStore`);
 
 const { requestLyric, validateUrl } = require("./lyricTransport");
+const { createDirectLyricFetch } = require("./lyricDirectTransport");
+const { createNeteaseVerificationSession } = require("./neteaseVerificationSession");
+const neteaseLyricSession = createNeteaseVerificationSession({
+  session,
+  BrowserWindow,
+  dnsFetch: (url, options) => electron.net.fetch(url, options),
+});
+const directLyricFetch = createDirectLyricFetch({
+  dnsFetch: (url, options) => electron.net.fetch(url, options),
+});
 const lyricRequests = new Map();
 ipcMain.handle("lyrics:request", async (event, request) => {
   if (
@@ -68,8 +78,17 @@ ipcMain.handle("lyrics:request", async (event, request) => {
   const controller = new AbortController();
   lyricRequests.set(request.id, controller);
   try {
+    if (new URL(request.url).hostname === "music.163.com") {
+      const result = await requestLyric(
+        neteaseLyricSession.fetch.bind(neteaseLyricSession),
+        request.url,
+        controller.signal
+      );
+      if (controller.signal.aborted) return { ok: false, status: "timeout" };
+      return await neteaseLyricSession.observeResult(result, request.url);
+    }
     return await requestLyric(
-      electron.net.fetch.bind(electron.net),
+      directLyricFetch,
       request.url,
       controller.signal
     );
@@ -84,6 +103,21 @@ ipcMain.on("lyrics:cancel", (event, id) => {
     lyricRequests.has(id)
   )
     lyricRequests.get(id).abort();
+});
+
+// Only the trusted local player may request the server-provided official page.
+// No renderer URL, Cookie, or challenge token is accepted by this IPC.
+ipcMain.handle("lyrics:verify-netease", async (event) => {
+  if (
+    !mainWindow ||
+    event.sender !== mainWindow.webContents ||
+    event.senderFrame !== mainWindow.webContents.mainFrame
+  ) return { ok: false, status: "unavailable" };
+  try {
+    return await neteaseLyricSession.openVerification(mainWindow);
+  } catch (_) {
+    return { ok: false, status: "unavailable" };
+  }
 });
 
 const store = new Store();
@@ -175,13 +209,25 @@ function getStoredMachineTranslationConfig() {
   };
 }
 
+// null means secure storage has not been needed in this process. Merely
+// opening settings must not request macOS Keychain access.
+let machineTranslationSecureStorageAvailable = null;
+
+function checkMachineTranslationSecureStorage() {
+  machineTranslationSecureStorageAvailable = false;
+  machineTranslationSecureStorageAvailable = Boolean(
+    safeStorage.isEncryptionAvailable()
+  );
+  return machineTranslationSecureStorageAvailable;
+}
+
 function getPublicMachineTranslationConfig() {
   const config = getStoredMachineTranslationConfig();
   return {
     provider: config.provider,
     model: config.model,
     hasApiKey: Boolean(config.encryptedApiKey),
-    secureStorageAvailable: safeStorage.isEncryptionAvailable(),
+    secureStorageAvailable: machineTranslationSecureStorageAvailable,
     targetLanguage: DEEPSEEK_TARGET_LANGUAGE,
     promptVersion: DEEPSEEK_PROMPT_VERSION,
     promptFingerprint: getDeepSeekPromptFingerprint({
@@ -200,7 +246,7 @@ function getPublicMachineTranslationConfig() {
 }
 
 function encryptMachineTranslationApiKey(apiKey) {
-  if (!safeStorage.isEncryptionAvailable()) {
+  if (!checkMachineTranslationSecureStorage()) {
     throw Object.assign(
       new Error("Secure credential storage is unavailable."),
       { code: "secure-storage-unavailable" }
@@ -215,15 +261,13 @@ function decryptMachineTranslationApiKey(encryptedApiKey) {
   if (!encryptedApiKey) {
     return "";
   }
-  if (!safeStorage.isEncryptionAvailable()) {
+  if (!checkMachineTranslationSecureStorage()) {
     throw Object.assign(
       new Error("Secure credential storage is unavailable."),
       { code: "secure-storage-unavailable" }
     );
   }
-  return safeStorage.decryptString(
-    Buffer.from(encryptedApiKey, "base64")
-  );
+  return safeStorage.decryptString(Buffer.from(encryptedApiKey, "base64"));
 }
 
 function getMachineTranslationFetch() {
@@ -1740,6 +1784,8 @@ app.on("before-quit", (event) => {
 });
 
 app.on("will-quit", () => {
+  // Cleanup must not leak Cookie/challenge details through shutdown errors.
+  Promise.resolve(neteaseLyricSession.dispose()).catch(() => {});
   if (bilibiliService) {
     bilibiliService.shutdown();
   }

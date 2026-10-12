@@ -47,7 +47,7 @@
     "*://github.com/*",
     "*://gist.githubusercontent.com/*"
   ],
-  "version": "2.35.2",
+  "version": "2.35.3",
   "web_accessible_resources": [
     {
       "resources": ["images/*"],

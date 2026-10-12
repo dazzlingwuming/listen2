@@ -82,6 +82,20 @@ assert.match(confirmedRequest, /lyricTranslationRequestToken/);
 assert.match(playSource, /resetLyricTranslationConfirmation\(\);/);
 assert.doesNotMatch(playSource, /machineTranslationConfig\.enabled/);
 assert.match(playSource, /immutableSystemPrompt/);
+assert.match(playSource, /secureStorageAvailable:\s*null/);
+assert.doesNotMatch(
+  htmlSource,
+  /ng-if="!machineTranslationConfig\.secureStorageAvailable"/
+);
+assert.strictEqual(
+  (
+    htmlSource.match(
+      /ng-if="machineTranslationConfig\.secureStorageAvailable === false"/g
+    ) || []
+  ).length,
+  2,
+  'unknown secure storage must not display an unavailable error in either settings layout'
+);
 assert.match(playSource, /promptTemplatePreview/);
 assert.doesNotMatch(playSource, /machineTranslationFixedRules/);
 [

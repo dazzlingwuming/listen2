@@ -190,10 +190,13 @@ angular.module('listenone').controller('PlayController', [
     $scope.lyricTranslationSource = '';
     $scope.currentLyricResult = null;
     $scope.lyricPickerOpen = false;
-    $scope.lyricSearch = { query: '' };
+    $scope.lyricSearch = { title: '', artist: '' };
+    $scope.lyricSearchSubmitted = null;
     $scope.lyricSearchResults = [];
     $scope.lyricSearchState = 'idle';
     $scope.lyricSearchPending = false;
+    $scope.neteaseLyricVerificationPending = false;
+    $scope.neteaseLyricVerificationError = '';
     $scope.lyricTranslationLookupPending = false;
     $scope.lyricTranslationConfirmOpen = false;
     $scope.lyricTranslationConfirmPending = false;
@@ -206,7 +209,7 @@ angular.module('listenone').controller('PlayController', [
       model: 'deepseek-v4-flash',
       targetLanguage: 'zh-CN',
       hasApiKey: false,
-      secureStorageAvailable: false,
+      secureStorageAvailable: null,
       apiKeyInput: '',
       defaultStyleHint: '',
       effectiveStyleHint: '',
@@ -387,6 +390,7 @@ angular.module('listenone').controller('PlayController', [
     const MAX_LYRIC_OFFSET_MS = 60000;
     let lyricRequestToken = 0;
     let lyricSearchToken = 0;
+    let neteaseLyricVerificationToken = 0;
     let activeLyricSearch = null;
     let activeLyricSearchKey = '';
     $scope.lyricSearchSources = [];
@@ -2733,19 +2737,25 @@ angular.module('listenone').controller('PlayController', [
       if (!isBilibiliTrack(track)) {
         return;
       }
+      $scope.editLyricSearch();
       const isNewTrack = $scope.lyricPickerTrackId !== track.id;
       $scope.lyricPickerOpen = true;
       $scope.lyricPickerModal =
         typeof window.matchMedia === 'function' &&
         window.matchMedia('(max-width: 760px)').matches;
-      if (isNewTrack || !$scope.lyricSearch.query) {
+      if (isNewTrack || !$scope.lyricSearch.title) {
         $scope.lyricPickerTrackId = track.id;
-        $scope.lyricSearch.query =
+        $scope.lyricSearch.title =
           MediaService.getLyricSearchQuery(track) || track.title || '';
+        $scope.lyricSearch.artist = '';
         $scope.lyricSearchResults = [];
         $scope.lyricSearchState = 'idle';
       }
-      $scope.searchLyricCandidates();
+      $scope.lyricSearchSources = [];
+      $scope.lyricSearchSubmitted = null;
+      $scope.lyricSearchState = 'idle';
+      $scope.lyricSearchPending = false;
+      $scope.lyricSearchPartial = false;
       $timeout(() => {
         const input = document.querySelector(
           '.modern-body .lyric-picker-search input'
@@ -2758,6 +2768,7 @@ angular.module('listenone').controller('PlayController', [
 
     $scope.closeLyricPicker = () => {
       if (activeLyricSearch) activeLyricSearch.cancel();
+      resetNeteaseLyricVerification();
       const shouldRestoreFocus = $scope.lyricPickerOpen;
       lyricSearchToken += 1;
       $scope.lyricPickerOpen = false;
@@ -2818,14 +2829,33 @@ angular.module('listenone').controller('PlayController', [
 
     $scope.$on('$destroy', () => {
       lyricSearchToken += 1;
+      resetNeteaseLyricVerification();
       if (activeLyricSearch) activeLyricSearch.cancel();
     });
 
+    $scope.editLyricSearch = () => {
+      lyricSearchToken += 1;
+      if (activeLyricSearch) activeLyricSearch.cancel();
+      activeLyricSearch = null;
+      activeLyricSearchKey = '';
+      resetNeteaseLyricVerification();
+      $scope.lyricSearchResults = [];
+      $scope.lyricSearchSources = [];
+      $scope.lyricSearchSubmitted = null;
+      $scope.lyricSearchPending = false;
+      $scope.lyricSearchPartial = false;
+      $scope.lyricSearchState = 'edited';
+    };
+
     $scope.searchLyricCandidates = (force = false) => {
       const track = $scope.currentPlaying;
-      const query = String($scope.lyricSearch.query || '').trim();
-      if (!track || !query) return;
-      const key = `${track.id}:${query}`;
+      const title = String($scope.lyricSearch.title || '').trim();
+      const artist = String($scope.lyricSearch.artist || '').trim();
+      if (!track || !title) {
+        $scope.lyricSearchState = 'required';
+        return;
+      }
+      const key = JSON.stringify([track.id, title, artist]);
       if (
         !force &&
         activeLyricSearch &&
@@ -2835,45 +2865,136 @@ angular.module('listenone').controller('PlayController', [
         return;
       if (activeLyricSearch) activeLyricSearch.cancel();
       activeLyricSearchKey = key;
+      resetNeteaseLyricVerification();
       lyricSearchToken += 1;
       const searchToken = lyricSearchToken;
+      $scope.lyricSearchSubmitted = { title, artist };
       $scope.lyricSearchResults = [];
       $scope.lyricSearchSources = [];
       $scope.lyricSearchState = 'loading';
       $scope.lyricSearchPending = true;
       $scope.lyricSearchPartial = false;
-      activeLyricSearch = MediaService.searchLyrics(track, query, {
-        force,
-        onUpdate: (result) =>
-          $scope.$evalAsync(() => {
-            if (
-              searchToken !== lyricSearchToken ||
-              !$scope.currentPlaying ||
-              $scope.currentPlaying.id !== track.id ||
-              !$scope.lyricPickerOpen
-            )
-              return;
-            $scope.lyricSearchResults = result.candidates
-              .map(decorateLyricCandidate)
-              .sort(compareLyricCandidates);
-            $scope.lyricSearchSources = result.sources;
-            $scope.lyricSearchPending = result.pending;
-            const failed = result.sources.filter(
-              (source) =>
-                !['loading', 'success', 'empty'].includes(source.status)
-            ).length;
-            $scope.lyricSearchPartial =
-              failed > 0 && failed < result.sources.length;
-            if (result.candidates.length) $scope.lyricSearchState = 'results';
-            else if (result.pending) $scope.lyricSearchState = 'loading';
-            else $scope.lyricSearchState = failed ? 'error' : 'empty';
-          }),
+      activeLyricSearch = MediaService.searchLyrics(
+        track,
+        { title, artist },
+        {
+          force,
+          onUpdate: (result) =>
+            $scope.$evalAsync(() => {
+              if (
+                searchToken !== lyricSearchToken ||
+                !$scope.currentPlaying ||
+                $scope.currentPlaying.id !== track.id ||
+                !$scope.lyricPickerOpen ||
+                String($scope.lyricSearch.title || '').trim() !== title ||
+                String($scope.lyricSearch.artist || '').trim() !== artist
+              )
+                return;
+              $scope.lyricSearchResults = result.candidates
+                .map(decorateLyricCandidate)
+                .sort(compareLyricCandidates);
+              $scope.lyricSearchSources = result.sources;
+              $scope.lyricSearchPending = result.pending;
+              const failed = result.sources.filter(
+                (source) =>
+                  !['loading', 'success', 'empty', 'no-synced-lyrics'].includes(
+                    source.status
+                  )
+              ).length;
+              $scope.lyricSearchPartial =
+                failed > 0 && failed < result.sources.length;
+              if (result.candidates.length) $scope.lyricSearchState = 'results';
+              else if (result.pending) $scope.lyricSearchState = 'loading';
+              else if (failed) $scope.lyricSearchState = 'error';
+              else {
+                $scope.lyricSearchState = result.sources.some(
+                  (source) => source.status === 'no-synced-lyrics'
+                )
+                  ? 'no-synced'
+                  : 'empty';
+              }
+            }),
+        }
+      );
+    };
+    $scope.lyricSourceStatus = (source) => {
+      const status = source.status.toUpperCase().replace(/-/g, '_');
+      const stage = ['catalog', 'lyrics'].includes(source.stage)
+        ? source.stage.toUpperCase()
+        : '';
+      if (
+        stage &&
+        ['LOADING', 'EMPTY', 'UNAVAILABLE', 'INVALID_RESPONSE'].includes(status)
+      ) {
+        return i18next.t(`_LYRIC_${stage}_${status}`);
+      }
+      const message = i18next.t(`_LYRIC_SOURCE_${status}`);
+      return stage && status !== 'NO_SYNCED_LYRICS'
+        ? `${i18next.t(`_LYRIC_STAGE_${stage}`)}: ${message}`
+        : message;
+    };
+
+    function resetNeteaseLyricVerification() {
+      neteaseLyricVerificationToken += 1;
+      $scope.neteaseLyricVerificationPending = false;
+      $scope.neteaseLyricVerificationError = '';
+    }
+
+    $scope.canVerifyNeteaseLyrics = (source) =>
+      !$scope.isChrome &&
+      source &&
+      source.source === '网易云' &&
+      source.status === 'verification-required';
+
+    $scope.verifyNeteaseLyrics = (source) => {
+      const track = $scope.currentPlaying;
+      const title = String($scope.lyricSearch.title || '');
+      const artist = String($scope.lyricSearch.artist || '');
+      if (
+        !$scope.canVerifyNeteaseLyrics(source) ||
+        $scope.neteaseLyricVerificationPending ||
+        !$scope.lyricPickerOpen ||
+        !isBilibiliTrack(track) ||
+        !title.trim() ||
+        !$scope.lyricSearchSources.includes(source)
+      ) {
+        return Promise.resolve(null);
+      }
+      const searchToken = lyricSearchToken;
+      neteaseLyricVerificationToken += 1;
+      const verificationToken = neteaseLyricVerificationToken;
+      $scope.neteaseLyricVerificationPending = true;
+      $scope.neteaseLyricVerificationError = '';
+      return MediaService.verifyNeteaseLyrics().then((response) => {
+        $scope.$evalAsync(() => {
+          if (verificationToken !== neteaseLyricVerificationToken) return;
+          $scope.neteaseLyricVerificationPending = false;
+          if (
+            searchToken !== lyricSearchToken ||
+            !$scope.lyricPickerOpen ||
+            !$scope.currentPlaying ||
+            $scope.currentPlaying.id !== track.id ||
+            String($scope.lyricSearch.title || '') !== title ||
+            String($scope.lyricSearch.artist || '') !== artist
+          ) {
+            return;
+          }
+          // Closing the official window only makes a retry possible; the new
+          // search must determine whether the platform accepted verification.
+          if (response && response.ok && response.status === 'retry-ready') {
+            $scope.searchLyricCandidates(true);
+            return;
+          }
+          let message = '_LYRIC_VERIFY_UNAVAILABLE';
+          if (response && response.status === 'verification-unavailable') {
+            message = '_LYRIC_VERIFY_EXPIRED';
+          } else if (response && response.status === 'already-open') {
+            message = '_LYRIC_VERIFY_ALREADY_OPEN';
+          }
+          $scope.neteaseLyricVerificationError = i18next.t(message);
+        });
       });
     };
-    $scope.lyricSourceStatus = (source) =>
-      i18next.t(
-        `_LYRIC_SOURCE_${source.status.toUpperCase().replace('-', '_')}`
-      );
 
     $scope.chooseLyricCandidate = (candidate) => {
       const track = $scope.currentPlaying;
@@ -3215,6 +3336,7 @@ angular.module('listenone').controller('PlayController', [
             const track = msg.data.currentPlaying;
             $scope.lyricOffsetMs = getTrackLyricOffset(track.id);
             lyricSearchToken += 1;
+            resetNeteaseLyricVerification();
             resetLyricTranslationConfirmation();
             $scope.lyricTranslationSourceSnapshot = null;
             $scope.lyricPickerOpen = false;
@@ -3222,7 +3344,11 @@ angular.module('listenone').controller('PlayController', [
             if (activeLyricSearch) activeLyricSearch.cancel();
             lyricSearchToken += 1;
             $scope.lyricPickerTrackId = '';
-            $scope.lyricSearch.query = '';
+            $scope.lyricSearch.title = '';
+            $scope.lyricSearch.artist = '';
+            $scope.lyricSearchSubmitted = null;
+            $scope.lyricSearchSources = [];
+            $scope.lyricSearchPartial = false;
             $scope.lyricSearchResults = [];
             $scope.lyricSearchState = 'idle';
             $scope.lyricSearchPending = false;

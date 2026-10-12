@@ -6,14 +6,21 @@
   // within that search; automatic lookup caches never hold cancelled requests.
   const cache = new Map();
   function classify(error) {
+    if (error && error.code === 'verification-required')
+      return 'verification-required';
     if (
       error &&
       (error.name === 'AbortError' ||
         error.code === 'ETIMEDOUT' ||
-        error.code === 'ECONNABORTED')
+        error.code === 'ECONNABORTED' ||
+        error.code === 'timeout')
     )
       return 'timeout';
-    if (error && /invalid|format|payload/i.test(error.message || ''))
+    if (
+      error &&
+      (error.code === 'invalid-response' ||
+        /invalid|format|payload/i.test(error.message || ''))
+    )
       return 'invalid-response';
     return 'unavailable';
   }
@@ -22,6 +29,7 @@
     const states = providers.map((p) => ({
       source: p.id,
       status: 'loading',
+      stage: 'catalog',
       count: 0,
     }));
     const candidates = new Map();
@@ -37,7 +45,11 @@
     });
     function publish() {
       const value = snapshot();
-      if (options.onUpdate) options.onUpdate(value);
+      try {
+        if (options.onUpdate) options.onUpdate(value);
+      } catch (error) {
+        // Observers must never break the search or its deadline completion.
+      }
       return value;
     }
     function finish(cancelled = false) {
@@ -60,7 +72,33 @@
         next += 1;
         const provider = providers[index];
         const state = states[index];
-        const key = `${provider.id}:${query.trim().toLocaleLowerCase()}`;
+        const input =
+          query && typeof query === 'object'
+            ? [
+                String(query.title || '').trim(),
+                String(query.artist || '').trim(),
+              ]
+            : [String(query || '').trim(), ''];
+        const key = JSON.stringify([
+          provider.id,
+          ...input,
+          provider.cacheKey || '',
+        ]);
+        const onProgress = (progress) => {
+          const stage =
+            typeof progress === 'string'
+              ? progress
+              : progress && progress.stage;
+          if (
+            finished ||
+            state.status !== 'loading' ||
+            (stage !== 'catalog' && stage !== 'lyrics')
+          )
+            return;
+          if (state.stage === stage) return;
+          state.stage = stage;
+          publish();
+        };
         const time = Date.now();
         try {
           const saved = cache.get(key);
@@ -70,6 +108,8 @@
               : await provider.load({
                   signal: controller.signal,
                   force: options.force,
+                  onProgress,
+                  onStage: onProgress,
                 });
           if (finished) return;
           if (!Array.isArray(items)) throw new Error('Invalid lyric payload');
@@ -77,9 +117,17 @@
             if (item && item.id && item.lyric) candidates.set(item.id, item);
           });
           state.count = items.length;
-          state.status = items.length ? 'success' : 'empty';
+          if (!options.force && saved && saved.expires > time) {
+            state.stage = saved.stage;
+          }
+          state.status = items.length
+            ? 'success'
+            : state.stage === 'lyrics'
+            ? 'no-synced-lyrics'
+            : 'empty';
           cache.set(key, {
             items,
+            stage: state.stage,
             expires: Date.now() + (items.length ? 600000 : 60000),
           });
           while (cache.size > 80) cache.delete(cache.keys().next().value);

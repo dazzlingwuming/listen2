@@ -5,7 +5,7 @@
 ### 把 Bilibili 与多平台音乐内容，整理成更好用的桌面播放器
 
 [![License](https://img.shields.io/badge/license-MIT-7c5cff.svg)](./LICENSE.md)
-[![Version](https://img.shields.io/badge/version-2.35.2-8b5cf6.svg)](https://github.com/dazzlingwuming/listen2/releases/tag/v2.35.2)
+[![Version](https://img.shields.io/badge/version-2.35.3-8b5cf6.svg)](https://github.com/dazzlingwuming/listen2/releases/tag/v2.35.3)
 [![Electron](https://img.shields.io/badge/Electron-32-38bdf8.svg)](https://www.electronjs.org/)
 [![Windows](https://img.shields.io/badge/Windows-x64-2563eb.svg)](https://github.com/dazzlingwuming/listen2/releases/latest)
 [![macOS](https://img.shields.io/badge/macOS-Universal-111827.svg)](#平台支持)
@@ -18,6 +18,16 @@
 Listen2 是 [Listen1](https://github.com/listen1/listen1) 的社区增强版本。它保留多平台聚合搜索、播放和歌单能力，并重点改善 Bilibili 音乐播放、同步歌词、歌词翻译、桌面歌词、MV 和现代化桌面体验。
 
 > Listen2 只整理和播放用户本来就有权访问的内容，不解锁会员、付费、DRM、地区限制或其他受限资源。
+
+## v2.35.3 更新
+
+- 手动歌词搜索要求填写歌名，歌手可选；用户确认后才开始检索。修改输入会取消旧请求，避免旧结果覆盖新查询。
+- 按来源展示目录、歌词、平台验证和超时等阶段信息；酷狗纯歌名搜索补齐目录检索链路。
+- 对连接不可达地址增加有界的备用解析服务回退，限制额外尝试次数。
+- 网易歌词新增官方验证入口，并在验证后复用专用持久会话。真实用户账号认证未在本次验证中覆盖；平台风控仍可能影响访问。
+- macOS 延后 Keychain 检查，避免在启动阶段提前检查钥匙串。
+
+102 项相关测试与 6 项契约检查通过，并核对了《折风渡夜》《青花瓷》的公开歌词样例。本次未验证安装界面、网易真实账号认证或 Windows 实机；歌词来源与网络服务仍可能波动。macOS 沿用 v2.35.1 的打包配置，不新增签名证书，也不作 Apple 公证承诺；安装包状态以本版本 Release 页面为准。
 
 ## v2.35.2 更新
 
@@ -32,7 +42,7 @@ Listen2 是 [Listen1](https://github.com/listen1/listen1) 的社区增强版本�
 
 Windows 安装版选择 `listen1_2.35.2_win_x64.exe`，免安装压缩包选择 `.7z`。macOS 提供 x64、arm64、universal DMG。
 
-本版本未进行代码签名。频谱与缓存后续修正通过语法和前端静态检查；未执行本轮自动化回归或实机播放回归。主题预览、首版实测数据及具体修正记录见 [交付记录](docs/APPEARANCE_AND_WINDOWS.md)，其中首版性能数字不代表本次全部改动的回归结果。
+Windows 未使用商业代码签名；macOS 沿用 v2.35.1 的打包流程，无需新增证书配置，未使用 Developer ID 或 Apple 公证。频谱与缓存后续修正通过语法和前端静态检查；未执行本轮自动化回归或实机播放回归。主题预览、首版实测数据及具体修正记录见 [交付记录](docs/APPEARANCE_AND_WINDOWS.md)，其中首版性能数字不代表本次全部改动的回归结果。
 
 ## v2.35.1 更新
 
@@ -149,7 +159,15 @@ Windows 安装版选择 `listen1_2.35.2_win_x64.exe`，免安装压缩包选择 
 
 ### macOS
 
-下载 x64、arm64 或 Universal DMG 后拖入“应用程序”。当前 macOS 构建未使用 Apple Developer ID 签名或公证，首次打开时可能出现系统安全提示。
+Intel Mac 下载 x64 DMG，Apple Silicon（M 系列）下载 arm64 DMG；Universal DMG 同时支持两者。打开 DMG 后将 Listen1 拖入“应用程序”。
+
+macOS 沿用 v2.35.1 的打包流程，无需新增签名证书或信任配置。安装包未使用 Apple Developer ID，也未经过 Apple 公证，因此首次从浏览器下载后仍可能被 Gatekeeper 拦截。请先核对 [官方 Release](https://github.com/dazzlingwuming/listen2/releases/latest) 来源和 SHA-256，然后：
+
+1. 从“应用程序”打开 Listen1 一次，关闭系统拦截提示。
+2. 打开“系统设置 → 隐私与安全性”，在安全性区域找到 Listen1 的提示，点击“仍要打开”（Open Anyway）。
+3. 按系统要求确认或输入管理员密码，再点击“打开”。此操作仅允许这份应用运行；后续通常可正常打开。更新后系统可能再次要求确认。
+
+更新后的系统确认和钥匙串授权取决于本机状态，不能保证所有版本均免密码。如果系统未提供“仍要打开”，请保留提示文字并反馈，不要关闭 Gatekeeper。
 
 本版本只发布 Windows x64 的 NSIS 与 7z，以及 macOS x64、arm64 和 Universal DMG；不发布 Linux、Windows ia32 或 Windows arm64 制品。
 
@@ -160,7 +178,7 @@ Windows 安装版选择 `listen1_2.35.2_win_x64.exe`，免安装压缩包选择 
 | 平台                        | 状态         | 说明                                                                  |
 | --------------------------- | ------------ | --------------------------------------------------------------------- |
 | Windows 10/11 x64           | 发布目标     | 提供 NSIS 安装包与 7z；包含现代 UI、Bilibili、MV、桌面歌词与 DeepSeek 翻译 |
-| macOS Intel / Apple Silicon | 发布目标     | 提供 x64、arm64 与 Universal DMG；当前未签名或公证                    |
+| macOS Intel / Apple Silicon | 发布目标     | 提供 x64、arm64 与 Universal DMG；无需新增证书配置，未使用 Developer ID 或公证 |
 | Windows ia32 / arm64        | 不发布       | 本版本不提供对应制品                                                  |
 | Linux                       | 不发布       | 本版本不提供 Linux 制品                                               |
 
@@ -169,6 +187,12 @@ Windows 安装版选择 `listen1_2.35.2_win_x64.exe`，免安装压缩包选择 
 ### Bilibili 登录
 
 在账号区域选择 Bilibili 登录并使用手机客户端扫码。登录 Cookie 保存在 Electron 会话中，刷新令牌使用系统安全存储加密；退出登录会同时清理服务端会话与本地数据。
+
+### 网易歌词验证
+
+手动歌词搜索提示“需要完成平台验证”时，点击该来源旁的“去验证”，在网易官方页面操作后关闭窗口。应用会复用同一网易会话重新搜索；窗口关闭本身不表示验证成功。平台下发的有效持久 Cookie 由专用本机会话保存，后续网易歌词请求自动使用，其他歌词来源不携带这些 Cookie。
+
+Cookie 到期、被平台撤销或再次触发验证时仍需重做验证。验证入口失效时先重新搜索获取新入口。此过程不改变播放代理或系统 DNS，也不会把 Cookie 写进安装包或 GitHub。
 
 ### DeepSeek 歌词翻译
 
@@ -208,7 +232,7 @@ npm run dist:win
 npm run dist:mac
 ```
 
-构建产物位于 `dist/`。公开分发前，请在目标系统实机测试并按平台要求完成代码签名。
+构建产物位于 `dist/`。macOS 沿用 v2.35.1 的 electron-builder 流程，不配置自定义签名 hook，也不要求创建本机签名证书或修改钥匙串信任。公开分发前，请在目标系统实机测试。
 
 ### 运行测试
 

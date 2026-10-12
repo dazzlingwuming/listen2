@@ -186,11 +186,144 @@ test("refresh tokens never fall back to plaintext storage", async () => {
   );
 });
 
+test("public Bilibili auth metadata never checks Keychain availability", async () => {
+  let checks = 0;
+  const service = new BilibiliService({
+    electronSession: createSession(async () => jsonResponse({ code: 0 })),
+    safeStorage: {
+      isEncryptionAvailable() {
+        checks += 1;
+        throw new Error("must not check metadata");
+      },
+    },
+    store: createStore(),
+  });
+  service.getNav = async () => ({ isLogin: false });
+  assert.strictEqual(
+    (await service.getPublicAuthState()).secureStorageAvailable,
+    null
+  );
+  service.getNav = async () => ({ isLogin: true, mid: 1 });
+  assert.strictEqual(
+    (await service.getPublicAuthState({ refreshIfNeeded: false }))
+      .secureStorageAvailable,
+    null
+  );
+  service.getNav = async () => {
+    throw new Error("Offline");
+  };
+  assert.strictEqual(
+    (await service.getPublicAuthState()).secureStorageAvailable,
+    null
+  );
+  assert.strictEqual(service.getStoredRefreshToken(), "");
+  assert.strictEqual(
+    checks,
+    0,
+    "empty tokens and public metadata must not acquire Keychain"
+  );
+});
+
+test("real refresh-token encryption/decryption rechecks and caches availability", async () => {
+  const store = createStore();
+  let checks = 0;
+  let encryptions = 0;
+  let decryptions = 0;
+  let available = true;
+  const service = new BilibiliService({
+    electronSession: createSession(async () =>
+      jsonResponse({ code: -101, data: { isLogin: false } })
+    ),
+    safeStorage: {
+      isEncryptionAvailable() {
+        checks += 1;
+        return available;
+      },
+      encryptString(value) {
+        encryptions += 1;
+        return Buffer.from(value);
+      },
+      decryptString(value) {
+        decryptions += 1;
+        return value.toString();
+      },
+    },
+    store,
+  });
+  assert.strictEqual(service.saveRefreshToken("refresh-secret"), true);
+  assert.strictEqual(checks, 1);
+  assert.strictEqual(encryptions, 1);
+  assert.strictEqual(
+    (await service.getPublicAuthState()).secureStorageAvailable,
+    true
+  );
+  assert.strictEqual(
+    checks,
+    1,
+    "metadata reuses last actual availability check"
+  );
+  assert.strictEqual(service.getStoredRefreshToken(), "refresh-secret");
+  assert.strictEqual(checks, 2);
+  assert.strictEqual(decryptions, 1);
+  available = false;
+  assert.strictEqual(service.getStoredRefreshToken(), "");
+  assert.strictEqual(checks, 3);
+  assert.strictEqual(decryptions, 1, "unavailable storage cannot decrypt");
+  assert.strictEqual(service.saveRefreshToken("must-not-encrypt"), false);
+  assert.strictEqual(checks, 4);
+  assert.strictEqual(encryptions, 1);
+  assert.strictEqual(
+    (await service.getPublicAuthState()).secureStorageAvailable,
+    false
+  );
+  assert.strictEqual(checks, 4);
+  assert(
+    !JSON.stringify(store.get("bilibiliAuth")).includes("must-not-encrypt")
+  );
+});
+
+test("Keychain denial cannot become plaintext refresh-token fallback", () => {
+  const store = createStore();
+  let checks = 0;
+  const service = new BilibiliService({
+    electronSession: createSession(async () => jsonResponse({ code: 0 })),
+    safeStorage: {
+      isEncryptionAvailable() {
+        checks += 1;
+        return true;
+      },
+      encryptString() {
+        throw new Error("Keychain denied");
+      },
+      decryptString() {
+        throw new Error("Keychain denied");
+      },
+    },
+    store,
+  });
+  assert.throws(
+    () => service.saveRefreshToken("must-not-persist"),
+    /Keychain denied/
+  );
+  assert.strictEqual(store.get("bilibiliAuth"), undefined);
+  store.set("bilibiliAuth", {
+    encryptedRefreshToken: "opaque-encrypted-value",
+  });
+  assert.strictEqual(service.getStoredRefreshToken(), "");
+  assert.strictEqual(checks, 2);
+  assert.strictEqual(
+    store.get("bilibiliAuth").encryptedRefreshToken,
+    "opaque-encrypted-value"
+  );
+});
+
 test("cookie refresh rotates the encrypted token and confirms the old one", async () => {
   const store = createStore();
   const secureStorage = {
     decryptString: (value) =>
-      Buffer.from(value).toString("utf8").replace(/^encrypted:/, ""),
+      Buffer.from(value)
+        .toString("utf8")
+        .replace(/^encrypted:/, ""),
     encryptString: (value) => Buffer.from(`encrypted:${value}`, "utf8"),
     isEncryptionAvailable: () => true,
   };
@@ -273,10 +406,7 @@ test("cookie refresh rotates the encrypted token and confirms the old one", asyn
 
   assert.strictEqual(state.loggedIn, true);
   assert.strictEqual(service.getStoredRefreshToken(), "new-refresh-token");
-  assert.strictEqual(
-    store.get("bilibiliAuth").lastCookieRefreshError,
-    ""
-  );
+  assert.strictEqual(store.get("bilibiliAuth").lastCookieRefreshError, "");
   assert.ok(requests.some((request) => request.url.includes("/correspond/1/")));
   assert.ok(
     requests.some((request) => request.url.includes("/web/confirm/refresh"))

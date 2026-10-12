@@ -1,0 +1,192 @@
+/* eslint-env node */
+
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+
+const root = path.resolve(__dirname, '..');
+const play = fs.readFileSync(path.join(root, 'js/controller/play.js'), 'utf8');
+const handlers = play.slice(
+  play.indexOf('    $scope.openLyricPicker = () => {'),
+  play.indexOf('    $scope.chooseLyricCandidate = (candidate) => {')
+);
+
+function makeController() {
+  const calls = [];
+  const scope = {
+    currentPlaying: {
+      id: 'bitrack_123',
+      title: 'Video title',
+      artist: 'Uploader must not become artist',
+    },
+    lyricSearch: { title: '', artist: '' },
+    $evalAsync: (callback) => callback(),
+    $on: () => {},
+  };
+  vm.runInNewContext(
+    `let lyricSearchToken = 0;
+    let neteaseLyricVerificationToken = 0;
+    let activeLyricSearch = null;
+    let activeLyricSearchKey = '';
+    ${handlers}`,
+    {
+      $scope: scope,
+      $timeout: () => {},
+      window: { matchMedia: () => ({ matches: false }) },
+      document: { querySelector: () => null },
+      MediaService: {
+        getLyricSearchQuery: () => 'Suggested title',
+        searchLyrics: (track, fields, options) => {
+          const call = { track, fields, options, cancelled: false };
+          calls.push(call);
+          return {
+            cancel: () => {
+              call.cancelled = true;
+            },
+          };
+        },
+      },
+      decorateLyricCandidate: (candidate) => candidate,
+      compareLyricCandidates: (a, b) => a.id.localeCompare(b.id),
+      isBilibiliTrack: (track) => track && track.id.startsWith('bitrack_'),
+      i18next: { t: (key) => key },
+    }
+  );
+  return { scope, calls };
+}
+
+function update(call, options = {}) {
+  call.options.onUpdate({
+    candidates: [{ id: 'a', lyric: '[00:00]Lyrics' }],
+    sources: [{ source: 'QQ', stage: 'lyrics', status: 'success' }],
+    pending: false,
+    ...options,
+  });
+}
+
+const current = makeController();
+current.scope.openLyricPicker();
+assert.strictEqual(current.calls.length, 0, 'opening must not search');
+assert.strictEqual(current.scope.lyricSearch.title, 'Suggested title');
+assert.strictEqual(
+  current.scope.lyricSearch.artist,
+  '',
+  'never prefill uploader'
+);
+assert.strictEqual(current.scope.lyricSearchState, 'idle');
+current.scope.lyricSearch.title = ' 折风渡夜 ';
+current.scope.lyricSearch.artist = ' 泽国同学 ';
+current.scope.searchLyricCandidates();
+assert.strictEqual(current.calls.length, 1);
+assert.strictEqual(current.calls[0].fields.title, '折风渡夜');
+assert.strictEqual(current.calls[0].fields.artist, '泽国同学');
+assert.strictEqual(current.scope.lyricSearchSubmitted.title, '折风渡夜');
+update(current.calls[0]);
+assert.strictEqual(current.scope.lyricSearchState, 'results');
+current.scope.lyricSearch.artist = '';
+current.scope.editLyricSearch();
+assert.strictEqual(current.calls[0].cancelled, true);
+assert.strictEqual(current.scope.lyricSearchState, 'edited');
+assert.strictEqual(current.scope.lyricSearchSubmitted, null);
+assert.strictEqual(current.scope.lyricSearchResults.length, 0);
+update(current.calls[0]);
+assert.strictEqual(
+  current.scope.lyricSearchResults.length,
+  0,
+  'late result ignored'
+);
+current.scope.searchLyricCandidates();
+assert.strictEqual(current.calls[1].fields.artist, '', 'artist can stay empty');
+current.scope.openLyricPicker();
+assert.strictEqual(
+  current.calls[1].cancelled,
+  true,
+  'reopening cancels pending search'
+);
+assert.strictEqual(current.calls.length, 2, 'reopening must not search');
+update(current.calls[1]);
+assert.strictEqual(current.scope.lyricSearchState, 'idle');
+assert.strictEqual(current.scope.lyricSearchResults.length, 0);
+assert.strictEqual(
+  current.scope.lyricSearch.title,
+  ' 折风渡夜 ',
+  'retain edited fields'
+);
+current.scope.lyricSearch.title = '   ';
+current.scope.editLyricSearch();
+current.scope.searchLyricCandidates();
+assert.strictEqual(current.calls.length, 2, 'empty title must not request');
+assert.strictEqual(current.scope.lyricSearchState, 'required');
+
+for (const mutate of [
+  (scope) => {
+    scope.lyricSearch.title = 'Other title';
+  },
+  (scope) => {
+    scope.lyricSearch.artist = 'Other artist';
+  },
+  (scope) => {
+    scope.currentPlaying = { id: 'bitrack_456' };
+  },
+  (scope) => {
+    scope.closeLyricPicker();
+  },
+]) {
+  const stale = makeController();
+  stale.scope.openLyricPicker();
+  stale.scope.searchLyricCandidates();
+  mutate(stale.scope);
+  update(stale.calls[0]);
+  assert.strictEqual(stale.scope.lyricSearchResults.length, 0);
+}
+const empty = makeController();
+empty.scope.openLyricPicker();
+empty.scope.searchLyricCandidates();
+update(empty.calls[0], {
+  candidates: [],
+  sources: [{ source: 'QQ', stage: 'lyrics', status: 'no-synced-lyrics' }],
+});
+assert.strictEqual(empty.scope.lyricSearchState, 'no-synced');
+assert.strictEqual(empty.scope.lyricSearchPartial, false);
+assert.strictEqual(
+  empty.scope.lyricSourceStatus({ status: 'unavailable', stage: 'catalog' }),
+  '_LYRIC_CATALOG_UNAVAILABLE'
+);
+assert.strictEqual(
+  empty.scope.lyricSourceStatus({ status: 'unavailable', stage: 'lyrics' }),
+  '_LYRIC_LYRICS_UNAVAILABLE'
+);
+assert.strictEqual(
+  empty.scope.lyricSourceStatus({
+    status: 'no-synced-lyrics',
+    stage: 'lyrics',
+  }),
+  '_LYRIC_SOURCE_NO_SYNCED_LYRICS'
+);
+const html = fs.readFileSync(path.join(root, 'listen1.html'), 'utf8');
+assert.match(html, /ng-model="lyricSearch.title"/);
+assert.match(html, /ng-model="lyricSearch.artist"/);
+assert.strictEqual(
+  (html.match(/ng-change="editLyricSearch\(\)"/g) || []).length,
+  2
+);
+for (const locale of ['zh-CN', 'zh-TC', 'en-US', 'fr-FR', 'ko-KR', 'pt-BR']) {
+  const translations = JSON.parse(
+    fs.readFileSync(path.join(root, 'i18n', `${locale}.json`), 'utf8')
+  );
+  for (const key of [
+    'SEARCH_TITLE_LABEL',
+    'SEARCH_ARTIST_LABEL',
+    'SEARCH_HELP',
+    'SEARCH_IDLE',
+    'SEARCH_EDITED',
+    'SEARCH_TITLE_REQUIRED',
+    'SOURCE_NO_SYNCED_LYRICS',
+    'CATALOG_UNAVAILABLE',
+    'LYRICS_UNAVAILABLE',
+  ]) {
+    assert(translations[`_LYRIC_${key}`], `${locale}: ${key}`);
+  }
+}
+console.log('Manual lyric search UI behavior passed');
