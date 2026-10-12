@@ -7,6 +7,30 @@ status: incomplete
 
 Pure-title correction and scoped local checks complete at source level. Version remains 2.35.2. Default proxy/DNS route acceptance remains degraded; no GUI launch/restart, new installer, commit, push, merge or Release action performed by the resumed executor. The earlier preview installer described below predates the pure-title correction.
 
+## Approved Keychain phase: source implementation complete (2026-10-12)
+
+User confirmed the password dialog is macOS Keychain and authorized avoiding unnecessary checks during startup/configuration metadata reads. This phase is independent of the unresolved lyric-network route; no network configuration or additional installer work performed.
+
+- `getPublicMachineTranslationConfig` returns a process-local `null`/`true`/`false` cache and never checks `safeStorage`. Real API-key encryption/decryption still calls `isEncryptionAvailable` before cryptographic use, updates the cache, rejects unavailable storage and propagates denied cryptographic operations without persisting plaintext.
+- Bilibili public auth responses likewise expose cached availability initialized to `null`; token reads/writes retain real checks, encrypted storage and refresh behavior. Anonymous auth metadata, offline responses, signed-in metadata with `refreshIfNeeded:false`, and empty token reads perform zero availability calls in spy tests.
+- Frontend availability starts as `null`; both settings layouts display unavailable only for `=== false`, avoiding a false error while availability is unknown.
+- Preserved the 653 existing CRLF sequences in `main.js` with byte-preserving local replacements. Formatted only the changed credential-boundary fragments there and in `bilibiliService.js`; HTML has only the two condition edits. No whole-file main/HTML formatting.
+
+Scope limitation: `getPublicAuthState` still defaults to `refreshIfNeeded:true`; a genuinely due cookie refresh may read/decrypt its refresh token and request Keychain authorization. Explicit API-key saving/testing/translation may also request authorization. No cookie-encryption fuse was changed; the installed Electron binary was independently verified to have that fuse disabled. This change does not promise that actual secret access, OS credential handling or every startup condition is prompt-free; changing ad-hoc code identity can still cause legitimate authorization. No GUI launch/restart, OS Keychain interaction, mock-keychain product flag, certificate trust change or real credential test performed.
+
+Scoped local CI **PASS**: `/private/tmp/listen2-kugou-20261012`, branch `agent/kugou-lyrics-20261012`; HEAD before/after `0e497d8b6d1310cef16ba9f19f84e8d1196e807c`; macOS, Asia/Shanghai; 2026-10-12 11:43:37–11:43:38 +0800. Intentional dirty tree consists of this phase's seven product/test files plus quick PLAN/SUMMARY. Run-local-ci skill applied; no Docker stage or full repository gate. Commands all exit 0:
+
+- `npm run test:machine-translation` — IPC regression with zero metadata-check spies, real encrypt/decrypt counts, unavailable backend and user-denial paths.
+- `npm run test:bilibili` — 18 tests, including encrypted refresh rotation and three new credential-boundary cases.
+- `node --test app/test/mainLocalDataCache.test.js` — 4 passed.
+- `node app/listen1_chrome_extension/test/deepseek_lyric_translation_ui_contract.test.js` — both unknown-state UI conditions verified.
+- `node --check app/main.js`, `node --check app/bilibiliService.js`, `node --check app/listen1_chrome_extension/js/controller/play.js`.
+- `./node_modules/.bin/prettier --check app/test/bilibiliService.test.js app/listen1_chrome_extension/js/controller/play.js app/listen1_chrome_extension/test/deepseek_lyric_translation_ui_contract.test.js`.
+- `./node_modules/.bin/prettier --single-quote --check app/test/machineTranslationDeepSeek.test.js` — preserves that existing test's quote convention.
+- Prettier API `check` on the changed main/Bilibili credential-boundary fragments and `git diff --check`.
+
+No new OS-level acceptance or full gate claimed. Root owns task-record synchronization and the separately authorized commit/push; executor performed neither. Restore only this phase's diff to return to the prior eager metadata checks, without changing lyric-source work.
+
 ## Current correction: authoritative editable query (2026-10-12)
 
 The user clarified that the search field is authoritative. Automatic prefill may remain editable, but changing songs, Bilibili uploader names or track singer metadata must not alter the submitted query. Root confirmed the current Bilibili artist is the uploader, not the singer.

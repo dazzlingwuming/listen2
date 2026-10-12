@@ -206,7 +206,7 @@ angular.module('listenone').controller('PlayController', [
       model: 'deepseek-v4-flash',
       targetLanguage: 'zh-CN',
       hasApiKey: false,
-      secureStorageAvailable: false,
+      secureStorageAvailable: null,
       apiKeyInput: '',
       defaultStyleHint: '',
       effectiveStyleHint: '',

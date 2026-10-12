@@ -28,26 +28,52 @@ class Store {
 }
 Store.data = {};
 
-function loadTranslationHandlers() {
+function loadTranslationHandlers(overrides = {}) {
+  const secureStorage = {
+    available: true,
+    checks: 0,
+    encryptions: 0,
+    decryptions: 0,
+    denyEncrypt: false,
+    denyDecrypt: false,
+    ...overrides,
+  };
   const handlers = new Map();
   let fetchCount = 0;
   const electron = {
     app: {
       disableHardwareAcceleration() {},
       on() {},
-      requestSingleInstanceLock() { return true; },
+      requestSingleInstanceLock() {
+        return true;
+      },
     },
     BrowserWindow: class {},
     globalShortcut: { register() {}, unregisterAll() {} },
     ipcMain: {
-      handle(name, handler) { handlers.set(name, handler); },
+      handle(name, handler) {
+        handlers.set(name, handler);
+      },
       on() {},
     },
     Menu: { buildFromTemplate() {} },
     safeStorage: {
-      isEncryptionAvailable() { return true; },
-      encryptString(value) { return Buffer.from(value); },
-      decryptString(value) { return Buffer.from(value).toString(); },
+      isEncryptionAvailable() {
+        secureStorage.checks += 1;
+        return secureStorage.available;
+      },
+      encryptString(value) {
+        secureStorage.encryptions += 1;
+        if (secureStorage.denyEncrypt)
+          throw new Error('Keychain access denied');
+        return Buffer.from(value);
+      },
+      decryptString(value) {
+        secureStorage.decryptions += 1;
+        if (secureStorage.denyDecrypt)
+          throw new Error('Keychain access denied');
+        return Buffer.from(value).toString();
+      },
     },
     session: {
       defaultSession: {
@@ -78,20 +104,27 @@ function loadTranslationHandlers() {
       }
       if (id === '@electron/remote/main') return {};
       if (id === './bilibiliFailure') {
-        return { createBilibiliFailure() { return {}; } };
+        return {
+          createBilibiliFailure() {
+            return {};
+          },
+        };
       }
       if (id === './bilibiliService') {
         return { BilibiliService: class {} };
       }
-      if (id === './machineTranslation') return require('../machineTranslation');
-      return id.startsWith("./") ? require(path.join(__dirname, "..", id)) : require(id);
+      if (id === './machineTranslation')
+        return require('../machineTranslation');
+      return id.startsWith('./')
+        ? require(path.join(__dirname, '..', id))
+        : require(id);
     },
     setTimeout,
     clearTimeout,
   };
   vm.createContext(context);
   vm.runInContext(source, context, { filename });
-  return { handlers, getFetchCount: () => fetchCount };
+  return { handlers, secureStorage, getFetchCount: () => fetchCount };
 }
 
 function trustedEvent() {
@@ -131,7 +164,7 @@ async function run() {
       encryptedApiKey: 'legacy-deepl-key-must-not-be-used',
     },
   };
-  const { handlers, getFetchCount } = loadTranslationHandlers();
+  const { handlers, secureStorage, getFetchCount } = loadTranslationHandlers();
   const getConfig = handlers.get('machine-translation:get-config');
   const setConfig = handlers.get('machine-translation:set-config');
   const translate = handlers.get('machine-translation:translate-lyrics');
@@ -142,7 +175,12 @@ async function run() {
   assert.strictEqual(config.config.provider, 'deepseek');
   assert.strictEqual(config.config.model, DEEPSEEK_MODEL);
   assert.strictEqual(config.config.hasApiKey, false);
-  assert.strictEqual(config.config.secureStorageAvailable, true);
+  assert.strictEqual(config.config.secureStorageAvailable, null);
+  assert.strictEqual(
+    secureStorage.checks,
+    0,
+    'startup/config metadata must not check Keychain'
+  );
   assert.strictEqual(config.config.targetLanguage, 'zh-CN');
   assert.strictEqual(config.config.maxStyleHintChars, 1200);
   assert.ok(config.config.defaultStyleHint);
@@ -153,7 +191,9 @@ async function run() {
     'the preview must use placeholder song data and the same fixed few-shot contract'
   );
   assert.ok(
-    !config.config.promptTemplatePreview.includes('legacy-deepl-key-must-not-be-used'),
+    !config.config.promptTemplatePreview.includes(
+      'legacy-deepl-key-must-not-be-used'
+    ),
     'a public prompt preview must never expose a stored credential'
   );
 
@@ -210,8 +250,16 @@ async function run() {
     'force-refresh-requires-network'
   );
 
+  assert.strictEqual(
+    secureStorage.checks,
+    0,
+    'cache-only and missing-key paths must not check Keychain'
+  );
   const configuredForForce = await setConfig(event, { apiKey: 'test-key' });
   assert.strictEqual(configuredForForce.ok, true);
+  assert.strictEqual(configuredForForce.config.secureStorageAvailable, true);
+  assert.strictEqual(secureStorage.checks, 1);
+  assert.strictEqual(secureStorage.encryptions, 1);
   const forcedCacheBypass = await translate(event, {
     lyric,
     allowNetwork: true,
@@ -225,6 +273,12 @@ async function run() {
     'an explicit network-confirmed force refresh must bypass an otherwise valid cache entry'
   );
 
+  assert.strictEqual(
+    secureStorage.checks,
+    2,
+    'explicit network use must check before decrypting'
+  );
+  assert.strictEqual(secureStorage.decryptions, 1);
   const changedStyle = await setConfig(event, { styleHint: '更口语化一些' });
   assert.strictEqual(changedStyle.ok, true);
   assert.strictEqual(changedStyle.config.styleHint, '更口语化一些');
@@ -251,6 +305,68 @@ async function run() {
   });
   assert.strictEqual(invalidStyle.ok, false);
   assert.strictEqual(invalidStyle.status, 'invalid-style-hint');
+
+  assert.strictEqual(
+    secureStorage.checks,
+    2,
+    'style/config metadata must reuse cached availability'
+  );
+
+  Store.data = {
+    machineTranslation: {
+      provider: DEEPSEEK_PROVIDER,
+      encryptedApiKey: Buffer.from('stored-key').toString('base64'),
+    },
+  };
+  const denied = loadTranslationHandlers({ available: false });
+  const deniedConfig = denied.handlers.get('machine-translation:get-config');
+  const deniedSet = denied.handlers.get('machine-translation:set-config');
+  const deniedTest = denied.handlers.get('machine-translation:test');
+  assert.strictEqual((await deniedConfig(event)).config.hasApiKey, true);
+  assert.strictEqual(
+    (await deniedConfig(event)).config.secureStorageAvailable,
+    null
+  );
+  await deniedSet(event, { styleHint: 'metadata only' });
+  assert.strictEqual(
+    denied.secureStorage.checks,
+    0,
+    'stored credential metadata also avoids Keychain'
+  );
+  const blockedRead = await deniedTest(event);
+  assert.strictEqual(blockedRead.ok, false);
+  assert.strictEqual(blockedRead.status, 'secure-storage-unavailable');
+  assert.strictEqual(denied.secureStorage.checks, 1);
+  assert.strictEqual(denied.secureStorage.decryptions, 0);
+  assert.strictEqual(
+    (await deniedConfig(event)).config.secureStorageAvailable,
+    false
+  );
+  assert.strictEqual(denied.secureStorage.checks, 1);
+  const before = Store.data.machineTranslation.encryptedApiKey;
+  const blockedWrite = await deniedSet(event, { apiKey: 'must-not-persist' });
+  assert.strictEqual(blockedWrite.status, 'secure-storage-unavailable');
+  assert.strictEqual(denied.secureStorage.checks, 2);
+  assert.strictEqual(denied.secureStorage.encryptions, 0);
+  assert.strictEqual(Store.data.machineTranslation.encryptedApiKey, before);
+  denied.secureStorage.available = true;
+  denied.secureStorage.denyEncrypt = true;
+  assert.strictEqual(
+    (await deniedSet(event, { apiKey: 'must-not-persist' })).ok,
+    false
+  );
+  assert.strictEqual(denied.secureStorage.checks, 3);
+  assert.strictEqual(denied.secureStorage.encryptions, 1);
+  assert.strictEqual(Store.data.machineTranslation.encryptedApiKey, before);
+  denied.secureStorage.denyDecrypt = true;
+  assert.strictEqual((await deniedTest(event)).ok, false);
+  assert.strictEqual(denied.secureStorage.checks, 4);
+  assert.strictEqual(denied.secureStorage.decryptions, 1);
+  assert.strictEqual(
+    denied.getFetchCount(),
+    0,
+    'denied credentials never reach a network request'
+  );
 
   // eslint-disable-next-line no-console
   console.log('DeepSeek machine translation IPC tests passed');

@@ -340,6 +340,9 @@ class BilibiliService {
     this.electronSession = electronSession;
     this.store = store;
     this.safeStorage = safeStorage;
+    // Public auth metadata must not request Keychain access before a secret is
+    // actually read or written. null denotes availability not yet checked.
+    this.secureStorageAvailable = null;
     this.now = now;
     this.activeQrSession = null;
     this.wbiKey = null;
@@ -461,12 +464,13 @@ class BilibiliService {
 
   isSecureStorageAvailable() {
     try {
-      return Boolean(
+      this.secureStorageAvailable = Boolean(
         this.safeStorage && this.safeStorage.isEncryptionAvailable()
       );
     } catch (error) {
-      return false;
+      this.secureStorageAvailable = false;
     }
+    return this.secureStorageAvailable;
   }
 
   async getPublicAuthState({ refreshIfNeeded = true } = {}) {
@@ -481,7 +485,7 @@ class BilibiliService {
       if (data.isLogin !== true) {
         return {
           loggedIn: false,
-          secureStorageAvailable: this.isSecureStorageAvailable(),
+          secureStorageAvailable: this.secureStorageAvailable,
         };
       }
       return {
@@ -492,12 +496,12 @@ class BilibiliService {
         vipType: Number(data.vipType || 0),
         vipStatus: Number(data.vipStatus || 0),
         vipDueDate: Number(data.vipDueDate || 0),
-        secureStorageAvailable: this.isSecureStorageAvailable(),
+        secureStorageAvailable: this.secureStorageAvailable,
       };
     } catch (error) {
       return {
         loggedIn: false,
-        secureStorageAvailable: this.isSecureStorageAvailable(),
+        secureStorageAvailable: this.secureStorageAvailable,
         lastError: error && error.code ? error.code : "request-failed",
       };
     }
@@ -506,10 +510,7 @@ class BilibiliService {
   getStoredRefreshToken() {
     const stored = this.store.get(BILIBILI_REFRESH_TOKEN_STORE_KEY) || {};
     const encrypted = String(stored.encryptedRefreshToken || "");
-    if (
-      !encrypted ||
-      !this.isSecureStorageAvailable()
-    ) {
+    if (!encrypted || !this.isSecureStorageAvailable()) {
       return "";
     }
     try {

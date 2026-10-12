@@ -40,4 +40,4 @@ next_action: Approved free-route delivery complete; user installs refreshed v2.3
 root_cause: v2.35.2 arm64 DMG 内的 Electron app 带有无效、不完整的 ad-hoc 签名（资源封印缺失且 Info.plist 未绑定），严格 codesign 与 Gatekeeper 均会拒绝它。该签名制品缺陷足以造成报告的阻止打开。另一个交付限制是本机没有有效 codesigning identity，且用户没有 Apple Developer Program 资格：免费/未签名或 ad-hoc 重打包无法变成可通过 Gatekeeper 验证的公开 macOS 发布物。
 fix: 用户批准免费路线。4da4cf385514eaf38f425fcd89cb1ae463cbcc7c 增加完整嵌套 ad-hoc signing hook，Universal 合并后签名，再生成 DMG/元数据；README 与 Release 明确无 Developer ID/公证和首次“仍要打开”。三架构安装包与元数据已更新至 dazzlingwuming/listen2 v2.35.2。未声称 Gatekeeper 信任通过。
 verification: 三个只读挂载 DMG codesign --verify --deep --strict PASS，版本/架构/哈希 PASS，篡改测试按预期失败，3 个定向测试 PASS。arm64 与 Universal UI 启动已核验，Universal 使用测试钥匙串避免个人钥匙串授权。线上8附件摘要匹配且 arm64 重新下载一致。用户实际首次允许、真实钥匙串授权、Intel 硬件运行未验证。
-files_changed: build/macosSign.js, app/test/macosSigning.test.js, package.json, README.md, task/debug records. Main task record: doc/2026-10-11/macOS安装包验证修复-2026-10-11至2026-10-11.md.
+files_changed: build/macosSign.js, app/test/macosSigning.test.js, package.json, README.md, task/debug records. Main task record: doc/2026-10-11/macOS安装包验证修复-2026-10-11至2026-10-12.md.

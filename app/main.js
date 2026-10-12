@@ -175,13 +175,25 @@ function getStoredMachineTranslationConfig() {
   };
 }
 
+// null means secure storage has not been needed in this process. Merely
+// opening settings must not request macOS Keychain access.
+let machineTranslationSecureStorageAvailable = null;
+
+function checkMachineTranslationSecureStorage() {
+  machineTranslationSecureStorageAvailable = false;
+  machineTranslationSecureStorageAvailable = Boolean(
+    safeStorage.isEncryptionAvailable()
+  );
+  return machineTranslationSecureStorageAvailable;
+}
+
 function getPublicMachineTranslationConfig() {
   const config = getStoredMachineTranslationConfig();
   return {
     provider: config.provider,
     model: config.model,
     hasApiKey: Boolean(config.encryptedApiKey),
-    secureStorageAvailable: safeStorage.isEncryptionAvailable(),
+    secureStorageAvailable: machineTranslationSecureStorageAvailable,
     targetLanguage: DEEPSEEK_TARGET_LANGUAGE,
     promptVersion: DEEPSEEK_PROMPT_VERSION,
     promptFingerprint: getDeepSeekPromptFingerprint({
@@ -200,7 +212,7 @@ function getPublicMachineTranslationConfig() {
 }
 
 function encryptMachineTranslationApiKey(apiKey) {
-  if (!safeStorage.isEncryptionAvailable()) {
+  if (!checkMachineTranslationSecureStorage()) {
     throw Object.assign(
       new Error("Secure credential storage is unavailable."),
       { code: "secure-storage-unavailable" }
@@ -215,15 +227,13 @@ function decryptMachineTranslationApiKey(encryptedApiKey) {
   if (!encryptedApiKey) {
     return "";
   }
-  if (!safeStorage.isEncryptionAvailable()) {
+  if (!checkMachineTranslationSecureStorage()) {
     throw Object.assign(
       new Error("Secure credential storage is unavailable."),
       { code: "secure-storage-unavailable" }
     );
   }
-  return safeStorage.decryptString(
-    Buffer.from(encryptedApiKey, "base64")
-  );
+  return safeStorage.decryptString(Buffer.from(encryptedApiKey, "base64"));
 }
 
 function getMachineTranslationFetch() {
