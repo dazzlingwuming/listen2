@@ -94,3 +94,44 @@ Coverage limitations: no whole-repository gate; frontend ESLint dependency is ab
 User subsequently asked to use their existing player and stop opening test instances. Only the user's installed player remains running; no more GUI startup/restart tests are authorized without first explaining them. Selection/restart persistence and default-network recovery remain unverified. Use the existing player for read-only observations; it still runs the old installed code. Revert only this task's source commit to roll back. Do not alter system proxy/DNS or publish pinned IPs.
 
 Local installer: `listen1_2.35.2_kugou-preview_mac_arm64.dmg`; SHA256 `83dddd6ff9ca7420a053d4da65fb740c804d5a7ebb785bff4b42f47f727099a1`. Build with electron-builder 25.1.8 / Electron32.3.2, custom ad-hoc signing, no Apple notarization. DMG and mounted `codesign --verify --deep --strict` pass. Source files in ASAR match final source. Building and static inspection do not interrupt the user's running player. This is a preview with a disclosed default-network limitation, not an updated public Release.
+
+
+## Approved isolated direct lyric transport (2026-10-12)
+
+Implemented only the trusted `lyrics:request` route with new `app/lyricDirectTransport.js`; other Electron sessions/providers keep their existing networking. Fixed Google/Cloudflare public DoH JSON requests use Electron `net.fetch`, while lyric HTTP GETs use Node HTTPS directly with resolved public addresses, original Host/SNI and certificate hostname verification. No fixed provider IP, proxy fallback, caller headers/cookies, redirect, TLS bypass or system configuration change. Preserve the existing fixed Kugou mobile User-Agent previously applied by `webRequest`. Exact Kuwo `https://search.kuwo.cn/r.s` joins the endpoint allow-list in coordination with root's separate provider route change.
+
+DNS accepts only registered lyric hostnames, checks the returned question, bounds JSON to 64 KiB, TTL cache to 300 seconds/24 entries, and uses at most two public addresses. Reject private/local/link-local/fake-IP/documentation IPv4 and non-global/mapped/private IPv6. Only failures before HTTP response permit a second address; HTTP errors and malformed/oversized bodies remain explicit failures. GET bodies are identity encoding, at most 2 MiB. The original single eight-second request deadline includes DNS, HTTPS and body; manual search retains its twelve-second deadline. Cancellation closes active requests. 204/205 null-body responses cannot throw asynchronously.
+
+Scoped local CI PASS, `/private/tmp/listen2-kugou-20261012`, `agent/kugou-lyrics-20261012`, HEAD before/after `645c690eafbb2d1d58024368cb2f1e5a0f9ffa40`; macOS Node v24.15.0, Asia/Shanghai. Time 2026-10-12 12:10:10–12:10:11 +0800. Intentional dirty worktree contains this transport phase and root-owned provider/i18n changes; no stash/reset/commit/push/build/GUI actions. All commands exit 0:
+
+- `node --test app/test/lyricDirectTransport.test.js app/test/lyricSearch.test.js app/test/mainLocalDataCache.test.js app/test/lyricProviderRoutes.test.js` — 44 passed, including 17 new direct transport tests.
+- `./node_modules/.bin/prettier --check app/lyricDirectTransport.js app/lyricTransport.js app/test/lyricDirectTransport.test.js app/test/lyricSearch.test.js`
+- `node --check app/main.js`, `node --check app/lyricDirectTransport.js`, `node --check app/lyricTransport.js`, `git diff --check`.
+
+Main's existing 653 CRLF sequences are preserved; no whole-file main reformat. No whole-repository gate, Docker stage, packaged Electron GUI or installed-player acceptance performed.
+
+Live source probe, roughly 12:08–12:10 +0800: `/tmp/listen2-live-direct-lyrics.cjs` evaluates the actual source provider with `requestLyric(createDirectLyricFetch(...))`; third argument `http://127.0.0.1:7897` obtains only fixed DoH JSON through diagnostic curl with the current proxy, while all lyric/catalog bodies use actual product Node HTTPS, with TLS verification. No resolver IP injection and no full lyrics/tokens logged. Latest representative run: bare `折风渡夜` completed in 6,412 ms, KUGOU 2 synced/KUWO 1 synced/LRCLIB 0; `青花瓷` in 2,637 ms, LRCLIB 12 synced/KUWO 2 synced/KUGOU 0. Kugou catalog intermittently returns valid HTTP 200/status 1/lists 0, including earlier runs for the first song, so its catalog availability remains degraded; mobile UA did not eliminate this upstream behavior. Do not reinterpret valid empty responses as transport errors or retry another IP after HTTP. Root's Electron DoH/session integration and installed-player acceptance remain to be verified. Roll back only this transport phase's source commit to restore the previous Session-based lyric request path.
+
+
+## Final resolver refinement and five-source verification (2026-10-12)
+
+This supersedes the Google-first network limitation recorded above. Fixed HTTPS AliDNS is now first, followed by Google and Cloudflare only on DNS failure, under the same shared eight-second deadline. Strict Question validation accepts Ali's object shape and the array shape; exact hostname/type, public address filtering, TLS identity, two-address limit and bounded TTL/body remain unchanged. Failed DNS HTTP bodies are cancelled before fallback. No provider IP, custom query/singer or system proxy/DNS configuration is embedded.
+
+Read-only alternatives did not justify widening the Kugou allow-list: `msearchcdn.kugou.com/api/v3/search/song` failed hostname certificate validation in both songs/two rounds; `mobileservice.kugou.com/api/v3/lyric/search` returned HTTPS 200 HTML instead of JSON. Original songsearch query and the publicly documented WebFilter variant each returned five valid catalog rows across both songs/two rounds with AliDNS; therefore no extra provider query parameters or empty-result retry were added. Primary implementation references: https://github.com/keyule/KuGou-API, https://github.com/bingaha/kugou-lrc/blob/main/README.md, https://github.com/CharlesPikachu/musicdl/blob/master/musicdl/modules/sources/kugou.py .
+
+Final actual source probe at 12:26 +0800: `node /tmp/listen2-live-direct-five.cjs /tmp/listen2-kugou-20261012 http://127.0.0.1:7897 2`. Uses current provider functions, exact manual hints and actual `lyric_search` three-worker/twelve-second search. Only the product-selected fixed DoH JSON is obtained via diagnostic curl through the configured proxy; response JSON is unmodified, no IP or resolver mapping injected. Actual lyric bodies use final product `createDirectLyricFetch` / Node HTTPS and are not printed. Counts are downloaded synced candidates:
+
+| Round | Exact query | QQ | Kugou | Kuwo | LRCLIB | NetEase | Total elapsed |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 折风渡夜 | 5 | 2 | 2 | 0 | verification-required | 1,751 ms |
+| 1 | 青花瓷 | 6 | 2 | 1 | 12 | verification-required | 2,096 ms |
+| 2 | 折风渡夜 | 5 | 2 | 2 | 0 | verification-required | 1,564 ms |
+| 2 | 青花瓷 | 6 | 2 | 2 | 12 | verification-required | 2,356 ms |
+
+Final scoped local CI PASS at 2026-10-12 12:26:26–12:26:27 CST (+0800), macOS Node v24.15.0; worktree `/private/tmp/listen2-kugou-20261012`, branch `agent/kugou-lyrics-20261012`, HEAD before/after `645c690eafbb2d1d58024368cb2f1e5a0f9ffa40`. Intentional dirty tree includes this phase and root-owned provider/signing/doc changes; no changes discarded. Commands exit 0:
+
+- `node --test app/test/lyricDirectTransport.test.js app/test/lyricSearch.test.js app/test/mainLocalDataCache.test.js app/test/lyricProviderRoutes.test.js` — 51 passed (20 direct transport tests).
+- `./node_modules/.bin/prettier --check app/lyricDirectTransport.js app/test/lyricDirectTransport.test.js app/test/lyricSearch.test.js`
+- `node --check app/main.js`, `node --check app/lyricDirectTransport.js`, `git diff --check`.
+
+No whole-repository gate, Electron launch or installed-player UI acceptance was performed. Runtime Electron `net.fetch` DoH integration remains root's acceptance responsibility; Node HTTPS source pipeline is verified. No credentials, full lyrics, public download access tokens or raw verification responses were logged or persisted. NetEase verification restrictions remain explicit and are not bypassed; LRCLIB valid empty catalog coverage for the first title remains honest. Root owns commit/push/package and persistent task records. Roll back the isolated transport commit to restore the prior Session-based lyric path; no system configuration recovery is necessary.

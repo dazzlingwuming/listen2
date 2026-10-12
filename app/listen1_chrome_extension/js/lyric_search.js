@@ -6,6 +6,8 @@
   // within that search; automatic lookup caches never hold cancelled requests.
   const cache = new Map();
   function classify(error) {
+    if (error && error.code === 'verification-required')
+      return 'verification-required';
     if (
       error &&
       (error.name === 'AbortError' ||

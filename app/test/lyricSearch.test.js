@@ -586,7 +586,14 @@ test("desktop transport permits only exact public lyric endpoints", () => {
       "https://www.kugou.com/"
     );
   }
+  assert.equal(
+    validateUrl("https://search.kuwo.cn/r.s?all=test&ft=music").referer,
+    "https://www.kuwo.cn/"
+  );
   for (const url of [
+    "https://search.kuwo.cn/private",
+    "https://search.kuwo.cn.evil.test/r.s",
+    "http://search.kuwo.cn/r.s",
     "https://lyrics.kugou.com/other",
     "https://songsearch.kugou.com/private",
     "https://songsearch.kugou.com.evil.test/song_search_v2",

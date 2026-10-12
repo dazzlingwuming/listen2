@@ -835,10 +835,24 @@ class bilibili {
     if (cached && cached.expiresAt > Date.now()) {
       return cached.request;
     }
+    // Reuse the public desktop search contract used by provider/qq.js.
+    const searchRequest = {
+      comm: { ct: '19', cv: '1859', uin: '0' },
+      req: {
+        method: 'DoSearchForQQMusicDesktop',
+        module: 'music.search.SearchCgiService',
+        param: {
+          grp: 1,
+          num_per_page: 20,
+          page_num: 1,
+          query,
+          search_type: 0,
+        },
+      },
+    };
     const targetUrl =
-      'https://c.y.qq.com/soso/fcgi-bin/client_search_cp' +
-      '?p=1&n=20&format=json' +
-      `&w=${encodeURIComponent(query)}`;
+      'https://u.y.qq.com/cgi-bin/musicu.fcg?data=' +
+      encodeURIComponent(JSON.stringify(searchRequest));
     const request = (
       typeof Listen2LyricHttp !== 'undefined' ? Listen2LyricHttp : axios
     )
@@ -850,10 +864,18 @@ class bilibili {
         const payload = this.parse_json_payload(response.data);
         const items =
           payload &&
-          payload.data &&
-          payload.data.song &&
-          payload.data.song.list;
-        if (!payload || Number(payload.code) !== 0 || !Array.isArray(items)) {
+          payload.req &&
+          payload.req.data &&
+          payload.req.data.body &&
+          payload.req.data.body.song &&
+          payload.req.data.body.song.list;
+        if (
+          !payload ||
+          Number(payload.code) !== 0 ||
+          !payload.req ||
+          Number(payload.req.code) !== 0 ||
+          !Array.isArray(items)
+        ) {
           throw new Error('QQ lyric search returned an invalid response');
         }
         return items;
@@ -1043,6 +1065,11 @@ class bilibili {
       })
       .then((response) => {
         const payload = this.parse_json_payload(response.data);
+        if (payload && Number(payload.code) === -462) {
+          const error = new Error('NetEase requires user verification');
+          error.code = 'verification-required';
+          throw error;
+        }
         const items = payload && payload.result && payload.result.songs;
         if (
           payload &&
@@ -1708,7 +1735,7 @@ class bilibili {
     );
   }
 
-  static search_kuwo_lyric_candidates(hints) {
+  static async search_kuwo_lyric_candidates(hints) {
     const scoringHints = this.build_lyric_scoring_hints(hints);
     const searchText = this.build_lyric_search_text(
       hints,
@@ -1718,13 +1745,12 @@ class bilibili {
       return Promise.resolve([]);
     }
     const targetUrl =
-      'https://www.kuwo.cn/search/searchMusicBykeyWord' +
-      '?vipver=1&client=kt&ft=music&cluster=0&strategy=2012' +
-      '&encoding=utf8&rformat=json&mobi=1&issubtitle=1' +
-      '&show_copyright_off=1&pn=0&rn=20' +
+      'https://search.kuwo.cn/r.s' +
+      '?ft=music&itemset=web_2013&client=kt&pn=0' +
+      '&rformat=json&encoding=utf8&mobi=1&rn=20' +
       `&all=${encodeURIComponent(searchText)}`;
 
-    return this.fetch_kuwo_search(targetUrl, hints).then((response) => {
+    return this.fetch_kuwo_search(targetUrl, hints).then(async (response) => {
       if (!response) {
         throw new Error('Kuwo lyric search unavailable');
       }
@@ -1738,61 +1764,62 @@ class bilibili {
         )
         .filter((candidate) => hints.manual || candidate.score >= 0.35)
         .sort((left, right) => right.score - left.score)
-        .slice(0, 2);
+        .slice(0, 5);
 
-      return candidates.reduce(
-        (request, candidate) =>
-          request.then((results) => {
-            const musicId =
-              candidate.item.DC_TARGETID ||
-              String(candidate.item.MUSICRID || '')
-                .split('_')
-                .pop();
-            if (!musicId) {
-              return results;
-            }
-            const lyricUrl = `https://m.kuwo.cn/newh5/singles/songinfoandlrc?musicId=${encodeURIComponent(
-              musicId
-            )}`;
-            return (
-              typeof Listen2LyricHttp !== 'undefined' ? Listen2LyricHttp : axios
-            )
-              .get(lyricUrl, {
-                timeout: BILIBILI_LYRIC_REQUEST_TIMEOUT,
-                signal: hints.signal,
-              })
-              .then((lyricResponse) => {
-                const lyricPayload = this.parse_json_payload(
-                  lyricResponse.data
-                );
-                const lyric = this.kuwo_lyric_to_lrc(
-                  lyricPayload && lyricPayload.data && lyricPayload.data.lrclist
-                );
-                if (!lyric) {
-                  return results;
-                }
-                return [
-                  ...results,
-                  {
-                    id: `kuwo_${musicId}`,
-                    provider: 'KUWO',
-                    title: candidate.item.NAME || candidate.item.SONGNAME || '',
-                    artist: candidate.item.ARTIST || '',
-                    album: candidate.item.ALBUM || '',
-                    duration: candidate.candidateDuration,
-                    lyric,
-                    tlyric: '',
-                    matchScore: candidate.score,
-                  },
-                ];
-              })
-              .catch((error) => {
-                if (hints.manual && !results.length) throw error;
-                return results;
-              });
-          }),
-        Promise.resolve([])
-      );
+      const results = [];
+      let failure;
+      for (const candidate of candidates) {
+        if (hints.signal && hints.signal.aborted) {
+          throw Object.assign(new Error('Lyric request cancelled'), {
+            name: 'AbortError',
+          });
+        }
+        try {
+          const musicId =
+            candidate.item.DC_TARGETID ||
+            String(candidate.item.MUSICRID || '')
+              .split('_')
+              .pop();
+          if (!musicId) {
+            continue;
+          }
+          const lyricUrl = `https://m.kuwo.cn/newh5/singles/songinfoandlrc?musicId=${encodeURIComponent(
+            musicId
+          )}`;
+          const lyricResponse = await (typeof Listen2LyricHttp !== 'undefined'
+            ? Listen2LyricHttp
+            : axios
+          ).get(lyricUrl, {
+            timeout: BILIBILI_LYRIC_REQUEST_TIMEOUT,
+            signal: hints.signal,
+          });
+          const lyricPayload = this.parse_json_payload(lyricResponse.data);
+          if (!lyricPayload || Number(lyricPayload.status) !== 200) {
+            throw new Error('Kuwo lyric service unavailable');
+          }
+          const lyric = this.kuwo_lyric_to_lrc(
+            lyricPayload.data && lyricPayload.data.lrclist
+          );
+          if (!lyric) continue;
+          results.push({
+            id: `kuwo_${musicId}`,
+            provider: 'KUWO',
+            title: candidate.item.NAME || candidate.item.SONGNAME || '',
+            artist: candidate.item.ARTIST || '',
+            album: candidate.item.ALBUM || '',
+            duration: candidate.candidateDuration,
+            lyric,
+            tlyric: '',
+            matchScore: candidate.score,
+          });
+          if (results.length >= 2) break;
+        } catch (error) {
+          if (hints.signal && hints.signal.aborted) throw error;
+          failure = failure || error;
+        }
+      }
+      if (!results.length && failure && hints.manual) throw failure;
+      return results;
     });
   }
 
@@ -1879,10 +1906,9 @@ class bilibili {
     }
     const searchText = this.clean_music_title(hints.bgmTitle) || variants[0];
     const targetUrl =
-      'https://www.kuwo.cn/search/searchMusicBykeyWord' +
-      '?vipver=1&client=kt&ft=music&cluster=0&strategy=2012' +
-      '&encoding=utf8&rformat=json&mobi=1&issubtitle=1' +
-      '&show_copyright_off=1&pn=0&rn=30' +
+      'https://search.kuwo.cn/r.s' +
+      '?ft=music&itemset=web_2013&client=kt&pn=0' +
+      '&rformat=json&encoding=utf8&mobi=1&rn=30' +
       `&all=${encodeURIComponent(searchText)}`;
     const scoringHints = {
       variants,

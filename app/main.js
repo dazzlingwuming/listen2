@@ -43,6 +43,10 @@ const { LyricCacheStore } = require(`${__dirname}/lyricCacheStore`);
 const { ListeningHistoryStore } = require(`${__dirname}/listeningHistoryStore`);
 
 const { requestLyric, validateUrl } = require("./lyricTransport");
+const { createDirectLyricFetch } = require("./lyricDirectTransport");
+const directLyricFetch = createDirectLyricFetch({
+  dnsFetch: (url, options) => electron.net.fetch(url, options),
+});
 const lyricRequests = new Map();
 ipcMain.handle("lyrics:request", async (event, request) => {
   if (
@@ -69,7 +73,7 @@ ipcMain.handle("lyrics:request", async (event, request) => {
   lyricRequests.set(request.id, controller);
   try {
     return await requestLyric(
-      electron.net.fetch.bind(electron.net),
+      directLyricFetch,
       request.url,
       controller.signal
     );
