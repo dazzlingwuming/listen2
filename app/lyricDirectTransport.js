@@ -9,6 +9,7 @@ const DNS_ENDPOINTS = [
   "https://cloudflare-dns.com/dns-query",
 ];
 const MAX_DNS_BYTES = 64 * 1024;
+const DNS_ATTEMPT_TIMEOUT_MS = 2000;
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 // Preserve the existing public Kugou client header formerly applied by
 // Electron webRequest; independent sockets do not pass through that hook.
@@ -106,27 +107,62 @@ function createPublicDnsResolver({
     throw transportError("LYRIC_INVALID_RESPONSE");
   const endpoints = [...dnsEndpoints];
   const cache = new Map();
-  return async function resolveLyricHost(hostname, signal) {
+  const resolveLyricHost = async function (hostname, signal, context = {}) {
     if (!isAllowedHostname(hostname))
       throw transportError("LYRIC_INVALID_RESPONSE");
     if (signal && signal.aborted) throw abortError();
+    const excluded = context.excludeAddresses || new Set();
+    const attempted = context.attemptedEndpoints || new Set();
     const cached = cache.get(hostname);
-    if (cached && cached.expiresAt > now()) return [...cached.addresses];
+    if (cached && cached.expiresAt > now()) {
+      const addresses = cached.addresses.filter(
+        (address) => !excluded.has(address)
+      );
+      if (addresses.length) {
+        attempted.add(cached.endpoint);
+        return addresses;
+      }
+      cache.delete(hostname);
+    }
     let failure;
     for (const endpoint of endpoints) {
       if (signal && signal.aborted) throw abortError();
+      if (attempted.has(endpoint)) continue;
+      attempted.add(endpoint);
+      // Each resolver gets only part of the caller's shared total deadline.
+      // The local abort race also bounds injected fetches that ignore signals.
+      const attempt = new AbortController();
+      const abort = () => attempt.abort();
+      if (signal) signal.addEventListener("abort", abort, { once: true });
+      const timeout = setTimeout(abort, DNS_ATTEMPT_TIMEOUT_MS);
       try {
         const response = await withAbort(
-          fetchImpl(`${endpoint}?name=${encodeURIComponent(hostname)}&type=A`, {
-            signal,
-            redirect: "error",
-            credentials: "omit",
-            cache: "no-store",
-            headers: { Accept: "application/dns-json" },
+          Promise.resolve(
+            fetchImpl(
+              `${endpoint}?name=${encodeURIComponent(hostname)}&type=A`,
+              {
+                signal: attempt.signal,
+                redirect: "error",
+                credentials: "omit",
+                cache: "no-store",
+                headers: { Accept: "application/dns-json" },
+              }
+            )
+          ).then((response) => {
+            // A fetch implementation may ignore abort and deliver headers late.
+            // Close its unused body instead of retaining a stranded response.
+            if (attempt.signal.aborted) {
+              if (response && response.body)
+                Promise.resolve()
+                  .then(() => response.body.cancel())
+                  .catch(() => {});
+              throw abortError();
+            }
+            return response;
           }),
-          signal
+          attempt.signal
         );
-        const payload = await readDnsJson(response, signal);
+        const payload = await readDnsJson(response, attempt.signal);
         const questions =
           payload && Array.isArray(payload.Question)
             ? payload.Question
@@ -145,7 +181,10 @@ function createPublicDnsResolver({
           throw transportError("LYRIC_INVALID_RESPONSE");
         const answers = payload.Answer.slice(0, 64).filter(
           (answer) =>
-            answer && Number(answer.type) === 1 && isPublicAddress(answer.data)
+            answer &&
+            Number(answer.type) === 1 &&
+            isPublicAddress(answer.data) &&
+            !excluded.has(answer.data)
         );
         const addresses = [
           ...new Set(answers.map((answer) => answer.data)),
@@ -159,17 +198,40 @@ function createPublicDnsResolver({
               : 0
           )
         );
-        cache.set(hostname, { addresses, expiresAt: now() + ttl * 1000 });
+        cache.set(hostname, {
+          addresses,
+          endpoint,
+          expiresAt: now() + ttl * 1000,
+        });
         while (cache.size > 24) cache.delete(cache.keys().next().value);
         return addresses;
       } catch (error) {
-        if ((signal && signal.aborted) || error.name === "AbortError")
-          throw abortError();
-        failure = error;
+        if (signal && signal.aborted) throw abortError();
+        failure = attempt.signal.aborted ? transportError() : error;
+      } finally {
+        clearTimeout(timeout);
+        if (signal) signal.removeEventListener("abort", abort);
       }
     }
     throw failure || transportError();
   };
+  resolveLyricHost.rejectAddresses = (hostname, failed) => {
+    const cached = cache.get(hostname);
+    if (!cached) return;
+    cached.addresses = cached.addresses.filter(
+      (address) => !failed.has(address)
+    );
+    if (!cached.addresses.length) cache.delete(hostname);
+  };
+  resolveLyricHost.rememberReachable = (hostname, address) => {
+    const cached = cache.get(hostname);
+    if (cached && cached.addresses.includes(address))
+      cached.addresses = [
+        address,
+        ...cached.addresses.filter((item) => item !== address),
+      ];
+  };
+  return resolveLyricHost;
 }
 
 function createDirectLyricFetch({
@@ -181,128 +243,150 @@ function createDirectLyricFetch({
     const validated = validateUrl(value);
     const url = new URL(validated.url);
     const { signal } = options;
-    const addresses = [
-      ...new Set(await withAbort(resolve(url.hostname, signal), signal)),
-    ]
-      .filter(isPublicAddress)
-      .slice(0, 2);
-    if (!addresses.length) throw transportError();
+    const context = {
+      excludeAddresses: new Set(),
+      attemptedEndpoints: new Set(),
+    };
     let failure;
-    for (const address of addresses) {
+    // Two address batches only, with one connection-triggered resolver fallback.
+    for (let batch = 0; batch < 2; batch += 1) {
       if (signal && signal.aborted) throw abortError();
-      let receivedResponse = false;
-      try {
-        return await new Promise((resolveResponse, reject) => {
-          let settled = false;
-          let req;
-          const cleanup = () => {
-            if (signal) signal.removeEventListener("abort", abort);
-          };
-          const finish = (error, response) => {
-            if (settled) return;
-            settled = true;
-            cleanup();
-            if (error) reject(error);
-            else resolveResponse(response);
-          };
-          const abort = () => {
-            finish(abortError());
-            if (req) req.destroy();
-          };
-          if (signal) signal.addEventListener("abort", abort, { once: true });
-          // Connect to the resolved public address directly. Never use a proxy
-          // agent, Electron session, cookies, caller headers or redirected URLs.
-          try {
-            req = request(
-              {
-                protocol: "https:",
-                hostname: address,
-                port: 443,
-                servername: url.hostname,
-                rejectUnauthorized: true,
-                checkServerIdentity: (_host, cert) =>
-                  tls.checkServerIdentity(url.hostname, cert),
-                method: "GET",
-                path: `${url.pathname}${url.search}`,
-                agent: false,
-                headers: {
-                  Host: url.hostname,
-                  Referer: validated.referer,
-                  Accept: "application/json,text/plain",
-                  "Accept-Encoding": "identity",
-                  "User-Agent": url.hostname.endsWith(".kugou.com")
-                    ? KUGOU_USER_AGENT
-                    : "Listen2/2.35.2 (desktop lyrics)",
+      const addresses = [
+        ...new Set(
+          await withAbort(resolve(url.hostname, signal, context), signal)
+        ),
+      ]
+        .filter(
+          (address) =>
+            isPublicAddress(address) && !context.excludeAddresses.has(address)
+        )
+        .slice(0, 2);
+      if (!addresses.length) throw failure || transportError();
+      for (const address of addresses) {
+        if (signal && signal.aborted) throw abortError();
+        let receivedResponse = false;
+        try {
+          return await new Promise((resolveResponse, reject) => {
+            let settled = false;
+            let req;
+            const cleanup = () => {
+              if (signal) signal.removeEventListener("abort", abort);
+            };
+            const finish = (error, response) => {
+              if (settled) return;
+              settled = true;
+              cleanup();
+              if (error) reject(error);
+              else resolveResponse(response);
+            };
+            const abort = () => {
+              finish(abortError());
+              if (req) req.destroy();
+            };
+            if (signal) signal.addEventListener("abort", abort, { once: true });
+            // Connect to the resolved public address directly. Never use a proxy
+            // agent, Electron session, cookies, caller headers or redirected URLs.
+            try {
+              req = request(
+                {
+                  protocol: "https:",
+                  hostname: address,
+                  port: 443,
+                  servername: url.hostname,
+                  rejectUnauthorized: true,
+                  checkServerIdentity: (_host, cert) =>
+                    tls.checkServerIdentity(url.hostname, cert),
+                  method: "GET",
+                  path: `${url.pathname}${url.search}`,
+                  agent: false,
+                  headers: {
+                    Host: url.hostname,
+                    Referer: validated.referer,
+                    Accept: "application/json,text/plain",
+                    "Accept-Encoding": "identity",
+                    "User-Agent": url.hostname.endsWith(".kugou.com")
+                      ? KUGOU_USER_AGENT
+                      : "Listen2/2.35.2 (desktop lyrics)",
+                  },
                 },
-              },
-              (response) => {
-                receivedResponse = true;
-                const status = response.statusCode;
-                if (!Number.isInteger(status) || status < 200 || status > 599) {
-                  finish(transportError("LYRIC_INVALID_RESPONSE"));
-                  response.destroy();
-                  return;
-                }
-                if (status >= 300) {
-                  finish(null, new Response(null, { status }));
-                  response.destroy();
-                  return;
-                }
-                const encoding = String(
-                  response.headers["content-encoding"] || "identity"
-                ).toLowerCase();
-                if (
-                  encoding !== "identity" ||
-                  Number(response.headers["content-length"]) > MAX_BODY_BYTES
-                ) {
-                  finish(transportError("LYRIC_INVALID_RESPONSE"));
-                  response.destroy();
-                  return;
-                }
-                const chunks = [];
-                let size = 0;
-                response.on("data", (chunk) => {
-                  size += chunk.length;
-                  if (size > MAX_BODY_BYTES) {
+                (response) => {
+                  receivedResponse = true;
+                  if (typeof resolve.rememberReachable === "function")
+                    resolve.rememberReachable(url.hostname, address);
+                  const status = response.statusCode;
+                  if (
+                    !Number.isInteger(status) ||
+                    status < 200 ||
+                    status > 599
+                  ) {
                     finish(transportError("LYRIC_INVALID_RESPONSE"));
                     response.destroy();
-                  } else chunks.push(Buffer.from(chunk));
-                });
-                response.once("end", () => {
-                  try {
-                    finish(
-                      null,
-                      new Response(
-                        status === 204 || status === 205
-                          ? null
-                          : Buffer.concat(chunks),
-                        { status }
-                      )
-                    );
-                  } catch (_) {
-                    finish(transportError("LYRIC_INVALID_RESPONSE"));
+                    return;
                   }
-                });
-                response.once("error", () => finish(transportError()));
-                response.once("aborted", () => finish(transportError()));
-              }
-            );
-            req.once("error", () => finish(transportError()));
-            if (signal && signal.aborted) abort();
-            else req.end();
-          } catch (error) {
-            finish(transportError());
-            if (req) req.destroy();
-          }
-        });
-      } catch (error) {
-        if (
-          receivedResponse ||
-          (signal && signal.aborted) ||
-          error.name === "AbortError"
-        )
-          throw error;
-        failure = error;
+                  if (status >= 300) {
+                    finish(null, new Response(null, { status }));
+                    response.destroy();
+                    return;
+                  }
+                  const encoding = String(
+                    response.headers["content-encoding"] || "identity"
+                  ).toLowerCase();
+                  if (
+                    encoding !== "identity" ||
+                    Number(response.headers["content-length"]) > MAX_BODY_BYTES
+                  ) {
+                    finish(transportError("LYRIC_INVALID_RESPONSE"));
+                    response.destroy();
+                    return;
+                  }
+                  const chunks = [];
+                  let size = 0;
+                  response.on("data", (chunk) => {
+                    size += chunk.length;
+                    if (size > MAX_BODY_BYTES) {
+                      finish(transportError("LYRIC_INVALID_RESPONSE"));
+                      response.destroy();
+                    } else chunks.push(Buffer.from(chunk));
+                  });
+                  response.once("end", () => {
+                    try {
+                      finish(
+                        null,
+                        new Response(
+                          status === 204 || status === 205
+                            ? null
+                            : Buffer.concat(chunks),
+                          { status }
+                        )
+                      );
+                    } catch (_) {
+                      finish(transportError("LYRIC_INVALID_RESPONSE"));
+                    }
+                  });
+                  response.once("error", () => finish(transportError()));
+                  response.once("aborted", () => finish(transportError()));
+                }
+              );
+              req.once("error", () => finish(transportError()));
+              if (signal && signal.aborted) abort();
+              else req.end();
+            } catch (error) {
+              finish(transportError());
+              if (req) req.destroy();
+            }
+          });
+        } catch (error) {
+          if (
+            receivedResponse ||
+            (signal && signal.aborted) ||
+            error.name === "AbortError"
+          )
+            throw error;
+          failure = error;
+          context.excludeAddresses.add(address);
+          if (typeof resolve.rejectAddresses === "function")
+            resolve.rejectAddresses(url.hostname, context.excludeAddresses);
+        }
       }
     }
     throw failure || transportError();

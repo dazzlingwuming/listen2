@@ -20,3 +20,13 @@ All five providers receive only confirmed manual title/artist values. Scoring re
 ## Limits and recovery
 
 Input/feedback optimization is complete and scoped CI passed. Current upstream reachability is degraded; live installed UI, authenticated NetEase verification/Cookie recovery and visual layout are not verified. No user settings, credentials, system proxy/DNS or running player changed. Revert the task commit for source rollback; the preview is optional and the installed application remains intact.
+
+## Final connection recovery follow-up
+
+The failed first live run exposed a recovery gap: valid DNS answers could lead to unreachable addresses without trying another fixed resolver. The existing direct transport now performs at most one connection-triggered resolver fallback (four unique public sockets, three fixed DoH calls maximum). Each DoH attempt/body has a two-second sub-budget within the original eight-second request deadline. Failed addresses leave cache, reachable addresses get preference, any HTTP response stops fallback, and late timed-out responses close their unused bodies. TLS, allow-lists, proxy/user settings and credential isolation are unchanged.
+
+Final scoped CI, 2026-10-12 15:01:24 CST, baseline a2aa1fa75b0d184197ef9ddc9cf87f29e123ee20: same six selected Node suites above passed **84/84**. Transport syntax and its two changed files' Prettier/diff checks passed. Earlier four frontend contracts remain applicable; their source did not change during this follow-up. No full gate was run.
+
+Live checks used the default product resolver order and actual structured `MediaService.searchLyrics` registry, with no injected addresses or altered responses. First title-only 折风渡夜: QQ5 + Kugou2 synchronized candidates in 6.8s. Small batch: 折风渡夜 title-only Kugou2 in 7.3s; title plus 泽国同学 Kugou2 in 4.5s; 青花瓷 Kugou2 + LRCLIB12 in 4.0s. After final late-response cleanup, a fresh 折风渡夜 process returned QQ2 + Kugou1 in 11.3s, including matching singer and non-credit lyric lines. Candidate count/latency still varies; QQ has intermittent invalid payloads, Kuwo remains unavailable, and anonymous NetEase returned invalid responses in this harness. This evidence demonstrates sample recovery, not every provider's stability or the credentialed Electron NetEase session.
+
+The **final** arm64 preview replaces the earlier UI-only preview. All 13 changed ASAR product assets match source bytes; final DMG SHA256 `9438b4255e50e4cd8f1d624f926dbe1ddf631166085596dde223dc1c3eabdfdb`. Installed UI/visual layout and authenticated session acceptance remain not verified. No app was launched/replaced and no merge/Release was performed. Source rollback: revert this task's input and connection-recovery commits; runtime settings need no rollback.

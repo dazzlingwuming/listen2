@@ -245,12 +245,11 @@ test("unsafe resolver addresses never connect", async () => {
   await assert.rejects(fixture.fetch(URL_VALUE));
   assert.equal(fixture.calls.length, 0);
 });
-test("connection failure retries at most a second public address without proxy fallback", async () => {
-  const fixture = directFixture([
-    { error: true },
-    { error: true },
-    { body: "never" },
-  ]);
+test("connection fallback never reuses already failed public addresses", async () => {
+  const fixture = directFixture(
+    [{ error: true }, { error: true }, { body: "never" }],
+    async () => PUBLIC_IPS.slice(0, 2)
+  );
   const result = await requestLyric(fixture.fetch, URL_VALUE);
   assert.deepEqual(result, { ok: false, status: "unavailable" });
   assert.deepEqual(
@@ -428,5 +427,214 @@ test("unsuccessful DNS HTTP responses close their bodies before bounded fallback
     },
   });
   assert.deepEqual(await resolve("lyrics.kugou.com"), PUBLIC_IPS.slice(0, 2));
+  assert.equal(calls, 2);
+});
+
+test("connection failure obtains fresh fixed-resolver addresses and caches the reachable route", async () => {
+  const dnsCalls = [];
+  const fixture = httpsFixture([
+    { error: true },
+    { error: true },
+    { body: "fallback" },
+    { body: "cached" },
+  ]);
+  const fetch = createDirectLyricFetch({
+    request: fixture.request,
+    dnsFetch: async (url) => {
+      dnsCalls.push(url);
+      return dnsResponse(
+        "lyrics.kugou.com",
+        dnsCalls.length === 1
+          ? PUBLIC_IPS.slice(0, 2)
+          : [PUBLIC_IPS[1], PUBLIC_IPS[2]]
+      );
+    },
+  });
+  assert.equal(await (await fetch(URL_VALUE)).text(), "fallback");
+  assert.deepEqual(
+    fixture.calls.map((call) => call.hostname),
+    PUBLIC_IPS
+  );
+  assert.equal(dnsCalls.length, 2);
+  assert.match(dnsCalls[1], /^https:\/\/dns\.google\/resolve/);
+  assert.equal(await (await fetch(URL_VALUE)).text(), "cached");
+  assert.equal(dnsCalls.length, 2);
+  assert.equal(fixture.calls[3].hostname, PUBLIC_IPS[2]);
+});
+
+test("resolver fallback is at most four unique public sockets and three fixed DNS calls", async () => {
+  const dnsCalls = [];
+  const fourth = "4.2.2.2";
+  const fixture = httpsFixture(
+    Array.from({ length: 5 }, () => ({ error: true }))
+  );
+  const fetch = createDirectLyricFetch({
+    request: fixture.request,
+    dnsFetch: async (url) => {
+      dnsCalls.push(url);
+      return dnsResponse(
+        "lyrics.kugou.com",
+        dnsCalls.length < 3
+          ? PUBLIC_IPS.slice(0, 2)
+          : ["127.0.0.1", PUBLIC_IPS[0], PUBLIC_IPS[2], fourth]
+      );
+    },
+  });
+  assert.equal((await requestLyric(fetch, URL_VALUE)).status, "unavailable");
+  assert.equal(dnsCalls.length, 3);
+  assert.equal(new Set(dnsCalls).size, 3);
+  assert.deepEqual(
+    fixture.calls.map((call) => call.hostname),
+    [...PUBLIC_IPS, fourth]
+  );
+});
+
+test("HTTP 500 ends the request without a second resolver or socket", async () => {
+  let dnsCalls = 0;
+  const fixture = httpsFixture([{ status: 500 }]);
+  const fetch = createDirectLyricFetch({
+    request: fixture.request,
+    dnsFetch: async () => {
+      dnsCalls++;
+      return dnsResponse();
+    },
+  });
+  assert.deepEqual(await requestLyric(fetch, URL_VALUE), {
+    ok: false,
+    status: "unavailable",
+    httpStatus: 500,
+  });
+  assert.equal(dnsCalls, 1);
+  assert.equal(fixture.calls.length, 1);
+});
+
+test("each DoH attempt has a two-second budget even when fetch ignores abort", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const signals = [];
+  const resolve = createPublicDnsResolver({
+    fetchImpl: (url, { signal }) => {
+      signals.push(signal);
+      return signals.length === 1
+        ? new Promise(() => {})
+        : Promise.resolve(dnsResponse());
+    },
+  });
+  const pending = resolve("lyrics.kugou.com");
+  t.mock.timers.tick(1999);
+  assert.equal(signals.length, 1);
+  t.mock.timers.tick(1);
+  for (let i = 0; i < 12; i++) await Promise.resolve();
+  assert.deepEqual(await pending, PUBLIC_IPS.slice(0, 2));
+  assert.equal(signals[0].aborted, true);
+  assert.equal(signals.length, 2);
+  assert.equal(signals[1].aborted, false);
+});
+
+test("DoH body reading shares its resolver budget and cancels stalled readers", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let cancelled = false;
+  let calls = 0;
+  const resolve = createPublicDnsResolver({
+    fetchImpl: async () => {
+      calls++;
+      return calls === 1
+        ? new Response(
+            new ReadableStream({
+              cancel() {
+                cancelled = true;
+              },
+            })
+          )
+        : dnsResponse();
+    },
+  });
+  const pending = resolve("lyrics.kugou.com");
+  for (let i = 0; i < 6; i++) await Promise.resolve();
+  t.mock.timers.tick(2000);
+  for (let i = 0; i < 12; i++) await Promise.resolve();
+  await pending;
+  assert.equal(cancelled, true);
+  assert.equal(calls, 2);
+});
+
+test("outer cancellation during connection-triggered DNS fallback prevents later resolvers", async () => {
+  const controller = new AbortController();
+  const signals = [];
+  const fixture = httpsFixture([{ error: true }, { error: true }]);
+  const fetch = createDirectLyricFetch({
+    request: fixture.request,
+    dnsFetch: (url, { signal }) => {
+      signals.push(signal);
+      return signals.length === 1
+        ? Promise.resolve(dnsResponse())
+        : new Promise(() => {});
+    },
+  });
+  const pending = requestLyric(fetch, URL_VALUE, controller.signal);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(signals.length, 2);
+  controller.abort();
+  assert.equal((await pending).status, "timeout");
+  assert.equal(signals[1].aborted, true);
+  assert.equal(signals.length, 2);
+  assert.equal(fixture.calls.length, 2);
+});
+
+test("connection fallback keeps the original total deadline for its replacement socket", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let calls = 0;
+  const fixture = httpsFixture([
+    { error: true },
+    { error: true },
+    { pending: true },
+  ]);
+  const fetch = createDirectLyricFetch({
+    request: fixture.request,
+    dnsFetch: async () => {
+      calls++;
+      return dnsResponse(
+        "lyrics.kugou.com",
+        calls === 1 ? PUBLIC_IPS.slice(0, 2) : [PUBLIC_IPS[2]]
+      );
+    },
+  });
+  const pending = requestLyric(fetch, URL_VALUE);
+  for (let i = 0; i < 40; i++) await Promise.resolve();
+  assert.equal(fixture.calls.length, 3);
+  t.mock.timers.tick(7999);
+  assert.notEqual(fixture.requests[2].destroyed, true);
+  t.mock.timers.tick(1);
+  assert.equal((await pending).status, "timeout");
+  assert.equal(fixture.requests[2].destroyed, true);
+});
+
+test("a DoH response arriving after its budget closes its unused body", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let deliverLate;
+  let cancelled = false;
+  let calls = 0;
+  const resolve = createPublicDnsResolver({
+    fetchImpl: () => {
+      calls++;
+      return calls === 1
+        ? new Promise((deliver) => {
+            deliverLate = deliver;
+          })
+        : Promise.resolve(dnsResponse());
+    },
+  });
+  const pending = resolve("lyrics.kugou.com");
+  t.mock.timers.tick(2000);
+  for (let i = 0; i < 16; i++) await Promise.resolve();
+  assert.deepEqual(await pending, PUBLIC_IPS.slice(0, 2));
+  deliverLate({
+    body: {
+      cancel: async () => {
+        cancelled = true;
+      },
+    },
+  });
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  assert.equal(cancelled, true);
   assert.equal(calls, 2);
 });
