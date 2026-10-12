@@ -407,6 +407,7 @@
  "_LYRIC_VERIFY_UNAVAILABLE": "Impossible d’ouvrir la vérification NetEase. Réessayez plus tard.",
  "_LYRIC_VERIFY_ALREADY_OPEN": "La fenêtre de vérification NetEase est déjà ouverte. Terminez les étapes, fermez-la, puis relancez la recherche.",
  "_LYRIC_VERIFY_EXPIRED": "Le lien de vérification est absent ou a expiré. Relancez la recherche avant de réessayer.",
+ "_LYRIC_SOURCE_DETAILS": "Détails des sources",
  "_LYRIC_SEARCH_TITLE_LABEL": "Titre (obligatoire)",
  "_LYRIC_SEARCH_ARTIST_LABEL": "Artiste (facultatif)",
  "_LYRIC_SEARCH_TITLE_PLACEHOLDER": "Saisissez le titre",

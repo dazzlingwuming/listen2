@@ -6627,24 +6627,88 @@
                                   ×
                                 </button>
                               </form>
-                              <p
-                                id="lyric-search-help"
-                                class="lyric-search-help"
-                              >
-                                {{_LYRIC_SEARCH_HELP}}
-                              </p>
-                              <p
-                                class="lyric-search-summary"
-                                ng-if="lyricSearchSubmitted"
-                                aria-live="polite"
-                              >
-                                {{_LYRIC_SEARCH_SUBMITTED}}:
-                                {{lyricSearchSubmitted.title}}<span
-                                  ng-if="lyricSearchSubmitted.artist"
+                              <div class="lyric-picker-tools">
+                                <div class="lyric-picker-context">
+                                  <p
+                                    id="lyric-search-help"
+                                    ng-show="!lyricSearchSubmitted"
+                                    class="lyric-search-help"
+                                  >
+                                    {{_LYRIC_SEARCH_HELP}}
+                                  </p>
+                                  <p
+                                    class="lyric-search-summary"
+                                    ng-if="lyricSearchSubmitted"
+                                    aria-live="polite"
+                                  >
+                                    {{_LYRIC_SEARCH_SUBMITTED}}:
+                                    {{lyricSearchSubmitted.title}}<span
+                                      ng-if="lyricSearchSubmitted.artist"
+                                    >
+                                      · {{lyricSearchSubmitted.artist}}</span
+                                    >
+                                  </p>
+                                </div>
+                                <details
+                                  class="lyric-source-details"
+                                  ng-if="lyricSearchSources.length"
                                 >
-                                  · {{lyricSearchSubmitted.artist}}</span
+                                  <summary>{{_LYRIC_SOURCE_DETAILS}}</summary>
+                                  <div
+                                    class="lyric-source-status"
+                                    aria-live="polite"
+                                  >
+                                    <span
+                                      ng-repeat="source in lyricSearchSources track by source.source"
+                                      ng-attr-data-state="{{source.status}}"
+                                      ><b>{{source.source}}</b>
+                                      {{lyricSourceStatus(source)}}<small
+                                        ng-if="source.count"
+                                      >
+                                        · {{source.count}}</small
+                                      ><button
+                                        type="button"
+                                        class="lyric-retry"
+                                        ng-if="canVerifyNeteaseLyrics(source)"
+                                        ng-click="verifyNeteaseLyrics(source)"
+                                        ng-disabled="neteaseLyricVerificationPending"
+                                        ng-attr-aria-busy="{{neteaseLyricVerificationPending}}"
+                                      >
+                                        {{neteaseLyricVerificationPending ?
+                                        _LYRIC_VERIFY_PENDING :
+                                        _LYRIC_VERIFY_ACTION}}
+                                      </button></span
+                                    >
+                                  </div>
+                                </details>
+                                <div
+                                  class="lyric-picker-notices"
+                                  ng-if="neteaseLyricVerificationPending || neteaseLyricVerificationError || lyricSearchPartial || (!lyricSearchPending && (lyricSearchState === 'error' || lyricSearchState === 'empty' || lyricSearchState === 'no-synced'))"
                                 >
-                              </p>
+                                  <p
+                                    class="lyric-partial-notice"
+                                    ng-if="neteaseLyricVerificationPending || neteaseLyricVerificationError"
+                                    role="status"
+                                  >
+                                    {{neteaseLyricVerificationError ||
+                                    _LYRIC_VERIFY_HINT}}
+                                  </p>
+                                  <p
+                                    class="lyric-partial-notice"
+                                    ng-if="lyricSearchPartial"
+                                  >
+                                    {{_LYRIC_SEARCH_PARTIAL}}
+                                  </p>
+                                  <button
+                                    class="lyric-retry"
+                                    type="button"
+                                    ng-if="!lyricSearchPending && (lyricSearchState === 'error' || lyricSearchState === 'empty' || lyricSearchState === 'no-synced' || lyricSearchPartial)"
+                                    ng-click="searchLyricCandidates(true)"
+                                  >
+                                    {{_LYRIC_SEARCH_RETRY}}
+                                  </button>
+                                </div>
+                              </div>
                               <div
                                 class="lyric-picker-status"
                                 ng-if="lyricSearchState === 'idle' || lyricSearchState === 'edited' || lyricSearchState === 'required'"
@@ -6655,55 +6719,6 @@
                                 === 'edited' ? _LYRIC_SEARCH_EDITED :
                                 _LYRIC_SEARCH_IDLE)}}
                               </div>
-                              <div
-                                class="lyric-source-status"
-                                ng-if="lyricSearchSources.length"
-                                aria-live="polite"
-                              >
-                                <span
-                                  ng-repeat="source in lyricSearchSources track by source.source"
-                                  ng-attr-data-state="{{source.status}}"
-                                  ><b>{{source.source}}</b>
-                                  {{lyricSourceStatus(source)}}<small
-                                    ng-if="source.count"
-                                  >
-                                    · {{source.count}}</small
-                                  ><button
-                                    type="button"
-                                    class="lyric-retry"
-                                    ng-if="canVerifyNeteaseLyrics(source)"
-                                    ng-click="verifyNeteaseLyrics(source)"
-                                    ng-disabled="neteaseLyricVerificationPending"
-                                    ng-attr-aria-busy="{{neteaseLyricVerificationPending}}"
-                                  >
-                                    {{neteaseLyricVerificationPending ?
-                                    _LYRIC_VERIFY_PENDING :
-                                    _LYRIC_VERIFY_ACTION}}
-                                  </button></span
-                                >
-                              </div>
-                              <p
-                                class="lyric-partial-notice"
-                                ng-if="neteaseLyricVerificationPending || neteaseLyricVerificationError"
-                                role="status"
-                              >
-                                {{neteaseLyricVerificationError ||
-                                _LYRIC_VERIFY_HINT}}
-                              </p>
-                              <p
-                                class="lyric-partial-notice"
-                                ng-if="lyricSearchPartial"
-                              >
-                                {{_LYRIC_SEARCH_PARTIAL}}
-                              </p>
-                              <button
-                                class="lyric-retry"
-                                type="button"
-                                ng-if="!lyricSearchPending && (lyricSearchState === 'error' || lyricSearchState === 'empty' || lyricSearchState === 'no-synced' || lyricSearchPartial)"
-                                ng-click="searchLyricCandidates(true)"
-                              >
-                                {{_LYRIC_SEARCH_RETRY}}
-                              </button>
                               <div
                                 class="lyric-picker-status is-loading"
                                 ng-if="lyricSearchState === 'loading'"
@@ -6773,14 +6788,18 @@
                                   </span>
                                 </button>
                               </div>
-                              <button
-                                type="button"
-                                class="lyric-picker-restore"
+                              <div
+                                class="lyric-picker-footer"
                                 ng-if="lyricSource === 'manual-selection' || lyricSource === 'lrclib-manual'"
-                                ng-click="restoreAutoLyric()"
                               >
-                                {{_LYRIC_RESTORE_AUTO}}
-                              </button>
+                                <button
+                                  type="button"
+                                  class="lyric-picker-restore"
+                                  ng-click="restoreAutoLyric()"
+                                >
+                                  {{_LYRIC_RESTORE_AUTO}}
+                                </button>
+                              </div>
                             </div>
                             <div
                               class="lyric"

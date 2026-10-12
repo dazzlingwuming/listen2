@@ -447,6 +447,7 @@
  "_LYRIC_VERIFY_UNAVAILABLE": "无法打开网易云验证，请稍后重试。",
  "_LYRIC_VERIFY_ALREADY_OPEN": "网易云验证窗口已打开，请完成操作并关闭窗口后重新搜索。",
  "_LYRIC_VERIFY_EXPIRED": "验证入口已失效或尚未获取，请重新搜索后再试。",
+ "_LYRIC_SOURCE_DETAILS": "来源详情",
  "_LYRIC_SEARCH_TITLE_LABEL": "歌名（必填）",
  "_LYRIC_SEARCH_ARTIST_LABEL": "歌手（选填）",
  "_LYRIC_SEARCH_TITLE_PLACEHOLDER": "输入要查找的歌名",

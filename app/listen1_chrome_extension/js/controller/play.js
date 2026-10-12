@@ -2805,7 +2805,7 @@ angular.module('listenone').controller('PlayController', [
       }
       const focusable = Array.from(
         panel.querySelectorAll(
-          'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          'button:not([disabled]), input:not([disabled]), summary, [tabindex]:not([tabindex="-1"])'
         )
       ).filter(
         (element) =>
@@ -2834,6 +2834,8 @@ angular.module('listenone').controller('PlayController', [
     });
 
     $scope.editLyricSearch = () => {
+      const sourceDetails = document.querySelector('.lyric-source-details');
+      if (sourceDetails) sourceDetails.open = false;
       lyricSearchToken += 1;
       if (activeLyricSearch) activeLyricSearch.cancel();
       activeLyricSearch = null;
@@ -2865,6 +2867,8 @@ angular.module('listenone').controller('PlayController', [
         return;
       if (activeLyricSearch) activeLyricSearch.cancel();
       activeLyricSearchKey = key;
+      const sourceDetails = document.querySelector('.lyric-source-details');
+      if (sourceDetails) sourceDetails.open = false;
       resetNeteaseLyricVerification();
       lyricSearchToken += 1;
       const searchToken = lyricSearchToken;
