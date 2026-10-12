@@ -22,7 +22,6 @@
     "test:machine-translation": "node app/test/machineTranslationDeepSeek.test.js",
     "test:listening-history": "node app/test/listeningHistoryStore.test.js",
     "test:lyrics-search": "node --test app/test/lyricSearch.test.js",
-    "test:macos-signing": "node --test app/test/macosSigning.test.js",
     "dist:win:unsigned": "electron-builder --win nsis 7z --x64 --config.win.signAndEditExecutable=false"
   },
   "repository": {
@@ -73,8 +72,7 @@
           ]
         }
       ],
-      "category": "public.app-category.music",
-      "sign": "build/macosSign.js"
+      "category": "public.app-category.music"
     },
     "linux": {
       "target": [

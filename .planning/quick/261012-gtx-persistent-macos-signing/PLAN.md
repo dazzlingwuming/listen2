@@ -1,5 +1,5 @@
 ---
-status: approved
+status: cancelled
 ---
 # Fixed local macOS signing identity
 
@@ -13,3 +13,5 @@ Ownership: build/macosSign.js, build/setupMacSigning.js, app/test/macosSigning.t
 4. Run signing-related tests, syntax/format checks, document coverage and rollback, then hand off. Real Safe Storage authorization and cross-update app UAT remain unverified.
 
 2026-10-12 recovery: trust is now accepted. Controlled test proved codesign requires the dedicated keychain temporarily present in the current-user search list even with --keychain. Add a narrowly scoped save/append/finally-restore helper for setup and signing, serialize asynchronous signing scopes, test restoration on success/failure, and accept designated-requirement output from both tool streams. Do not permanently add the keychain or change login contents/trust. User has renewed generation/Release authorization; parent performs builds only after stable-identity verification.
+
+Superseded by explicit user request: no new fixed certificate flow. Restore v2.35.1 mac packaging and retain lyric fixes. Do not publish the fixed-certificate sample.
