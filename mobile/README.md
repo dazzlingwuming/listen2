@@ -1,15 +1,19 @@
 # Listen2 Mobile
 
-`mobile/` is the canonical Android application. It follows the original
+> **Historical implementation:** `mobile/` is not the current Android route or
+> release entry. Current development reuses the shared Listen1 frontend with
+> the existing [`android/` WebView shell](../android/README.md). The React Native
+> code and evidence below are retained as historical records.
+
+`mobile/` was the canonical Android application on the superseded route. It follows the original
 `listen1_mobile` product shape—a standalone React Native app with Redux-backed
 state, native background audio and mobile navigation—while using a current
 React Native/Android toolchain.
 
-It does not load the desktop application in a WebView. The older `android/`
-project remains in this repository only as migration evidence until the new
-application has passed integrated emulator acceptance.
+It does not load the desktop application in a WebView. This description records
+the former route and does not define the current Android build or acceptance path.
 
-## Current scope
+## Historical implementation scope
 
 - Mobile tabs for My Music, Discover, Search and Settings.
 - Real Discover content from bounded anonymous provider routes: NetEase featured
@@ -72,7 +76,7 @@ NetEase's public playlist detail sample returned 10 tracks while its summary
 reported 35; this is recorded as an upstream/public-endpoint limitation, not
 as proof that the full playlist was retrieved.
 
-## Development
+## Historical development commands
 
 Requirements:
 
@@ -102,7 +106,7 @@ npm run mobile:test
 npm --prefix mobile run lint -- --quiet
 ```
 
-### Current source verification
+### Historical source and device verification
 
 - TypeScript, Jest, ESLint, Kotlin/JVM contracts and release-like Android builds
   have been exercised on the current JDK 17 toolchain.
@@ -129,7 +133,7 @@ npm --prefix mobile run lint -- --quiet
 APK assembly is performed at integrated acceptance boundaries rather than
 after every source-level change.
 
-## Packaging status
+## Historical packaging status
 
 A minified, non-debuggable release-like APK is assembled with the development
 signer for emulator acceptance. It is not a production-signed release artifact.

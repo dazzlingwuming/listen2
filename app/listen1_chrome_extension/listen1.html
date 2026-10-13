@@ -4574,7 +4574,8 @@
                               id="mobile-provider-query"
                               type="search"
                               maxlength="256"
-                              ng-model="keywords"
+                              ng-model="searchInput.keyword"
+                              ng-change="setSearchKeyword(searchInput.keyword)"
                               ng-keydown="enterEvent($event)"
                               placeholder="搜索歌曲、歌手或歌单"
                               aria-label="搜索歌曲、歌手或歌单"
@@ -8966,7 +8967,7 @@
                           class="android-player-state"
                           ng-if="androidPlaybackSnapshot.state === 'error'"
                         >
-                          <strong>当前歌曲暂时无法播放</strong>
+                          <strong>{{androidPlaybackStateCopy()}}</strong>
                           <span>请重试，或选择其他歌曲。</span>
                           <button
                             type="button"

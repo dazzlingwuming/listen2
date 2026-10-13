@@ -25,7 +25,7 @@ See: `.planning/PROJECT.md`
 
 **Core value:** Android users reliably complete an authorized end-to-end music journey from search through playback, lyrics, and later control.
 
-**Current focus:** Standalone React Native mobile parity; offline, Discover, native Bilibili account/audio, consented DeepSeek, and Bilibili exact-part lyric selection implemented; QQ/Kuwo playback, advanced media surfaces, and integrated runtime acceptance pending
+**Current focus:** Reuse the shared Listen1 frontend with the existing `android/` WebView shell and narrow native bridge. `mobile/` is retained historical React Native work, not the active route.
 
 ## Current Position
 
@@ -78,6 +78,7 @@ Progress: Implementation and device evidence tracked separately; no parity perce
 - The latest desktop `main` capability set remains the v1 promise. A desktop-only form is rendered as Android-equivalent UX or reported as unavailable with a real reason; it is not silently dropped.
 - Current bridge, Media3, Room, SAF, cache, Bilibili/NetEase and lyric code are foundation facts. They are neither a five-source product claim nor final E2E acceptance.
 - Fast iteration uses scoped JavaScript/JVM/contract tests after coherent work. Do not assemble an APK merely to inspect each small change. Phase 8 performs the integrated API 35 emulator, performance, and release-like validation.
+- 2026-10-13 route adjustment: current Android work uses the shared Listen1 frontend plus the existing `android/` shell; retain `mobile/` React Native code and evidence as history, not as the current candidate. This supersedes earlier route decisions without rewriting completed Phase history.
 - [Phase ?]: Android primary provider order is netease, kugou, kuwo, qq, bilibili; Migu and Taihe remain registry-only unavailable.
 - [Phase ?]: Missing semantic routes terminate OPERATION_UNAVAILABLE without provider, bridge, MediaService, or transport fallback.
 - [Phase ?]: Android search selects NetEase first and projects all five primary sources from MobileProviderRegistry.

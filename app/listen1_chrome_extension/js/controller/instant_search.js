@@ -86,6 +86,11 @@ angular.module('listenone').controller('InstantSearchController', [
       : sourceList.filter((item) => item.searchable !== false);
     $scope.tab = isAndroidTyped() ? 'netease' : sourceList[0].name;
     $scope.keywords = '';
+    // ng-if creates a child scope; an object keeps the phone input shared.
+    $scope.searchInput = { keyword: '' };
+    $scope.setSearchKeyword = (keyword) => {
+      $scope.keywords = keyword;
+    };
     $scope.loading = false;
     $scope.curpagelog = { ...$scope.originpagelog };
     $scope.totalpagelog = { ...$scope.originpagelog };
@@ -651,7 +656,9 @@ angular.module('listenone').controller('InstantSearchController', [
       return legacySearch();
     };
     $scope.$watch('keywords', (next, previous) => {
-      if (!isAndroidTyped() || next === previous) return;
+      if (!isAndroidTyped()) return;
+      $scope.searchInput.keyword = next;
+      if (next === previous) return;
       const query = String(next || '').trim();
       if (query === $scope.providerSearch.query) return;
       $scope.cancelProviderSearch();

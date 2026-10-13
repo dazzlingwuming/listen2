@@ -3,8 +3,12 @@
 Android 端复用 `app/listen1_chrome_extension/` 的共享播放器界面，由一个
 窄化的 native bridge 补足手机生命周期、受控网络、数据持久化和系统播放能力。
 它不把 Electron 主进程搬进 WebView，也不把任意 URL、请求头、Cookie、文件路径
-或凭据交给页面。以下范围以当前源码为准；发布或宣布可用前仍必须通过 API 35
-模拟器验收。
+或凭据交给页面。以下能力清单描述当前源码范围，不等于端到端验收。发布或宣布可用前
+仍必须通过 API 35 模拟器验收。
+
+## 验证记录
+
+**2026-10-13（API 35 共享 Android 壳）**：真实输入下 Bilibili 音乐搜索返回 18 条结果，选择首结果及分 P 均成功，播放清单已被 mapper 解析。指定的 5 类 JVM 测试共 28 项通过，service 顺序执行后的最后 4 项复验通过；前端 3 项定向检查、语法/差异检查及 debug APK 构建通过。对同一曲目执行一次播放流程时，Media3 自动产生 2 次网络错误，均为 `SSLHandshakeException` 后接 EOF，未收到 HTTP 状态；position 保持 0，最终稳定为 `ERROR / media-network-unavailable / retryable=true`，曲名和队列项保留。已确认的仅是本 API 35 AVD 到 CDN 的 TLS 握手中断，不能据此归因于普遍环境问题。持续播放未成功；后台行为、暂停后的声音表现未验证。debug APK 使用调试签名，不是正式 release 制品。后续需一次真机或独立网络对照；当前无需用户提供登录 Key。
 
 ## 当前能力
 
@@ -80,7 +84,7 @@ WebMessage listener。当前页面使用版本化 typed RPC（provider、歌词�
 cd android
 gradle --no-daemon :app:testDebugUnitTest
 
-# shared mobile UI、typed provider/RPC contract tests
+# shared Listen1 frontend、typed provider/RPC contract tests
 cd ../app/listen1_chrome_extension
 npm test
 ```

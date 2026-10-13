@@ -20,11 +20,14 @@ function controllerScope(overrides = {}) {
   let definition;
   const events = {};
   const timeouts = [];
+  const watches = [];
   const scope = {
     $on(name, handler) {
       events[name] = handler;
     },
-    $watch() {},
+    $watch(expression, callback) {
+      watches.push({ expression, callback, previous: undefined });
+    },
     $broadcast() {},
   };
   const sandbox = {
@@ -82,7 +85,25 @@ function controllerScope(overrides = {}) {
   };
   timeout.cancel = () => {};
   definition[definition.length - 1](scope, timeout, { $broadcast() {} });
-  return { scope, events, timeouts };
+  const digest = () => {
+    for (let pass = 0; pass < 10; pass += 1) {
+      let dirty = false;
+      watches.forEach((watch) => {
+        const next = watch.expression
+          .split('.')
+          .reduce((value, key) => value && value[key], scope);
+        if (next !== watch.previous) {
+          const previous = watch.previous;
+          watch.previous = next;
+          watch.callback(next, previous);
+          dirty = true;
+        }
+      });
+      if (!dirty) return;
+    }
+    assert.fail('search model watchers did not settle');
+  };
+  return { scope, events, timeouts, digest };
 }
 
 function scriptIndex(filename) {
@@ -225,6 +246,87 @@ async function run() {
   controlled.scope.cancelProviderSearch();
   await Promise.resolve();
   assert.strictEqual(controlled.scope.providerSearch.state, 'cancelled');
+
+  const requests = [];
+  const nested = controllerScope({
+    MediaService: {
+      getAndroidProviderCapabilities: () => matrix,
+      search(sourceId, options) {
+        requests.push({ sourceId, ...options });
+        return {
+          success() {
+            return this;
+          },
+          error() {
+            return this;
+          },
+          cancel() {},
+        };
+      },
+    },
+  });
+  // ng-if creates a prototypically inherited child scope. Run the real
+  // template expressions against that child and the actual controller above.
+  const child = Object.create(nested.scope);
+  const input = html.match(/<input\s+id="mobile-provider-query"[\s\S]*?\/>/)[0];
+  const model = input.match(/ng-model="([^"]+)"/)[1];
+  const submit = html.match(
+    /<button[^>]*ng-click="([^"]+)"[^>]*aria-label="搜索当前音乐来源"/
+  )[1];
+  child.typedValue = 'music';
+  vm.runInNewContext(`${model} = typedValue`, child);
+  const change = input.match(/ng-change="([^"]+)"/)[1];
+  vm.runInNewContext(change, child);
+  nested.digest();
+  assert.strictEqual(requests.length, 0, 'typing must not submit a search');
+  assert.strictEqual(nested.scope.keywords, 'music');
+  vm.runInNewContext(submit, child);
+  assert.strictEqual(
+    requests.length,
+    1,
+    'ng-if input must reach the search controller'
+  );
+  assert.strictEqual(requests[0].keywords, 'music');
+  nested.scope.nextPage();
+  assert.strictEqual(requests[1].keywords, 'music');
+  assert.strictEqual(requests[1].curpage, 2);
+  nested.scope.previousPage();
+  assert.strictEqual(requests[2].keywords, 'music');
+  assert.strictEqual(requests[2].curpage, 1);
+  nested.scope.clearProviderSearch();
+  nested.digest();
+  assert.strictEqual(vm.runInNewContext(model, child), '');
+  nested.scope.keywords = 'header query';
+  nested.digest();
+  assert.strictEqual(vm.runInNewContext(model, child), 'header query');
+  assert.strictEqual(requests.length, 3, 'clear/header changes must not search');
+  child.typedValue = 'keyboard query';
+  vm.runInNewContext(`${model} = typedValue`, child);
+  vm.runInNewContext(change, child);
+  nested.digest();
+  child.$event = { which: 13, keyCode: 13 };
+  vm.runInNewContext(input.match(/ng-keydown="([^"]+)"/)[1], child);
+  assert.strictEqual(requests[3].keywords, 'keyboard query');
+  assert.strictEqual(requests.length, 4, 'Enter submits exactly once');
+
+  const desktopRequests = [];
+  const desktop = controllerScope({
+    window: {},
+    MediaService: {
+      search(sourceId, options) {
+        desktopRequests.push({ sourceId, ...options });
+        return { success() {} };
+      },
+    },
+  });
+  desktop.scope.keywords = 'desktop music';
+  desktop.scope.enterEvent({ which: 13 });
+  desktop.scope.nextPage();
+  assert.strictEqual(desktopRequests.length, 2);
+  assert.strictEqual(desktopRequests[0].keywords, 'desktop music');
+  assert.strictEqual(desktopRequests[0].curpage, 1);
+  assert.strictEqual(desktopRequests[1].keywords, 'desktop music');
+  assert.strictEqual(desktopRequests[1].curpage, 2);
   console.log('Android mobile shell registry manifest contract passed');
 }
 

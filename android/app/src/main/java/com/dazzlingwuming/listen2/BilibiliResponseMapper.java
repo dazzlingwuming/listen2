@@ -71,8 +71,14 @@ final class BilibiliResponseMapper {
             if (selectedCid <= 0) return MappingResult.error("INVALID_PART");
 
             JSONObject data = providerData(body);
-            if (data == null || !request.bvid.equals(data.opt("bvid"))
-                    || positiveLong(data.opt("cid")) != selectedCid) {
+            Object manifestCid = data == null ? null : data.opt("cid");
+            // The fixed playurl request is bound to the verified detail/part above.
+            // Some replies omit identity echoes; explicit contradictions still fail.
+            if (data == null
+                    || (data.has("bvid") && !request.bvid.equals(data.opt("bvid")))
+                    || (data.has("cid") && (!(manifestCid instanceof Number)
+                            || ((Number) manifestCid).longValue() != selectedCid
+                            || ((Number) manifestCid).doubleValue() != selectedCid))) {
                 return MappingResult.error("IDENTITY_MISMATCH");
             }
             long durationMillis = positiveLong(data.opt("timelength"));
@@ -89,10 +95,17 @@ final class BilibiliResponseMapper {
             String mime = plain(audio.opt("mimeType"));
             String codec = plain(audio.opt("codecs"));
             if (!isApprovedAudio(mime, codec)) return MappingResult.error("UNSUPPORTED_CODEC");
-            JSONArray candidates = projectCandidates(audio);
-            if (candidates == null || candidates.length() == 0) return MappingResult.error("INVALID_STREAM");
+            JSONArray structuralCandidates = projectCandidates(audio);
+            if (structuralCandidates == null || structuralCandidates.length() == 0)
+                return MappingResult.error("INVALID_STREAM");
+            JSONArray candidates = new JSONArray();
+            long now = currentEpochSeconds();
+            for (int index = 0; index < structuralCandidates.length(); index += 1) {
+                String candidate = structuralCandidates.getString(index);
+                if (expiryOf(candidate) > now) candidates.put(candidate);
+            }
+            if (candidates.length() == 0) return MappingResult.error("EXPIRED_STREAM");
             long expiry = expiryOf(candidates.getString(0));
-            if (expiry <= currentEpochSeconds()) return MappingResult.error("EXPIRED_STREAM");
 
             JSONObject result = new JSONObject();
             result.put("bvid", request.bvid);
@@ -169,7 +182,8 @@ final class BilibiliResponseMapper {
             throws JSONException {
         if (!(raw instanceof String)) return;
         String candidate = (String) raw;
-        if (!isSafeMediaCandidate(candidate)) throw new JSONException("unsafe candidate");
+        // An unusable backup must not discard another independently safe candidate.
+        if (!isSafeMediaCandidate(candidate)) return;
         if (seen.add(candidate)) candidates.put(candidate);
     }
 

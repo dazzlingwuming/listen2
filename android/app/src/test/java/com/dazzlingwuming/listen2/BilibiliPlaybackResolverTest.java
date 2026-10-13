@@ -11,6 +11,9 @@ import org.junit.Test;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 public final class BilibiliPlaybackResolverTest {
     private static final String BVID = "BV1xx411c7mD";
@@ -43,7 +46,7 @@ public final class BilibiliPlaybackResolverTest {
         PlaybackMediaResolver.Resolution result = media.resolveCurrent(prepared.getOccurrenceId(), 2L);
 
         assertFalse(result.isReady());
-        assertEquals("bilibili-manifest-unavailable", result.getStatus());
+        assertEquals("bilibili-detail-cid-mismatch", result.getStatus());
         assertFalse(result.toSnapshotFields().toString().contains("bilivideo"));
     }
 
@@ -61,6 +64,80 @@ public final class BilibiliPlaybackResolverTest {
         assertEquals(1, candidates.size());
         assertEquals("https://www.bilibili.com/audio/music-service-c/web/url?sid=9001",
                 http.requests.get(0).toASCIIString());
+    }
+
+    @Test
+    public void preservesBoundedHttpProviderAndMappingStagesAndResetsOnSuccess() throws Exception {
+        BilibiliPlaybackResolver detailRejected = new BilibiliPlaybackResolver(
+                uri -> new BilibiliPlaybackResolver.Response(412, null));
+        assertTrue(detailRejected.resolve(descriptor(22L)).isEmpty());
+        assertEquals("bilibili-detail-http-412", detailRejected.unavailableStatus());
+        BilibiliPlaybackResolver malformed = new BilibiliPlaybackResolver(
+                new FakeHttp("not-json", manifest(22L)));
+        malformed.resolve(descriptor(22L));
+        assertEquals("bilibili-detail-map-identity-mismatch", malformed.unavailableStatus());
+        BilibiliPlaybackResolver mismatched = new BilibiliPlaybackResolver(
+                new FakeHttp(detail(), manifest(99L)));
+        mismatched.resolve(descriptor(22L));
+        assertEquals("bilibili-manifest-map-identity-mismatch", mismatched.unavailableStatus());
+        BilibiliPlaybackResolver providerRejected = new BilibiliPlaybackResolver(
+                new FakeHttp(detail(), "{\"code\":-404,\"message\":\"private response\"}"));
+        providerRejected.resolve(descriptor(22L));
+        assertEquals("bilibili-manifest-provider--404", providerRejected.unavailableStatus());
+        final String detailBody = detail();
+        final String manifestBody = manifest(22L);
+        final boolean[] failing = { true };
+        BilibiliPlaybackResolver reset = new BilibiliPlaybackResolver(uri ->
+                new BilibiliPlaybackResolver.Response(failing[0] ? 503 : 200,
+                        AndroidRpcContract.BILIBILI_VIDEO_DETAIL_PATH.equals(uri.getPath())
+                                ? detailBody : manifestBody));
+        reset.resolve(descriptor(22L));
+        assertEquals("bilibili-detail-http-503", reset.unavailableStatus());
+        failing[0] = false;
+        assertEquals(2, reset.resolve(descriptor(22L)).size());
+        assertEquals("ready", reset.unavailableStatus());
+        reset.resolve(null);
+        assertEquals("bilibili-invalid-selection", reset.unavailableStatus());
+        BilibiliPlaybackResolver invalidHttp = new BilibiliPlaybackResolver(
+                uri -> new BilibiliPlaybackResolver.Response(Integer.MAX_VALUE, null));
+        invalidHttp.resolve(descriptor(22L));
+        assertEquals("bilibili-detail-http-0", invalidHttp.unavailableStatus());
+    }
+
+    @Test
+    public void sharedProviderDoesNotMixConcurrentResolutionDiagnostics() throws Exception {
+        BilibiliPlaybackResolver shared = new BilibiliPlaybackResolver(uri ->
+                new BilibiliPlaybackResolver.Response(
+                        "first-resolution".equals(Thread.currentThread().getName()) ? 412 : 503, null));
+        CountDownLatch resolved = new CountDownLatch(2);
+        AtomicReference<String> first = new AtomicReference<>();
+        AtomicReference<String> second = new AtomicReference<>();
+        Thread a = new Thread(() -> {
+            shared.resolve(descriptor(22L));
+            resolved.countDown();
+            try {
+                resolved.await(2L, TimeUnit.SECONDS);
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+            }
+            first.set(shared.unavailableStatus());
+        }, "first-resolution");
+        Thread b = new Thread(() -> {
+            shared.resolve(descriptor(22L));
+            resolved.countDown();
+            try {
+                resolved.await(2L, TimeUnit.SECONDS);
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+            }
+            second.set(shared.unavailableStatus());
+        }, "second-resolution");
+        a.start();
+        b.start();
+        a.join(2_000L);
+        b.join(2_000L);
+        assertEquals("bilibili-detail-http-412", first.get());
+        assertEquals("bilibili-detail-http-503", second.get());
     }
 
     private static PlaybackMediaResolver.Descriptor descriptor(long cid) {

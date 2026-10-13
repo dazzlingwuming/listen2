@@ -139,38 +139,16 @@ Listen2 是 [Listen1](https://github.com/listen1/listen1) 的社区增强版本�
 | macOS Intel / Apple Silicon | 已构建并验证 | 支持 x64、arm64 与 Universal DMG；当前未签名或公证                    |
 | Windows ia32 / arm64        | 保留构建能力 | 尚未在对应设备上完成系统性回归                                        |
 | Linux                       | 保留构建能力 | 不是当前版本的主要测试平台                                            |
-| Android API 24+             | 开发中       | 采用独立 React Native 手机端路线；第三批本地音乐能力已接入，尚未生成 APK |
+| Android                     | 开发中       | 当前复用共享 Listen1 前端与 `android/` WebView 壳；验收记录见 [`android/README.md`](android/README.md) |
 
 ## Android 移动端
 
-Android 端正在改为与原作者 `listen1_mobile` 同类的独立 React Native 应用，
-不再把桌面端页面放进 WebView。新入口位于 [`mobile/`](mobile/)，当前已包含：
+当前 Android 路线是复用 `app/listen1_chrome_extension/` 的 Listen1 前端，并由现有
+[`android/`](android/) WebView 壳和受限 native bridge 承担 Android 宿主能力。`mobile/`
+保留此前独立 React Native 实现与验证记录，属于历史路线，不是当前入口或发布候选。
 
-原作者 `listen1_mobile` 没有本地音频或离线缓存能力，`local` 仅用于 JSON 备份；本批
-在此基础上补充了 Android 本地音频的受控能力。
-
-- 手机端导航、搜索、播放详情、迷你播放器、队列、收藏和最近播放。
-- `react-native-track-player` 原生后台播放、系统媒体通知、audio focus 和播放恢复。
-- 网易云歌曲与远程歌单搜索、歌单详情和播放；公开歌单详情样本可能只返回 10 首，而摘要显示 35 首，完整性仍受公开接口限制。
-- 歌词 API 已接通网易云、QQ、酷狗和酷我适配器；LRC 时间轴支持原文/译文按时间配对、当前行高亮和自动滚动，普通无时间戳文本仍只展示、不参与高亮。酷狗/酷我实时歌词响应尚未在当前候选设备上验收。
-- 版本化 JSON 备份，包含收藏、自建歌单和当前队列；支持分享导出、粘贴导入，默认合并，覆盖导入需要二次确认，并限制为安全的元数据字段。
-- 酷狗、酷我、QQ 与哔哩哔哩的原生播放解析适配已接入源码。QQ/酷我当前候选设备上的实时播放与真实上游授权尚未验收；酷我 Cookie/Secret 在原生适配层内部处理，不向 JS 暴露，也不绕过平台权限。
-- 播放器队列按事务语义处理：provider 解析和原生加载成功后才切换并消费待播项，失败时保留队列。
-- 固定、受控的 provider 网络契约；不接受页面传入的任意 URL、header、Cookie 或 token。
-- 本地音乐使用 `@react-native-documents/picker` 12.0.2 通过 Android SAF 的 `open`、audio、multi、long-term 模式导入；不申请媒体库权限，不复制或删除用户原文件，只持久化受授权保护的 `content://` URI。
-- 本地曲目可持久化、由 TrackPlayer 播放并进入队列/历史；移除时清理应用内引用并释放 URI 授权，失效访问标记为 `needs-repair`。本地曲目不请求网络歌词，也不进入可携 JSON 备份。
-- 发现页已接入真实且有界的网易热门歌单/榜单和酷狗榜单；详情数据不完整时明确标记并禁用整单播放，完整列表只有在第一首原生加载成功后才进入播放器，失败会尝试恢复原播放状态。
-- 网易与酷狗支持用户主动离线下载：媒体存入应用私有目录，经大小限制、SHA-256 校验和原子发布后才可播放；设置页可查看进度、取消、重试、移除和清空。哔哩哔哩另有精确分 P/CID 缓存路径，仅接受当前 native 原生账号授权；匿名下载会被拒绝。哔哩哔哩下载、重启恢复和离线播放尚未在当前候选设备上验收。
-
-旧 [`android/`](android/) WebView 工程暂时保留为迁移参考，不是新版发布入口。
-新 canonical 入口是 [`mobile/`](mobile/)；当前状态仍是开发中，还不能宣称与桌面端功能完全等价。
-
-当前 Android 验证已覆盖 TypeScript/Jest/ESLint、Kotlin/JVM contract、release-like 构建和 API 35
-模拟器。五音源可见搜索矩阵中，酷狗、酷我、QQ 和 Bilibili 均返回相关结果；网易云当前
-对匿名搜索返回 `-462` 验证挑战，应用会明确显示上游限制，不伪装成空结果。Bilibili
-音频已在模拟器中进入 MediaSession `PLAYING` 并取得非零缓冲进度；真实旧 APK 覆盖升级也
-验证了音乐库迁移及冲突数据保留。MV 候选策略修复已通过 JVM 测试，但最新的真实画面/进度
-回归被 Bilibili 后续的匿名 HTTP 412 安全策略拦截，因此该项仍标记为 `not verified`。QQ/酷我原生播放以及酷狗/酷我歌词的实时上游结果目前只有源码接入，尚未在当前候选设备完成验证。
+Android 环境、构建入口和当前验收状态见 [`android/README.md`](android/README.md)。
+目前仍处于开发阶段，不代表 provider 播放、后台播放或桌面功能等价。
 
 ## 使用提示
 
@@ -185,7 +163,7 @@ Android 端正在改为与原作者 `listen1_mobile` 同类的独立 React Nativ
 3. 在翻译确认面板查看说明，主动确认后才会发起翻译。
 4. 如不再使用，可在设置中清除密钥。
 
-机器翻译由 Electron 桌面端和 React Native Android 端提供；Android 端需自行配置 DeepSeek API 密钥，并在每次翻译前明确同意。
+机器翻译由 Electron 桌面端提供；Android 当前路线的翻译能力尚未验收。
 
 ## 本地开发与构建
 
@@ -194,7 +172,7 @@ Android 端正在改为与原作者 `listen1_mobile` 同类的独立 React Nativ
 - Node.js 18 或更高版本
 - npm
 - Windows、macOS 或 Linux 桌面系统
-- 如需 Android：Node.js 22.13+ 或 24.3+、JDK 17、Android SDK Platform 37 和 Build Tools 37.0.0
+- 如需 Android：JDK 17、Android SDK Platform 35、Build Tools 35.0.0 和外部 Gradle 8.10.2
 
 ### 运行开发版
 
@@ -207,11 +185,10 @@ npm run start
 
 前端代码已经位于 `app/listen1_chrome_extension`，不需要额外初始化 Git 子模块。
 
-### Android 移动端构建与验证
+### Android 构建与验证
 
-快速迭代使用 `npm run mobile:typecheck`、`npm run mobile:test` 和 mobile lint，不为每个小功能
-反复组装 APK。整合功能完成后，再启动 Metro 并使用 `npm run mobile:android` 在
-模拟器上验收搜索、播放、后台通知、歌词和队列。详细说明见 [`mobile/README.md`](mobile/README.md)。
+当前 Android 使用 `android/` 宿主加载共享 Listen1 前端。环境、构建和模拟器验收说明见
+[`android/README.md`](android/README.md)。
 
 ### 构建安装包
 
@@ -252,8 +229,8 @@ listen2/
 │  ├─ machineTranslation.js     # DeepSeek 歌词翻译与结果校验
 │  ├─ floatingWindow.html       # 桌面歌词窗口
 │  └─ listen1_chrome_extension/ # 共用播放器前端与音乐平台适配
-├─ mobile/                        # 新版 React Native Android 应用（发布入口）
-├─ android/                       # 旧 WebView 迁移参考（暂保留）
+├─ android/                       # 当前 Android WebView 壳与 native bridge
+├─ mobile/                        # 历史 React Native 实现与验证记录（非当前路线）
 ├─ build/                        # 应用图标与打包资源
 ├─ docs/                         # 设计、验证与实现文档
 ├─ 图片/                         # README 界面预览
@@ -268,13 +245,7 @@ listen2/
 - 登录只使用账号实际拥有的访问权限，不保证获得固定音质或画质。
 - MV 可用性受视频、地区、CDN 和设备解码能力影响；不可用时请继续使用纯音频模式。
 - 逐词高亮需要歌词源提供逐词时间戳；普通 LRC 只能可靠地逐行同步。
-- React Native Android 版已接入 DeepSeek 翻译设置、显式确认、原生密钥保护和翻译请求；真实 API key 上游调用及当前候选设备验收尚未确认。
-- React Native Android 版已实现网易、酷狗主动下载及 Bilibili 精确 CID 离线缓存源码。Bilibili 只接受仍有效的 native 账号授权，不支持匿名下载；三家来源的真实下载、重启恢复和离线 TrackPlayer 播放仍需当前候选设备验收。
-- React Native Android 版已接入 Bilibili 扫码登录、MV/PiP、音效和可视化源码；登录仅指 Bilibili，真实扫码与账号权限尚未验证。MV 画面/进度仍受匿名 HTTP 412 阻断；PiP、音效和可视化的当前候选设备运行尚未验收。
-- 网易公开歌单详情的本次样本只返回 10 首歌曲，而摘要显示 35 首；这是公开接口样本限制，不代表完整歌单已验证。
-- QQ/酷我原生播放解析适配已在源码中接通，但当前候选设备的实时播放尚未验证；酷我 Cookie/Secret 在 native 内部处理，实际可用性仍取决于上游响应与其访问权限。搜索成功不代表媒体可播放。
-- release-like APK 已使用开发签名构建并用于 API 35 模拟器验收；它不是正式发布签名制品。Bilibili MV 的最新画面/进度回归受上游 HTTP 412 拦截，离线下载与重启播放仍有未覆盖的实机风险。
-- React Native Android 版已接入完整缓存文件的响度分析与播放增益；只分析已完成缓存的整首音频，当前候选设备验收尚未确认。解码器支持的来源采样率会统一重采样到 48 kHz 分析域；超过时长或资源限制、无法解码的完整缓存保持原音量。
+- Android 当前使用共享 Listen1 前端和 `android/` 宿主，尚不能宣称与桌面端能力等价。此前 React Native 路线的实现范围和限制保留在 [`mobile/README.md`](mobile/README.md) 作为历史记录；当前验收状态见 [`android/README.md`](android/README.md)。
 
 ## 贡献
 

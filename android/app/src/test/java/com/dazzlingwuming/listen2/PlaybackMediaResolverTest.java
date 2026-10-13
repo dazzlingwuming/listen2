@@ -14,6 +14,19 @@ import java.util.List;
 
 public final class PlaybackMediaResolverTest {
     @Test
+    public void rejectedCandidatesAreDistinctFromAnUnavailableManifest() {
+        FakeManifest manifest = new FakeManifest();
+        manifest.candidates = Collections.singletonList("https://evil.example/audio?deadline=9999999999");
+        PlaybackMediaResolver resolver = resolver(manifest);
+        PlaybackMediaResolver.Prepared prepared = resolver.prepare(descriptor());
+        resolver.select(prepared.getTrackHandle(), prepared.getOccurrenceId(), 4L, "replace-current", true);
+        PlaybackMediaResolver.Resolution result = resolver.resolveCurrent(prepared.getOccurrenceId(), 4L);
+        assertFalse(result.isReady());
+        assertEquals("candidate-rejected", result.getStatus());
+        assertFalse(result.toSnapshotFields().toString().contains("evil.example"));
+    }
+
+    @Test
     public void prepareMintsNativeHandlesAndSelectConsumesThemOnce() {
         PlaybackMediaResolver resolver = resolver(new FakeManifest());
         PlaybackMediaResolver.Prepared prepared = resolver.prepare(descriptor());

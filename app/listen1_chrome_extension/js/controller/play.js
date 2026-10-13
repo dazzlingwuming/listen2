@@ -294,6 +294,23 @@ angular.module('listenone').controller('PlayController', [
       const safeSnapshot = snapshot || {};
       const recovery = safeSnapshot.recovery || {};
       if (!safeSnapshot.revision) return '正在连接播放器…';
+      if (safeSnapshot.state === 'error') {
+        const status = String(recovery.status || '');
+        if (status === 'media-network-unavailable')
+          return '音频网络连接失败，请稍后重试';
+        if (/^bilibili-(detail|manifest|legacy)-http-0$/.test(status))
+          return '网络连接失败，暂时无法播放这首歌曲';
+        if (
+          /^bilibili-(detail|manifest|legacy)-(http-(403|412|429)|provider--?\d{1,7})$/.test(
+            status
+          )
+        )
+          return '来源暂时拒绝提供这首歌曲的音频';
+        if (/^bilibili-(detail|manifest)-map-/.test(status))
+          return '来源返回的音频信息暂时无法使用';
+        if (status === 'candidate-rejected') return '音频地址暂时无法使用';
+        return '当前歌曲暂时无法播放';
+      }
       if (recovery.status === 'buffering') return '正在缓冲…';
       if (recovery.status === 'retrying') {
         return `正在尝试恢复播放（${$scope.androidPlaybackRetryAttempt}/${$scope.androidPlaybackRetryMax}）…`;
@@ -303,7 +320,6 @@ angular.module('listenone').controller('PlayController', [
       if (safeSnapshot.state === 'resolving') return '正在准备播放…';
       if (safeSnapshot.state === 'playing') return '正在播放';
       if (safeSnapshot.state === 'paused') return '已暂停';
-      if (safeSnapshot.state === 'error') return '当前歌曲暂时无法播放';
       return '还没有正在播放的内容';
     }
 

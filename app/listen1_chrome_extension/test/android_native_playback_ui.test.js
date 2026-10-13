@@ -4,6 +4,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 
 const root = path.join(__dirname, '..');
 const controller = fs.readFileSync(
@@ -18,6 +19,34 @@ function requireText(source, expected, explanation) {
 }
 
 function run() {
+  const stateCopySource = controller.slice(
+    controller.indexOf('function androidPlaybackStateCopy(snapshot)'),
+    controller.indexOf('$scope.androidPlaybackStateCopy =')
+  );
+  const copyContext = { $scope: {} };
+  vm.runInNewContext(stateCopySource, copyContext);
+  const copy = (status) => copyContext.androidPlaybackStateCopy({
+    revision: 4,
+    state: 'error',
+    metadata: { title: 'Selected track' },
+    recovery: { status, retryable: true },
+  });
+  assert.strictEqual(copy('bilibili-detail-http-0'), '网络连接失败，暂时无法播放这首歌曲');
+  assert.strictEqual(copy('bilibili-manifest-http-412'), '来源暂时拒绝提供这首歌曲的音频');
+  assert.strictEqual(copy('bilibili-manifest-provider--404'), '来源暂时拒绝提供这首歌曲的音频');
+  assert.strictEqual(copy('bilibili-manifest-map-identity-mismatch'), '来源返回的音频信息暂时无法使用');
+  assert.strictEqual(copy('candidate-rejected'), '音频地址暂时无法使用');
+  assert.strictEqual(copy('media-network-unavailable'), '音频网络连接失败，请稍后重试');
+  assert.strictEqual(copy('https://private.invalid/?token=secret'), '当前歌曲暂时无法播放');
+  const detailErrorCard = markup.match(
+    /class="android-player-state"\s+ng-if="androidPlaybackSnapshot.state === 'error'"[\s\S]*?<\/p>/
+  );
+  assert.ok(detailErrorCard, 'native detail error card exists');
+  requireText(
+    detailErrorCard[0],
+    '<strong>{{androidPlaybackStateCopy()}}</strong>',
+    'visible detail error uses the same safe classified state copy'
+  );
   [
     'applyAndroidPlaybackSnapshot',
     'sendAndroidPlaybackCommand',

@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 
 import javax.net.ssl.HttpsURLConnection;
 
@@ -58,6 +59,10 @@ final class BilibiliPlaybackResolver implements PlaybackMediaResolver.ManifestPo
     }
 
     private final HttpPort http;
+    // resolve() and unavailableStatus() run on the same resolver lane. Keep
+    // each lane's safe diagnostic isolated if this provider is shared.
+    private final ThreadLocal<String> resolutionStatus = ThreadLocal.withInitial(
+            () -> "bilibili-manifest-unavailable");
 
     BilibiliPlaybackResolver() {
         this(new UrlConnectionPort(null));
@@ -73,46 +78,52 @@ final class BilibiliPlaybackResolver implements PlaybackMediaResolver.ManifestPo
 
     @Override
     public List<String> resolve(PlaybackMediaResolver.Descriptor descriptor) {
+        resolutionStatus.set("bilibili-manifest-unavailable");
         if (descriptor == null || !"bilibili".equals(descriptor.getSource())) {
-            return Collections.emptyList();
+            return fail("bilibili-invalid-selection");
         }
+        String stage = "detail";
         try {
             String bvid = descriptor.getProviderTrackId();
             long cid = descriptor.getProviderPartId();
             if (bvid.matches("[1-9][0-9]{0,17}") && cid == 1L) {
+                stage = "legacy";
                 return resolveLegacyAudio(bvid);
             }
             AndroidRpcContract.TypedRequest detailRequest = AndroidRpcContract.TypedRequest.videoDetail(
                     "native-media", 0, bvid);
             Response detail = http.get(AndroidRpcContract.buildVideoDetailUri(detailRequest));
-            if (!detail.isSuccess()) return Collections.emptyList();
+            if (!checkResponse(detail, stage)) return Collections.emptyList();
             BilibiliResponseMapper.MappingResult detailProjection = BilibiliResponseMapper.mapVideoDetail(
                     detailRequest, detail.body);
-            if (!detailProjection.isValid() || !containsCid(detailProjection.value.getJSONArray("pages"), cid)) {
-                return Collections.emptyList();
-            }
+            if (!detailProjection.isValid()) return fail(mappingStatus(stage, detailProjection.errorCode));
+            if (!containsCid(detailProjection.value.getJSONArray("pages"), cid))
+                return fail("bilibili-detail-cid-mismatch");
 
+            stage = "manifest";
             AndroidRpcContract.TypedRequest manifestRequest = AndroidRpcContract.TypedRequest.audioManifest(
                     "native-media", 0, bvid, "explicit", cid);
             Response manifest = http.get(AndroidRpcContract.buildAudioManifestUri(manifestRequest));
-            if (!manifest.isSuccess()) return Collections.emptyList();
+            if (!checkResponse(manifest, stage)) return Collections.emptyList();
             BilibiliResponseMapper.MappingResult mapped = BilibiliResponseMapper.mapAudioManifest(
                     manifestRequest, detail.body, manifest.body);
-            if (!mapped.isValid()) return Collections.emptyList();
+            if (!mapped.isValid()) return fail(mappingStatus(stage, mapped.errorCode));
 
             JSONArray candidates = mapped.value.optJSONArray("candidates");
             if (candidates == null || candidates.length() == 0 || candidates.length() > 4) {
-                return Collections.emptyList();
+                return fail("bilibili-manifest-no-candidates");
             }
             List<String> result = new ArrayList<>();
             for (int index = 0; index < candidates.length(); index += 1) {
                 String candidate = candidates.optString(index, "");
-                if (candidate.isEmpty() || result.contains(candidate)) return Collections.emptyList();
+                if (candidate.isEmpty() || result.contains(candidate))
+                    return fail("bilibili-manifest-invalid-candidate");
                 result.add(candidate);
             }
+            resolutionStatus.set("ready");
             return result;
         } catch (JSONException | java.net.URISyntaxException | RuntimeException ignored) {
-            return Collections.emptyList();
+            return fail("bilibili-" + stage + "-malformed-response");
         }
     }
 
@@ -120,28 +131,75 @@ final class BilibiliPlaybackResolver implements PlaybackMediaResolver.ManifestPo
         URI uri = new URI("https", null, LEGACY_AUDIO_HOST, -1, LEGACY_AUDIO_PATH,
                 "sid=" + sid, null);
         Response response = http.get(uri);
-        if (!response.isSuccess()) return Collections.emptyList();
+        if (!checkResponse(response, "legacy")) return Collections.emptyList();
         JSONObject root = new JSONObject(response.body);
         Object code = root.opt("code");
         JSONObject data = root.optJSONObject("data");
         JSONArray cdns = data == null ? null : data.optJSONArray("cdns");
         if (!(code instanceof Number) || ((Number) code).intValue() != 0
                 || cdns == null || cdns.length() < 1 || cdns.length() > 4) {
-            return Collections.emptyList();
+            return fail("bilibili-legacy-no-candidates");
         }
         List<String> result = new ArrayList<>();
         for (int index = 0; index < cdns.length(); index += 1) {
             Object candidate = cdns.opt(index);
             if (!(candidate instanceof String) || ((String) candidate).isEmpty()
-                    || result.contains(candidate)) return Collections.emptyList();
+                    || result.contains(candidate)) return fail("bilibili-legacy-invalid-candidate");
             result.add((String) candidate);
         }
+        resolutionStatus.set("ready");
         return result;
     }
 
     @Override
     public String unavailableStatus() {
-        return "bilibili-manifest-unavailable";
+        return resolutionStatus.get();
+    }
+
+    private List<String> fail(String status) {
+        resolutionStatus.set(status);
+        return Collections.emptyList();
+    }
+
+    private boolean checkResponse(Response response, String stage) {
+        if (response == null || !response.isSuccess()) {
+            int httpStatus = response == null ? 0 : response.status;
+            if (httpStatus < 100 || httpStatus > 599) httpStatus = 0;
+            fail("bilibili-" + stage + "-http-" + httpStatus);
+            return false;
+        }
+        try {
+            Object code = new JSONObject(response.body).opt("code");
+            if (code instanceof Number) {
+                long number = ((Number) code).longValue();
+                if (number != 0L && number >= -1_000_000L && number <= 1_000_000L
+                        && ((Number) code).doubleValue() == number) {
+                    fail("bilibili-" + stage + "-provider-" + number);
+                    return false;
+                }
+            }
+        } catch (JSONException ignored) {
+            // The existing mapper classifies malformed bodies; no body escapes.
+        }
+        return true;
+    }
+
+    private static String mappingStatus(String stage, String code) {
+        String safe;
+        switch (code == null ? "" : code) {
+            case "IDENTITY_MISMATCH":
+            case "INVALID_PART":
+            case "INVALID_DURATION":
+            case "NO_STREAM":
+            case "UNSUPPORTED_CODEC":
+            case "INVALID_STREAM":
+            case "EXPIRED_STREAM":
+                safe = code.toLowerCase(Locale.ROOT).replace('_', '-');
+                break;
+            default:
+                safe = "malformed-provider-response";
+        }
+        return "bilibili-" + stage + "-map-" + safe;
     }
 
     private static boolean containsCid(JSONArray pages, long cid) throws JSONException {

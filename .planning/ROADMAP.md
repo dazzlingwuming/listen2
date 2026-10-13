@@ -1,6 +1,10 @@
 # Roadmap: Listen2 Android v1.0 — Official-Mobile Product Pivot
 
-## Overview
+> **2026-10-13 route adjustment:** Current Android work reuses the shared Listen1 frontend with the existing `android/` WebView shell and narrow native bridge. The `mobile/` React Native implementation and earlier Phase 4–8 route descriptions remain historical records, not the active build/release candidate. This note supersedes the route only; it does not rewrite prior phase evidence.
+
+## Previous roadmap overview (historical route)
+
+以下 overview 与 Phase 4–8 计划保留此前 React Native 路线的规划上下文；当前方向以上方 2026-10-13 调整说明为准。
 
 Android v1.0 now takes the original author's `listen1/listen1_mobile` v0.8.2 as the **product reference**, not as an obsolete technology stack to copy: its phone-first information architecture, bottom navigation, focused player flow, and the one-contract four-source search model are the starting point. The Android product adds Bilibili as a fifth source and uses the current `main` desktop behavior as the complete capability baseline.
 

@@ -273,7 +273,8 @@ public final class PlaybackMediaResolver {
             }
             if (safe.size() == MAX_CANDIDATES) break;
         }
-        return safe.isEmpty() ? Resolution.failed(manifest.unavailableStatus(), true)
+        return safe.isEmpty() ? Resolution.failed(raw.isEmpty()
+                        ? manifest.unavailableStatus() : "candidate-rejected", true)
                 : Resolution.ready(new ArrayList<>(safe), mediaUris);
     }
 

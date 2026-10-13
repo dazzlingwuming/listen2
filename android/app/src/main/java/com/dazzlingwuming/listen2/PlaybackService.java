@@ -13,6 +13,7 @@ import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.Player;
+import androidx.media3.common.PlaybackException;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.session.MediaSession;
 import androidx.media3.session.MediaSessionService;
@@ -83,6 +84,9 @@ public final class PlaybackService extends MediaSessionService
     // Main-looper generation prevents a slow native manifest resolution from
     // replacing a newer user selection after the page has moved on.
     private long mediaResolutionGeneration;
+    private CandidateFallback candidateFallback;
+    private List<java.net.URI> activeMediaUris = Collections.emptyList();
+    private String playerFailureStatus = "";
     private volatile PlaybackSnapshot latestPageSnapshot = initialSnapshot();
     private volatile PlaybackBridgeController.SnapshotPublisher snapshotPublisher;
     private final PageBinder pageBinder = new PageBinder();
@@ -125,6 +129,11 @@ public final class PlaybackService extends MediaSessionService
             if (playerHandler != null) playerHandler.post(() -> applyRestoredCheckpoint(restored));
         });
         player.addListener(new Player.Listener() {
+            @Override
+            public void onPlayerError(PlaybackException error) {
+                handlePlayerError(error);
+            }
+
             @Override
             public void onPlaybackStateChanged(int playbackState) {
                 if (playbackState == Player.STATE_ENDED) advanceToNext(latestPageSnapshot, true);
@@ -235,6 +244,7 @@ public final class PlaybackService extends MediaSessionService
                 persistListeningHistory(true);
                 listeningHistory.clear();
                 mediaResolutionGeneration += 1L;
+                resetCandidateFallback();
                 preparedMediaByPageHandle.clear();
                 selectedMediaByOccurrenceId.clear();
                 playbackHistory.clear();
@@ -357,12 +367,14 @@ public final class PlaybackService extends MediaSessionService
             playbackHistoryCursor = playbackHistory.size() - 1;
         }
         final long resolutionGeneration = ++mediaResolutionGeneration;
+        resetCandidateFallback();
         final PlaybackMediaResolver resolverForSelection = selectedMedia.resolver;
         final String pageOccurrenceId = selectedMedia.pageOccurrenceId;
         final String nativeOccurrenceId = selectedMedia.nativePrepared.getOccurrenceId();
         final long expectedRevision = selectedMedia.selectionRevision;
         player.stop();
         player.clearMediaItems();
+        player.setPlayWhenReady(playWhenReady);
         // Manifest fetching uses a bounded native network client. Keep it off
         // Media3's main looper while retaining player mutation on that looper.
         transitionExecutor.execute(() -> {
@@ -373,7 +385,7 @@ public final class PlaybackService extends MediaSessionService
             final PlaybackMediaResolver.Resolution selectedResolution = resolution;
             if (playerHandler != null) playerHandler.post(() -> applyResolvedMedia(
                     resolutionGeneration, pageOccurrenceId, descriptor,
-                    selectedResolution, playWhenReady, targetPositionMs));
+                    selectedResolution, targetPositionMs));
         });
     }
 
@@ -482,6 +494,7 @@ public final class PlaybackService extends MediaSessionService
             currentLyricIdentity = null;
             lyricProjection = null;
             mediaResolutionGeneration += 1L;
+            resetCandidateFallback();
             player.stop();
             player.clearMediaItems();
             publishPlayerSnapshot("current-selection-removed", LyricClockProjection.Event.ERROR);
@@ -566,25 +579,100 @@ public final class PlaybackService extends MediaSessionService
     /** Applies a transient native-only candidate after its resolver task completes. */
     private void applyResolvedMedia(long resolutionGeneration, String pageOccurrenceId,
             PlaybackMediaResolver.Descriptor descriptor,
-            PlaybackMediaResolver.Resolution resolution, boolean playWhenReady, long targetPositionMs) {
+            PlaybackMediaResolver.Resolution resolution, long targetPositionMs) {
         if (released || player == null || resolutionGeneration != mediaResolutionGeneration) return;
         if (!resolution.isReady() || resolution.mediaUris().isEmpty()) {
-            publishPlayerSnapshot(resolution.getStatus(), LyricClockProjection.Event.ERROR);
+            playerFailureStatus = resolution.getStatus();
+            publishPlayerSnapshot(resolution.getStatus(), LyricClockProjection.Event.ERROR, true);
             return;
         }
         String mediaLocation = resolution.mediaUris().get(0).toString();
+        activeMediaUris = new ArrayList<>(resolution.mediaUris());
         if (mediaCache != null && descriptor != null
                 && ("bilibili".equals(descriptor.getSource()) || "netease".equals(descriptor.getSource()))) {
             Uri cached = mediaCache.readyUri(NativeMediaDownloadCoordinator.contentKeyFor(descriptor));
-            if (cached != null) mediaLocation = cached.toString();
+            if (cached != null) {
+                mediaLocation = cached.toString();
+                activeMediaUris = Collections.emptyList();
+            }
         }
+        candidateFallback = new CandidateFallback(resolutionGeneration, pageOccurrenceId,
+                activeMediaUris.size());
         MediaMetadata mediaMetadata = new MediaMetadata.Builder().setTitle(descriptor.getTitle())
                 .setArtist(descriptor.getArtist()).build();
         player.setMediaItem(new MediaItem.Builder().setMediaId(pageOccurrenceId)
                 .setUri(mediaLocation).setMediaMetadata(mediaMetadata).build());
         player.prepare();
         if (targetPositionMs > 0L) player.seekTo(targetPositionMs);
-        player.setPlayWhenReady(playWhenReady);
+        // A pause while the manifest was resolving must remain a pause.
+        // activateSelection established the intent before the asynchronous fetch.
+    }
+
+    private void resetCandidateFallback() {
+        candidateFallback = null;
+        activeMediaUris = Collections.emptyList();
+        playerFailureStatus = "";
+    }
+
+    /** Only already-approved transport candidates are attempted, once each on this selection. */
+    private void handlePlayerError(PlaybackException error) {
+        if (released || player == null || player.getPlayerError() != error) return;
+        MediaItem current = player.getCurrentMediaItem();
+        CandidateFallback plan = candidateFallback;
+        if (current == null || plan == null
+                || !plan.matches(mediaResolutionGeneration, currentOccurrenceId, current.mediaId)) return;
+        boolean networkCandidate = current.localConfiguration != null
+                && "https".equalsIgnoreCase(current.localConfiguration.uri.getScheme());
+        int next = plan.advance(error.errorCode, networkCandidate,
+                mediaResolutionGeneration, currentOccurrenceId, current.mediaId);
+        if (next >= 0) {
+            long position = Math.max(0L, player.getCurrentPosition());
+            boolean playWhenReady = player.getPlayWhenReady();
+            player.setMediaItem(current.buildUpon().setUri(activeMediaUris.get(next).toString()).build(),
+                    position);
+            player.prepare();
+            player.setPlayWhenReady(playWhenReady);
+            return;
+        }
+        playerFailureStatus = networkCandidate && isCandidateIoFailure(error.errorCode)
+                ? "media-network-unavailable" : "media-playback-unavailable";
+        publishPlayerSnapshot(playerFailureStatus, LyricClockProjection.Event.ERROR, true);
+    }
+
+    /** A bounded service-local policy; no URI, credentials, or manifest refresh crosses it. */
+    static final class CandidateFallback {
+        private final long generation;
+        private final String occurrenceId;
+        private final int count;
+        private int index;
+
+        CandidateFallback(long generation, String occurrenceId, int count) {
+            this.generation = generation;
+            this.occurrenceId = occurrenceId;
+            this.count = Math.max(0, Math.min(4, count));
+        }
+
+        boolean matches(long currentGeneration, String currentOccurrence, String mediaId) {
+            return generation == currentGeneration && occurrenceId.equals(currentOccurrence)
+                    && occurrenceId.equals(mediaId);
+        }
+
+        int advance(int errorCode, boolean https, long currentGeneration,
+                String currentOccurrence, String mediaId) {
+            if (!matches(currentGeneration, currentOccurrence, mediaId) || !https
+                    || !isCandidateIoFailure(errorCode) || index + 1 >= count) return -1;
+            return ++index;
+        }
+    }
+
+    static boolean isCandidateIoFailure(int errorCode) {
+        return errorCode == PlaybackException.ERROR_CODE_IO_UNSPECIFIED
+                || errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED
+                || errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT;
+    }
+
+    static String projectRecoveryCode(String failureStatus, String callbackCode) {
+        return failureStatus.isEmpty() ? callbackCode : failureStatus;
     }
 
     /** A bound page is disposable; active audio must also retain a started service lifecycle. */
@@ -624,6 +712,8 @@ public final class PlaybackService extends MediaSessionService
     void releasePlaybackState() {
         if (released) return;
         released = true;
+        mediaResolutionGeneration += 1L;
+        resetCandidateFallback();
         if (player != null) {
             if (playerHandler != null) playerHandler.removeCallbacks(foregroundCadence);
             player.clearMediaItems();
@@ -664,7 +754,17 @@ public final class PlaybackService extends MediaSessionService
     }
 
     private synchronized void publishPlayerSnapshot(String recoveryCode, LyricClockProjection.Event event) {
+        publishPlayerSnapshot(recoveryCode, event, false);
+    }
+
+    private synchronized void publishPlayerSnapshot(String recoveryCode, LyricClockProjection.Event event,
+            boolean resolutionFailed) {
         if (released || player == null) return;
+        recoveryCode = projectRecoveryCode(playerFailureStatus, recoveryCode);
+        if (!playerFailureStatus.isEmpty()) {
+            resolutionFailed = true;
+            event = LyricClockProjection.Event.ERROR;
+        }
         PlaybackSnapshot previous = latestPageSnapshot;
         Map<String, Object> prior = previous.toMap();
         long revision = Math.max(snapshotRevision, previous.getRevision()) + 1L;
@@ -674,11 +774,8 @@ public final class PlaybackService extends MediaSessionService
         listeningHistory.updateDuration(duration);
         listeningHistory.observe(position, player.isPlaying(), System.currentTimeMillis());
         persistListeningHistory(!player.isPlaying());
-        PlaybackSnapshot.State state;
-        if (player.isPlaying()) state = PlaybackSnapshot.State.PLAYING;
-        else if (player.getPlaybackState() == Player.STATE_IDLE) state = PlaybackSnapshot.State.IDLE;
-        else if (player.getPlaybackState() == Player.STATE_BUFFERING) state = PlaybackSnapshot.State.RESOLVING;
-        else state = PlaybackSnapshot.State.PAUSED;
+        PlaybackSnapshot.State state = projectPlaybackState(resolutionFailed,
+                player.isPlaying(), player.getPlaybackState());
         PlaybackSnapshot.LyricContext lyric = currentLyricIdentity == null
                 ? PlaybackSnapshot.LyricContext.unavailable() : previous.getLyricContext();
         if (currentLyricIdentity != null) {
@@ -930,8 +1027,21 @@ public final class PlaybackService extends MediaSessionService
         return metadata(prior, duration);
     }
 
-    private static boolean isRetryableRecovery(String recoveryCode) {
+    static PlaybackSnapshot.State projectPlaybackState(boolean resolutionFailed,
+            boolean playing, int playerState) {
+        if (resolutionFailed) return PlaybackSnapshot.State.ERROR;
+        if (playing) return PlaybackSnapshot.State.PLAYING;
+        if (playerState == Player.STATE_IDLE) return PlaybackSnapshot.State.IDLE;
+        if (playerState == Player.STATE_BUFFERING) return PlaybackSnapshot.State.RESOLVING;
+        return PlaybackSnapshot.State.PAUSED;
+    }
+
+    static boolean isRetryableRecovery(String recoveryCode) {
         return "interrupted".equals(recoveryCode) || "manifest-unavailable".equals(recoveryCode)
+                || (recoveryCode != null && recoveryCode.startsWith("bilibili-"))
+                || "candidate-rejected".equals(recoveryCode)
+                || "media-network-unavailable".equals(recoveryCode)
+                || "media-playback-unavailable".equals(recoveryCode)
                 || "bilibili-manifest-unavailable".equals(recoveryCode)
                 || "netease-manifest-unavailable".equals(recoveryCode)
                 || "refresh-unavailable".equals(recoveryCode)

@@ -58,6 +58,91 @@ public final class BilibiliResponseMapperTest {
     }
 
     @Test
+    public void missingManifestIdentityUsesVerifiedDetailAndRequestIdentity() throws Exception {
+        AndroidRpcContract.TypedRequest request = AndroidRpcContract.TypedRequest.audioManifest(
+                "manifest", 1, BVID, "explicit", 22L);
+        for (String omitted : new String[] { "bvid", "cid", "both" }) {
+            JSONObject manifest = manifestFor(22);
+            JSONObject data = manifest.getJSONObject("data");
+            if (!"cid".equals(omitted)) data.remove("bvid");
+            if (!"bvid".equals(omitted)) data.remove("cid");
+            BilibiliResponseMapper.MappingResult result = BilibiliResponseMapper.mapAudioManifest(
+                    request, detailWithPages(), manifest.toString());
+            assertTrue(result.isValid());
+            assertEquals(BVID, result.value.getString("bvid"));
+            assertEquals(22L, result.value.getLong("cid"));
+        }
+        JSONObject wrongDetail = detailWithPages();
+        wrongDetail.getJSONObject("data").put("bvid", "BV1yy411c7mD");
+        JSONObject absent = manifestFor(22);
+        absent.getJSONObject("data").remove("bvid");
+        absent.getJSONObject("data").remove("cid");
+        assertEquals("IDENTITY_MISMATCH", BilibiliResponseMapper.mapAudioManifest(
+                request, wrongDetail, absent.toString()).errorCode);
+    }
+
+    @Test
+    public void presentManifestIdentityMustRemainValidAndMatch() throws Exception {
+        AndroidRpcContract.TypedRequest request = AndroidRpcContract.TypedRequest.audioManifest(
+                "manifest", 1, BVID, "explicit", 22L);
+        for (Object bvid : new Object[] { "BV1yy411c7mD", "", 22, JSONObject.NULL }) {
+            JSONObject manifest = manifestFor(22);
+            manifest.getJSONObject("data").put("bvid", bvid);
+            assertEquals("IDENTITY_MISMATCH", BilibiliResponseMapper.mapAudioManifest(
+                    request, detailWithPages(), manifest.toString()).errorCode);
+        }
+        for (Object cid : new Object[] { 23L, 0L, -22L, 22.5, "22", JSONObject.NULL }) {
+            JSONObject manifest = manifestFor(22);
+            manifest.getJSONObject("data").put("cid", cid);
+            assertEquals("IDENTITY_MISMATCH", BilibiliResponseMapper.mapAudioManifest(
+                    request, detailWithPages(), manifest.toString()).errorCode);
+        }
+    }
+
+    @Test
+    public void unusableCandidatesDoNotPoisonUsablePrimaryOrBackup() throws Exception {
+        AndroidRpcContract.TypedRequest request = AndroidRpcContract.TypedRequest.audioManifest(
+                "manifest", 1, BVID, "explicit", 22L);
+        String good = "https://upos-sz-mirrorcos.bilivideo.com/good.m4s?deadline=4102444800";
+        String unsafe = "https://bilivideo.com.evil.example/bad.m4s?deadline=4102444800";
+        String expired = "https://upos-sz-mirrorcos.bilivideo.com/old.m4s?deadline=1";
+        for (String primary : new String[] { good, unsafe, expired }) {
+            JSONObject manifest = manifestFor(22);
+            JSONObject audio = manifest.getJSONObject("data").getJSONObject("dash")
+                    .getJSONArray("audio").getJSONObject(0);
+            audio.put("baseUrl", primary).put("backupUrl", new JSONArray()
+                    .put(unsafe).put(expired).put(good).put(good));
+            BilibiliResponseMapper.MappingResult result = BilibiliResponseMapper.mapAudioManifest(
+                    request, detailWithPages(), manifest.toString());
+            assertTrue(result.isValid());
+            assertEquals(1, result.value.getJSONArray("candidates").length());
+            assertEquals(good, result.value.getJSONArray("candidates").getString(0));
+            assertEquals(22L, result.value.getLong("cid"));
+        }
+    }
+
+    @Test
+    public void noUsableCandidateKeepsExplicitFailureAndInputBounds() throws Exception {
+        AndroidRpcContract.TypedRequest request = AndroidRpcContract.TypedRequest.audioManifest(
+                "manifest", 1, BVID, "explicit", 22L);
+        String good = "https://upos-sz-mirrorcos.bilivideo.com/good.m4s?deadline=4102444800";
+        String unsafe = "http://upos-sz-mirrorcos.bilivideo.com/bad.m4s?deadline=4102444800";
+        JSONObject bad = manifestFor(22);
+        bad.getJSONObject("data").getJSONObject("dash").getJSONArray("audio").getJSONObject(0)
+                .put("baseUrl", unsafe).put("backupUrl", new JSONArray().put(unsafe));
+        assertEquals("INVALID_STREAM", BilibiliResponseMapper.mapAudioManifest(
+                request, detailWithPages(), bad.toString()).errorCode);
+        JSONObject excess = manifestFor(22);
+        excess.getJSONObject("data").getJSONObject("dash").getJSONArray("audio").getJSONObject(0)
+                .put("backupUrl", new JSONArray().put(good).put(good).put(good).put(good).put(good));
+        assertEquals("INVALID_STREAM", BilibiliResponseMapper.mapAudioManifest(
+                request, detailWithPages(), excess.toString()).errorCode);
+        JSONObject wrongIdentity = manifestFor(23);
+        assertEquals("IDENTITY_MISMATCH", BilibiliResponseMapper.mapAudioManifest(
+                request, detailWithPages(), wrongIdentity.toString()).errorCode);
+    }
+
+    @Test
     public void rejectsUnsafeMediaAndExpiredOrUnsupportedStreams() throws Exception {
         AndroidRpcContract.TypedRequest request = AndroidRpcContract.TypedRequest.audioManifest(
                 "manifest", 1, BVID, "explicit", 22L);
