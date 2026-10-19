@@ -1,17 +1,17 @@
 /* eslint-env node */
 
-const assert = require('assert');
-const { createHash } = require('crypto');
-const fs = require('fs');
-const path = require('path');
-const vm = require('vm');
+const assert = require("assert");
+const { createHash } = require("crypto");
+const fs = require("fs");
+const path = require("path");
+const vm = require("vm");
 const {
   DEEPSEEK_MODEL,
   DEEPSEEK_PROMPT_VERSION,
   DEEPSEEK_PROVIDER,
   DEEPSEEK_TARGET_LANGUAGE,
   getDeepSeekPromptFingerprint,
-} = require('../machineTranslation');
+} = require("../machineTranslation");
 
 class Store {
   constructor() {
@@ -65,13 +65,13 @@ function loadTranslationHandlers(overrides = {}) {
       encryptString(value) {
         secureStorage.encryptions += 1;
         if (secureStorage.denyEncrypt)
-          throw new Error('Keychain access denied');
+          throw new Error("Keychain access denied");
         return Buffer.from(value);
       },
       decryptString(value) {
         secureStorage.decryptions += 1;
         if (secureStorage.denyDecrypt)
-          throw new Error('Keychain access denied');
+          throw new Error("Keychain access denied");
         return Buffer.from(value).toString();
       },
     },
@@ -79,15 +79,15 @@ function loadTranslationHandlers(overrides = {}) {
       defaultSession: {
         fetch() {
           fetchCount += 1;
-          throw new Error('network must not be used for a cache-only request');
+          throw new Error("network must not be used for a cache-only request");
         },
       },
     },
     screen: {},
     Tray: class {},
   };
-  const filename = path.join(__dirname, '..', 'main.js');
-  const source = fs.readFileSync(filename, 'utf8');
+  const filename = path.join(__dirname, "..", "main.js");
+  const source = fs.readFileSync(filename, "utf8");
   const context = {
     AbortController,
     Buffer,
@@ -97,26 +97,29 @@ function loadTranslationHandlers(overrides = {}) {
     module: { exports: {} },
     process,
     require(id) {
-      if (id === 'electron') return electron;
-      if (id === 'electron-store') return Store;
-      if (id === 'electron-updater') {
+      if (id === "electron") return electron;
+      if (id === "electron-store") return Store;
+      if (id === "electron-updater") {
         return { autoUpdater: { checkForUpdatesAndNotify() {} } };
       }
-      if (id === '@electron/remote/main') return {};
-      if (id === './bilibiliFailure') {
+      if (id === "@electron/remote/main") return {};
+      if (id === "./bilibiliFailure") {
         return {
           createBilibiliFailure() {
             return {};
           },
         };
       }
-      if (id === './bilibiliService') {
+      if (id === "./bilibiliService") {
         return { BilibiliService: class {} };
       }
-      if (id === './machineTranslation')
-        return require('../machineTranslation');
-      return id.startsWith('./')
-        ? require(path.join(__dirname, '..', id))
+      if (id === "./machineTranslation")
+        return {
+          ...require("../machineTranslation"),
+          ...(overrides.translationModule || {}),
+        };
+      return id.startsWith("./")
+        ? require(path.join(__dirname, "..", id))
         : require(id);
     },
     setTimeout,
@@ -130,77 +133,77 @@ function loadTranslationHandlers(overrides = {}) {
 function trustedEvent() {
   return {
     senderFrame: {
-      url: 'file:///tmp/listen1_chrome_extension/listen1.html',
+      url: "file:///tmp/listen1_chrome_extension/listen1.html",
     },
   };
 }
 
-function cacheKey(lyric, title, artist, styleHint = '') {
+function cacheKey(lyric, title, artist, styleHint = "") {
   const promptFingerprint = getDeepSeekPromptFingerprint({
     targetLanguage: DEEPSEEK_TARGET_LANGUAGE,
     styleHint,
   });
-  return createHash('sha256')
+  return createHash("sha256")
     .update(DEEPSEEK_PROVIDER)
-    .update('\0')
+    .update("\0")
     .update(DEEPSEEK_MODEL)
-    .update('\0')
+    .update("\0")
     .update(promptFingerprint)
-    .update('\0')
+    .update("\0")
     .update(DEEPSEEK_TARGET_LANGUAGE)
-    .update('\0')
+    .update("\0")
     .update(lyric)
-    .update('\0')
+    .update("\0")
     .update(title)
-    .update('\0')
+    .update("\0")
     .update(artist)
-    .digest('hex');
+    .digest("hex");
 }
 
 async function run() {
   Store.data = {
     machineTranslation: {
-      provider: 'deepl',
-      encryptedApiKey: 'legacy-deepl-key-must-not-be-used',
+      provider: "deepl",
+      encryptedApiKey: "legacy-deepl-key-must-not-be-used",
     },
   };
   const { handlers, secureStorage, getFetchCount } = loadTranslationHandlers();
-  const getConfig = handlers.get('machine-translation:get-config');
-  const setConfig = handlers.get('machine-translation:set-config');
-  const translate = handlers.get('machine-translation:translate-lyrics');
+  const getConfig = handlers.get("machine-translation:get-config");
+  const setConfig = handlers.get("machine-translation:set-config");
+  const translate = handlers.get("machine-translation:translate-lyrics");
   const event = trustedEvent();
 
   const config = await getConfig(event);
   assert.strictEqual(config.ok, true);
-  assert.strictEqual(config.config.provider, 'deepseek');
+  assert.strictEqual(config.config.provider, "deepseek");
   assert.strictEqual(config.config.model, DEEPSEEK_MODEL);
   assert.strictEqual(config.config.hasApiKey, false);
   assert.strictEqual(config.config.secureStorageAvailable, null);
   assert.strictEqual(
     secureStorage.checks,
     0,
-    'startup/config metadata must not check Keychain'
+    "startup/config metadata must not check Keychain"
   );
-  assert.strictEqual(config.config.targetLanguage, 'zh-CN');
+  assert.strictEqual(config.config.targetLanguage, "zh-CN");
   assert.strictEqual(config.config.maxStyleHintChars, 1200);
   assert.ok(config.config.defaultStyleHint);
-  assert.ok(config.config.immutableSystemPrompt.includes('untrusted data'));
+  assert.ok(config.config.immutableSystemPrompt.includes("untrusted data"));
   assert.ok(
-    config.config.promptTemplatePreview.includes('<placeholder lyric line>') &&
+    config.config.promptTemplatePreview.includes("<placeholder lyric line>") &&
       config.config.promptTemplatePreview.includes('"E0001"'),
-    'the preview must use placeholder song data and the same fixed few-shot contract'
+    "the preview must use placeholder song data and the same fixed few-shot contract"
   );
   assert.ok(
     !config.config.promptTemplatePreview.includes(
-      'legacy-deepl-key-must-not-be-used'
+      "legacy-deepl-key-must-not-be-used"
     ),
-    'a public prompt preview must never expose a stored credential'
+    "a public prompt preview must never expose a stored credential"
   );
 
-  const lyric = '[00:01.00]First line';
+  const lyric = "[00:01.00]First line";
   const uncached = await translate(event, { lyric });
   assert.strictEqual(uncached.ok, false);
-  assert.strictEqual(uncached.status, 'not-cached');
+  assert.strictEqual(uncached.status, "not-cached");
   assert.strictEqual(getFetchCount(), 0);
 
   const legacyKeyAttempt = await translate(event, {
@@ -208,19 +211,19 @@ async function run() {
     allowNetwork: true,
   });
   assert.strictEqual(legacyKeyAttempt.ok, false);
-  assert.strictEqual(legacyKeyAttempt.status, 'missing-api-key');
+  assert.strictEqual(legacyKeyAttempt.status, "missing-api-key");
   assert.strictEqual(getFetchCount(), 0);
 
   Store.data.machineTranslationCache = {
-    [cacheKey(lyric, '', '')]: {
-      tlyric: '[00:01.00]第一行',
-      provider: 'deepseek',
+    [cacheKey(lyric, "", "")]: {
+      tlyric: "[00:01.00]第一行",
+      provider: "deepseek",
       model: DEEPSEEK_MODEL,
-      targetLanguage: 'zh-CN',
+      targetLanguage: "zh-CN",
       lineCount: 1,
       promptVersion: DEEPSEEK_PROMPT_VERSION,
       promptFingerprint: getDeepSeekPromptFingerprint({
-        targetLanguage: 'zh-CN',
+        targetLanguage: "zh-CN",
       }),
     },
   };
@@ -229,16 +232,16 @@ async function run() {
   });
   assert.strictEqual(cached.ok, true);
   assert.strictEqual(cached.cached, true);
-  assert.strictEqual(cached.tlyric, '[00:01.00]第一行');
-  assert.strictEqual(cached.targetLanguage, 'zh-CN');
+  assert.strictEqual(cached.tlyric, "[00:01.00]第一行");
+  assert.strictEqual(cached.targetLanguage, "zh-CN");
   assert.strictEqual(getFetchCount(), 0);
 
   const unsupportedTarget = await translate(event, {
     lyric,
-    targetLanguage: 'en-US',
+    targetLanguage: "en-US",
   });
   assert.strictEqual(unsupportedTarget.ok, false);
-  assert.strictEqual(unsupportedTarget.status, 'unsupported-target-language');
+  assert.strictEqual(unsupportedTarget.status, "unsupported-target-language");
 
   const forceWithoutNetwork = await translate(event, {
     lyric,
@@ -247,15 +250,15 @@ async function run() {
   assert.strictEqual(forceWithoutNetwork.ok, false);
   assert.strictEqual(
     forceWithoutNetwork.status,
-    'force-refresh-requires-network'
+    "force-refresh-requires-network"
   );
 
   assert.strictEqual(
     secureStorage.checks,
     0,
-    'cache-only and missing-key paths must not check Keychain'
+    "cache-only and missing-key paths must not check Keychain"
   );
-  const configuredForForce = await setConfig(event, { apiKey: 'test-key' });
+  const configuredForForce = await setConfig(event, { apiKey: "test-key" });
   assert.strictEqual(configuredForForce.ok, true);
   assert.strictEqual(configuredForForce.config.secureStorageAvailable, true);
   assert.strictEqual(secureStorage.checks, 1);
@@ -266,76 +269,76 @@ async function run() {
     forceRefresh: true,
   });
   assert.strictEqual(forcedCacheBypass.ok, false);
-  assert.strictEqual(forcedCacheBypass.status, 'request-failed');
+  assert.strictEqual(forcedCacheBypass.status, "request-failed");
   assert.strictEqual(
     getFetchCount(),
     1,
-    'an explicit network-confirmed force refresh must bypass an otherwise valid cache entry'
+    "an explicit network-confirmed force refresh must bypass an otherwise valid cache entry"
   );
 
   assert.strictEqual(
     secureStorage.checks,
     2,
-    'explicit network use must check before decrypting'
+    "explicit network use must check before decrypting"
   );
   assert.strictEqual(secureStorage.decryptions, 1);
-  const changedStyle = await setConfig(event, { styleHint: '更口语化一些' });
+  const changedStyle = await setConfig(event, { styleHint: "更口语化一些" });
   assert.strictEqual(changedStyle.ok, true);
-  assert.strictEqual(changedStyle.config.styleHint, '更口语化一些');
+  assert.strictEqual(changedStyle.config.styleHint, "更口语化一些");
   assert.ok(
-    changedStyle.config.promptTemplatePreview.includes('更口语化一些') &&
+    changedStyle.config.promptTemplatePreview.includes("更口语化一些") &&
       changedStyle.config.promptTemplatePreview.includes(
         changedStyle.config.immutableSystemPrompt
       ) &&
-      !changedStyle.config.promptTemplatePreview.includes('test-key'),
-    'the preview uses the effective persisted style and never leaks an API key'
+      !changedStyle.config.promptTemplatePreview.includes("test-key"),
+    "the preview uses the effective persisted style and never leaks an API key"
   );
   assert.notStrictEqual(
     changedStyle.config.promptFingerprint,
     config.config.promptFingerprint,
-    'a style preference must isolate translation cache entries'
+    "a style preference must isolate translation cache entries"
   );
   const styleCacheMiss = await translate(event, { lyric });
   assert.strictEqual(styleCacheMiss.ok, false);
-  assert.strictEqual(styleCacheMiss.status, 'not-cached');
+  assert.strictEqual(styleCacheMiss.status, "not-cached");
   assert.strictEqual(getFetchCount(), 1);
 
   const invalidStyle = await setConfig(event, {
-    styleHint: 'x'.repeat(1201),
+    styleHint: "x".repeat(1201),
   });
   assert.strictEqual(invalidStyle.ok, false);
-  assert.strictEqual(invalidStyle.status, 'invalid-style-hint');
+  assert.strictEqual(invalidStyle.status, "invalid-style-hint");
 
   assert.strictEqual(
     secureStorage.checks,
     2,
-    'style/config metadata must reuse cached availability'
+    "style/config metadata must reuse cached availability"
   );
 
   Store.data = {
     machineTranslation: {
       provider: DEEPSEEK_PROVIDER,
-      encryptedApiKey: Buffer.from('stored-key').toString('base64'),
+      encryptedApiKey: Buffer.from("stored-key").toString("base64"),
     },
   };
   const denied = loadTranslationHandlers({ available: false });
-  const deniedConfig = denied.handlers.get('machine-translation:get-config');
-  const deniedSet = denied.handlers.get('machine-translation:set-config');
-  const deniedTest = denied.handlers.get('machine-translation:test');
+  const deniedConfig = denied.handlers.get("machine-translation:get-config");
+  const deniedSet = denied.handlers.get("machine-translation:set-config");
+  const deniedTest = denied.handlers.get("machine-translation:test");
   assert.strictEqual((await deniedConfig(event)).config.hasApiKey, true);
   assert.strictEqual(
     (await deniedConfig(event)).config.secureStorageAvailable,
     null
   );
-  await deniedSet(event, { styleHint: 'metadata only' });
+  await deniedSet(event, { styleHint: "metadata only" });
   assert.strictEqual(
     denied.secureStorage.checks,
     0,
-    'stored credential metadata also avoids Keychain'
+    "stored credential metadata also avoids Keychain"
   );
   const blockedRead = await deniedTest(event);
   assert.strictEqual(blockedRead.ok, false);
-  assert.strictEqual(blockedRead.status, 'secure-storage-unavailable');
+  assert.strictEqual(blockedRead.status, "secure-storage-unavailable");
   assert.strictEqual(denied.secureStorage.checks, 1);
   assert.strictEqual(denied.secureStorage.decryptions, 0);
   assert.strictEqual(
@@ -344,15 +347,15 @@ async function run() {
   );
   assert.strictEqual(denied.secureStorage.checks, 1);
   const before = Store.data.machineTranslation.encryptedApiKey;
-  const blockedWrite = await deniedSet(event, { apiKey: 'must-not-persist' });
-  assert.strictEqual(blockedWrite.status, 'secure-storage-unavailable');
+  const blockedWrite = await deniedSet(event, { apiKey: "must-not-persist" });
+  assert.strictEqual(blockedWrite.status, "secure-storage-unavailable");
   assert.strictEqual(denied.secureStorage.checks, 2);
   assert.strictEqual(denied.secureStorage.encryptions, 0);
   assert.strictEqual(Store.data.machineTranslation.encryptedApiKey, before);
   denied.secureStorage.available = true;
   denied.secureStorage.denyEncrypt = true;
   assert.strictEqual(
-    (await deniedSet(event, { apiKey: 'must-not-persist' })).ok,
+    (await deniedSet(event, { apiKey: "must-not-persist" })).ok,
     false
   );
   assert.strictEqual(denied.secureStorage.checks, 3);
@@ -365,11 +368,110 @@ async function run() {
   assert.strictEqual(
     denied.getFetchCount(),
     0,
-    'denied credentials never reach a network request'
+    "denied credentials never reach a network request"
+  );
+
+  const secretMarker = "private-provider-content";
+  Store.data = {
+    machineTranslation: {
+      provider: "deepseek",
+      encryptedApiKey: Buffer.from("mock-key").toString("base64"),
+    },
+  };
+  for (const code of [
+    "empty-content",
+    "refused",
+    "invalid-response-json",
+    "invalid-json",
+    "unexpected-test-result",
+    "invalid-response",
+    "invalid-alignment",
+    "unexpected-finish-reason",
+    secretMarker,
+  ]) {
+    const failure = Object.assign(new Error(secretMarker), {
+      code,
+      status: 200,
+      diagnostics: {
+        operation: secretMarker,
+        stage: "content",
+        finishReason: "length",
+        contentBytes: 0,
+        expectedLineCount: 3,
+        receivedLineCount: 1,
+        attempts: 2,
+        content: secretMarker,
+        apiKey: secretMarker,
+      },
+    });
+    const isolated = loadTranslationHandlers({
+      translationModule: {
+        testDeepSeekApiKey: async () => {
+          throw failure;
+        },
+        translateWholeLyricWithDeepSeek: async () => {
+          throw failure;
+        },
+      },
+    });
+    const testFailure = await isolated.handlers.get("machine-translation:test")(
+      event
+    );
+    const lyricFailure = await isolated.handlers.get(
+      "machine-translation:translate-lyrics"
+    )(event, {
+      lyric: "[00:01.00]Hello",
+      title: "Safety test",
+      allowNetwork: true,
+    });
+    for (const [operation, result] of [
+      ["test", testFailure],
+      ["translate", lyricFailure],
+    ]) {
+      assert.strictEqual(
+        result.status,
+        code === secretMarker ? "request-failed" : code
+      );
+      assert.strictEqual(result.diagnostics.operation, operation);
+      assert.strictEqual(result.diagnostics.attempts, 2);
+      assert.strictEqual(result.diagnostics.receivedLineCount, 1);
+      assert.strictEqual(JSON.stringify(result).includes(secretMarker), false);
+    }
+  }
+  const unsafe = loadTranslationHandlers({
+    translationModule: {
+      testDeepSeekApiKey: async () => {
+        throw Object.assign(new Error(secretMarker), {
+          code: secretMarker,
+          status: Infinity,
+          diagnostics: {
+            stage: secretMarker,
+            finishReason: secretMarker,
+            contentBytes: -1,
+            expectedLineCount: 1.5,
+            receivedLineCount: Infinity,
+            attempts: 10000001,
+          },
+        });
+      },
+    },
+  });
+  assert.deepStrictEqual(
+    JSON.parse(
+      JSON.stringify(
+        await unsafe.handlers.get("machine-translation:test")(event)
+      )
+    ),
+    {
+      ok: false,
+      status: "request-failed",
+      httpStatus: 0,
+      diagnostics: { attempts: 2, operation: "test" },
+    }
   );
 
   // eslint-disable-next-line no-console
-  console.log('DeepSeek machine translation IPC tests passed');
+  console.log("DeepSeek machine translation IPC tests passed");
 }
 
 run().catch((error) => {

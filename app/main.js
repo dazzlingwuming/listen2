@@ -32,6 +32,7 @@ const {
   getEffectiveStyleHint,
   normalizeDeepSeekTranslationInput,
   normalizeStyleHint,
+  sanitizeDeepSeekDiagnostics,
   testDeepSeekApiKey,
   translateWholeLyricWithDeepSeek,
 } = require("./machineTranslation");
@@ -332,9 +333,9 @@ function getListeningHistoryStore() {
   return listeningHistoryStore;
 }
 
-async function withMachineTranslationTimeout(operation) {
+async function withMachineTranslationTimeout(operation, timeoutMs = 30000) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await operation(controller.signal);
   } catch (error) {
@@ -448,15 +449,56 @@ function deleteMachineTranslationCacheEntries(cacheKeys) {
   }
 }
 
-function machineTranslationFailure(error) {
-  return {
-    ok: false,
-    status:
-      error && typeof error.code === "string"
-        ? error.code
-        : "request-failed",
-    httpStatus: Number((error && error.status) || 0),
-  };
+function machineTranslationFailure(error, operation) {
+  // IPC errors contain only fixed status names and bounded metadata, never provider text.
+  const statuses = new Set([
+    "request-failed",
+    "request-timeout",
+    "ipc-forbidden",
+    "missing-api-key",
+    "invalid-api-key",
+    "secure-storage-unavailable",
+    "quota-exceeded",
+    "rate-limited",
+    "bad-request",
+    "invalid-request",
+    "server-error",
+    "service-unavailable",
+    "fetch-unavailable",
+    "invalid-style-hint",
+    "unsupported-target-language",
+    "empty-lyric",
+    "no-timed-lines",
+    "lyric-too-large",
+    "too-many-timed-lines",
+    "lyric-line-too-long",
+    "response-too-large",
+    "invalid-json",
+    "invalid-response-json",
+    "invalid-response",
+    "empty-content",
+    "invalid-alignment",
+    "unexpected-finish-reason",
+    "unexpected-test-result",
+    "refused",
+  ]);
+  const status =
+    error && statuses.has(error.code) ? error.code : "request-failed";
+  const httpStatus =
+    error &&
+    Number.isInteger(error.status) &&
+    error.status >= 100 &&
+    error.status <= 599
+      ? error.status
+      : 0;
+  const response = { ok: false, status, httpStatus };
+  const diagnostics = sanitizeDeepSeekDiagnostics(error && error.diagnostics);
+  delete diagnostics.operation;
+  if (operation === "test" || operation === "translate") {
+    diagnostics.operation = operation;
+  }
+  if (Object.keys(diagnostics).length) response.diagnostics = diagnostics;
+  return response;
 }
 
 function ensureTrustedMachineTranslationSender(event) {
@@ -764,7 +806,7 @@ ipcMain.handle("machine-translation:test", async (event) => {
       ...usage,
     };
   } catch (error) {
-    return machineTranslationFailure(error);
+    return machineTranslationFailure(error, "test");
   }
 });
 
@@ -819,17 +861,19 @@ ipcMain.handle(
         return { ok: false, status: "missing-api-key" };
       }
 
-      const result = await withMachineTranslationTimeout((signal) =>
-        translateWholeLyricWithDeepSeek({
-          fetchImpl: getMachineTranslationFetch(),
-          apiKey,
-          lyric: input.lyric,
-          targetLanguage: input.targetLanguage,
-          title: input.title,
-          artist: input.artist,
-          styleHint: input.styleHint,
-          signal,
-        })
+      const result = await withMachineTranslationTimeout(
+        (signal) =>
+          translateWholeLyricWithDeepSeek({
+            fetchImpl: getMachineTranslationFetch(),
+            apiKey,
+            lyric: input.lyric,
+            targetLanguage: input.targetLanguage,
+            title: input.title,
+            artist: input.artist,
+            styleHint: input.styleHint,
+            signal,
+          }),
+        120000
       );
       saveMachineTranslationCacheEntry(cacheKey, result);
       await attachMachineTranslationToLyricCache(
@@ -850,7 +894,7 @@ ipcMain.handle(
         cached: false,
       };
     } catch (error) {
-      return machineTranslationFailure(error);
+      return machineTranslationFailure(error, "translate");
     }
   }
 );

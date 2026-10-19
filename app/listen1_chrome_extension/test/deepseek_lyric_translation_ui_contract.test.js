@@ -268,3 +268,108 @@ fs.readdirSync(path.join(extensionRoot, 'i18n'))
 
 // eslint-disable-next-line no-console
 console.log('DeepSeek lyric translation UI contract passed.');
+
+async function verifyTranslationSettingsPendingLock() {
+  const queue = [];
+  const notices = [];
+  let testCalls = 0;
+  let resolveTest;
+  const scope = {
+    machineTranslationConfig: { apiKeyInput: 'mock-key', styleHint: '' },
+    machineTranslationConfigPending: false,
+    $evalAsync(callback) {
+      queue.push(callback);
+    },
+  };
+  const context = {
+    $scope: scope,
+    isElectron: () => true,
+    i18next: { t: (key) => key },
+    notyf: { error: (message) => notices.push(message), success() {} },
+    MediaService: {
+      setMachineTranslationConfig: async () => ({
+        ok: true,
+        config: { hasApiKey: true },
+      }),
+      testMachineTranslationConfig() {
+        testCalls += 1;
+        return new Promise((resolve) => {
+          resolveTest = resolve;
+        });
+      },
+    },
+  };
+  const testAction = playSource.slice(
+    playSource.indexOf('    $scope.testMachineTranslationConfig ='),
+    playSource.indexOf('    $scope.loadLocalSettings =')
+  );
+  vm.runInNewContext(
+    [
+      functionBody('getMachineTranslationErrorMessage'),
+      functionBody('applyMachineTranslationConfigResponse'),
+      functionBody('saveMachineTranslationConfig'),
+      testAction,
+      'globalThis.getError = getMachineTranslationErrorMessage;',
+    ].join('\n'),
+    context
+  );
+  scope.testMachineTranslationConfig();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.strictEqual(testCalls, 1);
+  queue.splice(0).forEach((callback) => callback());
+  assert.strictEqual(
+    scope.machineTranslationConfigPending,
+    true,
+    'delayed save digest must not unlock the in-flight connection test'
+  );
+  scope.testMachineTranslationConfig();
+  assert.strictEqual(
+    testCalls,
+    1,
+    'repeat clicks must not start another request'
+  );
+  resolveTest({ ok: false, status: 'unexpected-test-result' });
+  await Promise.resolve();
+  queue.splice(0).forEach((callback) => callback());
+  assert.strictEqual(scope.machineTranslationConfigPending, false);
+  assert.match(notices[0], /_MACHINE_TRANSLATION_TEST_RESULT_FAILED/);
+  assert.match(
+    context.getError('request-timeout', 'test'),
+    /_MACHINE_TRANSLATION_TEST_TIMEOUT/
+  );
+  assert.match(
+    context.getError('request-timeout'),
+    /_MACHINE_TRANSLATION_TIMEOUT/
+  );
+  for (const unsafeStatus of [
+    'secret-provider-message',
+    '__proto__',
+    'constructor',
+  ]) {
+    assert.match(
+      context.getError(unsafeStatus),
+      /_MACHINE_TRANSLATION_FAILED \[request-failed\]/
+    );
+  }
+  for (const [status, key] of Object.entries({
+    'empty-content': 'EMPTY_CONTENT',
+    refused: 'REFUSED',
+    'invalid-response-json': 'RESPONSE_JSON_FAILED',
+    'invalid-json': 'MODEL_JSON_FAILED',
+    'invalid-response': 'INVALID_RESPONSE',
+    'invalid-alignment': 'ALIGNMENT_FAILED',
+    'unexpected-finish-reason': 'FINISH_FAILED',
+  })) {
+    assert.match(
+      context.getError(status),
+      new RegExp(`_MACHINE_TRANSLATION_${key}`)
+    );
+  }
+}
+
+verifyTranslationSettingsPendingLock().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
