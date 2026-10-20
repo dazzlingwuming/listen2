@@ -20,11 +20,19 @@ angular.module('listenone').controller('ProfileController', [
     $scope.proxyModes = [
       { name: 'system', displayId: '_PROXY_SYSTEM' },
       { name: 'direct', displayId: '_PROXY_DIRECT' },
+      { name: 'enhanced-direct', displayId: '_PROXY_ENHANCED_DIRECT' },
       { name: 'custom', displayId: '_PROXY_CUSTOM' },
     ];
 
-    [$scope.proxyModeInput] = $scope.proxyModes;
-    [$scope.proxyMode] = $scope.proxyModes;
+    $scope.proxyModeInput = null;
+    $scope.proxyMode = null;
+    $scope.proxyNetworkAvailable = isElectron();
+    $scope.proxyStatePending = $scope.proxyNetworkAvailable;
+    $scope.proxyApplyPending = false;
+    $scope.proxyStateKnown = false;
+    $scope.proxyFeedbackKey = $scope.proxyNetworkAvailable
+      ? '_PROXY_STATE_LOADING'
+      : '_PROXY_STATE_DESKTOP_ONLY';
     $scope.proxyProtocols = ['http', 'https', 'quic', 'socks4', 'socks5'];
 
     $scope.proxyProtocol = 'http';
@@ -38,33 +46,238 @@ angular.module('listenone').controller('ProfileController', [
       $scope.proxyModeInput = newMode;
     };
 
-    $scope.setProxyConfig = () => {
-      const mode = $scope.proxyModeInput.name;
-      $scope.proxyMode = $scope.proxyModeInput;
-      const host = document.getElementById('proxy-rules-host').value;
-      const port = document.getElementById('proxy-rules-port').value;
-      $scope.proxyRules = `${$scope.proxyProtocol}://${host}:${port}`;
-      if (isElectron()) {
-        const message = 'update_proxy_config';
-        const { ipcRenderer } = require('electron');
-        if (mode === 'system' || mode === 'direct') {
-          ipcRenderer.send('control', message, { mode });
-        } else {
-          ipcRenderer.send('control', message, {
-            proxyRules: $scope.proxyRules,
-          });
+    let proxyRequestVersion = 0;
+    const proxyConfigMode = (config) => {
+      if (!config || typeof config !== 'object') return null;
+      if (
+        config.mode === 'system' ||
+        config.mode === 'direct' ||
+        config.mode === 'enhanced-direct'
+      ) {
+        return config.mode;
+      }
+      if (config.mode === 'custom' && typeof config.proxyRules === 'string') {
+        return 'custom';
+      }
+      return typeof config.proxyRules === 'string' ? 'custom' : null;
+    };
+    const updateProxyMode = (config) => {
+      const modeName = proxyConfigMode(config);
+      if (!modeName) return false;
+      [$scope.proxyMode] = $scope.proxyModes.filter(
+        (item) => item.name === modeName
+      );
+      $scope.proxyModeInput = $scope.proxyMode;
+      $scope.proxyRules = modeName === 'custom' ? config.proxyRules : '';
+      if (modeName === 'custom') {
+        const match = /(\w+):\/\/([^:/]+):(\d+)/.exec(config.proxyRules);
+        if (match) {
+          const [, protocol, host, port] = match;
+          $scope.proxyProtocol = protocol;
+          const hostInput = document.getElementById('proxy-rules-host');
+          const portInput = document.getElementById('proxy-rules-port');
+          if (hostInput) hostInput.value = host;
+          if (portInput) portInput.value = port;
         }
       }
+      $scope.proxyStateKnown = true;
+      return true;
     };
+    const applyProxyState = (state) => {
+      const mode = state && proxyConfigMode(state.config);
+      if (
+        !state ||
+        state.scope !== 'application' ||
+        !mode ||
+        Boolean(state.enhancedDirect) !== (mode === 'enhanced-direct')
+      ) {
+        return false;
+      }
+      updateProxyMode(state.config);
+      if (state.ok === true) {
+        $scope.proxyFeedbackKey =
+          mode === 'enhanced-direct'
+            ? '_PROXY_STATE_ENHANCED_ACTIVE'
+            : mode === 'direct'
+            ? '_PROXY_STATE_DIRECT_ACTIVE'
+            : mode === 'custom'
+            ? '_PROXY_STATE_CUSTOM_ACTIVE'
+            : '_PROXY_STATE_SYSTEM_ACTIVE';
+      }
+      return true;
+    };
+    const clearProxyState = () => {
+      $scope.proxyMode = null;
+      $scope.proxyModeInput = null;
+      $scope.proxyRules = '';
+      $scope.proxyStateKnown = false;
+    };
+    const currentProxyConfig = () => {
+      if (!$scope.proxyStateKnown || !$scope.proxyMode) return null;
+      return $scope.proxyMode.name === 'custom'
+        ? { proxyRules: $scope.proxyRules }
+        : { mode: $scope.proxyMode.name };
+    };
+    const sameProxyConfig = (left, right) => {
+      const leftMode = proxyConfigMode(left);
+      const rightMode = proxyConfigMode(right);
+      if (!leftMode || leftMode !== rightMode) return false;
+      return leftMode === 'custom'
+        ? left.proxyRules === right.proxyRules
+        : leftMode === rightMode;
+    };
+    const reportProxyFailure = (state, previousConfig) => {
+      if (applyProxyState(state)) {
+        const rollbackCodes = new Set([
+          'invalid-config',
+          'policy-apply-failed',
+          'resolver-check-failed',
+          'resolver-check-timeout',
+          'persist-failed',
+        ]);
+        const restored =
+          state.ok === false &&
+          rollbackCodes.has(state.errorCode) &&
+          sameProxyConfig(previousConfig, state.config);
+        $scope.proxyFeedbackKey = restored
+          ? '_PROXY_ERROR_RESTORED'
+          : '_PROXY_ERROR_APPLIED_WITH_WARNING';
+        return;
+      }
+      clearProxyState();
+      $scope.proxyFeedbackKey = '_PROXY_ERROR_UNCONFIRMED';
+    };
+    const invokeNetwork = (method, config) => {
+      if (!isElectron()) return Promise.reject(new Error('desktop-only'));
+      const { ipcRenderer } = require('electron');
+      return method === 'get'
+        ? ipcRenderer.invoke('network:getState')
+        : ipcRenderer.invoke('network:applyConfig', config);
+    };
+    const updateInDigest = (callback) =>
+      new Promise((resolve) => {
+        const update = () => resolve(callback());
+        if (typeof $scope.$applyAsync === 'function') {
+          $scope.$applyAsync(update);
+        } else {
+          update();
+        }
+      });
+    const applyProxyConfig = (config, closeOnSuccess) => {
+      if (!isElectron() || $scope.proxyApplyPending)
+        return Promise.resolve(false);
+      const requestVersion = ++proxyRequestVersion;
+      const previousConfig = currentProxyConfig();
+      $scope.proxyStatePending = false;
+      $scope.proxyApplyPending = true;
+      $scope.proxyFeedbackKey = '_PROXY_STATE_APPLYING';
+      return invokeNetwork('apply', config)
+        .then((state) =>
+          updateInDigest(() => {
+            if (requestVersion !== proxyRequestVersion) return false;
+            if (!state || state.ok !== true) {
+              reportProxyFailure(state, previousConfig);
+              return false;
+            }
+            if (!applyProxyState(state)) {
+              clearProxyState();
+              $scope.proxyFeedbackKey = '_PROXY_ERROR_UNCONFIRMED';
+              return false;
+            }
+            $scope.proxyFeedbackKey = '_PROXY_STATE_APPLIED';
+            if (closeOnSuccess && typeof $scope.closeDialog === 'function') {
+              $scope.closeDialog();
+            }
+            return true;
+          })
+        )
+        .catch(() =>
+          updateInDigest(() => {
+            if (requestVersion === proxyRequestVersion) {
+              clearProxyState();
+              $scope.proxyFeedbackKey = '_PROXY_ERROR_UNCONFIRMED';
+            }
+            return false;
+          })
+        )
+        .finally(() =>
+          updateInDigest(() => {
+            if (requestVersion === proxyRequestVersion) {
+              $scope.proxyApplyPending = false;
+            }
+          })
+        );
+    };
+    $scope.setProxyConfig = () => {
+      const mode = $scope.proxyModeInput && $scope.proxyModeInput.name;
+      if (!mode) return Promise.resolve(false);
+      if (mode === 'custom') {
+        const hostInput = document.getElementById('proxy-rules-host');
+        const portInput = document.getElementById('proxy-rules-port');
+        const host = hostInput && hostInput.value;
+        const port = portInput && portInput.value;
+        if (!host || !/^\d+$/.test(port || '')) {
+          $scope.proxyFeedbackKey = '_PROXY_ERROR_RESTORED';
+          return Promise.resolve(false);
+        }
+        const proxyRules = `${$scope.proxyProtocol}://${host}:${port}`;
+        return applyProxyConfig({ proxyRules }, true);
+      }
+      return applyProxyConfig({ mode }, true);
+    };
+    $scope.applyEnhancedDirect = () =>
+      applyProxyConfig({ mode: 'enhanced-direct' }, false);
+    $scope.restoreSystemProxy = () =>
+      applyProxyConfig({ mode: 'system' }, false);
 
     $scope.getProxyConfig = () => {
-      if (isElectron()) {
-        // get proxy config from main process
-        const message = 'get_proxy_config';
-        const { ipcRenderer } = require('electron');
-        ipcRenderer.send('control', message);
-      }
+      if (!isElectron() || $scope.proxyApplyPending)
+        return Promise.resolve(false);
+      const requestVersion = ++proxyRequestVersion;
+      $scope.proxyStatePending = true;
+      $scope.proxyFeedbackKey = '_PROXY_STATE_LOADING';
+      return invokeNetwork('get')
+        .then((state) =>
+          updateInDigest(() => {
+            if (requestVersion !== proxyRequestVersion) return false;
+            if (!state || state.ok !== true) {
+              if (applyProxyState(state)) {
+                reportProxyFailure(state, null);
+              } else {
+                clearProxyState();
+                $scope.proxyFeedbackKey = '_PROXY_STATE_UNKNOWN';
+              }
+              return false;
+            }
+            if (!applyProxyState(state)) {
+              clearProxyState();
+              $scope.proxyStateKnown = false;
+              $scope.proxyFeedbackKey = '_PROXY_STATE_UNKNOWN';
+              return false;
+            }
+            return true;
+          })
+        )
+        .catch(() =>
+          updateInDigest(() => {
+            if (requestVersion === proxyRequestVersion) {
+              clearProxyState();
+              $scope.proxyFeedbackKey = '_PROXY_STATE_UNKNOWN';
+            }
+            return false;
+          })
+        )
+        .finally(() =>
+          updateInDigest(() => {
+            if (requestVersion === proxyRequestVersion) {
+              $scope.proxyStatePending = false;
+            }
+          })
+        );
     };
+    $scope.retryProxyState = $scope.getProxyConfig;
+    $scope.proxyFeedbackText = () =>
+      $scope[$scope.proxyFeedbackKey] || $scope._PROXY_STATE_UNKNOWN || '';
 
     $scope.initProfile = () => {
       const url = `https://api.github.com/repos/listen1/listen1_chrome_extension/releases/latest`;
@@ -74,34 +287,6 @@ angular.module('listenone').controller('ProfileController', [
 
       $scope.getProxyConfig();
     };
-
-    if (isElectron()) {
-      const { ipcRenderer } = require('electron');
-
-      ipcRenderer.on('proxyConfig', (event, config) => {
-        // parse config
-        if (config.mode === 'system' || config.mode === 'direct') {
-          [$scope.proxyMode] = $scope.proxyModes.filter(
-            (i) => i.name === config.mode
-          );
-          $scope.proxyModeInput = $scope.proxyMode;
-          $scope.proxyRules = '';
-        } else {
-          [$scope.proxyMode] = $scope.proxyModes.filter(
-            (i) => i.name === 'custom'
-          );
-          $scope.proxyModeInput = $scope.proxyMode;
-          $scope.proxyRules = config.proxyRules;
-          // rules = 'socks5://127.0.0.1:1080'
-          const match = /(\w+):\/\/([\d.]+):(\d+)/.exec(config.proxyRules);
-          const [, protocol, host, port] = match;
-
-          $scope.proxyProtocol = protocol;
-          document.getElementById('proxy-rules-host').value = host;
-          document.getElementById('proxy-rules-port').value = port;
-        }
-      });
-    }
     $scope.setLang = (langKey) => {
       // You can change the language during runtime
       i18next.changeLanguage(langKey).then((t) => {

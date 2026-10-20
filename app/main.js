@@ -16,6 +16,9 @@ const {
 const Store = require("electron-store");
 const { autoUpdater } = require("electron-updater");
 const { createDesktopUpdater } = require("./desktopUpdater");
+const { createDesktopNetworkPolicy } = require("./desktopNetworkPolicy");
+const { createDesktopNetworkBridge } = require("./desktopNetworkBridge");
+const { pathToFileURL } = require("url");
 const remoteMain = require("@electron/remote/main");
 const { createHash } = require("crypto");
 const { join } = require("path");
@@ -189,6 +192,34 @@ const windowState = store.get("windowState") || {
 let proxyConfig = store.get("proxyConfig") || {
   mode: "system",
 };
+const mainPlayerUrl = pathToFileURL(
+  join(__dirname, "listen1_chrome_extension", "listen1.html")
+).href;
+let desktopUpdater;
+const desktopNetworkPolicy = createDesktopNetworkPolicy({
+  configureHostResolver: (config) => app.configureHostResolver(config),
+  getManagedSessions: () => [
+    { name: "default", session: session.defaultSession },
+    {
+      name: "electron-updater",
+      session: session.fromPartition("electron-updater", { cache: false }),
+    },
+  ],
+  persist: (snapshot) => {
+    store.set(snapshot);
+    proxyConfig = snapshot.proxyConfig;
+  },
+  platform: process.platform,
+});
+const desktopNetworkBridge = createDesktopNetworkBridge({
+  policy: desktopNetworkPolicy,
+  ipcMain,
+  getMainWindow: () => mainWindow,
+  mainUrl: mainPlayerUrl,
+  startUpdater: () => desktopUpdater.start(),
+});
+desktopNetworkBridge.register();
+
 
 function getStoredMachineTranslationConfig() {
   const config = store.get("machineTranslation") || {};
@@ -1097,15 +1128,6 @@ async function updateFloatingWindow(cssStyle) {
     console.log(err);
   }
 }
-/**
- * @param {electron.Config} params
- */
-async function updateProxyConfig(params) {
-  proxyConfig = params;
-
-  await mainWindow.webContents.session.setProxy(params);
-  await mainWindow.webContents.session.forceReloadProxyConfig();
-}
 
 function destroyFloatingWindow() {
   if (!floatingWindow) {
@@ -1379,12 +1401,7 @@ function createWindow() {
   const ua =
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.119 Safari/537.36";
 
-  mainWindow.webContents.session.setProxy(proxyConfig).then(() => {
-    mainWindow.loadURL(
-      `file://${__dirname}/listen1_chrome_extension/listen1.html`,
-      { userAgent: ua }
-    );
-  });
+  mainWindow.loadURL(mainPlayerUrl, { userAgent: ua });
 
   setThumbarPause();
   // Emitted when the window is closed.
@@ -1691,11 +1708,8 @@ ipcMain.on("control", async (event, arg, params) => {
       break;
 
     case "get_proxy_config":
-      mainWindow.webContents.send("proxyConfig", proxyConfig);
-      break;
-
     case "update_proxy_config":
-      await updateProxyConfig(params);
+      await desktopNetworkBridge.handleLegacy(event, arg, params);
       break;
 
     default:
@@ -1748,6 +1762,10 @@ if (!gotTheLock) {
 
   // Create myWindow, load the rest of the app, etc...
   app.on("ready", async () => {
+    const networkStartupState = await desktopNetworkPolicy.initialize({
+      proxyConfig,
+      networkPolicy: store.get("networkPolicy"),
+    });
     try {
       await getAudioCache().initialize();
       if (
@@ -1767,14 +1785,14 @@ if (!gotTheLock) {
       audioCacheStartupError = error;
     }
     createWindow();
-    const desktopUpdater = createDesktopUpdater({
+    desktopUpdater = createDesktopUpdater({
       updater: autoUpdater,
       dialog,
       shell,
       platform: process.platform,
       getParentWindow: () => mainWindow,
     });
-    void desktopUpdater.start();
+    desktopNetworkBridge.maybeStartUpdater(networkStartupState);
     remoteMain.initialize();
     remoteMain.enable(mainWindow.webContents);
   });
@@ -1807,7 +1825,6 @@ app.on("before-quit", (event) => {
     store.set("floatingWindowBounds", floatingWindow.getBounds());
   }
   store.set("windowState", windowState);
-  store.set("proxyConfig", proxyConfig);
   if (audioCache && !audioCacheQuitCleanupComplete) {
     event.preventDefault();
     if (!audioCacheQuitCleanupStarted) {
