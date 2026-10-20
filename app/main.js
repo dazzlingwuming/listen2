@@ -16,6 +16,9 @@ const {
 const Store = require("electron-store");
 const { autoUpdater } = require("electron-updater");
 const { createDesktopUpdater } = require("./desktopUpdater");
+const { createDesktopNetworkPolicy } = require("./desktopNetworkPolicy");
+const { createDesktopNetworkBridge } = require("./desktopNetworkBridge");
+const { pathToFileURL } = require("url");
 const remoteMain = require("@electron/remote/main");
 const { createHash } = require("crypto");
 const { join } = require("path");
@@ -32,6 +35,7 @@ const {
   getEffectiveStyleHint,
   normalizeDeepSeekTranslationInput,
   normalizeStyleHint,
+  sanitizeDeepSeekDiagnostics,
   testDeepSeekApiKey,
   translateWholeLyricWithDeepSeek,
 } = require("./machineTranslation");
@@ -188,6 +192,34 @@ const windowState = store.get("windowState") || {
 let proxyConfig = store.get("proxyConfig") || {
   mode: "system",
 };
+const mainPlayerUrl = pathToFileURL(
+  join(__dirname, "listen1_chrome_extension", "listen1.html")
+).href;
+let desktopUpdater;
+const desktopNetworkPolicy = createDesktopNetworkPolicy({
+  configureHostResolver: (config) => app.configureHostResolver(config),
+  getManagedSessions: () => [
+    { name: "default", session: session.defaultSession },
+    {
+      name: "electron-updater",
+      session: session.fromPartition("electron-updater", { cache: false }),
+    },
+  ],
+  persist: (snapshot) => {
+    store.set(snapshot);
+    proxyConfig = snapshot.proxyConfig;
+  },
+  platform: process.platform,
+});
+const desktopNetworkBridge = createDesktopNetworkBridge({
+  policy: desktopNetworkPolicy,
+  ipcMain,
+  getMainWindow: () => mainWindow,
+  mainUrl: mainPlayerUrl,
+  startUpdater: () => desktopUpdater.start(),
+});
+desktopNetworkBridge.register();
+
 
 function getStoredMachineTranslationConfig() {
   const config = store.get("machineTranslation") || {};
@@ -332,9 +364,9 @@ function getListeningHistoryStore() {
   return listeningHistoryStore;
 }
 
-async function withMachineTranslationTimeout(operation) {
+async function withMachineTranslationTimeout(operation, timeoutMs = 30000) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await operation(controller.signal);
   } catch (error) {
@@ -448,15 +480,56 @@ function deleteMachineTranslationCacheEntries(cacheKeys) {
   }
 }
 
-function machineTranslationFailure(error) {
-  return {
-    ok: false,
-    status:
-      error && typeof error.code === "string"
-        ? error.code
-        : "request-failed",
-    httpStatus: Number((error && error.status) || 0),
-  };
+function machineTranslationFailure(error, operation) {
+  // IPC errors contain only fixed status names and bounded metadata, never provider text.
+  const statuses = new Set([
+    "request-failed",
+    "request-timeout",
+    "ipc-forbidden",
+    "missing-api-key",
+    "invalid-api-key",
+    "secure-storage-unavailable",
+    "quota-exceeded",
+    "rate-limited",
+    "bad-request",
+    "invalid-request",
+    "server-error",
+    "service-unavailable",
+    "fetch-unavailable",
+    "invalid-style-hint",
+    "unsupported-target-language",
+    "empty-lyric",
+    "no-timed-lines",
+    "lyric-too-large",
+    "too-many-timed-lines",
+    "lyric-line-too-long",
+    "response-too-large",
+    "invalid-json",
+    "invalid-response-json",
+    "invalid-response",
+    "empty-content",
+    "invalid-alignment",
+    "unexpected-finish-reason",
+    "unexpected-test-result",
+    "refused",
+  ]);
+  const status =
+    error && statuses.has(error.code) ? error.code : "request-failed";
+  const httpStatus =
+    error &&
+    Number.isInteger(error.status) &&
+    error.status >= 100 &&
+    error.status <= 599
+      ? error.status
+      : 0;
+  const response = { ok: false, status, httpStatus };
+  const diagnostics = sanitizeDeepSeekDiagnostics(error && error.diagnostics);
+  delete diagnostics.operation;
+  if (operation === "test" || operation === "translate") {
+    diagnostics.operation = operation;
+  }
+  if (Object.keys(diagnostics).length) response.diagnostics = diagnostics;
+  return response;
 }
 
 function ensureTrustedMachineTranslationSender(event) {
@@ -764,7 +837,7 @@ ipcMain.handle("machine-translation:test", async (event) => {
       ...usage,
     };
   } catch (error) {
-    return machineTranslationFailure(error);
+    return machineTranslationFailure(error, "test");
   }
 });
 
@@ -819,17 +892,19 @@ ipcMain.handle(
         return { ok: false, status: "missing-api-key" };
       }
 
-      const result = await withMachineTranslationTimeout((signal) =>
-        translateWholeLyricWithDeepSeek({
-          fetchImpl: getMachineTranslationFetch(),
-          apiKey,
-          lyric: input.lyric,
-          targetLanguage: input.targetLanguage,
-          title: input.title,
-          artist: input.artist,
-          styleHint: input.styleHint,
-          signal,
-        })
+      const result = await withMachineTranslationTimeout(
+        (signal) =>
+          translateWholeLyricWithDeepSeek({
+            fetchImpl: getMachineTranslationFetch(),
+            apiKey,
+            lyric: input.lyric,
+            targetLanguage: input.targetLanguage,
+            title: input.title,
+            artist: input.artist,
+            styleHint: input.styleHint,
+            signal,
+          }),
+        120000
       );
       saveMachineTranslationCacheEntry(cacheKey, result);
       await attachMachineTranslationToLyricCache(
@@ -850,7 +925,7 @@ ipcMain.handle(
         cached: false,
       };
     } catch (error) {
-      return machineTranslationFailure(error);
+      return machineTranslationFailure(error, "translate");
     }
   }
 );
@@ -1052,15 +1127,6 @@ async function updateFloatingWindow(cssStyle) {
   } catch (err) {
     console.log(err);
   }
-}
-/**
- * @param {electron.Config} params
- */
-async function updateProxyConfig(params) {
-  proxyConfig = params;
-
-  await mainWindow.webContents.session.setProxy(params);
-  await mainWindow.webContents.session.forceReloadProxyConfig();
 }
 
 function destroyFloatingWindow() {
@@ -1335,12 +1401,7 @@ function createWindow() {
   const ua =
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.119 Safari/537.36";
 
-  mainWindow.webContents.session.setProxy(proxyConfig).then(() => {
-    mainWindow.loadURL(
-      `file://${__dirname}/listen1_chrome_extension/listen1.html`,
-      { userAgent: ua }
-    );
-  });
+  mainWindow.loadURL(mainPlayerUrl, { userAgent: ua });
 
   setThumbarPause();
   // Emitted when the window is closed.
@@ -1647,11 +1708,8 @@ ipcMain.on("control", async (event, arg, params) => {
       break;
 
     case "get_proxy_config":
-      mainWindow.webContents.send("proxyConfig", proxyConfig);
-      break;
-
     case "update_proxy_config":
-      await updateProxyConfig(params);
+      await desktopNetworkBridge.handleLegacy(event, arg, params);
       break;
 
     default:
@@ -1704,6 +1762,10 @@ if (!gotTheLock) {
 
   // Create myWindow, load the rest of the app, etc...
   app.on("ready", async () => {
+    const networkStartupState = await desktopNetworkPolicy.initialize({
+      proxyConfig,
+      networkPolicy: store.get("networkPolicy"),
+    });
     try {
       await getAudioCache().initialize();
       if (
@@ -1723,14 +1785,14 @@ if (!gotTheLock) {
       audioCacheStartupError = error;
     }
     createWindow();
-    const desktopUpdater = createDesktopUpdater({
+    desktopUpdater = createDesktopUpdater({
       updater: autoUpdater,
       dialog,
       shell,
       platform: process.platform,
       getParentWindow: () => mainWindow,
     });
-    void desktopUpdater.start();
+    desktopNetworkBridge.maybeStartUpdater(networkStartupState);
     remoteMain.initialize();
     remoteMain.enable(mainWindow.webContents);
   });
@@ -1763,7 +1825,6 @@ app.on("before-quit", (event) => {
     store.set("floatingWindowBounds", floatingWindow.getBounds());
   }
   store.set("windowState", windowState);
-  store.set("proxyConfig", proxyConfig);
   if (audioCache && !audioCacheQuitCleanupComplete) {
     event.preventDefault();
     if (!audioCacheQuitCleanupStarted) {

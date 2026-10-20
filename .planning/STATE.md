@@ -10,3 +10,5 @@
 | 261012-ojv — Right-side lyric picker layout | 2026-10-12 | Source and scoped CI PASS; headless real-markup layouts/actions verified at six sizes; local 2.35.4 DMGs built. Installed runtime not verified. See quick SUMMARY. |
 
 No Android roadmap or milestone state is represented by this desktop branch.
+
+| 261019-mk8 — DeepSeek response reliability | 2026-10-19 | c9ce651; scoped CI, native direct/system + packaged50-line translations PASS; repair installed, two real-song completion states observed, user confirmed usable. ARM64 DMG verified; rollback app retained. See quick SUMMARY. |

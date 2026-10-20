@@ -581,9 +581,19 @@
                           ng-options="mode.displayText for mode in proxyModes"
                           ng-model="proxyModeInput"
                           ng-change="changeProxyMode(proxyModeInput)"
+                          ng-disabled="proxyApplyPending || !proxyNetworkAvailable"
                         ></select>
+                        <p>{{_PROXY_APP_DIRECT_HELP}}</p>
+                        <p
+                          class="proxy-feedback"
+                          role="status"
+                          aria-live="polite"
+                          aria-atomic="true"
+                        >
+                          {{proxyFeedbackText()}}
+                        </p>
                         <div
-                          ng-show="proxyModeInput.name=='custom'"
+                          ng-show="proxyModeInput && proxyModeInput.name=='custom'"
                           class="custom-proxy"
                         >
                           <div class="rule-input">
@@ -602,7 +612,8 @@
                         <div class="buttons">
                           <button
                             class="btn btn-primary confirm-button"
-                            ng-click="setProxyConfig();closeDialog();"
+                            ng-click="setProxyConfig()"
+                            ng-disabled="proxyApplyPending || !proxyNetworkAvailable || !proxyModeInput"
                           >
                             {{_CONFIRM}}
                           </button>
@@ -2095,13 +2106,40 @@
                               </div>
                               <div class="settings-content" ng-if="!isChrome">
                                 <span>{{_PROXY_CONFIG}}:</span>
-                                {{proxyMode.displayText}}
-                                <span ng-show="proxyMode.name=='custom'"
+                                <p>{{_PROXY_APP_DIRECT_HELP}}</p>
+                                <span ng-if="proxyStateKnown">{{proxyMode.displayText}}</span>
+                                <span ng-if="!proxyStateKnown">{{_PROXY_STATE_UNKNOWN}}</span>
+                                <span ng-show="proxyMode && proxyMode.name=='custom'"
                                   >{{proxyRules}}</span
                                 >
-                                <button ng-click="showDialog(12)">
+                                <button
+                                  class="btn btn-default"
+                                  ng-click="applyEnhancedDirect()"
+                                  ng-if="!proxyStateKnown || proxyMode.name !== 'enhanced-direct'"
+                                  ng-disabled="proxyApplyPending || !proxyNetworkAvailable"
+                                >{{_PROXY_ENABLE_APP_DIRECT}}</button>
+                                <button
+                                  class="btn btn-default"
+                                  ng-click="restoreSystemProxy()"
+                                  ng-if="!proxyStateKnown || proxyMode.name === 'enhanced-direct'"
+                                  ng-disabled="proxyApplyPending || !proxyNetworkAvailable"
+                                >{{_PROXY_RESTORE_SYSTEM}}</button>
+                                <button
+                                  class="btn btn-default"
+                                  ng-click="retryProxyState()"
+                                  ng-if="!proxyStateKnown"
+                                  ng-disabled="proxyStatePending || !proxyNetworkAvailable"
+                                >{{_PROXY_RETRY}}</button>
+                                <button ng-click="showDialog(12)" ng-disabled="proxyApplyPending || !proxyNetworkAvailable">
                                   {{_MODIFY}}
                                 </button>
+                                <span
+                                  class="proxy-feedback"
+                                  role="status"
+                                  aria-live="polite"
+                                  aria-atomic="true"
+                                  >{{proxyFeedbackText()}}</span
+                                >
                               </div>
                               <div class="settings-title">
                                 <span>{{_ABOUT}}</span>
@@ -2138,7 +2176,7 @@
                                   {{_DESIGNER}} ({{_THEME_MODERN_BLACK}},
                                   {{_THEME_MODERN_WHITE}}): 814959822, Antion
                                 </p>
-                                <p>{{_VERSION}}: v2.35.2 {{_LICENSE_NOTICE}}</p>
+                                <p>{{_VERSION}}: v2.35.5 {{_LICENSE_NOTICE}}</p>
                                 <p ng-show='lastestVersion!=""'>
                                   {{_LATEST_VERSION}}: {{lastestVersion}}
                                 </p>
@@ -3466,9 +3504,19 @@
                           ng-options="mode.displayText for mode in proxyModes"
                           ng-model="proxyModeInput"
                           ng-change="changeProxyMode(proxyModeInput)"
+                          ng-disabled="proxyApplyPending || !proxyNetworkAvailable"
                         ></select>
+                        <p>{{_PROXY_APP_DIRECT_HELP}}</p>
+                        <p
+                          class="proxy-feedback"
+                          role="status"
+                          aria-live="polite"
+                          aria-atomic="true"
+                        >
+                          {{proxyFeedbackText()}}
+                        </p>
                         <div
-                          ng-show="proxyModeInput.name=='custom'"
+                          ng-show="proxyModeInput && proxyModeInput.name=='custom'"
                           class="custom-proxy"
                         >
                           <div class="rule-input">
@@ -3487,7 +3535,8 @@
                         <div class="buttons">
                           <button
                             class="btn btn-primary confirm-button"
-                            ng-click="setProxyConfig();closeDialog();"
+                            ng-click="setProxyConfig()"
+                            ng-disabled="proxyApplyPending || !proxyNetworkAvailable || !proxyModeInput"
                           >
                             {{_CONFIRM}}
                           </button>
@@ -5532,13 +5581,40 @@
                               </div>
                               <div class="settings-content" ng-if="!isChrome">
                                 <span>{{_PROXY_CONFIG}}:</span>
-                                {{proxyMode.displayText}}
-                                <span ng-show="proxyMode.name=='custom'"
+                                <p>{{_PROXY_APP_DIRECT_HELP}}</p>
+                                <span ng-if="proxyStateKnown">{{proxyMode.displayText}}</span>
+                                <span ng-if="!proxyStateKnown">{{_PROXY_STATE_UNKNOWN}}</span>
+                                <span ng-show="proxyMode && proxyMode.name=='custom'"
                                   >{{proxyRules}}</span
                                 >
-                                <button ng-click="showDialog(12)">
+                                <button
+                                  class="btn btn-default"
+                                  ng-click="applyEnhancedDirect()"
+                                  ng-if="!proxyStateKnown || proxyMode.name !== 'enhanced-direct'"
+                                  ng-disabled="proxyApplyPending || !proxyNetworkAvailable"
+                                >{{_PROXY_ENABLE_APP_DIRECT}}</button>
+                                <button
+                                  class="btn btn-default"
+                                  ng-click="restoreSystemProxy()"
+                                  ng-if="!proxyStateKnown || proxyMode.name === 'enhanced-direct'"
+                                  ng-disabled="proxyApplyPending || !proxyNetworkAvailable"
+                                >{{_PROXY_RESTORE_SYSTEM}}</button>
+                                <button
+                                  class="btn btn-default"
+                                  ng-click="retryProxyState()"
+                                  ng-if="!proxyStateKnown"
+                                  ng-disabled="proxyStatePending || !proxyNetworkAvailable"
+                                >{{_PROXY_RETRY}}</button>
+                                <button ng-click="showDialog(12)" ng-disabled="proxyApplyPending || !proxyNetworkAvailable">
                                   {{_MODIFY}}
                                 </button>
+                                <span
+                                  class="proxy-feedback"
+                                  role="status"
+                                  aria-live="polite"
+                                  aria-atomic="true"
+                                  >{{proxyFeedbackText()}}</span
+                                >
                               </div>
                               <div class="settings-title">
                                 <span>{{_ABOUT}}</span>
@@ -5575,7 +5651,7 @@
                                   {{_DESIGNER}} ({{_THEME_MODERN_BLACK}},
                                   {{_THEME_MODERN_WHITE}}): 814959822, Antion
                                 </p>
-                                <p>{{_VERSION}}: v2.35.2 {{_LICENSE_NOTICE}}</p>
+                                <p>{{_VERSION}}: v2.35.5 {{_LICENSE_NOTICE}}</p>
                                 <p ng-show='lastestVersion!=""'>
                                   {{_LATEST_VERSION}}: {{lastestVersion}}
                                 </p>

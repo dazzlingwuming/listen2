@@ -5,7 +5,7 @@
 ### 把 Bilibili 与多平台音乐内容，整理成更好用的桌面播放器
 
 [![License](https://img.shields.io/badge/license-MIT-7c5cff.svg)](./LICENSE.md)
-[![Version](https://img.shields.io/badge/version-2.35.4-8b5cf6.svg)](https://github.com/dazzlingwuming/listen2/releases/tag/v2.35.4)
+[![Version](https://img.shields.io/badge/version-2.35.5-8b5cf6.svg)](https://github.com/dazzlingwuming/listen2/releases/tag/v2.35.5)
 [![Electron](https://img.shields.io/badge/Electron-32-38bdf8.svg)](https://www.electronjs.org/)
 [![Windows](https://img.shields.io/badge/Windows-x64-2563eb.svg)](https://github.com/dazzlingwuming/listen2/releases/latest)
 [![macOS](https://img.shields.io/badge/macOS-Universal-111827.svg)](#平台支持)
@@ -18,6 +18,14 @@
 Listen2 是 [Listen1](https://github.com/listen1/listen1) 的社区增强版本。它保留多平台聚合搜索、播放和歌单能力，并重点改善 Bilibili 音乐播放、同步歌词、歌词翻译、桌面歌词、MV 和现代化桌面体验。
 
 > Listen2 只整理和播放用户本来就有权访问的内容，不解锁会员、付费、DRM、地区限制或其他受限资源。
+
+## v2.35.5 更新
+
+- 新增“仅本应用直连”，仅影响本应用的搜索、播放、歌词、翻译和更新；电脑代理可继续供其他软件使用。
+- 本应用使用独立安全 DNS，减少默认 Fake-IP 解析对应用网络请求的影响，并提供异步切换回执及设置保存、恢复。
+- 修复 DeepSeek 翻译遇到不完整响应时的恢复处理（c9ce651）。
+
+此功能不保证所有歌曲都能直连，也不承诺绕过系统级 TUN 网络接管；实际连接仍受系统网络环境和内容服务影响。
 
 ## v2.35.4 更新
 

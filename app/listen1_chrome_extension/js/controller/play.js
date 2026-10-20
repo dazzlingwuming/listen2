@@ -1300,7 +1300,10 @@ angular.module('listenone').controller('PlayController', [
       return 'zh-CN';
     }
 
-    function getMachineTranslationErrorMessage(status) {
+    function getMachineTranslationErrorMessage(
+      status,
+      operation = 'translate'
+    ) {
       const messages = {
         'missing-api-key': '_MACHINE_TRANSLATION_MISSING_KEY',
         'invalid-api-key': '_MACHINE_TRANSLATION_INVALID_KEY',
@@ -1312,9 +1315,14 @@ angular.module('listenone').controller('PlayController', [
         'line-count-mismatch': '_MACHINE_TRANSLATION_ALIGNMENT_FAILED',
         'invalid-line-map': '_MACHINE_TRANSLATION_ALIGNMENT_FAILED',
         'missing-line': '_MACHINE_TRANSLATION_ALIGNMENT_FAILED',
-        'invalid-json': '_MACHINE_TRANSLATION_INVALID_RESPONSE',
-        'invalid-alignment': '_MACHINE_TRANSLATION_INVALID_RESPONSE',
-        'unexpected-finish-reason': '_MACHINE_TRANSLATION_INVALID_RESPONSE',
+        'empty-content': '_MACHINE_TRANSLATION_EMPTY_CONTENT',
+        refused: '_MACHINE_TRANSLATION_REFUSED',
+        'invalid-response-json': '_MACHINE_TRANSLATION_RESPONSE_JSON_FAILED',
+        'invalid-json': '_MACHINE_TRANSLATION_MODEL_JSON_FAILED',
+        'unexpected-test-result': '_MACHINE_TRANSLATION_TEST_RESULT_FAILED',
+        'invalid-response': '_MACHINE_TRANSLATION_INVALID_RESPONSE',
+        'invalid-alignment': '_MACHINE_TRANSLATION_ALIGNMENT_FAILED',
+        'unexpected-finish-reason': '_MACHINE_TRANSLATION_FINISH_FAILED',
         'same-language': '_MACHINE_TRANSLATION_SAME_LANGUAGE',
         'not-cached': '_MACHINE_TRANSLATION_NOT_CACHED',
         'bad-request': '_MACHINE_TRANSLATION_INVALID_REQUEST',
@@ -1330,7 +1338,20 @@ angular.module('listenone').controller('PlayController', [
         'service-unavailable': '_MACHINE_TRANSLATION_SERVICE_UNAVAILABLE',
         'insufficient-balance': '_MACHINE_TRANSLATION_ACCOUNT_LIMIT',
       };
-      return i18next.t(messages[status] || '_MACHINE_TRANSLATION_FAILED');
+      const knownStatus = Object.prototype.hasOwnProperty.call(
+        messages,
+        status
+      );
+      const messageKey =
+        status === 'request-timeout' && operation === 'test'
+          ? '_MACHINE_TRANSLATION_TEST_TIMEOUT'
+          : (knownStatus && messages[status]) ||
+            (operation === 'test'
+              ? '_MACHINE_TRANSLATION_TEST_FAILED'
+              : '_MACHINE_TRANSLATION_FAILED');
+      return `${i18next.t(messageKey)} [${
+        knownStatus ? status : 'request-failed'
+      }]`;
     }
 
     function applyMachineTranslationConfigResponse(response) {
@@ -1375,7 +1396,12 @@ angular.module('listenone').controller('PlayController', [
 
     function saveMachineTranslationConfig(
       showNotice,
-      { includeApiKey = true, includeStyleHint = true, noticeKey } = {}
+      {
+        includeApiKey = true,
+        includeStyleHint = true,
+        noticeKey,
+        keepPending = false,
+      } = {}
     ) {
       if (!isElectron()) {
         return Promise.resolve(false);
@@ -1396,7 +1422,7 @@ angular.module('listenone').controller('PlayController', [
       return MediaService.setMachineTranslationConfig(payload)
         .then((response) => {
           $scope.$evalAsync(() => {
-            $scope.machineTranslationConfigPending = false;
+            if (!keepPending) $scope.machineTranslationConfigPending = false;
             if (!applyMachineTranslationConfigResponse(response)) {
               if (showNotice) {
                 notyf.error(
@@ -1425,7 +1451,7 @@ angular.module('listenone').controller('PlayController', [
         })
         .catch(() => {
           $scope.$evalAsync(() => {
-            $scope.machineTranslationConfigPending = false;
+            if (!keepPending) $scope.machineTranslationConfigPending = false;
             if (showNotice) {
               notyf.error(i18next.t('_MACHINE_TRANSLATION_FAILED'));
             }
@@ -1503,38 +1529,47 @@ angular.module('listenone').controller('PlayController', [
       if ($scope.machineTranslationConfigPending) {
         return;
       }
-      saveMachineTranslationConfig(false).then((saveResponse) => {
-        if (!saveResponse || saveResponse.ok !== true) {
-          notyf.error(
-            getMachineTranslationErrorMessage(
-              (saveResponse && saveResponse.status) || 'request-failed'
-            )
-          );
-          return;
-        }
-        $scope.machineTranslationConfigPending = true;
-        MediaService.testMachineTranslationConfig()
-          .then((response) => {
+      saveMachineTranslationConfig(false, { keepPending: true }).then(
+        (saveResponse) => {
+          if (!saveResponse || saveResponse.ok !== true) {
             $scope.$evalAsync(() => {
               $scope.machineTranslationConfigPending = false;
-              if (!response || response.ok !== true) {
+            });
+            notyf.error(
+              getMachineTranslationErrorMessage(
+                (saveResponse && saveResponse.status) || 'request-failed',
+                'test'
+              )
+            );
+            return;
+          }
+          $scope.machineTranslationConfigPending = true;
+          MediaService.testMachineTranslationConfig()
+            .then((response) => {
+              $scope.$evalAsync(() => {
+                $scope.machineTranslationConfigPending = false;
+                if (!response || response.ok !== true) {
+                  notyf.error(
+                    getMachineTranslationErrorMessage(
+                      (response && response.status) || 'request-failed',
+                      'test'
+                    )
+                  );
+                  return;
+                }
+                notyf.success(i18next.t('_MACHINE_TRANSLATION_TEST_SUCCESS'));
+              });
+            })
+            .catch(() => {
+              $scope.$evalAsync(() => {
+                $scope.machineTranslationConfigPending = false;
                 notyf.error(
-                  getMachineTranslationErrorMessage(
-                    (response && response.status) || 'request-failed'
-                  )
+                  getMachineTranslationErrorMessage('request-failed', 'test')
                 );
-                return;
-              }
-              notyf.success(i18next.t('_MACHINE_TRANSLATION_TEST_SUCCESS'));
+              });
             });
-          })
-          .catch(() => {
-            $scope.$evalAsync(() => {
-              $scope.machineTranslationConfigPending = false;
-              notyf.error(i18next.t('_MACHINE_TRANSLATION_FAILED'));
-            });
-          });
-      });
+        }
+      );
     };
 
     $scope.loadLocalSettings = () => {
