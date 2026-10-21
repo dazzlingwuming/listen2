@@ -187,15 +187,11 @@ Windows 未使用商业代码签名；macOS 沿用 v2.35.1 的打包流程，无
 
 ### macOS
 
-Intel Mac 下载 x64 DMG，Apple Silicon（M 系列）下载 arm64 DMG；Universal DMG 同时支持两者。打开 DMG 后将 Listen1 拖入“应用程序”。
+Intel Mac 下载 x64 DMG，Apple Silicon（M 系列）下载 arm64 DMG；Universal DMG 同时支持两者。
 
-macOS 沿用 v2.35.1 的打包流程，无需新增签名证书或信任配置。安装包未使用 Apple Developer ID，也未经过 Apple 公证，因此首次从浏览器下载后仍可能被 Gatekeeper 拦截。请先核对 [官方 Release](https://github.com/dazzlingwuming/listen2/releases/latest) 来源和 SHA-256，然后：
+macOS 当前采用项目明确选择的未签名直接安装方式：构建保持 `CSC_IDENTITY_AUTO_DISCOVERY=false`，不使用 Developer ID 签名或 Apple 公证。下载后先核对 [官方 Release](https://github.com/dazzlingwuming/listen2/releases/latest)、DMG SHA-256、应用版本和架构，再将 Listen1 拖入“应用程序”。
 
-1. 从“应用程序”打开 Listen1 一次，关闭系统拦截提示。
-2. 打开“系统设置 → 隐私与安全性”，在安全性区域找到 Listen1 的提示，点击“仍要打开”（Open Anyway）。
-3. 按系统要求确认或输入管理员密码，再点击“打开”。此操作仅允许这份应用运行；后续通常可正常打开。更新后系统可能再次要求确认。
-
-更新后的系统确认和钥匙串授权取决于本机状态，不能保证所有版本均免密码。如果系统未提供“仍要打开”，请保留提示文字并反馈，不要关闭 Gatekeeper。
+只读 `codesign --verify` 可用于诊断；对于有意未签名的构建，验证失败本身不触发重签、自动修复或阻止已核验原包安装。安装门禁以可信来源、制品 hash、版本、架构和实际启动验证为准。如果 macOS 实际阻止启动，请记录系统显示的原始错误并反馈；不要自动修改系统安全设置、移除隔离属性或对制品/本机副本重签。具体约定见 [macOS 直接安装与签名约定](doc/2026-10-21/macOS直接安装与签名约定.md)。
 
 本版本只发布 Windows x64 的 NSIS 与 7z，以及 macOS x64、arm64 和 Universal DMG；不发布 Linux、Windows ia32 或 Windows arm64 制品。
 
@@ -260,7 +256,7 @@ npm run dist:win
 npm run dist:mac
 ```
 
-构建产物位于 `dist/`。macOS 沿用 v2.35.1 的 electron-builder 流程，不配置自定义签名 hook，也不要求创建本机签名证书或修改钥匙串信任。公开分发前，请在目标系统实机测试。
+构建产物位于 `dist/`。macOS 保持未签名直接安装流程；不要增加签名或公证配置，也不要对构建产物或已安装副本执行签名。源码与制品 hash、版本、架构及目标系统启动验证用于验收。构建前后请遵守 [macOS 直接安装与签名约定](doc/2026-10-21/macOS直接安装与签名约定.md)。
 
 ### 运行测试
 
