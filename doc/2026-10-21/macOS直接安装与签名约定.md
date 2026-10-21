@@ -10,7 +10,7 @@
 
 ## 构建和安装规则
 
-- macOS 构建保持 `CSC_IDENTITY_AUTO_DISCOVERY=false`，不配置 Developer ID 签名或 Apple 公证分发。
+- macOS 构建配置必须设置 `build.mac.identity: null`（CLI 可用 `--config.mac.identity=null`）；这是 electron-builder 跳过签名的决定性设置。`CSC_IDENTITY_AUTO_DISCOVERY=false` 单独只关闭证书自动发现，不足以保证不签名。保持该环境变量，同时不配置 Developer ID 签名或 Apple 公证分发。
 - 不对发布制品或本机已安装副本执行 `codesign --sign`、重签、补签或签名修复；不新增证书、钥匙串信任项或其他签名基础设施。
 - `codesign --verify` 等只读检查可以执行并如实记录。对于有意未签名的原包，验证失败本身不触发修复，也不能单独阻断已经核对的原包安装。
 - 安装核验依据：受信来源、DMG/应用制品 SHA-256、bundle 版本与 ID、目标架构，以及目标系统上的实际启动结果。不要以重新签名替代这些检查。

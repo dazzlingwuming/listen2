@@ -5,7 +5,7 @@
 ### 把 Bilibili 与多平台音乐内容，整理成更好用的桌面播放器
 
 [![License](https://img.shields.io/badge/license-MIT-7c5cff.svg)](./LICENSE.md)
-[![Version](https://img.shields.io/badge/version-2.35.6--candidate-8b5cf6.svg)](./app/package.json)
+[![Version](https://img.shields.io/badge/version-2.35.7--candidate-8b5cf6.svg)](./app/package.json)
 [![Electron](https://img.shields.io/badge/Electron-32-38bdf8.svg)](https://www.electronjs.org/)
 [![Windows](https://img.shields.io/badge/Windows-x64-2563eb.svg)](https://github.com/dazzlingwuming/listen2/releases/latest)
 [![macOS](https://img.shields.io/badge/macOS-Universal-111827.svg)](#平台支持)
@@ -18,6 +18,16 @@
 Listen2 是 [Listen1](https://github.com/listen1/listen1) 的社区增强版本。它保留多平台聚合搜索、播放和歌单能力，并重点改善 Bilibili 音乐播放、同步歌词、歌词翻译、桌面歌词、MV 和现代化桌面体验。
 
 > Listen2 只整理和播放用户本来就有权访问的内容，不解锁会员、付费、DRM、地区限制或其他受限资源。
+
+## v2.35.7 更新
+
+当前为开发候选，尚未发布。
+
+- 增强现有 FX 预设的低频、人声、高频与空间差异；夜间预设的音色更柔和，保留原有压缩力度。继续使用原来的 FX 入口，并保留舒适响度校准。
+- LRCLIB 遇到限流或服务繁忙时遵循服务器等待提示，在原有请求时限内最多重试一次，并限制连续请求频率。
+- 区分歌词服务繁忙、域名解析、安全连接中断及平台响应异常；部分来源失败时保留其他来源的结果。
+- 完善 LRCLIB 客户端标识，保持匿名查询；不新增未经证实需要的登录要求。
+- 网易旧搜索返回特定异常结构时，尝试一次官方搜索契约；平台确实要求验证时复用现有官方验证窗口。网络环境仍可能影响 QQ、酷我等来源，此候选不承诺绕过系统 TUN 接管。
 
 ## v2.35.6 更新
 

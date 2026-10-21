@@ -1,0 +1,211 @@
+{
+  "updatedAt": "2026-10-21T11:59:01.335876+08:00",
+  "status": "candidate_verified_not_installed",
+  "version": "2.35.7",
+  "repository": "dazzlingwuming/listen2",
+  "branch": "fix/desktop-comfort-loudness-20261021",
+  "implementationCommits": {
+    "lyrics": "b9ac5abcbbe5d14e2ef0c9586fdd3cbfedc85e3c",
+    "neteaseFallback": "1488037",
+    "fx": "c8cc3e53e92a0c791e5869d308eb71832786c388"
+  },
+  "sourceManifestSha256": "f7073699cbb05d84356ad51701bc4eb2eeeb57c9b95fc3e43befdb34c0578546",
+  "artifact": {
+    "acceptedAt": "2026-10-21T11:57:08.747058+08:00",
+    "status": "candidate_verified_not_installed",
+    "version": "2.35.7",
+    "architecture": "arm64",
+    "bundleId": "com.listen1.listen1",
+    "sourceManifestSha256": "f7073699cbb05d84356ad51701bc4eb2eeeb57c9b95fc3e43befdb34c0578546",
+    "dmg": {
+      "file": "listen1_2.35.7_mac_arm64.dmg",
+      "size": 100779482,
+      "sha256": "2996c95c4238af4705360b643877c1d7a1527ff277725711dd0fb0033100a72a"
+    },
+    "criticalSha256": {
+      "Contents/Info.plist": "b78f19b22c01f54cd7cedb3a01c62c9df555425ccc0a3ecb3cd309f30dabad71",
+      "Contents/MacOS/Listen1": "9e73b162e60c344c557abf368829e9827daaae35e293e3e309d0234b338ce3fa",
+      "Contents/Resources/app.asar": "2a085cf16fe80076776334dd8769e7bf92e9f0a2c1751c996d7f1a01be9fa991"
+    },
+    "newSigningPerformed": false,
+    "notarizationPerformed": false,
+    "userAppChanged": false,
+    "checks": {
+      "builderExit": 0,
+      "skipSigningReason": "identity explicitly is set to null",
+      "hdiutilVerify": "VALID",
+      "mountedContentMatches": true,
+      "mountDetached": true,
+      "asarSameAsSmokeTest": "2a085cf16fe80076776334dd8769e7bf92e9f0a2c1751c996d7f1a01be9fa991"
+    }
+  },
+  "targetedGates": {
+    "lyricsFinal": {
+      "startedAt": "2026-10-21T11:47:34.920173+08:00",
+      "endedAt": "2026-10-21T11:47:35.506544+08:00",
+      "head": "b9ac5abcbbe5d14e2ef0c9586fdd3cbfedc85e3c",
+      "command": [
+        "node",
+        "--test",
+        "app/test/neteaseSearchFallback.test.js",
+        "app/test/neteaseVerificationSession.test.js",
+        "app/test/neteaseLyricIpc.test.js",
+        "app/test/lyricSearch.test.js",
+        "app/test/lyricProviderRoutes.test.js",
+        "app/test/lyricDirectTransport.test.js",
+        "app/test/lyricRetryPolicy.test.js",
+        "app/test/lyricHttpMetadata.test.js",
+        "app/listen1_chrome_extension/test/netease_lyric_verification_ui_contract.test.js",
+        "app/listen1_chrome_extension/test/manual_lyric_search_ui.test.js"
+      ],
+      "exitCode": 0,
+      "summary": [
+        "ℹ tests 113",
+        "ℹ suites 0",
+        "ℹ pass 113",
+        "ℹ fail 0",
+        "ℹ cancelled 0",
+        "ℹ skipped 0",
+        "ℹ todo 0",
+        "ℹ duration_ms 561.714"
+      ],
+      "hashes": {
+        "app/listen1_chrome_extension/js/provider/bilibili.js": "2b9ce88e2267288b710bc255dfdbe2f770ec05be3ba5172b26395c27dced3375",
+        "app/lyricTransport.js": "a3152f07db73d3c0058bba3d1bc21b4a1e40ac466eb0731deb8a04d19fab4e69",
+        "app/neteaseVerificationSession.js": "30f9c4fb5ebbf49490d8fbe541260935b0183a599d05c6a827fd9d8cf6e623ac",
+        "app/test/neteaseSearchFallback.test.js": "49f68e4c93b4e9e17db2b9870f84e59ac840ec919649671cff19cfaf4b0d7892",
+        "app/test/neteaseVerificationSession.test.js": "0063e565e27c9969c0070c93078b14408bcde3a66e71facdaaf5a5d109ee54d7",
+        "app/test/neteaseLyricIpc.test.js": "fd8cff0d1003b39646332fc8c9251a894667be9ddae62ab73548758bce8defad"
+      },
+      "contract": [
+        "Fallback only code200+abroad===true+result string on old GET, Listen2LyricHttp present and isElectron true; at most onePC",
+        "PC URL envelope has exact s/type1/offset0/limit20 query; strict endpoint and cardinality validation",
+        "Trusted native session strips query, generates fixed POST/form/headers; never uses renderer method/body/header/defaultSession cookies",
+        "Original persistent dedicated session and official verification URL/resource restrictions retained",
+        "Global search signal unchanged across both requests; no12sdeadline renewal; per-request8s retained",
+        "PC -462 handled by same main observer and same verification session; success/empty/failure preserve actual outcome"
+      ],
+      "coverage": [
+        "First failing provider/PC allowlist regressions in before-fix.txt",
+        "GET anomaly ->PC songs/empty/-462/failure; no-loop; ordinaryGETempty/-462/non200same-shape/otherinvalid/timeout/browser nofallback",
+        "Exact PC endpoint/keys/values/no-duplicates; ignored arbitrary caller method/body/credentials/headers; actual wire URL passes existing resource callback",
+        "Same native partition verification window+retry; ignored-abort latePC headers close; provider lateGET/PC suppress stale result; global12scancellation",
+        "Existing strictTLS/publicDNS/cookie/privacy/RetryAfter tests retained"
+      ],
+      "limits": [
+        "No new live network requests; prior oneanonymousPOST returned-462 and verifyURL present; actual human verification/login acceptance remains unverified",
+        "No main.js/UI/FX/version/README/doc changes; no defaultSession credential copying",
+        "No dependency install, signing, commit, push or userApp manipulation"
+      ]
+    },
+    "comfortFinal": {
+      "startedAt": "2026-10-21T11:56:27.880427+08:00",
+      "endedAt": "2026-10-21T11:56:29.966919+08:00",
+      "head": "c8cc3e53e92a0c791e5869d308eb71832786c388",
+      "command": ["npm", "run", "test:comfort-loudness"],
+      "exitCode": 0,
+      "summary": [
+        "Desktop cache player behavior tests passed.",
+        "ℹ tests 39",
+        "ℹ pass 39",
+        "ℹ fail 0",
+        "ℹ skipped 0",
+        "ℹ duration_ms 1910.364"
+      ],
+      "sourceSha256": {
+        "app/listen1_chrome_extension/js/audio_visualizer.js": "0c1a4b0ab6fa826d213602545ea9eb048ebbdeca5fc0f3683ea440f7f1d31edd",
+        "app/listen1_chrome_extension/js/comfort_loudness_core.js": "a1b8f8a86274be1e8e136227f0da07acdec4be8effcf20e7263357e2ad7c3370"
+      }
+    },
+    "desktopNetworkIntegration": {
+      "tests": 5,
+      "passed": 5,
+      "exitCode": 0,
+      "unchangedInputApplicability": true
+    },
+    "nativeFx": {
+      "firstPass": {
+        "renders": 21,
+        "at": "2026-10-21T11:36:09+08:00",
+        "applicability": "Non-night branches only; initial night ratio3 values superseded"
+      },
+      "nightFinal": {
+        "renders": 7,
+        "at": "2026-10-21T11:39:47+08:00",
+        "exitCode": 0
+      },
+      "actualDom": {
+        "inputs": 2,
+        "at": "2026-10-21T11:34:34+08:00",
+        "networkBlocked": 7,
+        "exitCode": 0
+      },
+      "meterLimit": "Unchanged product analyzer previously independently calibrated; no new independent standard-meter validation"
+    },
+    "asarModuleSmoke": {
+      "exitCode": 0,
+      "startedAt": "2026-10-21T11:52:54.503+08:00",
+      "endedAt": "2026-10-21T11:52:54.769+08:00",
+      "archiveSha256": "2a085cf16fe80076776334dd8769e7bf92e9f0a2c1751c996d7f1a01be9fa991",
+      "archiveSameAfterDefaultBuildPolicy": true,
+      "noWindowOrRealSessionOrNetwork": true
+    }
+  },
+  "fxSourceSha256": {
+    "audio_visualizer.js": "0c1a4b0ab6fa826d213602545ea9eb048ebbdeca5fc0f3683ea440f7f1d31edd",
+    "comfort_loudness_core.js": "a1b8f8a86274be1e8e136227f0da07acdec4be8effcf20e7263357e2ad7c3370",
+    "comfort_loudness_worklet.js": "8ce57dfc5c5a6fc6c0f3e4d1d4634f6257cef80fc851d4da26f6417e10edfb60"
+  },
+  "realNetwork": {
+    "at": "2026-10-21T11:33:02.806+08:00",
+    "LRCLIB": {
+      "httpStatus": 200,
+      "attempts": 1,
+      "candidates": 12,
+      "retryBranch": "N/A; deterministic tests only"
+    },
+    "KUGOU": {
+      "catalogStatus": 200,
+      "candidates": 10,
+      "lyricStatus": 200,
+      "lyricPresent": true
+    },
+    "NETEASE_legacy": {
+      "httpStatus": 200,
+      "code": 200,
+      "abroad": true,
+      "resultType": "string"
+    },
+    "NETEASE_pc_anonymous": {
+      "at": "2026-10-21T11:41:09.044+08:00",
+      "httpStatus": 200,
+      "code": -462,
+      "verificationUrlPresent": true,
+      "humanVerificationNotPerformed": true
+    },
+    "QQ_KUWO": "Prior pre-HTTP TLS reset remains unresolved; no claim of restoration"
+  },
+  "fxBehavior": {
+    "ordinarySteadyLoudnessDifferenceLuMax": 0.001,
+    "highCrestDeepBassTruePeakDbtp": -1.49996,
+    "highCrestDeepBassLufs": -19.6,
+    "night": {
+      "compressorThresholdDb": -20,
+      "compressorRatio": 2,
+      "highShelfHz": 8000,
+      "highShelfDb": -3,
+      "transitionFirst400msDb": 1.397,
+      "oldComparableFirst400msDb": 1.346,
+      "over2DbDurationMs": 130,
+      "oldOver2DbDurationMs": 120
+    }
+  },
+  "limits": [
+    "Human NetEase verification and search acceptance not tested",
+    "No user-device listening or physical audio output capture",
+    "QQ/Kuwo TLS resets unresolved; actual TUN route not established",
+    "Only macOS arm64 candidate; no new Windows/x64 device validation",
+    "No whole-repository gate; legacy locale key-set differences preserved",
+    "Current installed 2.35.6 unchanged; no merge/tag/release"
+  ]
+}

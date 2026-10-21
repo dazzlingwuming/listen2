@@ -2,7 +2,7 @@
 
 ## macOS 直接安装与签名
 
-- 本项目有意维持未签名的 DMG 直接安装方式。构建保持 `CSC_IDENTITY_AUTO_DISCOVERY=false`；不要加入 Developer ID 签名或 Apple 公证分发配置。
+- 本项目有意维持未签名的 DMG 直接安装方式。构建配置必须设 `build.mac.identity: null`（CLI 可用 `--config.mac.identity=null`），这是 electron-builder 跳过签名的决定性设置；`CSC_IDENTITY_AUTO_DISCOVERY=false` 单独只关闭证书自动发现，不足以保证不签名。不要加入 Developer ID 签名或 Apple 公证分发配置。
 - 不对发布制品或本机已安装副本运行 `codesign --sign` 或其他重签操作；不得新增签名证书、钥匙串信任配置或系统安全设置修改。
 - 允许只读签名检查。对有意未签名的原包，`codesign --verify` 失败本身不能触发自动修复/重签，也不能单独阻断已通过来源、制品 hash、版本、架构和启动验证的原包安装。
 - 验收以源码/制品 hash、版本、架构及目标系统启动验证为准。若操作系统实际阻止启动，记录并报告原始错误，等待用户决定；不要自动修改 Gatekeeper、移除 quarantine 或尝试绕过系统阻拦。
