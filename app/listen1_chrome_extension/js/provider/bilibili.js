@@ -1195,19 +1195,32 @@ class bilibili {
     }
 
     return this.fetch_netease_lyric_search(searchText, hints).then((items) => {
-      if (items.length) this.report_lyric_search_stage(hints, 'lyrics');
+      if (hints.signal && hints.signal.aborted)
+        throw Object.assign(new Error('Cancelled'), { name: 'AbortError' });
+      const manualTitleVariants = scoringHints.variants.length
+        ? scoringHints.variants
+        : [scoringHints.rawTitle];
       const scoredCandidates = items
         .filter((item) => item && item.id)
         .map((item, index) => ({
           item,
           scored: this.score_netease_candidate(item, scoringHints, index),
         }))
-        .filter((candidate) => hints.manual || candidate.scored.score >= 0.3)
+        .filter((candidate) => {
+          if (!hints.manual) return candidate.scored.score >= 0.3;
+          // A manual search may keep covers or another singer, but an artist,
+          // duration baseline or provider rank cannot rescue an unrelated title.
+          const title = this.clean_music_title(candidate.item.name || '');
+          return manualTitleVariants.some(
+            (variant) => this.dice_similarity(variant, title) > 0
+          );
+        })
         .sort((left, right) => right.scored.score - left.scored.score)
         .slice(0, 6);
       if (scoredCandidates.length === 0) {
         return [];
       }
+      this.report_lyric_search_stage(hints, 'lyrics');
       return Promise.allSettled(
         scoredCandidates.map((candidate) =>
           this.fetch_netease_lyric(candidate.item.id, hints).then(
