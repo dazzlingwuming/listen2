@@ -73,6 +73,7 @@
     <script type="text/javascript" src="js/l1_player.js"></script>
     <script type="text/javascript" src="js/app.js"></script>
     <script src="js/virtual_repeat.js"></script>
+    <script src="js/comfort_loudness_core.js"></script>
     <script
       type="text/javascript"
       src="js/audio_visualizer.js?v=audio-reactive-stage-7"
@@ -784,7 +785,7 @@
                         </div>
                         <div
                           ng-class="{ 'active': (current_tag==4) && (window_url_stack.length ==0)}"
-                          ng-click="showTag(5)"
+                          ng-click="showTag(5); refreshAudioCacheStatus()"
                           class="settings"
                         >
                           <span class="icon">
@@ -1577,14 +1578,22 @@
                                   <input
                                     id="classic-loudness-normalization-enabled"
                                     type="checkbox"
+                                    role="switch"
                                     ng-model="audioCacheSettings.loudnessNormalizationEnabled"
                                     ng-change="updateLoudnessNormalizationEnabled()"
                                     ng-disabled="audioCacheActionPending"
+                                    aria-describedby="classic-loudness-normalization-description classic-loudness-normalization-playback-status"
                                   />
                                   <span>{{_LOUDNESS_NORMALIZATION_ENABLED}}</span>
                                 </label>
-                                <p class="loudness-normalization-description">
+                                <p id="classic-loudness-normalization-description" class="loudness-normalization-description">
                                   {{_LOUDNESS_NORMALIZATION_DESCRIPTION}}
+                                </p>
+                                <p id="classic-loudness-normalization-playback-status" class="loudness-normalization-description" aria-live="polite">
+                                  {{loudnessNormalizationPlaybackStatus()}}
+                                </p>
+                                <p class="loudness-normalization-description" role="status" aria-live="polite" ng-if="loudnessNormalizationPending || loudnessNormalizationError">
+                                  {{loudnessNormalizationActionStatus()}}
                                 </p>
                                 <p class="loudness-normalization-description" ng-if="audioCacheSettings.loudnessNormalizationEnabled !== false">
                                   {{loudnessNormalizationStatus()}}
@@ -2176,7 +2185,7 @@
                                   {{_DESIGNER}} ({{_THEME_MODERN_BLACK}},
                                   {{_THEME_MODERN_WHITE}}): 814959822, Antion
                                 </p>
-                                <p>{{_VERSION}}: v2.35.5 {{_LICENSE_NOTICE}}</p>
+                                <p>{{_VERSION}}: v2.35.6 {{_LICENSE_NOTICE}}</p>
                                 <p ng-show='lastestVersion!=""'>
                                   {{_LATEST_VERSION}}: {{lastestVersion}}
                                 </p>
@@ -3935,7 +3944,7 @@
                         </div>
                         <div
                           ng-class="{ 'active': (current_tag==4) && (window_url_stack.length ==0)}"
-                          ng-click="showTag(5)"
+                          ng-click="showTag(5); refreshAudioCacheStatus()"
                           class="settings"
                         >
                           <span class="icon">
@@ -5052,14 +5061,22 @@
                                   <input
                                     id="modern-loudness-normalization-enabled"
                                     type="checkbox"
+                                    role="switch"
                                     ng-model="audioCacheSettings.loudnessNormalizationEnabled"
                                     ng-change="updateLoudnessNormalizationEnabled()"
                                     ng-disabled="audioCacheActionPending"
+                                    aria-describedby="modern-loudness-normalization-description modern-loudness-normalization-playback-status"
                                   />
                                   <span>{{_LOUDNESS_NORMALIZATION_ENABLED}}</span>
                                 </label>
-                                <p class="loudness-normalization-description">
+                                <p id="modern-loudness-normalization-description" class="loudness-normalization-description">
                                   {{_LOUDNESS_NORMALIZATION_DESCRIPTION}}
+                                </p>
+                                <p id="modern-loudness-normalization-playback-status" class="loudness-normalization-description" aria-live="polite">
+                                  {{loudnessNormalizationPlaybackStatus()}}
+                                </p>
+                                <p class="loudness-normalization-description" role="status" aria-live="polite" ng-if="loudnessNormalizationPending || loudnessNormalizationError">
+                                  {{loudnessNormalizationActionStatus()}}
                                 </p>
                                 <p class="loudness-normalization-description" ng-if="audioCacheSettings.loudnessNormalizationEnabled !== false">
                                   {{loudnessNormalizationStatus()}}
@@ -5651,7 +5668,7 @@
                                   {{_DESIGNER}} ({{_THEME_MODERN_BLACK}},
                                   {{_THEME_MODERN_WHITE}}): 814959822, Antion
                                 </p>
-                                <p>{{_VERSION}}: v2.35.5 {{_LICENSE_NOTICE}}</p>
+                                <p>{{_VERSION}}: v2.35.6 {{_LICENSE_NOTICE}}</p>
                                 <p ng-show='lastestVersion!=""'>
                                   {{_LATEST_VERSION}}: {{lastestVersion}}
                                 </p>

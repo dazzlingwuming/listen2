@@ -1,26 +1,44 @@
 /**
  * Pure synthetic Electron loudness diagnosis: no network, audio files, userData,
  * real Electron runtime, application settings, or system volume are accessed.
- * Only repository JavaScript is read; all playback/cache inputs are fabricated.
+ * Only committed repository JavaScript is read; playback/cache inputs are fabricated.
  *
  * Run from any directory:
  *   node doc/2026-10-21/loudness-diagnosis-reproduce.cjs
  *
- * Expected on the diagnosis baseline: all assertions pass and demonstrate the
- * current gaps. This is evidence of existing behavior, not the desired behavior.
- * After a fix, replace these baseline assertions with regression tests for the
- * corrected contract; do not preserve a gap merely to keep this script passing.
+ * This historical reproducer reads the exact v2.35.5 diagnosis baseline from
+ * local Git objects, so fixing the live source does not rewrite the evidence.
+ * It requires that baseline commit to exist locally. Current behavior is tested
+ * separately by npm run test:comfort-loudness; these are not desired assertions.
  */
 const assert = require("node:assert/strict");
+const { execFileSync } = require("node:child_process");
 const { createHash } = require("node:crypto");
-const fs = require("node:fs");
+const Module = require("node:module");
 const path = require("node:path");
 const vm = require("node:vm");
 
 const root = path.resolve(__dirname, "../..");
-const core = require(path.join(root, "app/loudnessAnalyzerRenderer.js"));
-const { AudioCache } = require(path.join(root, "app/audioCache.js"));
-const { BilibiliService } = require(path.join(root, "app/bilibiliService.js"));
+const BASELINE = "5b5f90d891824cc5e339df78f3d546cb9f5d5b3e";
+function baselineSource(relativePath) {
+  return execFileSync("git", ["show", `${BASELINE}:${relativePath}`], {
+    cwd: root,
+    encoding: "utf8",
+    maxBuffer: 4 * 1024 * 1024,
+  });
+}
+function baselineRequire(relativePath) {
+  const filename = path.join(root, relativePath);
+  const snapshot = new Module(filename, module);
+  snapshot.filename = filename;
+  snapshot.paths = Module._nodeModulePaths(path.dirname(filename));
+  snapshot._compile(baselineSource(relativePath), filename);
+  return snapshot.exports;
+}
+console.log("HISTORICAL_BASELINE", BASELINE);
+const core = baselineRequire("app/loudnessAnalyzerRenderer.js");
+const { AudioCache } = baselineRequire("app/audioCache.js");
+const { BilibiliService } = baselineRequire("app/bilibiliService.js");
 
 function verifyGainExamples() {
   const examples = [
@@ -108,7 +126,11 @@ function createPlayerHarness() {
     root,
     "app/listen1_chrome_extension/js/player_thread.js"
   );
-  vm.runInContext(fs.readFileSync(filename, "utf8"), context, { filename });
+  vm.runInContext(
+    baselineSource("app/listen1_chrome_extension/js/player_thread.js"),
+    context,
+    { filename }
+  );
 
   return {
     player: context.window.threadPlayer,

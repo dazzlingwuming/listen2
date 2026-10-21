@@ -243,6 +243,11 @@ angular.module('listenone').controller('PlayController', [
       { value: null, label: '∞' },
     ];
     $scope.audioCacheActionPending = false;
+    $scope.loudnessNormalizationPending = false;
+    $scope.loudnessNormalizationError = '';
+    let audioCacheStatusRequestSequence = 0;
+    let audioCacheConfigureSequence = 0;
+    let confirmedLoudnessNormalizationEnabled = true;
     $scope.audioCacheManager = {
       loading: false,
       deleting: false,
@@ -428,6 +433,13 @@ angular.module('listenone').controller('PlayController', [
     }
 
     function scheduleAudioCacheStatusPoll(status) {
+      const comfortLoudnessSettingsVisible = Array.from(
+        document.querySelectorAll('[data-desktop-audio-cache-settings]')
+      ).some(
+        (element) =>
+          element.getClientRects().length > 0 &&
+          window.getComputedStyle(element).visibility !== 'hidden'
+      );
       const shouldPoll =
         !playControllerDestroyed &&
         isElectron() &&
@@ -436,6 +448,8 @@ angular.module('listenone').controller('PlayController', [
         (Number(status.queuedEntries) > 0 ||
           (status.loudnessNormalizationEnabled !== false &&
             Number(status.loudnessPendingEntries) > 0) ||
+          (status.loudnessNormalizationEnabled !== false &&
+            comfortLoudnessSettingsVisible) ||
           Boolean(document.querySelector('[data-audio-cache-library-page]')));
       if (!shouldPoll) {
         cancelAudioCacheStatusPoll();
@@ -460,6 +474,18 @@ angular.module('listenone').controller('PlayController', [
       );
     }
 
+    function isCurrentAudioCacheStatusRead(
+      readSequence,
+      configureSequenceAtStart,
+      currentReadSequence,
+      currentConfigureSequence
+    ) {
+      return (
+        readSequence === currentReadSequence &&
+        configureSequenceAtStart === currentConfigureSequence
+      );
+    }
+
     function applyAudioCacheStatus(response) {
       if (!response || response.ok !== true) {
         $scope.audioCacheSettings = {
@@ -474,6 +500,8 @@ angular.module('listenone').controller('PlayController', [
         ...response,
         supported: response.supported !== false,
       };
+      confirmedLoudnessNormalizationEnabled =
+        $scope.audioCacheSettings.loudnessNormalizationEnabled !== false;
       if (isElectron()) {
         const player = getPlayer(getPlayerMode());
         if (
@@ -508,12 +536,45 @@ angular.module('listenone').controller('PlayController', [
         scheduleAudioCacheStatusPoll($scope.audioCacheSettings);
         return Promise.resolve(null);
       }
+      const readSequence = ++audioCacheStatusRequestSequence;
+      const configureSequenceAtStart = audioCacheConfigureSequence;
       return MediaService.getAudioCacheStatus()
         .then((response) => {
-          $scope.$evalAsync(() => applyAudioCacheStatus(response));
+          if (
+            !isCurrentAudioCacheStatusRead(
+              readSequence,
+              configureSequenceAtStart,
+              audioCacheStatusRequestSequence,
+              audioCacheConfigureSequence
+            )
+          ) {
+            return null;
+          }
+          $scope.$evalAsync(() => {
+            if (
+              isCurrentAudioCacheStatusRead(
+                readSequence,
+                configureSequenceAtStart,
+                audioCacheStatusRequestSequence,
+                audioCacheConfigureSequence
+              )
+            ) {
+              applyAudioCacheStatus(response);
+            }
+          });
           return response;
         })
         .catch(() => {
+          if (
+            !isCurrentAudioCacheStatusRead(
+              readSequence,
+              configureSequenceAtStart,
+              audioCacheStatusRequestSequence,
+              audioCacheConfigureSequence
+            )
+          ) {
+            return null;
+          }
           cancelAudioCacheStatusPoll();
           $scope.$evalAsync(() => {
             $scope.audioCacheSettings.lastError = 'request-failed';
@@ -526,12 +587,33 @@ angular.module('listenone').controller('PlayController', [
       if (!isElectron() || $scope.audioCacheActionPending) {
         return;
       }
+      const updatesLoudnessSetting = Object.prototype.hasOwnProperty.call(
+        patch,
+        'loudnessNormalizationEnabled'
+      );
+      if (updatesLoudnessSetting) {
+        $scope.loudnessNormalizationPending = true;
+        $scope.loudnessNormalizationError = '';
+      }
+      const configureSequence = ++audioCacheConfigureSequence;
+      audioCacheStatusRequestSequence += 1;
       $scope.audioCacheActionPending = true;
       MediaService.configureAudioCache(patch)
         .then((response) => {
           $scope.$evalAsync(() => {
+            if (configureSequence !== audioCacheConfigureSequence) return;
             $scope.audioCacheActionPending = false;
-            if (!applyAudioCacheStatus(response)) {
+            const applied = applyAudioCacheStatus(response);
+            if (updatesLoudnessSetting) {
+              $scope.loudnessNormalizationPending = false;
+              if (!applied) {
+                $scope.audioCacheSettings.loudnessNormalizationEnabled =
+                  confirmedLoudnessNormalizationEnabled;
+                $scope.loudnessNormalizationError =
+                  (response && response.status) || 'request-failed';
+              }
+            }
+            if (!applied) {
               notyf.error(
                 $scope.audioCacheErrorLabel(response && response.status)
               );
@@ -542,8 +624,15 @@ angular.module('listenone').controller('PlayController', [
         })
         .catch(() => {
           $scope.$evalAsync(() => {
+            if (configureSequence !== audioCacheConfigureSequence) return;
             $scope.audioCacheActionPending = false;
             $scope.audioCacheSettings.lastError = 'request-failed';
+            if (updatesLoudnessSetting) {
+              $scope.audioCacheSettings.loudnessNormalizationEnabled =
+                confirmedLoudnessNormalizationEnabled;
+              $scope.loudnessNormalizationPending = false;
+              $scope.loudnessNormalizationError = 'request-failed';
+            }
             notyf.error(i18next.t('_AUDIO_CACHE_FAILURE_NOTICE'));
           });
         });
@@ -566,6 +655,53 @@ angular.module('listenone').controller('PlayController', [
         pending: $scope.audioCacheSettings.loudnessPendingEntries || 0,
         failed: $scope.audioCacheSettings.loudnessFailedEntries || 0,
       });
+    $scope.loudnessNormalizationPlaybackStatus = () => {
+      const settingEnabled =
+        $scope.audioCacheSettings.loudnessNormalizationEnabled !== false;
+      if (!settingEnabled && typeof Listen1AudioAnalysis === 'undefined') {
+        return i18next.t('_LOUDNESS_STATE_DISABLED');
+      }
+      if (
+        typeof Listen1AudioAnalysis === 'undefined' ||
+        typeof Listen1AudioAnalysis.getLoudnessState !== 'function'
+      ) {
+        return i18next.t('_LOUDNESS_STATE_UNAVAILABLE');
+      }
+      let state;
+      try {
+        state = Listen1AudioAnalysis.getLoudnessState();
+      } catch {
+        return i18next.t('_LOUDNESS_STATE_UNAVAILABLE');
+      }
+      if (!state || state.supported === false) {
+        return i18next.t(
+          settingEnabled
+            ? '_LOUDNESS_STATE_UNAVAILABLE'
+            : '_LOUDNESS_STATE_DISABLED'
+        );
+      }
+      if (state.enabled === false) {
+        return i18next.t('_LOUDNESS_STATE_DISABLED');
+      }
+      if (state.degraded || state.error || state.status === 'fallback') {
+        return i18next.t('_LOUDNESS_STATE_FALLBACK');
+      }
+      if (state.status === 'initializing' || state.ready === false) {
+        return i18next.t('_LOUDNESS_STATE_INITIALIZING');
+      }
+      if (state.active === true) {
+        return i18next.t(
+          state.status === 'calibrated'
+            ? '_LOUDNESS_STATE_ACTIVE_CALIBRATED'
+            : '_LOUDNESS_STATE_ACTIVE_ESTIMATING'
+        );
+      }
+      return i18next.t('_LOUDNESS_STATE_INACTIVE');
+    };
+    $scope.loudnessNormalizationActionStatus = () =>
+      $scope.loudnessNormalizationPending
+        ? i18next.t('_LOUDNESS_ACTION_PENDING')
+        : i18next.t('_LOUDNESS_ACTION_FAILED');
 
     const AUDIO_EFFECT_STORAGE_KEY = 'listen2-audio-effect-settings';
     const AUDIO_EFFECT_PRESET_IDS = $scope.audioEffectPresets.map(

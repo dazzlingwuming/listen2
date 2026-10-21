@@ -360,3 +360,113 @@ test("v1 cache index migrates missing loudness settings and backfills in place",
     await rm(rootDir, { recursive: true, force: true, maxRetries: 3 });
   }
 });
+
+test("transient analysis retries persist across restart, respect cooldown and stop after three attempts", async () => {
+  const analyzer = new DeferredAnalyzer();
+  const created = await createCache(analyzer);
+  const { rootDir } = created;
+  let { cache } = created;
+  let clock = Date.now();
+  cache.now = () => clock;
+  try {
+    await cache.schedule(scheduleInput());
+    await cache.writeChain;
+    await nextTurn();
+    analyzer.rejectNext("analyzer-renderer-gone");
+    await cache.waitForLoudnessIdle();
+    const first = (await lookup(cache)).entry.loudness;
+    assert.strictEqual(first.retryable, true);
+    assert.strictEqual(first.retryAttempts, 1);
+    assert.strictEqual(first.retryAfter, clock + 30000);
+    await nextTurn();
+    assert.strictEqual(
+      analyzer.calls.length,
+      1,
+      "lookup before cooldown cannot retry"
+    );
+
+    clock += 31000;
+    cache = new AudioCache({
+      rootDir,
+      session: { fetch() {} },
+      resolveBilibiliAudio: async () => ({}),
+      loudnessAnalyzer: analyzer,
+      now: () => clock,
+    });
+    await cache.initialize();
+    await nextTurn();
+    assert.strictEqual(
+      analyzer.calls.length,
+      2,
+      "restart retries only an eligible transient failure"
+    );
+    await Promise.all([lookup(cache), lookup(cache)]);
+    assert.strictEqual(
+      analyzer.calls.length,
+      2,
+      "parallel lookups share the same analysis job"
+    );
+    analyzer.rejectNext("analysis-timeout");
+    await cache.waitForLoudnessIdle();
+    assert.strictEqual((await lookup(cache)).entry.loudness.retryAttempts, 2);
+
+    clock += 61000;
+    await lookup(cache);
+    await nextTurn();
+    assert.strictEqual(analyzer.calls.length, 3);
+    analyzer.rejectNext("analysis-timeout");
+    await cache.waitForLoudnessIdle();
+    clock += 24 * 60 * 60 * 1000;
+    await lookup(cache);
+    cache.scheduleMissingLoudness();
+    await cache.configure({ loudnessNormalizationEnabled: true });
+    await nextTurn();
+    assert.strictEqual(
+      analyzer.calls.length,
+      3,
+      "retry exhaustion is persistent and bounded"
+    );
+    const persisted = JSON.parse(
+      await readFile(path.join(rootDir, "index-v1.json"), "utf8")
+    );
+    const result = Object.values(persisted.entries)[0].loudness;
+    assert.strictEqual(result.retryAttempts, 3);
+    assert.strictEqual(result.status, "failed");
+    assert.strictEqual(cache.status().readyEntries, 1);
+  } finally {
+    analyzer.cancelAll();
+    await cache.waitForLoudnessIdle();
+    await rm(rootDir, { recursive: true, force: true, maxRetries: 3 });
+  }
+});
+
+test("permanent unsupported and resource failures never retry the same bytes/version", async () => {
+  for (const code of [
+    "unsupported-sample-rate",
+    "analysis-file-too-large",
+    "decoded-audio-too-large",
+  ]) {
+    const analyzer = new DeferredAnalyzer();
+    const { cache, rootDir } = await createCache(analyzer);
+    try {
+      await cache.schedule(scheduleInput());
+      await cache.writeChain;
+      await nextTurn();
+      analyzer.rejectNext(code);
+      await cache.waitForLoudnessIdle();
+      const found = await lookup(cache);
+      assert.strictEqual(found.entry.loudness.retryable, false);
+      assert.strictEqual(found.entry.loudness.errorCode, code);
+      cache.now = () => Date.now() + 24 * 60 * 60 * 1000;
+      await lookup(cache);
+      cache.scheduleMissingLoudness();
+      await cache.configure({ loudnessNormalizationEnabled: true });
+      await nextTurn();
+      assert.strictEqual(analyzer.calls.length, 1, code);
+    } finally {
+      analyzer.cancelAll();
+      await cache.waitForLoudnessIdle();
+      await rm(rootDir, { recursive: true, force: true, maxRetries: 3 });
+    }
+  }
+});

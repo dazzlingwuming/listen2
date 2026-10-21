@@ -255,9 +255,9 @@
       return 5000;
     }
 
-    static getValidatedLoudnessGain(loudness, enabled = true) {
-      if (!enabled || !loudness || typeof loudness !== 'object') {
-        return 1;
+    static isValidLoudnessMeasurement(loudness) {
+      if (!loudness || typeof loudness !== 'object') {
+        return false;
       }
       const requiredNumbers = [
         loudness.integratedLufs,
@@ -283,10 +283,72 @@
             Number.isFinite(Date.parse(loudness.analyzedAt)))
         )
       ) {
-        return 1;
+        return false;
       }
+      return true;
+    }
+
+    static getValidatedLoudnessGain(loudness, enabled = true) {
+      if (!enabled || !Player.isValidLoudnessMeasurement(loudness)) return 1;
       const linearGain = 10 ** (loudness.gainDb / 20);
       return Number.isFinite(linearGain) && linearGain > 0 ? linearGain : 1;
+    }
+
+    static getValidatedCacheLoudness(entry) {
+      const loudness = entry && entry.loudness;
+      if (
+        !entry ||
+        !/^[a-f0-9]{64}$/.test(entry.cacheKey || '') ||
+        !/^[a-f0-9]{64}$/.test(entry.contentSha256 || '') ||
+        entry.url !== `listen2-cache://audio/${entry.cacheKey}` ||
+        !loudness ||
+        loudness.status !== 'ready' ||
+        loudness.cacheKey !== entry.cacheKey ||
+        loudness.contentSha256 !== entry.contentSha256 ||
+        !entry.analyzerVersion ||
+        loudness.analyzerVersion !== entry.analyzerVersion ||
+        !Player.isValidLoudnessMeasurement(loudness)
+      ) {
+        return null;
+      }
+      const expectedGain = Math.max(
+        -24,
+        Math.min(12, -14 - loudness.integratedLufs, -1 - loudness.truePeakDbtp)
+      );
+      return Math.abs(loudness.gainDb - expectedGain) <= 0.011
+        ? loudness
+        : null;
+    }
+
+    syncHowlLoudness(track) {
+      if (!track || !track.howl) return;
+      track.howl._listen1TrackGain = track._listen1_loudness_gain || 1;
+      track.howl._listen1ComfortEnabled = this._loudness_normalization_enabled;
+      const identity = track._listen1_cache_identity;
+      track.howl._listen1CacheContentSha256 = identity
+        ? identity.contentSha256
+        : null;
+      track.howl._listen1Loudness = identity
+        ? Player.getValidatedCacheLoudness({
+            ...identity,
+            loudness: track._listen1_loudness,
+          })
+        : null;
+    }
+
+    setTrackCacheLoudness(track, entry) {
+      track._listen1_cache_identity = {
+        cacheKey: entry.cacheKey,
+        contentSha256: entry.contentSha256,
+        analyzerVersion: entry.analyzerVersion,
+        url: entry.url,
+      };
+      track._listen1_loudness = Player.getValidatedCacheLoudness(entry);
+      track._listen1_loudness_gain = Player.getValidatedLoudnessGain(
+        track._listen1_loudness,
+        this._loudness_normalization_enabled
+      );
+      this.syncHowlLoudness(track);
     }
 
     setLoudnessNormalizationEnabled(enabled) {
@@ -298,7 +360,7 @@
           this._loudness_normalization_enabled
         );
         if (track.howl) {
-          track.howl._listen1TrackGain = track._listen1_loudness_gain;
+          this.syncHowlLoudness(track);
         }
       });
       if (this.currentHowl) {
@@ -994,6 +1056,7 @@
       const copy = { ...track, howl: undefined, disabled: false };
       delete copy._listen1_loudness;
       delete copy._listen1_loudness_gain;
+      delete copy._listen1_cache_identity;
       delete copy._audio_cache_descriptor;
       return copy;
     }
@@ -1357,9 +1420,76 @@
         delete this._media_uri_list[data.id];
         this.clearMediaRetryState(data.id);
         this.retrieveMediaUrl(this.index, true, { forceRefresh: true });
-      } else {
-        this.finishLoad(this.index, true);
+      } else if (!this.playing) {
+        // Recheck at the next playback boundary. Analysis completion during
+        // playback never hot-swaps the media or its measured initial gain.
+        this.refreshExistingMediaAtBoundary(this.index);
       }
+    }
+
+    refreshExistingMediaAtBoundary(index) {
+      const track = this.playlist[index];
+      const sourceHowl = track && track.howl;
+      if (!sourceHowl) return;
+      if (
+        !MediaService ||
+        typeof MediaService.getAudioCacheLookup !== 'function'
+      ) {
+        this.finishLoad(index, true);
+        return;
+      }
+      const requestToken = this.beginMediaUrlRequest(track.id);
+      const isCurrent = () =>
+        this.isCurrentMediaUrlRequest(index, track, true, requestToken) &&
+        track.howl === sourceHowl;
+      const continuePlayback = (response) => {
+        if (!isCurrent()) return;
+        const entry = response && response.entry;
+        if (
+          response &&
+          response.ok === true &&
+          response.hit === true &&
+          entry &&
+          entry.url
+        ) {
+          if (
+            this._media_uri_list[track.id] !== entry.url ||
+            sourceHowl._listen1CacheContentSha256 !== entry.contentSha256
+          ) {
+            const position = this.getPlaybackPosition(sourceHowl);
+            if (position > 0) this._media_resume_positions[track.id] = position;
+            this.unloadTrackHowl(track);
+          }
+          this.setMediaRetryState(track, [entry.url], {
+            fromAudioCache: true,
+            audioCacheKey: entry.cacheKey,
+          });
+          this.setTrackCacheLoudness(track, entry);
+          this.setMediaURI(entry.url, track.id);
+        } else if (
+          String(this._media_uri_list[track.id] || '').startsWith(
+            'listen2-cache:'
+          )
+        ) {
+          const position = this.getPlaybackPosition(sourceHowl);
+          if (position > 0) this._media_resume_positions[track.id] = position;
+          this.unloadTrackHowl(track);
+          delete this._media_uri_list[track.id];
+          this.retrieveMediaUrl(index, true, { bypassAudioCache: true });
+          return;
+        }
+        this.finishLoad(index, true);
+        this.invalidateMediaUrlRequest(track.id);
+      };
+      Promise.resolve()
+        .then(() => MediaService.getAudioCacheLookup(track))
+        .then(continuePlayback)
+        .catch(() => {
+          // IPC failure does not invalidate an already playable media object.
+          if (!isCurrent()) return;
+          this.finishLoad(index, true);
+          this.invalidateMediaUrlRequest(track.id);
+        });
     }
 
     static getMediaUrlDeadline(uri) {
@@ -1619,6 +1749,11 @@
       };
 
       const retrieveRemoteMediaUrl = () => {
+        if (
+          !this.isCurrentMediaUrlRequest(index, track, playNow, requestToken)
+        ) {
+          return;
+        }
         MediaService.bootstrapTrack(
           msg.data,
           (bootinfo) => {
@@ -1650,6 +1785,7 @@
             // stale local-track gain into a rebuilt Howl.
             this.playlist[index]._listen1_loudness = null;
             this.playlist[index]._listen1_loudness_gain = 1;
+            this.playlist[index]._listen1_cache_identity = null;
 
             const urlCandidates = Player.getMediaUrlCandidates(bootinfo);
             if (!urlCandidates.length) {
@@ -1730,12 +1866,7 @@
             audioCacheKey: entry.cacheKey,
             localBypassAttempted: options.localBypassAttempted === true,
           });
-          this.playlist[index]._listen1_loudness = entry.loudness || null;
-          this.playlist[index]._listen1_loudness_gain =
-            Player.getValidatedLoudnessGain(
-              entry.loudness,
-              this._loudness_normalization_enabled
-            );
+          this.setTrackCacheLoudness(this.playlist[index], entry);
           this.setMediaURI(entry.url, msg.data.id);
           this.setAudioDisabled(false, msg.data.index);
           this.finishLoad(msg.data.index, playNow);
@@ -1924,6 +2055,7 @@
             }
             self.clearPlaybackWatch();
             self.pauseListeningHistory();
+            prepareAudioAnalysis(createdHowl);
             navigator.mediaSession.playbackState = 'paused';
             self.sendPlayingEvent('Paused');
           },
@@ -1933,6 +2065,8 @@
             }
             self.clearPlaybackWatch();
             self.finishListeningHistory();
+            createdHowl._listen1LoudnessResetToken += 1;
+            prepareAudioAnalysis(createdHowl);
             self.sendPlayingEvent('Stopped');
           },
           onseek() {
@@ -1941,8 +2075,12 @@
             }
             self.resetPlaybackWatchProgress();
             self.resetListeningHistorySample();
+            createdHowl._listen1LoudnessResetToken += 1;
+            prepareAudioAnalysis(createdHowl);
           },
-          onvolume() {},
+          onvolume() {
+            if (isCurrentCreatedHowl()) prepareAudioAnalysis(createdHowl);
+          },
           onloaderror(id, err) {
             if (!isCurrentCreatedHowl()) {
               return;
@@ -1956,6 +2094,7 @@
             self.handleMediaLoadError(index, data, playNow, err, createdHowl);
           },
         });
+        createdHowl._listen1LoudnessResetToken = 0;
         // Howler's `volume` stays at 1 so its global volume/mute semantics
         // remain untouched. The desktop visualizer/output hub reads this
         // verified linear multiplier and ramps its per-track GainNode.
@@ -1965,6 +2104,7 @@
           ? data._listen1_loudness_gain
           : 1;
         data.howl = createdHowl;
+        this.syncHowlLoudness(data);
       }
 
       if (playNow) {
@@ -1987,6 +2127,9 @@
     pause() {
       if (!this.currentHowl) return;
 
+      // A pending boundary lookup must not resume playback after pause.
+      if (this.currentAudio)
+        this.invalidateMediaUrlRequest(this.currentAudio.id);
       // Puase the sound.
       this.clearPlaybackWatch();
       this.currentHowl.pause();
@@ -2092,6 +2235,7 @@
       // Update the global volume (affecting all Howls).
       if (typeof val === 'number') {
         Howler.volume(val);
+        prepareAudioAnalysis(this.currentHowl);
         this.sendVolumeEvent();
         this.sendFrameUpdate();
       }
@@ -2112,6 +2256,7 @@
 
     mute() {
       Howler.mute(true);
+      prepareAudioAnalysis(this.currentHowl);
       playerSendMessage(this.mode, {
         type: 'BG_PLAYER:MUTE',
         data: true,
@@ -2120,6 +2265,7 @@
 
     unmute() {
       Howler.mute(false);
+      prepareAudioAnalysis(this.currentHowl);
       playerSendMessage(this.mode, {
         type: 'BG_PLAYER:MUTE',
         data: false,

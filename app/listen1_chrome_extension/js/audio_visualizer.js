@@ -70,6 +70,7 @@
     const bars = new Float32Array(BAR_COUNT);
     const rawBars = new Float32Array(BAR_COUNT);
     const mediaSourceRecords = new WeakMap();
+    const comfortModules = new WeakMap();
     const captureSourceRecords = new WeakMap();
     const bassHistory = [];
 
@@ -414,19 +415,21 @@
         return false;
       }
       const gainParam = record.gain.gain;
-      const target = requestedTrackGain(howl);
+      // The worklet owns normalization once ready; applying both gains would
+      // normalize twice. The legacy verified multiplier is fallback only.
+      const target = record.comfortReady ? 1 : requestedTrackGain(howl);
       const contextTime = Number.isFinite(record.context.currentTime)
         ? record.context.currentTime
         : 0;
       try {
+        const heldValue = Number.isFinite(gainParam.value)
+          ? gainParam.value
+          : 1;
         if (typeof gainParam.cancelScheduledValues === 'function') {
           gainParam.cancelScheduledValues(contextTime);
         }
         if (typeof gainParam.setValueAtTime === 'function') {
-          gainParam.setValueAtTime(
-            Number.isFinite(gainParam.value) ? gainParam.value : 1,
-            contextTime
-          );
+          gainParam.setValueAtTime(heldValue, contextTime);
         }
         if (typeof gainParam.linearRampToValueAtTime === 'function') {
           gainParam.linearRampToValueAtTime(target, contextTime + 0.018);
@@ -463,6 +466,293 @@
       }
     };
 
+    const getLoudnessState = () => {
+      const record = currentNode && mediaSourceRecords.get(currentNode);
+      const enabled = Boolean(
+        currentHowl && currentHowl._listen1ComfortEnabled === true
+      );
+      const ready = Boolean(record && record.comfortReady);
+      const supported = Boolean(
+        isElectronRuntime() &&
+          AudioContextClass &&
+          $window.AudioWorkletNode &&
+          (!currentHowl || currentHowl._webAudio !== true)
+      );
+      return {
+        supported,
+        ready,
+        active:
+          ready &&
+          enabled &&
+          !(record.comfortOptions && record.comfortOptions.paused),
+        degraded: Boolean(record && record.comfortError),
+        error: record ? record.comfortError || null : null,
+        ...(record && record.comfortState ? record.comfortState : {}),
+        latencySeconds: ready
+          ? ((record.comfortState && record.comfortState.latencySeconds) ||
+              0.012) + (record.fxLatencySeconds || 0)
+          : null,
+        enabled,
+        status: !supported
+          ? 'unsupported'
+          : ready
+          ? !enabled
+            ? 'bypass'
+            : (record.comfortState &&
+                record.comfortState.status !== 'bypass' &&
+                record.comfortState.status) ||
+              'estimating'
+          : record && record.comfortError
+          ? 'fallback'
+          : 'initializing',
+      };
+    };
+
+    const configureComfort = (record, howl) => {
+      if (!record || !howl) return;
+      const element = record.element;
+      const token = Number(howl._listen1LoudnessResetToken) || 0;
+      const reset =
+        record.configuredHowl !== howl || record.resetToken !== token;
+      const loudness = howl._listen1Loudness;
+      // This is the actual HTMLMediaElement volume (global × per-Howl), not
+      // just Howler.volume(). The worklet measures as if that scalar were 1
+      // and applies only its own gain, so turning volume down stays quieter.
+      const volume = element && !element.muted ? Number(element.volume) : 0;
+      const options = {
+        enabled: howl._listen1ComfortEnabled === true,
+        volume: Number.isFinite(volume) ? volume : 1,
+        paused: typeof howl.playing === 'function' ? !howl.playing() : false,
+        effect: effectPreset,
+        knownLufs:
+          loudness &&
+          loudness.status === 'ready' &&
+          Number.isFinite(loudness.integratedLufs) &&
+          Number(loudness.channelCount || 2) <= 2
+            ? loudness.integratedLufs +
+              (Number(loudness.channelCount) === 1 ? 10 * Math.log10(2) : 0)
+            : null,
+        reset,
+        preserveGainOnReset: reset && record.configuredHowl === howl,
+      };
+      const signature = JSON.stringify({ ...options, reset: false });
+      if (
+        record.comfortNode &&
+        (reset || record.comfortSignature !== signature)
+      ) {
+        record.comfortState = null;
+        record.comfortNode.port.postMessage({ type: 'configure', options });
+        record.comfortSignature = signature;
+        record.configuredHowl = howl;
+        record.resetToken = token;
+      }
+      record.comfortOptions = options;
+    };
+
+    const releaseComfortNode = (record) => {
+      record.comfortEpoch = (record.comfortEpoch || 0) + 1;
+      record.comfortInitializing = false;
+      record.comfortReady = false;
+      if (record.comfortTimeout) timerClear(record.comfortTimeout);
+      if (record.comfortWarmup) timerClear(record.comfortWarmup);
+      record.comfortTimeout = null;
+      record.comfortWarmup = null;
+      const processor = record.comfortNode;
+      if (processor) {
+        processor.port.onmessage = null;
+        processor.onprocessorerror = null;
+        try {
+          processor.port.postMessage({ type: 'dispose' });
+        } catch (error) {
+          /* already stopped */
+        }
+        try {
+          record.outputBus.disconnect(processor);
+        } catch (error) {
+          /* disconnected */
+        }
+        try {
+          processor.disconnect();
+        } catch (error) {
+          /* disconnected */
+        }
+      }
+      if (record.referenceDelay) {
+        try {
+          record.source.disconnect(record.referenceDelay);
+        } catch (error) {
+          /* disconnected */
+        }
+        try {
+          record.referenceDelay.disconnect();
+        } catch (error) {
+          /* disconnected */
+        }
+      }
+      if (record.wetGate) {
+        try {
+          record.wetGate.disconnect();
+        } catch (error) {
+          /* disconnected */
+        }
+      }
+      record.comfortNode = null;
+      record.referenceDelay = null;
+      record.wetGate = null;
+      record.configuredHowl = null;
+      record.comfortSignature = null;
+      record.comfortState = null;
+    };
+
+    const parkRecord = (record) => {
+      if (!record || record.parked) return;
+      record.parked = true;
+      releaseComfortNode(record);
+      try {
+        (record.fallbackGate || record.effectOutput).disconnect(
+          record.context.destination
+        );
+      } catch (error) {
+        /* no active destination */
+      }
+      // Keep the one MediaElementSource: recreating it for this element is
+      // forbidden by Web Audio. FX/processor graphs may safely be rebuilt.
+      try {
+        record.effectInput.disconnect();
+      } catch (error) {
+        /* recycled */
+      }
+      disconnectEffectNodes(record);
+      record.effectGate = null;
+      record.builtPreset = null;
+    };
+
+    const failComfort = (record, code) => {
+      releaseComfortNode(record);
+      record.comfortError = code;
+      if (record.fallbackGate)
+        effectParam(record.fallbackGate.gain, 1, record.context);
+      buildEffectChain(record, effectPreset);
+      applyTrackGain(record, record.howl);
+    };
+
+    const initializeComfort = (record) => {
+      if (
+        record.comfortInitializing ||
+        record.comfortNode ||
+        record.comfortError
+      )
+        return;
+      const context = record.context;
+      if (
+        !context.audioWorklet ||
+        !$window.AudioWorkletNode ||
+        !record.outputBus
+      ) {
+        record.comfortError = 'audio-worklet-unavailable';
+        return;
+      }
+      record.comfortInitializing = true;
+      const epoch = record.comfortEpoch || 0;
+      let modules = comfortModules.get(context);
+      if (!modules) {
+        const base = $window.document && $window.document.baseURI;
+        modules = context.audioWorklet
+          .addModule(new URL('js/comfort_loudness_core.js', base).href)
+          .then(() =>
+            context.audioWorklet.addModule(
+              new URL('js/comfort_loudness_worklet.js', base).href
+            )
+          );
+        comfortModules.set(context, modules);
+      }
+      modules
+        .then(() => {
+          if (record.parked || epoch !== (record.comfortEpoch || 0)) return;
+          if (context.state === 'closed') throw new Error('context-closed');
+          const processor = new $window.AudioWorkletNode(
+            context,
+            'listen2-comfort',
+            {
+              numberOfInputs: 2,
+              numberOfOutputs: 1,
+              outputChannelCount: [2],
+              channelCount: 2,
+              channelCountMode: 'explicit',
+              channelInterpretation: 'speakers',
+            }
+          );
+          record.comfortNode = processor;
+          record.wetGate = context.createGain();
+          record.wetGate.gain.value = 0;
+          record.outputBus.connect(processor, 0, 0);
+          // Match the fixed FX alignment latency on the unprocessed reference.
+          record.referenceDelay = context.createDelay(0.05);
+          effectParam(record.referenceDelay.delayTime, 0.006, context);
+          record.source.connect(record.referenceDelay);
+          record.referenceDelay.connect(processor, 0, 1);
+          processor.connect(record.wetGate);
+          record.wetGate.connect(context.destination);
+          processor.onprocessorerror = () =>
+            failComfort(record, 'audio-worklet-processor-error');
+          processor.port.onmessage = (event) => {
+            if (
+              !event.data ||
+              record.comfortError ||
+              record.parked ||
+              record.comfortNode !== processor
+            )
+              return;
+            record.comfortState = event.data.state;
+            if (event.data.type !== 'ready') return;
+            if (record.comfortTimeout) timerClear(record.comfortTimeout);
+            record.comfortTimeout = null;
+            // Let the 12 ms lookahead fill before switching away from fallback.
+            record.comfortWarmup = timerSet(() => {
+              if (
+                record.comfortError ||
+                context.state === 'closed' ||
+                record.parked ||
+                record.comfortNode !== processor
+              )
+                return;
+              record.comfortReady = true;
+              buildEffectChain(record, effectPreset);
+              configureComfort(record, record.howl);
+              applyTrackGain(record, record.howl);
+              const time = context.currentTime || 0;
+              record.fallbackGate.gain.setValueAtTime(1, time);
+              record.fallbackGate.gain.linearRampToValueAtTime(0, time + 0.03);
+              record.wetGate.gain.setValueAtTime(0, time);
+              record.wetGate.gain.linearRampToValueAtTime(1, time + 0.03);
+              if (currentNode === record.element && analyser) {
+                disconnectAnalyserTap();
+                processor.connect(analyser);
+                markConnected(
+                  record.howl,
+                  record.element,
+                  processor,
+                  'html5-media'
+                );
+              }
+            }, 25);
+          };
+          configureComfort(record, record.howl);
+          record.comfortTimeout = timerSet(
+            () => failComfort(record, 'audio-worklet-start-timeout'),
+            2000
+          );
+        })
+        .catch(() => {
+          if (!record.parked && epoch === (record.comfortEpoch || 0))
+            failComfort(record, 'audio-worklet-load-failed');
+        })
+        .finally(() => {
+          if (epoch === (record.comfortEpoch || 0))
+            record.comfortInitializing = false;
+        });
+    };
+
     const disconnectEffectNodes = (record) => {
       [record.effectOutput, ...(record.effectNodes || [])].forEach((node) => {
         if (node && typeof node.disconnect === 'function') {
@@ -483,14 +773,17 @@
       if (!preset || !record.effectInput || !context) {
         return { ok: false, error: 'invalid-preset' };
       }
-      if (typeof record.effectInput.disconnect === 'function') {
+      const oldNodes = record.effectNodes || [];
+      const oldGate = record.effectGate;
+      const crossfade = Boolean(record.outputBus && oldGate);
+      if (!crossfade && typeof record.effectInput.disconnect === 'function') {
         try {
           record.effectInput.disconnect();
         } catch (error) {
           // A closed/recycled node may already be disconnected.
         }
       }
-      disconnectEffectNodes(record);
+      if (!crossfade) disconnectEffectNodes(record);
       try {
         let cursor = record.effectInput;
         const nodes = [];
@@ -500,7 +793,11 @@
         }
         if (useProcessing) {
           const preamp = context.createGain();
-          effectParam(preamp.gain, 10 ** (preset.preampDb / 20), context);
+          effectParam(
+            preamp.gain,
+            record.comfortReady ? 1 : 10 ** (preset.preampDb / 20),
+            context
+          );
           cursor.connect(preamp);
           cursor = preamp;
           nodes.push(preamp);
@@ -600,7 +897,22 @@
           cursor = compressor;
           nodes.push(compressor);
         }
-        if (useProcessing && typeof context.createWaveShaper === 'function') {
+        if (record.outputBus && !preset.compressor) {
+          // Web Audio's compressor has a fixed 6 ms predelay. Align every FX
+          // branch, including original, so its crossfade cannot comb-filter a
+          // delayed night preset against an undelayed dry path.
+          const alignmentDelay = context.createDelay(0.05);
+          effectParam(alignmentDelay.delayTime, 0.006, context);
+          cursor.connect(alignmentDelay);
+          cursor = alignmentDelay;
+          nodes.push(alignmentDelay);
+        }
+        record.fxLatencySeconds = record.outputBus ? 0.006 : 0;
+        if (
+          useProcessing &&
+          !record.comfortReady &&
+          typeof context.createWaveShaper === 'function'
+        ) {
           const limiter = context.createWaveShaper();
           limiter.oversample = '2x';
           limiter.curve = SOFT_LIMITER_CURVE;
@@ -608,14 +920,58 @@
           cursor = limiter;
           nodes.push(limiter);
         }
-        cursor.connect(context.destination);
+        if (record.outputBus) {
+          const gate = context.createGain();
+          gate.gain.value = crossfade ? 0 : 1;
+          cursor.connect(gate);
+          gate.connect(record.outputBus);
+          nodes.push(gate);
+          record.effectGate = gate;
+          if (crossfade) {
+            const time = context.currentTime || 0;
+            const heldValue = oldGate.gain.value;
+            oldGate.gain.cancelScheduledValues(time);
+            oldGate.gain.setValueAtTime(heldValue, time);
+            oldGate.gain.linearRampToValueAtTime(0, time + 0.025);
+            gate.gain.setValueAtTime(0, time);
+            gate.gain.linearRampToValueAtTime(1, time + 0.025);
+            timerSet(() => {
+              oldNodes.forEach((oldNode) => {
+                try {
+                  record.effectInput.disconnect(oldNode);
+                } catch (error) {
+                  /* already removed */
+                }
+                try {
+                  oldNode.disconnect();
+                } catch (error) {
+                  /* recycled */
+                }
+              });
+            }, 40);
+          }
+          cursor = gate;
+        } else {
+          cursor.connect(context.destination);
+        }
         record.effectNodes = nodes;
         record.effectOutput = cursor;
+        record.builtPreset = requestedPreset;
         return { ok: true, preset: requestedPreset };
       } catch (error) {
+        if (crossfade) {
+          record.effectNodes = oldNodes;
+          record.effectGate = oldGate;
+          record.effectOutput = oldGate;
+          return {
+            ok: false,
+            error: 'effect-unavailable',
+            fallback: 'previous',
+          };
+        }
         disconnectEffectNodes(record);
         try {
-          record.effectInput.connect(context.destination);
+          record.effectInput.connect(record.outputBus || context.destination);
           record.effectOutput = record.effectInput;
         } catch (fallbackError) {
           return { ok: false, error: 'effect-unavailable' };
@@ -659,14 +1015,13 @@
         error: built.error || null,
       };
       if (record && record.effectOutput) {
+        configureComfort(record, currentHowl);
         disconnectAnalyserTap();
-        record.effectOutput.connect(analyser);
-        markConnected(
-          currentHowl,
-          currentNode,
-          record.effectOutput,
-          'html5-media'
-        );
+        const tap = record.comfortReady
+          ? record.comfortNode
+          : record.effectOutput;
+        tap.connect(analyser);
+        markConnected(currentHowl, currentNode, tap, 'html5-media');
       }
       return { ...effectState };
     };
@@ -677,13 +1032,22 @@
       if (!context || !nextAnalyser) {
         return false;
       }
+      if (currentNode && currentNode !== node) {
+        disconnectAnalyserTap();
+        parkRecord(mediaSourceRecords.get(currentNode));
+      }
       if (
         currentHowl === howl &&
         currentNode === node &&
         currentTap &&
         analyserContext === context
       ) {
-        applyTrackGain(mediaSourceRecords.get(node), howl);
+        const existingRecord = mediaSourceRecords.get(node);
+        existingRecord.howl = howl;
+        if (existingRecord.builtPreset !== effectPreset)
+          buildEffectChain(existingRecord, effectPreset);
+        configureComfort(existingRecord, howl);
+        applyTrackGain(existingRecord, howl);
         requestOwnedContextResume('existing-html5-output');
         return true;
       }
@@ -719,7 +1083,17 @@
               effectNodes: [],
               effectOutput: null,
               outputConnected: true,
+              element: node,
+              howl,
+              comfortReady: false,
+              comfortError: null,
             };
+            if (context.audioWorklet && $window.AudioWorkletNode) {
+              record.outputBus = context.createGain();
+              record.fallbackGate = context.createGain();
+              record.outputBus.connect(record.fallbackGate);
+              record.fallbackGate.connect(context.destination);
+            }
             const built = buildEffectChain(record, effectPreset);
             effectState = {
               ok: built.ok,
@@ -756,12 +1130,28 @@
           );
           return false;
         }
+        if (record.parked) {
+          record.parked = false;
+          record.comfortError = null;
+          if (record.fallbackGate) {
+            record.fallbackGate.gain.value = 1;
+            record.fallbackGate.connect(context.destination);
+          }
+        }
+        record.howl = howl;
+        if (record.builtPreset !== effectPreset)
+          buildEffectChain(record, effectPreset);
+        configureComfort(record, howl);
+        initializeComfort(record);
         applyTrackGain(record, howl);
-        record.effectOutput.connect(nextAnalyser);
+        (record.comfortReady
+          ? record.comfortNode
+          : record.effectOutput
+        ).connect(nextAnalyser);
         const connected = markConnected(
           howl,
           node,
-          record.effectOutput,
+          record.comfortReady ? record.comfortNode : record.effectOutput,
           'html5-media'
         );
         if (outputRecoveryNode !== node) {
@@ -1203,6 +1593,7 @@
         ownsMediaElementOutput: Boolean(outputRecoveryNode),
       },
       effects: { ...effectState },
+      loudness: getLoudnessState(),
       peak: Math.max(...bars),
       beatCount,
       ...metrics,
@@ -1213,6 +1604,26 @@
       debug,
       ensureOutput,
       getEffectState: () => ({ ...effectState }),
+      getLoudnessState,
+      // Local verification hook: the same FX graph on an OfflineAudioContext.
+      // No media access, IPC, playback, or connection to a live destination.
+      createOfflineEffectChain: (context, input, preset) => {
+        const record = {
+          context,
+          effectInput: input,
+          outputBus: context.createGain(),
+          comfortReady: true,
+          effectNodes: [],
+        };
+        const result = buildEffectChain(record, preset);
+        if (!result.ok) throw new Error(result.error);
+        return {
+          output: record.outputBus,
+          latencySeconds: record.fxLatencySeconds,
+          setPreset: (presetId) => buildEffectChain(record, presetId),
+          dispose: () => disconnectEffectNodes(record),
+        };
+      },
       prepareHowl,
       sample,
       setEffectPreset,

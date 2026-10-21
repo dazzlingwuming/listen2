@@ -15,6 +15,8 @@ function createHarness(options = {}) {
   const source = fs.readFileSync(filename, 'utf8');
   const timers = new Map();
   const audioContexts = [];
+  const worklets = [];
+  const moduleUrls = [];
   let nextTimerId = 1;
   let audioContext = null;
 
@@ -32,7 +34,16 @@ function createHarness(options = {}) {
       this.connectionRecords.push({ target, output, input });
     }
 
-    disconnect() {}
+    disconnect(target) {
+      this.connections = target
+        ? this.connections.filter((node) => node !== target)
+        : [];
+      this.connectionRecords = target
+        ? this.connectionRecords.filter(
+            (connection) => connection.target !== target
+          )
+        : [];
+    }
   }
 
   class MockAnalyser extends MockSource {
@@ -111,6 +122,16 @@ function createHarness(options = {}) {
       this.shapers = [];
       this.splitters = [];
       this.mergers = [];
+      if (options.worklet) {
+        this.audioWorklet = {
+          addModule(url) {
+            moduleUrls.push(url);
+            return options.workletLoadError
+              ? Promise.reject(new Error('blocked'))
+              : Promise.resolve();
+          },
+        };
+      }
       if (options.disableGain) {
         this.createGain = undefined;
       }
@@ -207,6 +228,7 @@ function createHarness(options = {}) {
   };
   const window = {
     AudioContext: MockAudioContext,
+    document: { baseURI: 'file:///synthetic/listen1.html' },
     angular: undefined,
     clearTimeout(id) {
       timers.delete(id);
@@ -218,6 +240,16 @@ function createHarness(options = {}) {
       return id;
     },
   };
+  if (options.worklet) {
+    window.AudioWorkletNode = class extends MockSource {
+      constructor() {
+        super();
+        this.messages = [];
+        this.port = { postMessage: (message) => this.messages.push(message) };
+        worklets.push(this);
+      }
+    };
+  }
   const context = {
     Float32Array,
     Promise,
@@ -238,6 +270,8 @@ function createHarness(options = {}) {
   vm.runInContext(source, context, { filename });
 
   const node = {
+    volume: options.volume || 1,
+    muted: false,
     crossOrigin: 'anonymous',
     currentSrc: 'https://cdn.example/audio.m4s?token=secret',
     pause() {},
@@ -246,16 +280,21 @@ function createHarness(options = {}) {
   const howl = {
     _sounds: [{ _node: node, _paused: false }],
     _webAudio: false,
+    playing: () => true,
   };
 
   return {
+    howl,
+    node,
+    worklets,
+    moduleUrls,
     context: () => audioContext,
     contexts: () => audioContexts.slice(),
     debug() {
       return window.Listen1AudioAnalysis.debug();
     },
-    ensureOutput() {
-      return window.Listen1AudioAnalysis.ensureOutput(howl);
+    ensureOutput(nextHowl = howl) {
+      return window.Listen1AudioAnalysis.ensureOutput(nextHowl);
     },
     getEffectState() {
       return window.Listen1AudioAnalysis.getEffectState();
@@ -265,6 +304,15 @@ function createHarness(options = {}) {
     },
     setEffectPreset(preset) {
       return window.Listen1AudioAnalysis.setEffectPreset(preset);
+    },
+    runTimer(delay) {
+      const entry = [...timers.entries()].find(
+        ([, timer]) => timer.delay === delay
+      );
+      if (!entry) return false;
+      timers.delete(entry[0]);
+      entry[1].callback();
+      return true;
     },
     runNextTimer() {
       const entry = timers.entries().next().value;
@@ -283,6 +331,193 @@ function createHarness(options = {}) {
 }
 
 async function run() {
+  {
+    const harness = createHarness({ worklet: true, spatialNodes: true });
+    harness.howl._listen1ComfortEnabled = true;
+    const secondHowl = {
+      _sounds: [{ _node: { ...harness.node }, _paused: false }],
+      _webAudio: false,
+      _listen1ComfortEnabled: true,
+      playing: () => true,
+    };
+    harness.ensureOutput();
+    await flushPromises();
+    const firstProcessor = harness.worklets[0];
+    firstProcessor.port.onmessage({ data: { type: 'ready', state: {} } });
+    harness.runTimer(25);
+    harness.ensureOutput(secondHowl);
+    assert.strictEqual(
+      firstProcessor.messages[firstProcessor.messages.length - 1].type,
+      'dispose'
+    );
+    assert.strictEqual(
+      firstProcessor.connections.length,
+      0,
+      'park must disconnect the old processor from every output'
+    );
+    assert.strictEqual(firstProcessor.port.onmessage, null);
+    await flushPromises();
+    const secondProcessor = harness.worklets[1];
+    secondProcessor.port.onmessage({ data: { type: 'ready', state: {} } });
+    harness.runTimer(25);
+    harness.ensureOutput(harness.howl);
+    await flushPromises();
+    assert.strictEqual(
+      harness.context().sources.length,
+      2,
+      'returning to an element must reuse its unique MediaElementSource'
+    );
+    assert.strictEqual(
+      harness.worklets.length,
+      3,
+      'resuming parked media must create only its replacement processor'
+    );
+    assert.strictEqual(
+      secondProcessor.messages[secondProcessor.messages.length - 1].type,
+      'dispose'
+    );
+    const resumed = harness.worklets[2];
+    resumed.port.onmessage({ data: { type: 'ready', state: {} } });
+    harness.runTimer(25);
+    for (let index = 0; index < 5; index += 1) harness.ensureOutput();
+    assert.strictEqual(harness.worklets.length, 3);
+    assert.strictEqual(
+      harness.context().sources[0].connections.length,
+      2,
+      'only the gain path and current reference tap may remain connected'
+    );
+  }
+
+  {
+    const harness = createHarness({ worklet: true, spatialNodes: true });
+    const other = {
+      ...harness.howl,
+      _sounds: [{ _node: { ...harness.node }, _paused: false }],
+    };
+    harness.ensureOutput();
+    harness.ensureOutput(other);
+    await flushPromises();
+    assert.strictEqual(
+      harness.worklets.length,
+      1,
+      'a parked record must not attach a late module-load callback'
+    );
+    assert.strictEqual(harness.context().sources.length, 2);
+  }
+
+  {
+    const harness = createHarness({ worklet: true, spatialNodes: true });
+    const other = {
+      ...harness.howl,
+      _sounds: [{ _node: { ...harness.node }, _paused: false }],
+    };
+    harness.ensureOutput();
+    await flushPromises();
+    const oldReady = harness.worklets[0].port.onmessage;
+    oldReady({ data: { type: 'ready', state: {} } });
+    harness.ensureOutput(other);
+    assert.strictEqual(
+      harness.runTimer(25),
+      false,
+      'park must cancel a pending warmup'
+    );
+    oldReady({ data: { type: 'ready', state: {} } });
+    assert.strictEqual(
+      harness.runTimer(25),
+      false,
+      'a stale ready callback must not revive parked audio'
+    );
+  }
+
+  {
+    const harness = createHarness({
+      worklet: true,
+      spatialNodes: true,
+      volume: 0.25,
+    });
+    harness.howl._listen1ComfortEnabled = true;
+    harness.setTrackGain(2);
+    harness.ensureOutput();
+    await flushPromises();
+    assert.strictEqual(harness.moduleUrls.length, 2);
+    assert.ok(harness.moduleUrls[0].endsWith('comfort_loudness_core.js'));
+    assert.ok(harness.moduleUrls[1].endsWith('comfort_loudness_worklet.js'));
+    const processor = harness.worklets[0];
+    assert.strictEqual(processor.messages[0].options.volume, 0.25);
+    assert.strictEqual(processor.messages[0].options.enabled, true);
+    processor.port.onmessage({
+      data: { type: 'ready', state: { status: 'estimating' } },
+    });
+    assert.strictEqual(harness.runTimer(25), true);
+    assert.strictEqual(harness.debug().loudness.active, true);
+    assert.strictEqual(
+      harness.context().gains[0].gain.value,
+      1,
+      'worklet must replace legacy gain rather than multiply it twice'
+    );
+    harness.setEffectPreset('deep-bass');
+    assert.strictEqual(
+      harness.context().shapers.length,
+      0,
+      'ready worklet must replace the former saturating FX shaper'
+    );
+    const latest = processor.messages[processor.messages.length - 1];
+    assert.strictEqual(latest.options.effect, 'deep-bass');
+    harness.howl._listen1LoudnessResetToken = 1;
+    harness.ensureOutput();
+    assert.strictEqual(
+      processor.messages[processor.messages.length - 1].options.reset,
+      true
+    );
+    harness.howl._listen1ComfortEnabled = false;
+    harness.node.muted = true;
+    harness.ensureOutput();
+    assert.strictEqual(
+      processor.messages[processor.messages.length - 1].options.volume,
+      0
+    );
+    assert.strictEqual(harness.debug().loudness.active, false);
+    processor.onprocessorerror();
+    assert.strictEqual(
+      processor.messages[processor.messages.length - 1].type,
+      'dispose'
+    );
+    assert.strictEqual(processor.connections.length, 0);
+    assert.strictEqual(
+      harness
+        .context()
+        .gains.filter((gain) =>
+          gain.connections.includes(harness.context().destination)
+        ).length,
+      1,
+      'fallback must leave only one destination path'
+    );
+    assert.strictEqual(harness.debug().loudness.status, 'fallback');
+    assert.strictEqual(harness.debug().loudness.degraded, true);
+    assert.strictEqual(
+      harness.context().gains[0].gain.value,
+      2,
+      'processor failure must restore verified legacy fallback gain'
+    );
+  }
+
+  {
+    const harness = createHarness({ worklet: true, workletLoadError: true });
+    harness.howl._listen1ComfortEnabled = true;
+    harness.ensureOutput();
+    await flushPromises();
+    assert.strictEqual(harness.debug().loudness.status, 'fallback');
+    assert.strictEqual(
+      harness.debug().loudness.error,
+      'audio-worklet-load-failed'
+    );
+    assert.strictEqual(
+      harness.debug().output.status,
+      'running',
+      'optional worklet failure must preserve audible output'
+    );
+  }
+
   {
     const harness = createHarness({ spatialNodes: true });
     assert.strictEqual(harness.ensureOutput(), true);

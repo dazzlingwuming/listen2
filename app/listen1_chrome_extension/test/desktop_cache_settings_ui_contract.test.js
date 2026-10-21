@@ -3,6 +3,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 
 const extensionRoot = path.resolve(__dirname, '..');
 const html = fs.readFileSync(path.join(extensionRoot, 'listen1.html'), 'utf8');
@@ -27,6 +28,15 @@ const expectedI18nKeys = [
   '_LOUDNESS_NORMALIZATION_ENABLED',
   '_LOUDNESS_NORMALIZATION_DESCRIPTION',
   '_LOUDNESS_NORMALIZATION_STATUS',
+  '_LOUDNESS_STATE_DISABLED',
+  '_LOUDNESS_STATE_UNAVAILABLE',
+  '_LOUDNESS_STATE_INITIALIZING',
+  '_LOUDNESS_STATE_ACTIVE_CALIBRATED',
+  '_LOUDNESS_STATE_ACTIVE_ESTIMATING',
+  '_LOUDNESS_STATE_INACTIVE',
+  '_LOUDNESS_STATE_FALLBACK',
+  '_LOUDNESS_ACTION_PENDING',
+  '_LOUDNESS_ACTION_FAILED',
   '_AUDIO_CACHE_CAPACITY',
   '_AUDIO_CACHE_USAGE',
   '_AUDIO_CACHE_TRACKS',
@@ -161,6 +171,14 @@ assert.strictEqual(
   'classic and modern settings layouts must both expose normalization controls'
 );
 assert.strictEqual(
+  occurrences(
+    html,
+    /aria-describedby="(?:classic|modern)-loudness-normalization-description (?:classic|modern)-loudness-normalization-playback-status"/g
+  ),
+  2,
+  'the single comfort switch must remain a labeled, keyboard-operable native checkbox'
+);
+assert.strictEqual(
   occurrences(html, /data-audio-cache-default-loudness-normalization="true"/g),
   2,
   'both layouts must declare normalization enabled by default'
@@ -187,6 +205,61 @@ assert.strictEqual(
   2,
   'loudness analysis status must not be shown while normalization is disabled'
 );
+assert.strictEqual(
+  occurrences(html, /loudnessNormalizationPlaybackStatus\(\)/g),
+  2,
+  'both layouts must expose the actual playback state separately from the setting'
+);
+assert.strictEqual(
+  occurrences(html, /loudnessNormalizationActionStatus\(\)/g),
+  2,
+  'both layouts must expose pending and failure feedback inline'
+);
+assert.strictEqual(
+  occurrences(html, /ng-click="showTag\(5\); refreshAudioCacheStatus\(\)"/g),
+  2,
+  'opening settings must refresh the current playback state without template getter side effects'
+);
+const loudnessStatusGetter = playController.match(
+  /\$scope\.loudnessNormalizationPlaybackStatus = \(\) => \{[\s\S]*?return i18next\.t\('_LOUDNESS_STATE_INACTIVE'\);\n    \};/
+);
+assert.ok(loudnessStatusGetter, 'the playback-state getter must be present');
+assert.doesNotMatch(
+  loudnessStatusGetter[0],
+  /scheduleAudioCacheStatusPoll|querySelector|getComputedStyle/,
+  'the template getter must not perform layout reads or schedule work'
+);
+assert.ok(
+  loudnessStatusGetter[0].indexOf('state.degraded') <
+    loudnessStatusGetter[0].indexOf("state.status === 'initializing'"),
+  'fallback/error must be displayed before the initializing state'
+);
+const audioCacheStatusGuardSource = playController.match(
+  /function isCurrentAudioCacheStatusRead\([\s\S]*?\n    \}/
+);
+assert.ok(
+  audioCacheStatusGuardSource,
+  'the status-read generation guard must exist'
+);
+const audioCacheStatusGuard = vm.runInNewContext(
+  `(${audioCacheStatusGuardSource[0]})`
+);
+assert.strictEqual(audioCacheStatusGuard(4, 2, 4, 2), true);
+assert.strictEqual(
+  audioCacheStatusGuard(4, 2, 5, 2),
+  false,
+  'a superseded status read must not apply'
+);
+assert.strictEqual(
+  audioCacheStatusGuard(4, 2, 4, 3),
+  false,
+  'a status read started before a configuration write must not apply'
+);
+assert.match(
+  playController,
+  /const configureSequence = \+\+audioCacheConfigureSequence;[\s\S]*?audioCacheStatusRequestSequence \+= 1/,
+  'configuration writes must invalidate in-flight status reads'
+);
 assert.match(html, /ng-click="requestClearAudioCache\(\)"/);
 assert.match(html, /ng-click="confirmClearAudioCache\(\)"/);
 assert.match(html, /ng-click="cancelClearAudioCache\(\)"/);
@@ -203,7 +276,10 @@ const allIds = [...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);
 const duplicateIds = allIds.filter((id, index) => allIds.indexOf(id) !== index);
 assert.strictEqual(
   duplicateIds.filter(
-    (id) => id.includes('audio-cache') || id.includes('track-local-data')
+    (id) =>
+      id.includes('audio-cache') ||
+      id.includes('track-local-data') ||
+      id.includes('loudness-normalization')
   ).length,
   0,
   'new audio cache and local-data dialog IDs must be unique across duplicate layouts'
@@ -212,9 +288,37 @@ assert.match(css, /\.audio-cache-settings/);
 assert.match(css, /\.audio-cache-library/);
 assert.match(css, /\.loudness-normalization-description/);
 assert.match(
+  css,
+  /\.loudness-normalization-toggle input:checked \+ span::before/
+);
+assert.match(
+  css,
+  /\.loudness-normalization-toggle input:focus-visible \+ span::before/
+);
+assert.strictEqual(
+  occurrences(html, /role="switch"/g),
+  2,
+  'both layout controls must expose the native checkbox state as a switch'
+);
+assert.match(
+  html,
+  /comfort_loudness_core\.js[\s\S]*?audio_visualizer\.js/,
+  'the comfort loudness API must load before the visualizer'
+);
+assert.match(
   playController,
   /loudnessReadyEntries[\s\S]*?loudnessPendingEntries[\s\S]*?loudnessFailedEntries/,
   'the status summary must bind all core loudness counters'
+);
+assert.match(
+  playController,
+  /Listen1AudioAnalysis\.getLoudnessState\(\)[\s\S]*?state\.active === true/,
+  'the UI must show active playback only from the audio engine state'
+);
+assert.match(
+  playController,
+  /confirmedLoudnessNormalizationEnabled[\s\S]*?loudnessNormalizationError/,
+  'a failed setting acknowledgement must restore the last confirmed value and show an inline error'
 );
 assert.match(playController, /MediaService\.listAudioCache\(\)/);
 assert.match(playController, /MediaService\.deleteAudioCacheEntry/);

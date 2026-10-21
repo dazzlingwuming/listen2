@@ -22,6 +22,16 @@ const NORMALIZATION_TARGET_LUFS = -14;
 const TRUE_PEAK_CEILING_DBTP = -1;
 const MIN_NORMALIZATION_GAIN_DB = -24;
 const MAX_NORMALIZATION_GAIN_DB = 12;
+const MAX_LOUDNESS_ATTEMPTS = 3;
+const LOUDNESS_RETRY_DELAY_MS = 30 * 1000;
+const TRANSIENT_LOUDNESS_ERRORS = new Set([
+  "analysis-timeout",
+  "analyzer-page-failed",
+  "analyzer-renderer-gone",
+  "analyzer-ipc-failed",
+  "decode-or-analysis-failed",
+  "analysis-failed",
+]);
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -151,6 +161,11 @@ function sanitizeLoudness(value, cacheKey, contentSha256) {
   if (value.status === "failed") {
     const errorCode = safeString(value.errorCode, MAX_LOUDNESS_ERROR_LENGTH);
     if (!errorCode) return null;
+    const retryable = TRANSIENT_LOUDNESS_ERRORS.has(errorCode);
+    const retryAttempts = Math.min(
+      MAX_LOUDNESS_ATTEMPTS,
+      positiveInteger(value.retryAttempts) || 1
+    );
     return {
       status: "failed",
       cacheKey,
@@ -158,6 +173,16 @@ function sanitizeLoudness(value, cacheKey, contentSha256) {
       analyzerVersion,
       errorCode,
       analyzedAt,
+      retryable,
+      retryAttempts,
+      retryExhausted: retryable && retryAttempts >= MAX_LOUDNESS_ATTEMPTS,
+      retryAfter:
+        retryable && retryAttempts < MAX_LOUDNESS_ATTEMPTS
+          ? Math.max(
+              analyzedAt + LOUDNESS_RETRY_DELAY_MS,
+              Number.isFinite(value.retryAfter) ? value.retryAfter : 0
+            )
+          : null,
     };
   }
   if (value.status !== "ready") return null;
@@ -667,6 +692,10 @@ class AudioCache {
       bitrate: entry.bitrate,
       mimeType: entry.mimeType,
       audioId: entry.audioId,
+      contentSha256: entry.sha256,
+      analyzerVersion: this.loudnessAnalyzer
+        ? this.loudnessAnalyzer.version
+        : "",
       loudness:
         this.index.settings.loudnessNormalizationEnabled &&
         this.loudnessIsCurrent(entry)
@@ -700,6 +729,20 @@ class AudioCache {
     }
   }
 
+  // A failed measurement remains observable, but transient failures become
+  // eligible at a later lookup/startup. Persisted attempts bound retries across
+  // restarts; no timer or hot loop retries a failed decoder in the background.
+  shouldAnalyzeLoudness(entry) {
+    if (!this.loudnessIsCurrent(entry)) return true;
+    const result = entry.loudness;
+    return (
+      result.status === "failed" &&
+      result.retryable === true &&
+      result.retryAttempts < MAX_LOUDNESS_ATTEMPTS &&
+      this.now() >= result.retryAfter
+    );
+  }
+
   queueLoudnessAnalysis(cacheKey) {
     const key = safeCacheKey(cacheKey);
     const entry = this.index.entries[key];
@@ -707,7 +750,7 @@ class AudioCache {
       !key ||
       !entry ||
       this.loudnessJobs.has(key) ||
-      this.loudnessIsCurrent(entry) ||
+      !this.shouldAnalyzeLoudness(entry) ||
       !this.index.settings.loudnessNormalizationEnabled ||
       !this.loudnessAnalyzer ||
       typeof this.loudnessAnalyzer.analyze !== "function"
@@ -715,6 +758,10 @@ class AudioCache {
       return;
     }
     const contentSha256 = entry.sha256;
+    const retryAttempts = this.loudnessIsCurrent(entry)
+      ? (entry.loudness.retryAttempts || 1) + 1
+      : 1;
+    const analyzerVersion = this.loudnessAnalyzer.version;
     const promise = Promise.resolve()
       .then(() =>
         this.loudnessAnalyzer.analyze({
@@ -729,7 +776,7 @@ class AudioCache {
           status: "ready",
           cacheKey: key,
           contentSha256,
-          analyzerVersion: this.loudnessAnalyzer.version,
+          analyzerVersion,
           analyzedAt: this.now(),
         })
       )
@@ -749,9 +796,11 @@ class AudioCache {
           status: "failed",
           cacheKey: key,
           contentSha256,
-          analyzerVersion: this.loudnessAnalyzer.version,
+          analyzerVersion,
           errorCode: code || "analysis-failed",
           analyzedAt: this.now(),
+          retryAttempts,
+          retryAfter: this.now() + LOUDNESS_RETRY_DELAY_MS * retryAttempts,
         });
       })
       .finally(() => {
@@ -827,6 +876,7 @@ class AudioCache {
           throw new Error("invalid cache file");
         entry.lastAccessedAt = this.now();
         this.serialize(() => this.persist()).catch(() => {});
+        this.queueLoudnessAnalysis(cacheKey);
         return {
           ok: true,
           hit: true,

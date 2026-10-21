@@ -1,6 +1,6 @@
 {
   "name": "listen1",
-  "version": "2.35.5",
+  "version": "2.35.6",
   "description": "A modern Listen1 desktop experience with enhanced Bilibili, lyrics, and visualizations",
   "main": "app/main.js",
   "scripts": {
@@ -18,6 +18,7 @@
     "test:bilibili": "node --test app/test/bilibiliService.test.js app/test/bilibiliFailureContract.test.js",
     "test:desktop-cache": "node --test app/test/audioCache.test.js app/test/lyricCacheStore.test.js app/test/mainLocalDataCache.test.js",
     "test:loudness": "node --test app/test/loudnessAnalyzer.test.js app/test/loudnessAudioCache.test.js",
+    "test:comfort-loudness": "node --test app/test/loudnessAnalyzer.test.js app/test/loudnessAudioCache.test.js app/test/audioCache.test.js app/listen1_chrome_extension/test/comfort_loudness_dsp.test.js app/listen1_chrome_extension/test/audio_visualizer_output_recovery.test.js app/listen1_chrome_extension/test/desktop_cache_player_behavior.test.js app/listen1_chrome_extension/test/desktop_cache_renderer_contract.test.js app/listen1_chrome_extension/test/desktop_cache_settings_ui_contract.test.js app/listen1_chrome_extension/test/audio_effects_ui_contract.test.js",
     "test:desktop-lyric": "node --test app/test/floatingWindowControls.test.js",
     "test:machine-translation": "node app/test/machineTranslationDeepSeek.test.js && node app/test/machineTranslationResponse.test.js",
     "test:listening-history": "node app/test/listeningHistoryStore.test.js",
