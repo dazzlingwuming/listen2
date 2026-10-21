@@ -22,7 +22,11 @@ const RESOURCE_HOSTS = new Set([
   "ac-v6.dun.163yun.com",
   "da.dun.163.com",
 ]);
-const API_PATHS = new Set(["/api/search/get/web", "/api/song/lyric"]);
+const API_PATHS = new Set([
+  "/api/search/get/web",
+  "/api/search/pc",
+  "/api/song/lyric",
+]);
 const CHALLENGE_LIFETIME_MS = 5 * 60 * 1000;
 
 function unavailableError() {
@@ -329,6 +333,11 @@ function createNeteaseVerificationSession({
 
   async function fetch(value, options = {}) {
     const url = validateNeteaseApiUrl(value);
+    // PC is a renderer URL envelope only. The trusted session owns the fixed
+    // method/body and never accepts arbitrary renderer request options.
+    const parsed = new URL(url);
+    const pcSearch = parsed.pathname === "/api/search/pc";
+    const requestUrl = pcSearch ? `${parsed.origin}${parsed.pathname}` : url;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8000);
     requests.add(controller);
@@ -341,17 +350,35 @@ function createNeteaseVerificationSession({
       const current = await withAbort(ensureSession(), controller.signal);
       if (controller.signal.aborted) throw abortError();
       const response = await withAbort(
-        current.fetch(url, {
-          method: "GET",
-          credentials: "include",
-          redirect: "error",
-          cache: "no-store",
-          signal: controller.signal,
-          headers: {
-            Referer: "https://music.163.com/",
-            Accept: "application/json,text/plain",
-            "User-Agent": userAgent,
-          },
+        Promise.resolve(
+          current.fetch(requestUrl, {
+            method: pcSearch ? "POST" : "GET",
+            ...(pcSearch ? { body: parsed.searchParams.toString() } : {}),
+            credentials: "include",
+            redirect: "error",
+            cache: "no-store",
+            signal: controller.signal,
+            headers: {
+              Referer: "https://music.163.com/",
+              Accept: "application/json,text/plain",
+              "User-Agent": userAgent,
+              ...(pcSearch
+                ? {
+                    "Content-Type":
+                      "application/x-www-form-urlencoded;charset=UTF-8",
+                  }
+                : {}),
+            },
+          })
+        ).then((response) => {
+          if (controller.signal.aborted) {
+            if (response && response.body)
+              Promise.resolve()
+                .then(() => response.body.cancel())
+                .catch(() => {});
+            throw abortError();
+          }
+          return response;
         }),
         controller.signal
       );

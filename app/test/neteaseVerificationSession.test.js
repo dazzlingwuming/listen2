@@ -698,3 +698,120 @@ test("tunnel idle, lifetime, connection and ciphertext byte limits close sockets
     await proxy.dispose();
   }
 });
+
+test("PC envelope becomes a fixed native POST without caller method/body/headers", async () => {
+  const f = fixture();
+  const pc = SEARCH.replace("/api/search/get/web", "/api/search/pc");
+  await f.service.fetch(pc, {
+    method: "DELETE",
+    body: "private",
+    headers: { Cookie: "private", Authorization: "private" },
+  });
+  const call = f.fetchCalls[0];
+  assert.equal(call.url, "https://music.163.com/api/search/pc");
+  assert.equal(call.init.method, "POST");
+  assert.equal(call.init.body, "s=test&type=1&offset=0&limit=20");
+  assert.equal(
+    call.init.headers["Content-Type"],
+    "application/x-www-form-urlencoded;charset=UTF-8"
+  );
+  assert.equal(call.init.headers.Cookie, undefined);
+  assert.equal(call.init.headers.Authorization, undefined);
+  assert.deepEqual(f.partitionCalls, [PARTITION]);
+  assert.equal(
+    f.service.observeResult(challenge(), pc).status,
+    "verification-required"
+  );
+  await f.service.dispose();
+});
+test("PC wire URL passes existing resource guard, while an unvalidated envelope is rejected", async () => {
+  const f = fixture();
+  const pc = SEARCH.replace("/api/search/get/web", "/api/search/pc");
+  await f.service.fetch(pc);
+  let result;
+  f.selected.resourceCheck({ url: f.fetchCalls[0].url }, (value) => {
+    result = value;
+  });
+  assert.equal(result.cancel, false);
+  for (const value of [
+    pc.split("?")[0],
+    pc + "&body=evil",
+    pc + "&s=duplicate",
+    pc.replace("limit=20", "limit=21"),
+  ])
+    await assert.rejects(f.service.fetch(value));
+  assert.equal(f.fetchCalls.length, 1);
+  await f.service.dispose();
+});
+test("PC -462 opens existing same-session verification and retry stays in that partition", async () => {
+  const f = fixture({ response: () => new Response(challenge().data) });
+  const pc = SEARCH.replace("/api/search/get/web", "/api/search/pc");
+  const first = await f.service.fetch(pc);
+  const status = f.service.observeResult(
+    { ok: true, data: await first.text() },
+    pc
+  );
+  assert.deepEqual(status, {
+    ok: false,
+    status: "verification-required",
+    canVerify: true,
+  });
+  const verification = f.service.openVerification();
+  await tick();
+  assert.equal(f.windows[0].config.webPreferences.session, f.selected);
+  f.windows[0].destroy();
+  assert.equal((await verification).status, "retry-ready");
+  f.selected.fetch = async (url, init) => {
+    f.fetchCalls.push({ url, init });
+    return new Response(
+      JSON.stringify({ code: 200, result: { songCount: 0 } })
+    );
+  };
+  const retry = await f.service.fetch(pc);
+  const observed = f.service.observeResult(
+    { ok: true, data: await retry.text() },
+    pc
+  );
+  assert.equal(observed.ok, true);
+  assert.deepEqual(f.partitionCalls, [PARTITION]);
+  assert.deepEqual(
+    f.fetchCalls.map((call) => call.init.method),
+    ["POST", "POST"]
+  );
+  assert.equal(
+    (await f.service.openVerification()).status,
+    "verification-unavailable"
+  );
+  await f.service.dispose();
+});
+test("cancelled PC request closes ignored-abort late response and never creates a challenge", async () => {
+  let deliver,
+    cancelled = false;
+  const f = fixture({
+    response: () =>
+      new Promise((resolve) => {
+        deliver = resolve;
+      }),
+  });
+  const controller = new AbortController();
+  const pc = SEARCH.replace("/api/search/get/web", "/api/search/pc");
+  const pending = f.service.fetch(pc, { signal: controller.signal });
+  await tick();
+  controller.abort();
+  await assert.rejects(pending, (error) => error.name === "AbortError");
+  deliver({
+    body: {
+      cancel() {
+        cancelled = true;
+        return Promise.resolve();
+      },
+    },
+  });
+  await tick();
+  assert.equal(cancelled, true);
+  assert.equal(
+    (await f.service.openVerification()).status,
+    "verification-unavailable"
+  );
+  await f.service.dispose();
+});

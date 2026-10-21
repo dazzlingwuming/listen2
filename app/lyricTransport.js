@@ -6,6 +6,7 @@ const ENDPOINTS = new Map([
     "https://y.qq.com/",
   ],
   ["https://music.163.com/api/search/get/web", "https://music.163.com/"],
+  ["https://music.163.com/api/search/pc", "https://music.163.com/"],
   ["https://music.163.com/api/song/lyric", "https://music.163.com/"],
   ["https://lrclib.net/api/search", "https://lrclib.net/"],
   ["https://lyrics.kugou.com/search", "https://www.kugou.com/"],
@@ -34,17 +35,18 @@ function validateUrl(value) {
     const exactKeys = (expected) =>
       keys.length === expected.length &&
       expected.every((name) => query.has(name));
-    const valid =
-      url.pathname === "/api/search/get/web"
-        ? exactKeys(["s", "type", "offset", "limit"]) &&
-          query.get("s").trim().length > 0 &&
-          query.get("s").length <= 256 &&
-          query.get("type") === "1" &&
-          query.get("offset") === "0" &&
-          query.get("limit") === "20"
-        : exactKeys(["id", "lv", "kv", "tv"]) &&
-          /^\d{1,20}$/.test(query.get("id")) &&
-          ["lv", "kv", "tv"].every((name) => query.get(name) === "-1");
+    const valid = ["/api/search/get/web", "/api/search/pc"].includes(
+      url.pathname
+    )
+      ? exactKeys(["s", "type", "offset", "limit"]) &&
+        query.get("s").trim().length > 0 &&
+        query.get("s").length <= 256 &&
+        query.get("type") === "1" &&
+        query.get("offset") === "0" &&
+        query.get("limit") === "20"
+      : exactKeys(["id", "lv", "kv", "tv"]) &&
+        /^\d{1,20}$/.test(query.get("id")) &&
+        ["lv", "kv", "tv"].every((name) => query.get(name) === "-1");
     if (!valid) throw new Error("Invalid NetEase lyric request contract");
   }
   if (url.hostname === "u.y.qq.com") {

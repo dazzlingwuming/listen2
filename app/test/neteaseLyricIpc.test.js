@@ -117,3 +117,41 @@ test("only NetEase uses its credentialed session and challenge sanitizer", async
   assert.equal(h.calls[2].fetch, h.directLyricFetch);
   assert.equal(h.calls.length, 3);
 });
+
+test("PC envelope validates fixed search parameters and rejects unvalidated POST shapes", () => {
+  const pc = SEARCH.replace("/api/search/get/web", "/api/search/pc");
+  assert.doesNotThrow(() => validateUrl(pc));
+  for (const value of [
+    pc.split("?")[0],
+    pc + "&s=duplicate",
+    pc + "&method=POST",
+    pc + "&body=private",
+    pc + "&csrf_token=private",
+    pc.replace("s=test", "s="),
+    pc.replace("s=test", "s=%20"),
+    pc.replace("type=1", "type=1000"),
+    pc.replace("offset=0", "offset=1"),
+    pc.replace("limit=20", "limit=21"),
+    pc.replace("s=test", "s=" + "a".repeat(257)),
+    pc.replace("https:", "http:"),
+    pc.replace("music.163.com", "music.163.com.evil.test"),
+  ])
+    assert.throws(() => validateUrl(value));
+});
+test("PC IPC uses the same session and observer without forwarding arbitrary renderer request fields", async () => {
+  const h = harness();
+  const pc = SEARCH.replace("/api/search/get/web", "/api/search/pc");
+  const result = await h.handlers.get("lyrics:request")(h.event, {
+    id: "lyric-9-1",
+    url: pc,
+    method: "DELETE",
+    body: "private",
+    headers: { Cookie: "private" },
+  });
+  assert.equal(result.status, "verification-required");
+  assert.equal(h.calls[0].url, pc);
+  assert.notEqual(h.calls[0].fetch, h.directLyricFetch);
+  assert.equal(h.calls[1].type, "observe");
+  assert.equal(h.calls[1].url, pc);
+  assert.equal(JSON.stringify(h.calls).includes("private"), false);
+});

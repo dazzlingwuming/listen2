@@ -1,4 +1,4 @@
-/* global Listen2LyricHttp TextDecoder atob */
+/* global Listen2LyricHttp TextDecoder atob isElectron */
 let wbi_key = null;
 const bilibiliLyricCache = new Map();
 const bilibiliLyricSearchCache = new Map();
@@ -1061,6 +1061,57 @@ class bilibili {
       'https://music.163.com/api/search/get/web' +
       `?s=${encodeURIComponent(query)}` +
       '&type=1&offset=0&limit=20';
+    const parseResponse = (response, allowFallback) => {
+      if (options.signal && options.signal.aborted)
+        throw Object.assign(new Error('Cancelled'), { name: 'AbortError' });
+      const payload = this.parse_json_payload(response.data);
+      if (payload && Number(payload.code) === -462) {
+        const error = new Error('NetEase requires user verification');
+        error.code = 'verification-required';
+        throw error;
+      }
+      if (
+        payload &&
+        Number(payload.code) === 200 &&
+        payload.abroad === true &&
+        typeof payload.result === 'string'
+      ) {
+        if (
+          allowFallback &&
+          typeof Listen2LyricHttp !== 'undefined' &&
+          typeof isElectron === 'function' &&
+          isElectron()
+        ) {
+          const fallbackUrl = targetUrl.replace(
+            '/api/search/get/web',
+            '/api/search/pc'
+          );
+          return Listen2LyricHttp.get(fallbackUrl, {
+            timeout: NETEASE_LYRIC_REQUEST_TIMEOUT,
+            signal: options.signal,
+          }).then((fallback) => parseResponse(fallback, false));
+        }
+        throw Object.assign(
+          new Error('NetEase lyric search returned an invalid response'),
+          {
+            code: 'invalid-response',
+            reason: 'netease-unexpected-result',
+          }
+        );
+      }
+      const items = payload && payload.result && payload.result.songs;
+      if (
+        payload &&
+        Number(payload.code) === 200 &&
+        payload.result &&
+        Number(payload.result.songCount) === 0
+      )
+        return [];
+      if (!Array.isArray(items)) {
+        throw new Error('NetEase lyric search returned an invalid response');
+      }
+      return items;
+    };
     const request = (
       typeof Listen2LyricHttp !== 'undefined' ? Listen2LyricHttp : axios
     )
@@ -1068,39 +1119,7 @@ class bilibili {
         timeout: NETEASE_LYRIC_REQUEST_TIMEOUT,
         signal: options.signal,
       })
-      .then((response) => {
-        const payload = this.parse_json_payload(response.data);
-        if (payload && Number(payload.code) === -462) {
-          const error = new Error('NetEase requires user verification');
-          error.code = 'verification-required';
-          throw error;
-        }
-        if (
-          payload &&
-          payload.abroad === true &&
-          typeof payload.result === 'string'
-        ) {
-          throw Object.assign(
-            new Error('NetEase lyric search returned an invalid response'),
-            {
-              code: 'invalid-response',
-              reason: 'netease-unexpected-result',
-            }
-          );
-        }
-        const items = payload && payload.result && payload.result.songs;
-        if (
-          payload &&
-          Number(payload.code) === 200 &&
-          payload.result &&
-          Number(payload.result.songCount) === 0
-        )
-          return [];
-        if (!Array.isArray(items)) {
-          throw new Error('NetEase lyric search returned an invalid response');
-        }
-        return items;
-      })
+      .then((response) => parseResponse(response, true))
       .catch((error) => {
         bilibiliNeteaseLyricSearchCache.delete(cacheKey);
         throw error;
