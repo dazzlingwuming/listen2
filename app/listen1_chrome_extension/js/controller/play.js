@@ -3092,11 +3092,55 @@ angular.module('listenone').controller('PlayController', [
         }
       );
     };
+    const lyricSourceFailureReasonKeys = {
+      'rate-limited': '_LYRIC_REASON_RATE_LIMITED',
+      'service-busy': '_LYRIC_REASON_SERVICE_BUSY',
+      'connection-failed': '_LYRIC_REASON_CONNECTION_FAILED',
+      'netease-unexpected-result': '_LYRIC_REASON_NETEASE_UNEXPECTED_RESULT',
+    };
+    const lyricSourceNetworkStageKeys = {
+      dns: '_LYRIC_NETWORK_DNS_FAILED',
+      connect: '_LYRIC_NETWORK_CONNECT_FAILED',
+      tls: '_LYRIC_NETWORK_TLS_FAILED',
+      response: '_LYRIC_NETWORK_RESPONSE_FAILED',
+    };
+
     $scope.lyricSourceStatus = (source) => {
       const status = source.status.toUpperCase().replace(/-/g, '_');
       const stage = ['catalog', 'lyrics'].includes(source.stage)
         ? source.stage.toUpperCase()
         : '';
+      const mappableFailure = [
+        'UNAVAILABLE',
+        'TIMEOUT',
+        'INVALID_RESPONSE',
+      ].includes(status);
+      const reason =
+        typeof source.reason === 'string' &&
+        Object.prototype.hasOwnProperty.call(
+          lyricSourceFailureReasonKeys,
+          source.reason
+        )
+          ? source.reason
+          : '';
+      if (mappableFailure && reason) {
+        const reasonKey = lyricSourceFailureReasonKeys[reason];
+        const networkStage =
+          reason === 'connection-failed' &&
+          typeof source.networkStage === 'string' &&
+          Object.prototype.hasOwnProperty.call(
+            lyricSourceNetworkStageKeys,
+            source.networkStage
+          )
+            ? source.networkStage
+            : '';
+        const message = i18next.t(
+          networkStage ? lyricSourceNetworkStageKeys[networkStage] : reasonKey
+        );
+        return stage
+          ? `${i18next.t(`_LYRIC_STAGE_${stage}`)}: ${message}`
+          : message;
+      }
       if (
         stage &&
         ['LOADING', 'EMPTY', 'UNAVAILABLE', 'INVALID_RESPONSE'].includes(status)

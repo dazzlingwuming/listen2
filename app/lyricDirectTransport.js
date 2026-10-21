@@ -2,6 +2,7 @@ const https = require("node:https");
 const net = require("node:net");
 const tls = require("node:tls");
 const { validateUrl, isLyricHostname } = require("./lyricTransport");
+const { networkDetails, lyricHeaders } = require("./lyricRequestPolicy");
 
 const DNS_ENDPOINTS = [
   "https://dns.alidns.com/resolve",
@@ -16,8 +17,17 @@ const MAX_BODY_BYTES = 2 * 1024 * 1024;
 const KUGOU_USER_AGENT =
   "Mozilla/5.0 (iPhone; CPU iPhone OS 14_3 like Mac OS X) AppleWebKit/534.30 (KHTML, like Gecko) Version/4.0 Mobile Safari/534.30";
 
-function transportError(code = "LYRIC_UNAVAILABLE") {
-  return Object.assign(new Error("Lyric transport failed"), { code });
+function transportError(code = "LYRIC_UNAVAILABLE", stage, cause) {
+  return Object.assign(new Error("Lyric transport failed"), {
+    code,
+    ...networkDetails(cause, stage),
+  });
+}
+function responseHeaders(response) {
+  const retryAfter = response.headers["retry-after"];
+  return typeof retryAfter === "string" && retryAfter.length <= 128
+    ? { "Retry-After": retryAfter }
+    : {};
 }
 function abortError() {
   return Object.assign(new Error("Lyric request cancelled"), {
@@ -213,7 +223,7 @@ function createPublicDnsResolver({
         if (signal) signal.removeEventListener("abort", abort);
       }
     }
-    throw failure || transportError();
+    throw transportError(failure && failure.code, "dns", failure);
   };
   resolveLyricHost.rejectAddresses = (hostname, failed) => {
     const cached = cache.get(hostname);
@@ -243,6 +253,10 @@ function createDirectLyricFetch({
     const validated = validateUrl(value);
     const url = new URL(validated.url);
     const { signal } = options;
+    const reportStage = (stage) => {
+      if (typeof options.onNetworkStage === "function")
+        options.onNetworkStage(stage);
+    };
     const context = {
       excludeAddresses: new Set(),
       attemptedEndpoints: new Set(),
@@ -251,9 +265,15 @@ function createDirectLyricFetch({
     // Two address batches only, with one connection-triggered resolver fallback.
     for (let batch = 0; batch < 2; batch += 1) {
       if (signal && signal.aborted) throw abortError();
+      reportStage("dns");
       const addresses = [
         ...new Set(
-          await withAbort(resolve(url.hostname, signal, context), signal)
+          await withAbort(resolve(url.hostname, signal, context), signal).catch(
+            (error) => {
+              if (error.name === "AbortError") throw error;
+              throw transportError(error.code, "dns", error);
+            }
+          )
         ),
       ]
         .filter(
@@ -269,6 +289,12 @@ function createDirectLyricFetch({
           return await new Promise((resolveResponse, reject) => {
             let settled = false;
             let req;
+            let networkStage = "connect";
+            const setStage = (stage) => {
+              networkStage = stage;
+              reportStage(stage);
+            };
+            setStage("connect");
             const cleanup = () => {
               if (signal) signal.removeEventListener("abort", abort);
             };
@@ -304,13 +330,19 @@ function createDirectLyricFetch({
                     Referer: validated.referer,
                     Accept: "application/json,text/plain",
                     "Accept-Encoding": "identity",
-                    "User-Agent": url.hostname.endsWith(".kugou.com")
-                      ? KUGOU_USER_AGENT
-                      : "Listen2/2.35.2 (desktop lyrics)",
+                    ...lyricHeaders(url.hostname),
+                    ...(url.hostname.endsWith(".kugou.com")
+                      ? { "User-Agent": KUGOU_USER_AGENT }
+                      : {}),
                   },
                 },
                 (response) => {
+                  if (settled || (signal && signal.aborted)) {
+                    response.destroy();
+                    return;
+                  }
                   receivedResponse = true;
+                  setStage("response");
                   if (typeof resolve.rememberReachable === "function")
                     resolve.rememberReachable(url.hostname, address);
                   const status = response.statusCode;
@@ -319,12 +351,20 @@ function createDirectLyricFetch({
                     status < 200 ||
                     status > 599
                   ) {
-                    finish(transportError("LYRIC_INVALID_RESPONSE"));
+                    finish(
+                      transportError("LYRIC_INVALID_RESPONSE", "response")
+                    );
                     response.destroy();
                     return;
                   }
                   if (status >= 300) {
-                    finish(null, new Response(null, { status }));
+                    finish(
+                      null,
+                      new Response(null, {
+                        status,
+                        headers: responseHeaders(response),
+                      })
+                    );
                     response.destroy();
                     return;
                   }
@@ -335,7 +375,9 @@ function createDirectLyricFetch({
                     encoding !== "identity" ||
                     Number(response.headers["content-length"]) > MAX_BODY_BYTES
                   ) {
-                    finish(transportError("LYRIC_INVALID_RESPONSE"));
+                    finish(
+                      transportError("LYRIC_INVALID_RESPONSE", "response")
+                    );
                     response.destroy();
                     return;
                   }
@@ -344,7 +386,9 @@ function createDirectLyricFetch({
                   response.on("data", (chunk) => {
                     size += chunk.length;
                     if (size > MAX_BODY_BYTES) {
-                      finish(transportError("LYRIC_INVALID_RESPONSE"));
+                      finish(
+                        transportError("LYRIC_INVALID_RESPONSE", "response")
+                      );
                       response.destroy();
                     } else chunks.push(Buffer.from(chunk));
                   });
@@ -356,22 +400,39 @@ function createDirectLyricFetch({
                           status === 204 || status === 205
                             ? null
                             : Buffer.concat(chunks),
-                          { status }
+                          { status, headers: responseHeaders(response) }
                         )
                       );
                     } catch (_) {
-                      finish(transportError("LYRIC_INVALID_RESPONSE"));
+                      finish(
+                        transportError("LYRIC_INVALID_RESPONSE", "response")
+                      );
                     }
                   });
-                  response.once("error", () => finish(transportError()));
-                  response.once("aborted", () => finish(transportError()));
+                  response.once("error", (error) =>
+                    finish(transportError(undefined, "response", error))
+                  );
+                  response.once("aborted", () =>
+                    finish(transportError(undefined, "response"))
+                  );
                 }
               );
-              req.once("error", () => finish(transportError()));
+              req.once("socket", (socket) => {
+                if (!socket.connecting) setStage("tls");
+                socket.once("connect", () => {
+                  setStage("tls");
+                });
+                socket.once("secureConnect", () => {
+                  setStage("response");
+                });
+              });
+              req.once("error", (error) =>
+                finish(transportError(undefined, networkStage, error))
+              );
               if (signal && signal.aborted) abort();
               else req.end();
             } catch (error) {
-              finish(transportError());
+              finish(transportError(undefined, networkStage, error));
               if (req) req.destroy();
             }
           });
@@ -389,7 +450,7 @@ function createDirectLyricFetch({
         }
       }
     }
-    throw failure || transportError();
+    throw transportError(failure && failure.code, "dns", failure);
   };
 }
 

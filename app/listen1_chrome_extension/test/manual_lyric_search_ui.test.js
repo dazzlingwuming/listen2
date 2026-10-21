@@ -159,8 +159,67 @@ assert.strictEqual(
 );
 assert.strictEqual(
   empty.scope.lyricSourceStatus({
+    status: 'unavailable',
+    stage: 'catalog',
+    reason: 'rate-limited',
+    httpStatus: 429,
+    retryAfterMs: 1000,
+  }),
+  '_LYRIC_STAGE_CATALOG: _LYRIC_REASON_RATE_LIMITED'
+);
+assert.strictEqual(
+  empty.scope.lyricSourceStatus({
+    status: 'unavailable',
+    stage: 'lyrics',
+    reason: 'service-busy',
+    httpStatus: 503,
+  }),
+  '_LYRIC_STAGE_LYRICS: _LYRIC_REASON_SERVICE_BUSY'
+);
+assert.strictEqual(
+  empty.scope.lyricSourceStatus({
+    status: 'timeout',
+    stage: 'catalog',
+    reason: 'connection-failed',
+    networkStage: 'tls',
+    networkCode: 'ECONNRESET',
+    attempts: 2,
+    message: 'must not be shown',
+    url: 'https://private.invalid/',
+  }),
+  '_LYRIC_STAGE_CATALOG: _LYRIC_NETWORK_TLS_FAILED'
+);
+assert.strictEqual(
+  empty.scope.lyricSourceStatus({
+    status: 'invalid-response',
+    stage: 'catalog',
+    reason: 'netease-unexpected-result',
+  }),
+  '_LYRIC_STAGE_CATALOG: _LYRIC_REASON_NETEASE_UNEXPECTED_RESULT'
+);
+assert.strictEqual(
+  empty.scope.lyricSourceStatus({
+    status: 'unavailable',
+    stage: 'catalog',
+    reason: 'unrecognized-reason',
+  }),
+  '_LYRIC_CATALOG_UNAVAILABLE',
+  'unknown reason must fall back to the existing safe status'
+);
+assert.strictEqual(
+  empty.scope.lyricSourceStatus({
+    status: 'verification-required',
+    stage: 'catalog',
+    reason: 'rate-limited',
+  }),
+  '_LYRIC_STAGE_CATALOG: _LYRIC_SOURCE_VERIFICATION_REQUIRED',
+  'verification flow keeps its existing status'
+);
+assert.strictEqual(
+  empty.scope.lyricSourceStatus({
     status: 'no-synced-lyrics',
     stage: 'lyrics',
+    reason: 'service-busy',
   }),
   '_LYRIC_SOURCE_NO_SYNCED_LYRICS'
 );
@@ -252,6 +311,14 @@ for (const locale of ['zh-CN', 'zh-TC', 'en-US', 'fr-FR', 'ko-KR', 'pt-BR']) {
     'SOURCE_DETAILS',
     'CATALOG_UNAVAILABLE',
     'LYRICS_UNAVAILABLE',
+    'REASON_RATE_LIMITED',
+    'REASON_SERVICE_BUSY',
+    'REASON_CONNECTION_FAILED',
+    'REASON_NETEASE_UNEXPECTED_RESULT',
+    'NETWORK_DNS_FAILED',
+    'NETWORK_CONNECT_FAILED',
+    'NETWORK_TLS_FAILED',
+    'NETWORK_RESPONSE_FAILED',
   ]) {
     assert(translations[`_LYRIC_${key}`], `${locale}: ${key}`);
   }

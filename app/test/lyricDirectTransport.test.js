@@ -251,7 +251,13 @@ test("connection fallback never reuses already failed public addresses", async (
     async () => PUBLIC_IPS.slice(0, 2)
   );
   const result = await requestLyric(fixture.fetch, URL_VALUE);
-  assert.deepEqual(result, { ok: false, status: "unavailable" });
+  assert.deepEqual(result, {
+    ok: false,
+    status: "unavailable",
+    reason: "connection-failed",
+    networkStage: "connect",
+    attempts: 1,
+  });
   assert.deepEqual(
     fixture.calls.map((x) => x.hostname),
     PUBLIC_IPS.slice(0, 2)
@@ -266,6 +272,8 @@ test("HTTP redirect/error never follows or retries after receiving a response", 
       ok: false,
       status: "unavailable",
       httpStatus: status,
+      networkStage: "response",
+      attempts: 1,
     });
     assert.equal(fixture.calls.length, 1);
   }
@@ -293,7 +301,12 @@ test("outer cancellation destroys in-flight HTTPS and does not retry", async () 
   const pending = requestLyric(fixture.fetch, URL_VALUE, controller.signal);
   await new Promise((resolve) => setImmediate(resolve));
   controller.abort();
-  assert.deepEqual(await pending, { ok: false, status: "timeout" });
+  assert.deepEqual(await pending, {
+    ok: false,
+    status: "timeout",
+    networkStage: "response",
+    attempts: 1,
+  });
   assert.equal(fixture.calls.length, 1);
   assert.equal(fixture.requests[0].destroyed, true);
 });
@@ -342,6 +355,7 @@ test("DNS and HTTPS share the original eight-second deadline", async (t) => {
       })
   );
   const pending = requestLyric(fixture.fetch, URL_VALUE);
+  await Promise.resolve();
   t.mock.timers.tick(4000);
   resolveDns(PUBLIC_IPS);
   for (let i = 0; i < 6; i++) await Promise.resolve();
@@ -349,7 +363,12 @@ test("DNS and HTTPS share the original eight-second deadline", async (t) => {
   t.mock.timers.tick(3999);
   assert.notEqual(fixture.requests[0].destroyed, true);
   t.mock.timers.tick(1);
-  assert.deepEqual(await pending, { ok: false, status: "timeout" });
+  assert.deepEqual(await pending, {
+    ok: false,
+    status: "timeout",
+    networkStage: "response",
+    attempts: 1,
+  });
   assert.equal(fixture.requests[0].destroyed, true);
   assert.equal(fixture.calls.length, 1);
 });
@@ -503,6 +522,8 @@ test("HTTP 500 ends the request without a second resolver or socket", async () =
     ok: false,
     status: "unavailable",
     httpStatus: 500,
+    networkStage: "response",
+    attempts: 1,
   });
   assert.equal(dnsCalls, 1);
   assert.equal(fixture.calls.length, 1);
@@ -637,4 +658,85 @@ test("a DoH response arriving after its budget closes its unused body", async (t
   for (let i = 0; i < 8; i++) await Promise.resolve();
   assert.equal(cancelled, true);
   assert.equal(calls, 2);
+});
+
+test("LRCLIB keeps only Retry-After and centrally generated identity, never caller headers", async () => {
+  const fixture = directFixture([
+    {
+      status: 503,
+      headers: {
+        "retry-after": "2",
+        "set-cookie": "secret",
+        location: "https://evil.example/",
+      },
+    },
+  ]);
+  const response = await fixture.fetch(
+    "https://lrclib.net/api/search?q=public",
+    {
+      headers: {
+        Cookie: "secret",
+        Authorization: "secret",
+        "User-Agent": "forged",
+      },
+    }
+  );
+  assert.equal(response.headers.get("retry-after"), "2");
+  assert.equal(response.headers.get("set-cookie"), null);
+  assert.equal(response.headers.get("location"), null);
+  const headers = fixture.calls[0].headers;
+  assert.equal(headers.Cookie, undefined);
+  assert.equal(headers.Authorization, undefined);
+  assert.equal(
+    headers["User-Agent"],
+    `Listen2/${
+      require("../package.json").version
+    } (https://github.com/dazzlingwuming/listen2)`
+  );
+  assert.equal(headers["Lrclib-Client"], headers["User-Agent"]);
+});
+test("network phase diagnostics preserve only safe native codes through independent fallback", async () => {
+  for (const stage of ["connect", "tls", "response"]) {
+    const fetch = createDirectLyricFetch({
+      resolve: async () => [PUBLIC_IPS[0]],
+      request(_options, onResponse) {
+        const req = new EventEmitter();
+        req.destroy = () => {};
+        req.end = () =>
+          queueMicrotask(() => {
+            const socket = new EventEmitter();
+            socket.connecting = true;
+            req.emit("socket", socket);
+            if (stage !== "connect") socket.emit("connect");
+            if (stage === "response") socket.emit("secureConnect");
+            req.emit(
+              "error",
+              Object.assign(new Error("private address and response"), {
+                code: "ECONNRESET",
+                url: "private",
+              })
+            );
+          });
+        return req;
+      },
+    });
+    const result = await requestLyric(fetch, URL_VALUE);
+    assert.equal(result.networkStage, stage);
+    assert.equal(result.networkCode, "ECONNRESET");
+    assert.equal(result.reason, "connection-failed");
+    assert.equal(JSON.stringify(result).includes("private"), false);
+  }
+  const fetch = createDirectLyricFetch({
+    resolve: async () => {
+      throw Object.assign(new Error("private dns"), { code: "ENOTFOUND" });
+    },
+  });
+  assert.deepEqual(await requestLyric(fetch, URL_VALUE), {
+    ok: false,
+    status: "unavailable",
+    reason: "connection-failed",
+    networkStage: "dns",
+    networkCode: "ENOTFOUND",
+    attempts: 1,
+  });
 });

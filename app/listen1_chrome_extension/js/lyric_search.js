@@ -5,6 +5,55 @@
   // Each consumer owns cancellation. Provider HTTP calls share this signal only
   // within that search; automatic lookup caches never hold cancelled requests.
   const cache = new Map();
+  function failureDetails(value) {
+    const safe = {};
+    if (!value || typeof value !== 'object') return safe;
+    if (
+      [
+        'rate-limited',
+        'service-busy',
+        'connection-failed',
+        'netease-unexpected-result',
+      ].includes(value.reason)
+    )
+      safe.reason = value.reason;
+    if (
+      Number.isInteger(value.httpStatus) &&
+      value.httpStatus >= 200 &&
+      value.httpStatus <= 599
+    )
+      safe.httpStatus = value.httpStatus;
+    if (Number.isSafeInteger(value.retryAfterMs) && value.retryAfterMs >= 0)
+      safe.retryAfterMs = value.retryAfterMs;
+    if (['dns', 'connect', 'tls', 'response'].includes(value.networkStage))
+      safe.networkStage = value.networkStage;
+    if (
+      [
+        'ECONNRESET',
+        'ECONNREFUSED',
+        'EHOSTUNREACH',
+        'ENETUNREACH',
+        'ETIMEDOUT',
+        'ENOTFOUND',
+        'EAI_AGAIN',
+        'EPIPE',
+        'ERR_STREAM_PREMATURE_CLOSE',
+        'ERR_TLS_CERT_ALTNAME_INVALID',
+        'CERT_HAS_EXPIRED',
+        'CERT_NOT_YET_VALID',
+        'DEPTH_ZERO_SELF_SIGNED_CERT',
+        'SELF_SIGNED_CERT_IN_CHAIN',
+        'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+        'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+        'ERR_SSL_WRONG_VERSION_NUMBER',
+        'ERR_SSL_TLSV1_ALERT_PROTOCOL_VERSION',
+      ].includes(value.networkCode)
+    )
+      safe.networkCode = value.networkCode;
+    if (value.attempts === 1 || value.attempts === 2)
+      safe.attempts = value.attempts;
+    return safe;
+  }
   function classify(error) {
     if (error && error.code === 'verification-required')
       return 'verification-required';
@@ -134,6 +183,7 @@
         } catch (error) {
           if (finished) return;
           state.status = classify(error);
+          Object.assign(state, failureDetails(error));
         }
         state.elapsedMs = Date.now() - time;
         publish();
@@ -150,7 +200,7 @@
     });
     return { promise, cancel: () => finish(true) };
   }
-  const api = { search, classify };
+  const api = { search, classify, failureDetails };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Listen2LyricSearch = api;
 })(typeof window !== 'undefined' ? window : globalThis);

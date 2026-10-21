@@ -914,3 +914,97 @@ test("late provider progress cannot rewrite a completed source", async () => {
   assert.equal(updates, count);
   assert.equal(result.sources[0].stage, "catalog");
 });
+
+test("NetEase abroad string result is explicit invalid-response without claiming login or geography", async () => {
+  const provider = providerFixture({
+    axios: {
+      get: async () => ({
+        data: { code: 200, abroad: true, result: "opaque platform response" },
+      }),
+    },
+  });
+  await assert.rejects(
+    provider.fetch_netease_lyric_search("Public representative"),
+    (error) =>
+      error.code === "invalid-response" &&
+      error.reason === "netease-unexpected-result"
+  );
+  const result = await search(
+    [
+      {
+        id: "netease-unexpected",
+        load: () =>
+          provider.fetch_netease_lyric_search("Public representative"),
+      },
+    ],
+    "Public",
+    { force: true }
+  ).promise;
+  assert.equal(result.sources[0].status, "invalid-response");
+  assert.equal(result.sources[0].reason, "netease-unexpected-result");
+});
+test("aggregator copies verified diagnostics only and does not cache failure", async () => {
+  let calls = 0;
+  const provider = {
+    id: "safe-diagnostic",
+    load: async () => {
+      calls++;
+      throw Object.assign(new Error("private upstream URL and body"), {
+        code: "unavailable",
+        reason: "service-busy",
+        httpStatus: 503,
+        retryAfterMs: 1000,
+        networkStage: "response",
+        networkCode: "ECONNRESET",
+        attempts: 2,
+        headers: { Cookie: "secret" },
+        url: "private",
+        data: "private",
+      });
+    },
+  };
+  const first = await search([provider], "public").promise;
+  assert.equal(first.sources[0].reason, "service-busy");
+  assert.equal(first.sources[0].networkCode, "ECONNRESET");
+  assert.equal(first.sources[0].attempts, 2);
+  for (const field of ["message", "headers", "url", "data", "code"])
+    assert.equal(field in first.sources[0], false);
+  await search([provider], "public").promise;
+  assert.equal(calls, 2);
+  const {
+    failureDetails,
+  } = require("../listen1_chrome_extension/js/lyric_search");
+  assert.deepEqual(
+    failureDetails({
+      reason: "private",
+      networkStage: "private",
+      networkCode: "private",
+      attempts: 99,
+      httpStatus: NaN,
+      retryAfterMs: -1,
+    }),
+    {}
+  );
+});
+test("normal NetEase zero-count and -462 keep existing classifications", async () => {
+  const provider = providerFixture({
+    axios: {
+      get: async () => ({ data: { code: 200, result: { songCount: 0 } } }),
+    },
+  });
+  assert.equal(
+    (await provider.fetch_netease_lyric_search("public zero result")).length,
+    0
+  );
+  const verified = providerFixture({
+    axios: {
+      get: async () => ({
+        data: { code: -462, abroad: true, result: "unusual" },
+      }),
+    },
+  });
+  await assert.rejects(
+    verified.fetch_netease_lyric_search("public challenge"),
+    (error) => error.code === "verification-required" && !error.reason
+  );
+});

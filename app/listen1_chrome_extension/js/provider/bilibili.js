@@ -1075,6 +1075,19 @@ class bilibili {
           error.code = 'verification-required';
           throw error;
         }
+        if (
+          payload &&
+          payload.abroad === true &&
+          typeof payload.result === 'string'
+        ) {
+          throw Object.assign(
+            new Error('NetEase lyric search returned an invalid response'),
+            {
+              code: 'invalid-response',
+              reason: 'netease-unexpected-result',
+            }
+          );
+        }
         const items = payload && payload.result && payload.result.songs;
         if (
           payload &&

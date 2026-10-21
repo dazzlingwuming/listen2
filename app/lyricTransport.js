@@ -92,55 +92,225 @@ function validateUrl(value) {
   }
   return { url: url.href, referer: ENDPOINTS.get(key) };
 }
-async function requestLyric(fetchImpl, value, signal) {
-  const { url, referer } = validateUrl(value);
-  const controller = new AbortController();
-  const abort = () => controller.abort();
-  if (signal) {
-    signal.addEventListener("abort", abort, { once: true });
-    if (signal.aborted) abort();
-  }
-  const timer = setTimeout(abort, 8000);
-  try {
-    const response = await fetchImpl(url, {
-      signal: controller.signal,
-      redirect: "error",
-      credentials: "omit",
-      headers: {
-        Referer: referer,
-        Accept: "application/json,text/plain",
-        "User-Agent": "Listen2/2.35.1 (desktop lyrics)",
-      },
-    });
-    if (!response.ok)
-      return { ok: false, status: "unavailable", httpStatus: response.status };
-    // Bound decoded body size as well as Content-Length.
-    const reader = response.body.getReader();
-    const chunks = [];
-    let size = 0;
-    for (;;) {
-      const { done, value: chunk } = await reader.read();
-      if (done) break;
-      size += chunk.byteLength;
-      if (size > 2 * 1024 * 1024) {
-        await reader.cancel();
-        return { ok: false, status: "invalid-response" };
-      }
-      chunks.push(Buffer.from(chunk));
-    }
-    return { ok: true, data: Buffer.concat(chunks).toString("utf8") };
-  } catch (error) {
-    return {
-      ok: false,
-      status: controller.signal.aborted
-        ? "timeout"
-        : error && error.code === "LYRIC_INVALID_RESPONSE"
-        ? "invalid-response"
-        : "unavailable",
-    };
-  } finally {
-    clearTimeout(timer);
-    if (signal) signal.removeEventListener("abort", abort);
-  }
+const {
+  networkDetails,
+  lyricHeaders,
+  parseRetryAfter,
+} = require("./lyricRequestPolicy");
+function aborted() {
+  return Object.assign(new Error("Lyric request cancelled"), {
+    name: "AbortError",
+  });
 }
-module.exports = { requestLyric, validateUrl, isLyricHostname };
+function raceAbort(promise, signal) {
+  return new Promise((resolve, reject) => {
+    const finish = (error, value) => {
+      signal.removeEventListener("abort", cancel);
+      if (error) reject(error);
+      else resolve(value);
+    };
+    const cancel = () => finish(aborted());
+    signal.addEventListener("abort", cancel, { once: true });
+    Promise.resolve(promise).then((value) => finish(null, value), finish);
+    if (signal.aborted) cancel();
+  });
+}
+function cancelBody(response) {
+  if (response && response.body)
+    Promise.resolve()
+      .then(() => response.body.cancel())
+      .catch(() => {});
+}
+function createLyricRequester({ now = Date.now } = {}) {
+  // This queue belongs only to LRCLIB. Other sources retain their concurrency.
+  let tail = Promise.resolve();
+  let nextStart = 0;
+  let cooldownFailure;
+  return async function requestLyric(fetchImpl, value, signal) {
+    const { url, referer } = validateUrl(value);
+    const hostname = new URL(url).hostname;
+    const lrclib = hostname === "lrclib.net";
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    if (signal) {
+      signal.addEventListener("abort", abort, { once: true });
+      if (signal.aborted) abort();
+    }
+    const deadline = now() + 8000;
+    const timer = setTimeout(abort, 8000);
+    let attempts = 0;
+    let requestStage;
+    let lastFailure;
+    const wait = async (ms) => {
+      let timeout;
+      try {
+        await raceAbort(
+          new Promise((resolve) => {
+            timeout = setTimeout(resolve, ms);
+          }),
+          controller.signal
+        );
+      } finally {
+        clearTimeout(timeout);
+      }
+    };
+    const execute = async () => {
+      for (;;) {
+        if (now() >= deadline) abort();
+        if (controller.signal.aborted) throw aborted();
+        if (lrclib) {
+          const delay = Math.max(0, nextStart - now());
+          if (delay >= deadline - now()) {
+            if (lastFailure) return lastFailure;
+            if (cooldownFailure) {
+              // A prior server cooldown also applies to a new search. No socket
+              // was attempted for this caller, so omit its attempt count.
+              const failure = { ...cooldownFailure };
+              delete failure.attempts;
+              return { ...failure, retryAfterMs: delay };
+            }
+          }
+          if (delay) await wait(Math.min(delay, 8000));
+          if (controller.signal.aborted) throw aborted();
+        }
+        let attempted = false;
+        try {
+          const response = await raceAbort(
+            Promise.resolve()
+              .then(() => {
+                if (controller.signal.aborted) throw aborted();
+                attempted = true;
+                attempts += 1;
+                return fetchImpl(url, {
+                  signal: controller.signal,
+                  onNetworkStage: (stage) => {
+                    if (["dns", "connect", "tls", "response"].includes(stage))
+                      requestStage = stage;
+                  },
+                  redirect: "error",
+                  credentials: "omit",
+                  headers: {
+                    Referer: referer,
+                    Accept: "application/json,text/plain",
+                    ...lyricHeaders(hostname),
+                  },
+                });
+              })
+              .then((response) => {
+                // Ignore and close an implementation's late headers after cancellation.
+                if (controller.signal.aborted) {
+                  cancelBody(response);
+                  throw aborted();
+                }
+                return response;
+              }),
+            controller.signal
+          );
+          requestStage = "response";
+          if (!response.ok) {
+            const retryAfterMs = parseRetryAfter(
+              response.headers && response.headers.get("retry-after"),
+              now()
+            );
+            const retryable =
+              lrclib && (response.status === 429 || response.status === 503);
+            lastFailure = {
+              ok: false,
+              status: "unavailable",
+              httpStatus: response.status,
+              ...(retryable
+                ? {
+                    reason:
+                      response.status === 429 ? "rate-limited" : "service-busy",
+                  }
+                : {}),
+              ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
+              networkStage: "response",
+              attempts,
+            };
+            cancelBody(response);
+            if (!retryable) return lastFailure;
+            // Missing/malformed Retry-After uses one conservative, bounded second.
+            nextStart = Math.max(
+              nextStart,
+              now() + (retryAfterMs === undefined ? 1000 : retryAfterMs)
+            );
+            cooldownFailure = lastFailure;
+            if (attempts >= 2 || nextStart >= deadline) return lastFailure;
+            continue;
+          }
+          if (!response.body) return { ok: true, data: "" };
+          const reader = response.body.getReader();
+          const chunks = [];
+          let size = 0;
+          try {
+            for (;;) {
+              const { done, value: chunk } = await raceAbort(
+                reader.read(),
+                controller.signal
+              );
+              if (controller.signal.aborted) throw aborted();
+              if (done) break;
+              size += chunk.byteLength;
+              if (size > 2 * 1024 * 1024) {
+                Promise.resolve()
+                  .then(() => reader.cancel())
+                  .catch(() => {});
+                return {
+                  ok: false,
+                  status: "invalid-response",
+                  networkStage: "response",
+                  attempts,
+                };
+              }
+              chunks.push(Buffer.from(chunk));
+            }
+          } catch (error) {
+            Promise.resolve()
+              .then(() => reader.cancel())
+              .catch(() => {});
+            throw error;
+          }
+          return { ok: true, data: Buffer.concat(chunks).toString("utf8") };
+        } finally {
+          // Leave room after the completed attempt (including body reading),
+          // while preserving any longer server-specified cooldown. A queued
+          // cancellation that never called fetch must not extend this clock.
+          if (lrclib && attempted) nextStart = Math.max(nextStart, now() + 400);
+        }
+      }
+    };
+    try {
+      const work = lrclib ? tail.then(execute) : execute();
+      if (lrclib) tail = work.catch(() => {});
+      return await raceAbort(work, controller.signal);
+    } catch (error) {
+      const details = networkDetails(error, requestStage);
+      return {
+        ok: false,
+        status: controller.signal.aborted
+          ? "timeout"
+          : error && error.code === "LYRIC_INVALID_RESPONSE"
+          ? "invalid-response"
+          : "unavailable",
+        ...(!controller.signal.aborted &&
+        error &&
+        error.code !== "LYRIC_INVALID_RESPONSE"
+          ? { reason: "connection-failed" }
+          : {}),
+        ...details,
+        ...(attempts ? { attempts } : {}),
+      };
+    } finally {
+      clearTimeout(timer);
+      if (signal) signal.removeEventListener("abort", abort);
+    }
+  };
+}
+const requestLyric = createLyricRequester();
+module.exports = {
+  requestLyric,
+  createLyricRequester,
+  validateUrl,
+  isLyricHostname,
+};
