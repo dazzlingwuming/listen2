@@ -17,37 +17,43 @@
   const EFFECT_PRESETS = {
     original: { preampDb: 0, filters: [] },
     'clear-vocals': {
-      preampDb: -2,
+      preampDb: -5,
       filters: [
-        ['highpass', 90, 0, 0.7],
-        ['peaking', 2600, 2.4, 1],
+        ['highpass', 100, 0, 0.7],
+        ['peaking', 2600, 4, 1],
       ],
     },
     'deep-bass': {
-      preampDb: -5,
+      preampDb: -8,
       filters: [
-        ['lowshelf', 85, 3.5, 0.7],
-        ['peaking', 180, 1.4, 1],
+        ['lowshelf', 85, 6, 0.7],
+        ['peaking', 180, 2.5, 1],
       ],
     },
-    airy: { preampDb: -3, filters: [['highshelf', 9000, 2.2, 0.7]] },
-    warm: { preampDb: -3, filters: [['lowshelf', 180, 1.7, 0.7]] },
-    'hifi-live': {
+    airy: { preampDb: -5, filters: [['highshelf', 7500, 4, 0.7]] },
+    warm: {
       preampDb: -4,
       filters: [
-        ['lowshelf', 90, 1.4, 0.7],
-        ['peaking', 3200, 1.3, 1],
-        ['highshelf', 10000, 1.2, 0.7],
+        ['lowshelf', 220, 3, 0.7],
+        ['highshelf', 6000, -1.5, 0.7],
+      ],
+    },
+    'hifi-live': {
+      preampDb: -5,
+      filters: [
+        ['lowshelf', 90, 2.5, 0.7],
+        ['peaking', 3200, 2.5, 1],
+        ['highshelf', 10000, 2.5, 0.7],
       ],
     },
     'immersive-3d': {
       preampDb: -6,
-      filters: [['peaking', 2400, 1.2, 0.8]],
+      filters: [['peaking', 2400, 2, 0.8]],
       requiresSpatialization: true,
     },
     night: {
-      preampDb: -5,
-      filters: [['highshelf', 8000, -1.2, 0.7]],
+      preampDb: -7,
+      filters: [['highshelf', 8000, -3, 0.7]],
       compressor: true,
     },
   };
@@ -849,8 +855,8 @@
           });
           // Equal, low-amplitude inverted crossfeed adds a headphone room cue
           // without pushing the image toward either speaker.
-          effectParam(leftCrossfeed.gain, -0.08, context);
-          effectParam(rightCrossfeed.gain, -0.08, context);
+          effectParam(leftCrossfeed.gain, -0.17, context);
+          effectParam(rightCrossfeed.gain, -0.17, context);
           // ChannelSplitter uses discrete channel interpretation, so feeding a
           // mono source directly would leave its second output silent. Force a
           // standards-defined mono-to-stereo speaker up-mix before splitting.
@@ -1607,12 +1613,12 @@
       getLoudnessState,
       // Local verification hook: the same FX graph on an OfflineAudioContext.
       // No media access, IPC, playback, or connection to a live destination.
-      createOfflineEffectChain: (context, input, preset) => {
+      createOfflineEffectChain: (context, input, preset, options = {}) => {
         const record = {
           context,
           effectInput: input,
           outputBus: context.createGain(),
-          comfortReady: true,
+          comfortReady: options.fallback !== true,
           effectNodes: [],
         };
         const result = buildEffectChain(record, preset);

@@ -548,14 +548,18 @@ async function run() {
     assert.strictEqual(stereoUpmix.channelInterpretation, 'speakers');
     const crossfeedGains = harness
       .context()
-      .gains.filter((gain) => gain.gain.value === -0.08);
+      .gains.filter((gain) => gain.gain.value < 0);
     assert.strictEqual(crossfeedGains.length, 2);
     crossfeedGains.forEach((gain) => {
+      assert.ok(
+        gain.gain.value >= -0.2 && gain.gain.value <= -0.1,
+        'crossfeed must remain subordinate to the direct signal'
+      );
       assert.deepStrictEqual(
         gain.gain.calls,
         [
           ['cancel', 0],
-          ['set', -0.08, 0],
+          ['set', gain.gain.value, 0],
         ],
         'new crossfeed gains must never ramp from the +1 default'
       );
