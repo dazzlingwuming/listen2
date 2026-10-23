@@ -46,7 +46,7 @@ const main = () => {
     '$compileProvider',
     ($compileProvider) => {
       $compileProvider.imgSrcSanitizationWhitelist(
-        /^\s*(https?|ftp|mailto|chrome-extension|moz-extension|file):/
+        /^\s*((https?|ftp|mailto|chrome-extension|moz-extension|file):|data:image\/(png|jpeg|webp);base64,)/
       );
     },
   ]);

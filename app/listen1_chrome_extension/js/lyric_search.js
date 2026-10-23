@@ -1,5 +1,5 @@
 /* global module globalThis */
-/* eslint-disable no-param-reassign, no-await-in-loop */
+/* eslint-disable no-param-reassign, no-await-in-loop, no-loop-func */
 // Each worker awaits its own provider; the three workers run concurrently.
 (function lyricSearchModule(root) {
   // Each consumer owns cancellation. Provider HTTP calls share this signal only
@@ -100,6 +100,19 @@
           publish();
         };
         const time = Date.now();
+        const partialIds = new Set();
+        const onCandidates = (items) => {
+          if (finished || state.status !== 'loading' || !Array.isArray(items))
+            return;
+          items.forEach((item) => {
+            if (item && item.id && item.lyric) {
+              candidates.set(item.id, item);
+              partialIds.add(item.id);
+            }
+          });
+          state.count = partialIds.size;
+          publish();
+        };
         try {
           const saved = cache.get(key);
           const items =
@@ -110,6 +123,7 @@
                   force: options.force,
                   onProgress,
                   onStage: onProgress,
+                  onCandidates,
                 });
           if (finished) return;
           if (!Array.isArray(items)) throw new Error('Invalid lyric payload');
@@ -120,11 +134,9 @@
           if (!options.force && saved && saved.expires > time) {
             state.stage = saved.stage;
           }
-          state.status = items.length
-            ? 'success'
-            : state.stage === 'lyrics'
-            ? 'no-synced-lyrics'
-            : 'empty';
+          state.status =
+            state.stage === 'lyrics' ? 'no-synced-lyrics' : 'empty';
+          if (items.length) state.status = 'success';
           cache.set(key, {
             items,
             stage: state.stage,
@@ -143,7 +155,7 @@
     const promise = new Promise((resolve) => {
       resolveFinal = resolve;
     });
-    timer = setTimeout(() => finish(), options.timeoutMs || 12000);
+    timer = setTimeout(() => finish(), options.timeoutMs || 20000);
     Promise.resolve().then(() => {
       if (!providers.length) finish();
       else for (let i = 0; i < Math.min(3, providers.length); i += 1) worker();

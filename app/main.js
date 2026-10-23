@@ -18,6 +18,7 @@ const { autoUpdater } = require("electron-updater");
 const { createDesktopUpdater } = require("./desktopUpdater");
 const { createDesktopNetworkPolicy } = require("./desktopNetworkPolicy");
 const { createDesktopNetworkBridge } = require("./desktopNetworkBridge");
+const { createWindowAppearance } = require("./windowAppearance");
 const { pathToFileURL } = require("url");
 const remoteMain = require("@electron/remote/main");
 const { createHash } = require("crypto");
@@ -47,6 +48,7 @@ const { LyricCacheStore } = require(`${__dirname}/lyricCacheStore`);
 const { ListeningHistoryStore } = require(`${__dirname}/listeningHistoryStore`);
 
 const { requestLyric, validateUrl } = require("./lyricTransport");
+const { requestNetease } = require("./neteaseRequest");
 const { createDirectLyricFetch } = require("./lyricDirectTransport");
 const { createNeteaseVerificationSession } = require("./neteaseVerificationSession");
 const neteaseLyricSession = createNeteaseVerificationSession({
@@ -83,13 +85,13 @@ ipcMain.handle("lyrics:request", async (event, request) => {
   lyricRequests.set(request.id, controller);
   try {
     if (new URL(request.url).hostname === "music.163.com") {
-      const result = await requestLyric(
-        neteaseLyricSession.fetch.bind(neteaseLyricSession),
-        request.url,
-        controller.signal
-      );
-      if (controller.signal.aborted) return { ok: false, status: "timeout" };
-      return await neteaseLyricSession.observeResult(result, request.url);
+      return await requestNetease({
+        url: request.url,
+        signal: controller.signal,
+        neteaseSession: neteaseLyricSession,
+        publicFetch: directLyricFetch,
+        request: requestLyric,
+      });
     }
     return await requestLyric(
       directLyricFetch,
@@ -158,6 +160,11 @@ let audioCacheQuitCleanupComplete = false;
 let playerIsPlaying = false;
 /** @type {electron.BrowserWindow} */
 let mainWindow;
+const windowAppearance = createWindowAppearance({
+  ipcMain,
+  store,
+  getWindow: () => mainWindow,
+});
 /** @type {electron.BrowserWindow} */
 let floatingWindow;
 /** @type {electron.Tray} */
@@ -1369,6 +1376,7 @@ function createWindow() {
     lyricRequests.forEach(controller => controller.abort());
     lyricRequests.clear();
   });
+  windowAppearance.apply();
   mainWindow.on("ready-to-show", () => {
     if (windowState.maximized) {
       mainWindow.maximize();
@@ -1813,6 +1821,7 @@ app.on("activate", () => mainWindow.show());
 /* 'before-quit' is emitted when Electron receives
  * the signal to exit and wants to start closing windows */
 app.on("before-quit", (event) => {
+  windowAppearance.flush();
   willQuitApp = true;
   if (
     mainWindow &&

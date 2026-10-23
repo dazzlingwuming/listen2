@@ -1,6 +1,6 @@
 /* eslint-disable no-underscore-dangle */
 /* eslint-disable no-unused-vars */
-/* global getParameterByName forge */
+/* global getParameterByName forge Listen2LyricHttp */
 /* global isElectron cookieSet cookieGet cookieRemove async */
 class netease {
   static _create_secret_key(size) {
@@ -399,73 +399,128 @@ class netease {
   }
 
   static search(url) {
-    // use chrome extension to modify referer.
-    const target_url = 'https://music.163.com/api/search/pc';
-    const keyword = getParameterByName('keywords', url);
-    const curpage = getParameterByName('curpage', url);
-    const searchType = getParameterByName('type', url);
-    let ne_search_type = '1';
-    if (searchType === '1') {
-      ne_search_type = '1000';
-    }
-    const req_data = {
+    const keyword = String(getParameterByName('keywords', url) || '').trim();
+    const page = Math.min(
+      100,
+      Math.max(1, Math.floor(Number(getParameterByName('curpage', url)) || 1))
+    );
+    const searchType = String(getParameterByName('type', url) || '0');
+    const params = new URLSearchParams({
       s: keyword,
-      offset: 20 * (curpage - 1),
-      limit: 20,
-      type: ne_search_type,
-    };
+      offset: String(20 * (page - 1)),
+      limit: '20',
+      type: searchType === '1' ? '1000' : '1',
+    });
+    const targetUrl = `https://music.163.com/api/search/get/web?${params}`;
+    const http =
+      typeof Listen2LyricHttp !== 'undefined' &&
+      typeof isElectron === 'function' &&
+      isElectron()
+        ? Listen2LyricHttp
+        : axios;
     return {
       success: (fn) => {
-        this.ne_ensure_cookie(() => {
-          axios
-            .post(target_url, new URLSearchParams(req_data))
-            .then((response) => {
-              const { data } = response;
-              let result = [];
-              let total = 0;
-              if (searchType === '0') {
-                result = data.result.songs.map((song_info) => ({
-                  id: `netrack_${song_info.id}`,
-                  title: song_info.name,
-                  artist: song_info.artists[0].name,
-                  artist_id: `neartist_${song_info.artists[0].id}`,
-                  album: song_info.album.name,
-                  album_id: `nealbum_${song_info.album.id}`,
-                  source: 'netease',
-                  source_url: `https://music.163.com/#/song?id=${song_info.id}`,
-                  img_url: song_info.album.picUrl,
-                  // url: `netrack_${song_info.id}`,
-                  url: !this.is_playable(song_info) ? '' : undefined,
-                }));
-                total = data.result.songCount;
-              } else if (searchType === '1') {
-                result = data.result.playlists.map((info) => ({
-                  id: `neplaylist_${info.id}`,
-                  title: info.name,
-                  source: 'netease',
-                  source_url: `https://music.163.com/#/playlist?id=${info.id}`,
-                  img_url: info.coverImgUrl,
-                  url: `neplaylist_${info.id}`,
-                  author: info.creator.nickname,
-                  count: info.trackCount,
-                }));
-                total = data.result.playlistCount;
-              }
-
-              return fn({
-                result,
-                total,
-                type: searchType,
+        if (!keyword) {
+          fn({ result: [], total: 0, type: searchType, status: 'empty' });
+          return;
+        }
+        http
+          .get(targetUrl, { timeout: 8000 })
+          .then((response) => {
+            const data =
+              typeof response.data === 'string'
+                ? JSON.parse(response.data)
+                : response.data;
+            if (data && Number(data.code) === -462)
+              throw Object.assign(new Error('Verification required'), {
+                code: 'verification-required',
               });
-            })
-            .catch(() =>
-              fn({
-                result: [],
-                total: 0,
-                type: searchType,
-              })
-            );
-        });
+            if (
+              !data ||
+              Number(data.code) !== 200 ||
+              !data.result ||
+              typeof data.result !== 'object' ||
+              Array.isArray(data.result)
+            )
+              throw Object.assign(new Error('Invalid search response'), {
+                code: 'invalid-response',
+              });
+            const key = searchType === '1' ? 'playlists' : 'songs';
+            const count = searchType === '1' ? 'playlistCount' : 'songCount';
+            const items = data.result[key];
+            if (!Array.isArray(items) && Number(data.result[count]) !== 0)
+              throw Object.assign(new Error('Invalid search result'), {
+                code: 'invalid-response',
+              });
+            const result = (items || [])
+              .filter(
+                (item) =>
+                  item &&
+                  /^\d+$/.test(String(item.id)) &&
+                  typeof item.name === 'string' &&
+                  item.name.trim()
+              )
+              .map((item) => {
+                if (searchType === '1')
+                  return {
+                    id: `neplaylist_${item.id}`,
+                    title: item.name,
+                    source: 'netease',
+                    source_url: `https://music.163.com/#/playlist?id=${item.id}`,
+                    img_url: item.coverImgUrl || '',
+                    url: `neplaylist_${item.id}`,
+                    author: (item.creator && item.creator.nickname) || '',
+                    count: Number(item.trackCount) || 0,
+                  };
+                const artists = Array.isArray(item.artists || item.ar)
+                  ? item.artists || item.ar
+                  : [];
+                const album = item.album || item.al || {};
+                return {
+                  id: `netrack_${item.id}`,
+                  title: item.name,
+                  artist: artists
+                    .map((artist) => artist && artist.name)
+                    .filter(Boolean)
+                    .join('/'),
+                  artist_id: artists[0] ? `neartist_${artists[0].id}` : '',
+                  album: album.name || '',
+                  album_id: album.id ? `nealbum_${album.id}` : '',
+                  source: 'netease',
+                  source_url: `https://music.163.com/#/song?id=${item.id}`,
+                  img_url: album.picUrl || '',
+                  duration: Number(item.duration || item.dt || 0) / 1000,
+                  url: !this.is_playable(item) ? '' : undefined,
+                };
+              });
+            if (items && items.length && !result.length)
+              throw Object.assign(new Error('Invalid search items'), {
+                code: 'invalid-response',
+              });
+            fn({
+              result,
+              total: Math.min(
+                2000,
+                Math.max(result.length, Number(data.result[count]) || 0)
+              ),
+              type: searchType,
+              status: result.length ? 'success' : 'empty',
+            });
+          })
+          .catch((error) => {
+            let status =
+              error instanceof SyntaxError ? 'invalid-response' : 'unavailable';
+            if (
+              ['verification-required', 'invalid-response'].includes(error.code)
+            )
+              status = error.code;
+            fn({
+              result: [],
+              total: 0,
+              type: searchType,
+              status,
+            });
+          });
       },
     };
   }

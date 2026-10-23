@@ -3,6 +3,7 @@
 /* eslint-disable import/no-extraneous-dependencies */
 /* eslint-disable import/no-unresolved */
 /* eslint-disable global-require */
+/* eslint no-use-before-define: ["error", { "functions": false }] */
 /* global angular notyf i18next MediaService l1Player hotkeys GithubClient isElectron require getLocalStorageValue getPlayer getPlayerAsync getPlayerMode canUseBackgroundPlayer addPlayerListener smoothScrollTo lastfm BilibiliMvPlayer Listen1AudioAnalysis */
 
 function getCSSStringFromSetting(setting) {
@@ -31,7 +32,7 @@ function getCSSStringFromSetting(setting) {
 
 function useModernTheme() {
   const defaultTheme = localStorage.getObject('theme');
-  return ['white2', 'black2', 'sakura', 'mint', 'night'].includes(defaultTheme);
+  return window.Listen2Appearance.isModernTheme(defaultTheme);
 }
 
 function getSafeIndex(index, length) {

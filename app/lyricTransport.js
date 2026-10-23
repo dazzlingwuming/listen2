@@ -39,8 +39,10 @@ function validateUrl(value) {
         ? exactKeys(["s", "type", "offset", "limit"]) &&
           query.get("s").trim().length > 0 &&
           query.get("s").length <= 256 &&
-          query.get("type") === "1" &&
-          query.get("offset") === "0" &&
+          ["1", "1000"].includes(query.get("type")) &&
+          /^(0|[1-9]\d{0,3})$/.test(query.get("offset")) &&
+          Number(query.get("offset")) <= 1980 &&
+          Number(query.get("offset")) % 20 === 0 &&
           query.get("limit") === "20"
         : exactKeys(["id", "lv", "kv", "tv"]) &&
           /^\d{1,20}$/.test(query.get("id")) &&

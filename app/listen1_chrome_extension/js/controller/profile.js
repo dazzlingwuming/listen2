@@ -96,13 +96,11 @@ angular.module('listenone').controller('ProfileController', [
       updateProxyMode(state.config);
       if (state.ok === true) {
         $scope.proxyFeedbackKey =
-          mode === 'enhanced-direct'
-            ? '_PROXY_STATE_ENHANCED_ACTIVE'
-            : mode === 'direct'
-            ? '_PROXY_STATE_DIRECT_ACTIVE'
-            : mode === 'custom'
-            ? '_PROXY_STATE_CUSTOM_ACTIVE'
-            : '_PROXY_STATE_SYSTEM_ACTIVE';
+          {
+            'enhanced-direct': '_PROXY_STATE_ENHANCED_ACTIVE',
+            direct: '_PROXY_STATE_DIRECT_ACTIVE',
+            custom: '_PROXY_STATE_CUSTOM_ACTIVE',
+          }[mode] || '_PROXY_STATE_SYSTEM_ACTIVE';
       }
       return true;
     };
@@ -166,7 +164,8 @@ angular.module('listenone').controller('ProfileController', [
     const applyProxyConfig = (config, closeOnSuccess) => {
       if (!isElectron() || $scope.proxyApplyPending)
         return Promise.resolve(false);
-      const requestVersion = ++proxyRequestVersion;
+      proxyRequestVersion += 1;
+      const requestVersion = proxyRequestVersion;
       const previousConfig = currentProxyConfig();
       $scope.proxyStatePending = false;
       $scope.proxyApplyPending = true;
@@ -233,7 +232,8 @@ angular.module('listenone').controller('ProfileController', [
     $scope.getProxyConfig = () => {
       if (!isElectron() || $scope.proxyApplyPending)
         return Promise.resolve(false);
-      const requestVersion = ++proxyRequestVersion;
+      proxyRequestVersion += 1;
+      const requestVersion = proxyRequestVersion;
       $scope.proxyStatePending = true;
       $scope.proxyFeedbackKey = '_PROXY_STATE_LOADING';
       return invokeNetwork('get')
@@ -277,6 +277,7 @@ angular.module('listenone').controller('ProfileController', [
     };
     $scope.retryProxyState = $scope.getProxyConfig;
     $scope.proxyFeedbackText = () =>
+      // eslint-disable-next-line no-underscore-dangle
       $scope[$scope.proxyFeedbackKey] || $scope._PROXY_STATE_UNKNOWN || '';
 
     $scope.initProfile = () => {
@@ -314,8 +315,19 @@ angular.module('listenone').controller('ProfileController', [
       white: 'white2',
       black: 'black2',
     };
-    $scope.themeOptions = window.Listen2Appearance.themes;
-    const supportedThemes = $scope.themeOptions.map((item) => item.id);
+    $scope.themeOptions = window.Listen2Appearance.themes.filter(
+      (item) => item.id !== 'custom'
+    );
+    $scope.themeFilters = window.Listen2Appearance.filters;
+    $scope.themeFilter = 'all';
+    $scope.setThemeFilter = (filter) => {
+      if ($scope.themeFilters.includes(filter)) $scope.themeFilter = filter;
+    };
+    $scope.matchesThemeFilter = (item) =>
+      window.Listen2Appearance.matchesFilter(item, $scope.themeFilter);
+    const supportedThemes = window.Listen2Appearance.themes.map(
+      (item) => item.id
+    );
     const savedTheme = localStorage.getObject('theme');
     const fallbackTheme = savedTheme === null ? 'sakura' : 'black2';
     const defaultTheme =
@@ -337,15 +349,23 @@ angular.module('listenone').controller('ProfileController', [
       const normalizedTheme =
         legacyThemeMap[theme] ||
         (supportedThemes.includes(theme) ? theme : 'black2');
-      const selected = $scope.themeOptions.find(
+      const selected = window.Listen2Appearance.themes.find(
         (item) => item.id === normalizedTheme
       );
       $scope.theme = normalizedTheme;
       $scope.selectedTheme = selected;
+      $scope.themeSceneUrl = selected.scene
+        ? `images/themes/${selected.scene}-scene.webp`
+        : '';
+      if (selected.id === 'custom')
+        $scope.themeSceneUrl =
+          ($scope.customWallpaper && $scope.customWallpaper.image) || '';
       $scope.themeClass = {
         'theme-modern-light': selected.base === 'light',
         'theme-modern-dark': selected.base === 'dark',
         'theme-anime': Boolean(selected.assets),
+        'theme-designed': Boolean(selected.edition),
+        'theme-scenic': Boolean(selected.scene),
         [`theme-${selected.id}`]: true,
       };
       document.getElementById('theme-css').href =
@@ -362,5 +382,142 @@ angular.module('listenone').controller('ProfileController', [
       if (container) container.innerHTML = res.data;
     });
     $scope.setTheme(defaultTheme);
+
+    $scope.customWallpaper = null;
+    $scope.customWallpaperBusy = true;
+    $scope.customWallpaperError = '';
+    const wallpaper = window.Listen2Wallpaper;
+    function showWallpaperError(error) {
+      const keys = {
+        'image-format': '_WALLPAPER_FORMAT_ERROR',
+        'image-size': '_WALLPAPER_SIZE_ERROR',
+        'invalid-image': '_WALLPAPER_INVALID_ERROR',
+      };
+      $scope.customWallpaperError =
+        keys[error.message] || '_WALLPAPER_STORAGE_ERROR';
+    }
+    function installWallpaper(record, select) {
+      const palette = wallpaper.makePalette(record.seed, record.mode);
+      const theme = window.Listen2Appearance.themes.find(
+        (item) => item.id === 'custom'
+      );
+      theme.base = palette.base;
+      theme.colors = palette.colors;
+      Object.entries(palette.variables).forEach(([key, value]) => {
+        document.documentElement.style.setProperty(`--custom-${key}`, value);
+      });
+      document.documentElement.style.setProperty(
+        '--custom-wallpaper',
+        `url("${record.image}")`
+      );
+      $scope.customWallpaper = record;
+      $scope.customPalette = palette;
+      $scope.themeOptions = window.Listen2Appearance.themes;
+      if (select || $scope.theme === 'custom') $scope.setTheme('custom');
+    }
+    $scope.chooseWallpaper = () =>
+      document.getElementById('custom-wallpaper-file').click();
+    $scope.importWallpaper = async (file) => {
+      if (!file || $scope.customWallpaperBusy) return;
+      $scope.$evalAsync(() => {
+        $scope.customWallpaperBusy = true;
+        $scope.customWallpaperError = '';
+      });
+      try {
+        const record = await wallpaper.fromFile(file);
+        await wallpaper.save(record);
+        $scope.$evalAsync(() => installWallpaper(record, true));
+      } catch (error) {
+        $scope.$evalAsync(() => showWallpaperError(error));
+      } finally {
+        $scope.$evalAsync(() => {
+          $scope.customWallpaperBusy = false;
+        });
+      }
+    };
+    $scope.setWallpaperMode = async (mode) => {
+      if (
+        !$scope.customWallpaper ||
+        $scope.customWallpaperBusy ||
+        !['auto', 'light', 'dark'].includes(mode)
+      )
+        return;
+      $scope.customWallpaperBusy = true;
+      $scope.customWallpaperError = '';
+      const record = { ...$scope.customWallpaper, mode };
+      try {
+        await wallpaper.save(record);
+        $scope.$evalAsync(() => installWallpaper(record, true));
+      } catch (error) {
+        $scope.$evalAsync(() => showWallpaperError(error));
+      } finally {
+        $scope.$evalAsync(() => {
+          $scope.customWallpaperBusy = false;
+        });
+      }
+    };
+    $scope.removeWallpaper = async () => {
+      if ($scope.customWallpaperBusy) return;
+      $scope.customWallpaperBusy = true;
+      $scope.customWallpaperError = '';
+      try {
+        await wallpaper.remove();
+        $scope.$evalAsync(() => {
+          if ($scope.theme === 'custom') $scope.setTheme('black2');
+          $scope.customWallpaper = null;
+          $scope.themeOptions = window.Listen2Appearance.themes.filter(
+            (item) => item.id !== 'custom'
+          );
+          document.documentElement.style.removeProperty('--custom-wallpaper');
+        });
+      } catch (error) {
+        $scope.$evalAsync(() => showWallpaperError(error));
+      } finally {
+        $scope.$evalAsync(() => {
+          $scope.customWallpaperBusy = false;
+        });
+      }
+    };
+    Promise.resolve(wallpaper ? wallpaper.load() : null)
+      .then((record) => {
+        $scope.$evalAsync(() => {
+          if (record) installWallpaper(record, defaultTheme === 'custom');
+          else if ($scope.theme === 'custom') $scope.setTheme('black2');
+        });
+      })
+      .catch((error) =>
+        $scope.$evalAsync(() => {
+          showWallpaperError(error);
+          if ($scope.theme === 'custom') $scope.setTheme('black2');
+        })
+      )
+      .finally(() =>
+        $scope.$evalAsync(() => {
+          $scope.customWallpaperBusy = false;
+        })
+      );
+
+    $scope.windowAppearance = { supported: false, transparency: 0 };
+    if (isElectron()) {
+      const { ipcRenderer } = require('electron');
+      ipcRenderer
+        .invoke('appearance:get-window')
+        .then((state) => {
+          if (!state || !state.ok) return;
+          $scope.$evalAsync(() => {
+            $scope.windowAppearance.supported = state.supported;
+            $scope.windowAppearance.transparency = 100 - state.opacity;
+          });
+        })
+        .catch(() => {});
+      $scope.setWindowTransparency = () => {
+        ipcRenderer
+          .invoke(
+            'appearance:set-opacity',
+            100 - Number($scope.windowAppearance.transparency)
+          )
+          .catch(() => {});
+      };
+    }
   },
 ]);

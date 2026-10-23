@@ -1,4 +1,6 @@
-/* global Listen2LyricHttp TextDecoder atob */
+/* global Listen2LyricHttp */
+/* eslint-disable no-await-in-loop, no-continue, no-restricted-syntax */
+// Candidate downloads intentionally stop after enough usable lyrics are found.
 let wbi_key = null;
 const bilibiliLyricCache = new Map();
 const bilibiliLyricSearchCache = new Map();
@@ -850,9 +852,9 @@ class bilibili {
         },
       },
     };
-    const targetUrl =
-      'https://u.y.qq.com/cgi-bin/musicu.fcg?data=' +
-      encodeURIComponent(JSON.stringify(searchRequest));
+    const targetUrl = `https://u.y.qq.com/cgi-bin/musicu.fcg?data=${encodeURIComponent(
+      JSON.stringify(searchRequest)
+    )}`;
     const request = (
       typeof Listen2LyricHttp !== 'undefined' ? Listen2LyricHttp : axios
     )
@@ -939,6 +941,39 @@ class bilibili {
     );
   }
 
+  static async collect_lyric_candidates(candidates, load, hints) {
+    let next = 0;
+    let failure;
+    const results = [];
+    async function worker() {
+      while (next < candidates.length && results.length < 6) {
+        if (hints.signal && hints.signal.aborted) return;
+        const candidate = candidates[next];
+        next += 1;
+        try {
+          const item = await load(candidate);
+          if (
+            !item ||
+            results.length >= 6 ||
+            (hints.signal && hints.signal.aborted)
+          )
+            continue;
+          results.push(item);
+          try {
+            if (hints.onCandidates) hints.onCandidates([item]);
+          } catch (_) {
+            /* Observers cannot invalidate lyrics. */
+          }
+        } catch (error) {
+          failure = error;
+        }
+      }
+    }
+    await Promise.all([worker(), worker()]);
+    if (!results.length && failure) throw failure;
+    return results;
+  }
+
   static search_qq_lyric_candidates(hints) {
     this.report_lyric_search_stage(hints, 'catalog');
     const scoringHints = this.build_lyric_scoring_hints(hints);
@@ -946,13 +981,10 @@ class bilibili {
       hints,
       this.clean_music_title(hints.bgmTitle) || scoringHints.variants[0]
     );
-    if (!searchText) {
-      return Promise.resolve([]);
-    }
-
+    if (!searchText) return Promise.resolve([]);
     return this.fetch_qq_lyric_search(searchText, hints).then((items) => {
       if (items.length) this.report_lyric_search_stage(hints, 'lyrics');
-      const scoredCandidates = items
+      const ranked = items
         .filter((item) => item && (item.mid || item.songmid))
         .map((item, index) => ({
           item,
@@ -960,54 +992,31 @@ class bilibili {
         }))
         .filter((candidate) => hints.manual || candidate.scored.score >= 0.3)
         .sort((left, right) => right.scored.score - left.scored.score)
-        .slice(0, 6);
-      if (scoredCandidates.length === 0) {
-        return [];
-      }
-      return Promise.allSettled(
-        scoredCandidates.map((candidate) =>
-          this.fetch_qq_lyric(
-            candidate.item.mid || candidate.item.songmid,
-            hints
-          ).then((lyricResult) => {
-            if (
-              !lyricResult ||
-              (hints.manual && !this.has_synced_lyric(lyricResult.lyric))
-            ) {
-              return null;
-            }
-            const { item, scored } = candidate;
-            const songMid = item.mid || item.songmid;
-            return {
-              id: `qq_${songMid}`,
-              provider: 'QQ',
-              title: item.name || item.songname || '',
-              artist: item.singer && item.singer[0] ? item.singer[0].name : '',
-              album: item.album ? item.album.name || '' : item.albumname || '',
-              duration: this.parse_duration(item.interval),
-              lyric: lyricResult.lyric,
-              tlyric: lyricResult.tlyric,
-              matchScore: scored.score,
-            };
-          })
-        )
-      ).then((results) => {
-        const fulfilled = results.filter(
-          (result) => result.status === 'fulfilled'
-        );
-        if (fulfilled.length === 0) {
-          throw results.find((result) => result.status === 'rejected').reason;
-        }
-        const candidates = fulfilled
-          .map((result) => result.value)
-          .filter(Boolean);
-        if (
-          !candidates.length &&
-          results.some((result) => result.status === 'rejected')
-        )
-          throw results.find((result) => result.status === 'rejected').reason;
-        return candidates;
-      });
+        .slice(0, hints.manual ? 12 : 6);
+      return this.collect_lyric_candidates(
+        ranked,
+        async ({ item, scored }) => {
+          const songMid = item.mid || item.songmid;
+          const lyricResult = await this.fetch_qq_lyric(songMid, hints);
+          if (
+            !lyricResult ||
+            (hints.manual && !this.has_synced_lyric(lyricResult.lyric))
+          )
+            return null;
+          return {
+            id: `qq_${songMid}`,
+            provider: 'QQ',
+            title: item.name || item.songname || '',
+            artist: item.singer && item.singer[0] ? item.singer[0].name : '',
+            album: item.album ? item.album.name || '' : item.albumname || '',
+            duration: this.parse_duration(item.interval),
+            lyric: lyricResult.lyric,
+            tlyric: lyricResult.tlyric,
+            matchScore: scored.score,
+          };
+        },
+        hints
+      );
     });
   }
 
@@ -1158,13 +1167,10 @@ class bilibili {
       hints,
       this.clean_music_title(hints.bgmTitle) || scoringHints.variants[0]
     );
-    if (!searchText) {
-      return Promise.resolve([]);
-    }
-
+    if (!searchText) return Promise.resolve([]);
     return this.fetch_netease_lyric_search(searchText, hints).then((items) => {
       if (items.length) this.report_lyric_search_stage(hints, 'lyrics');
-      const scoredCandidates = items
+      const ranked = items
         .filter((item) => item && item.id)
         .map((item, index) => ({
           item,
@@ -1172,52 +1178,30 @@ class bilibili {
         }))
         .filter((candidate) => hints.manual || candidate.scored.score >= 0.3)
         .sort((left, right) => right.scored.score - left.scored.score)
-        .slice(0, 6);
-      if (scoredCandidates.length === 0) {
-        return [];
-      }
-      return Promise.allSettled(
-        scoredCandidates.map((candidate) =>
-          this.fetch_netease_lyric(candidate.item.id, hints).then(
-            (lyricResult) => {
-              if (
-                !lyricResult ||
-                (hints.manual && !this.has_synced_lyric(lyricResult.lyric))
-              ) {
-                return null;
-              }
-              const { item, scored } = candidate;
-              return {
-                id: `netease_${item.id}`,
-                provider: '网易云',
-                title: item.name || '',
-                artist: this.get_netease_artist(item),
-                album: this.get_netease_album(item),
-                duration: scored.candidateDuration,
-                lyric: lyricResult.lyric,
-                tlyric: lyricResult.tlyric,
-                matchScore: scored.score,
-              };
-            }
+        .slice(0, hints.manual ? 12 : 6);
+      return this.collect_lyric_candidates(
+        ranked,
+        async ({ item, scored }) => {
+          const lyricResult = await this.fetch_netease_lyric(item.id, hints);
+          if (
+            !lyricResult ||
+            (hints.manual && !this.has_synced_lyric(lyricResult.lyric))
           )
-        )
-      ).then((results) => {
-        const fulfilled = results.filter(
-          (result) => result.status === 'fulfilled'
-        );
-        if (fulfilled.length === 0) {
-          throw results.find((result) => result.status === 'rejected').reason;
-        }
-        const candidates = fulfilled
-          .map((result) => result.value)
-          .filter(Boolean);
-        if (
-          !candidates.length &&
-          results.some((result) => result.status === 'rejected')
-        )
-          throw results.find((result) => result.status === 'rejected').reason;
-        return candidates;
-      });
+            return null;
+          return {
+            id: `netease_${item.id}`,
+            provider: '网易云',
+            title: item.name || '',
+            artist: this.get_netease_artist(item),
+            album: this.get_netease_album(item),
+            duration: scored.candidateDuration,
+            lyric: lyricResult.lyric,
+            tlyric: lyricResult.tlyric,
+            matchScore: scored.score,
+          };
+        },
+        hints
+      );
     });
   }
 
@@ -1549,15 +1533,15 @@ class bilibili {
       ? String(options.hash)
       : '';
     const duration = Number(options.duration || 0);
-    const url =
+    const url = `${
       'https://lyrics.kugou.com/search?ver=1&man=yes&client=pc' +
       `&duration=${
         Number.isFinite(duration) && duration > 0 && duration <= 86400
           ? Math.round(duration * 1000)
           : 0
       }` +
-      `&keyword=${encodeURIComponent(query)}` +
-      (hash ? `&hash=${encodeURIComponent(hash)}` : '');
+      `&keyword=${encodeURIComponent(query)}`
+    }${hash ? `&hash=${encodeURIComponent(hash)}` : ''}`;
     return (typeof Listen2LyricHttp !== 'undefined' ? Listen2LyricHttp : axios)
       .get(url, {
         timeout: BILIBILI_LYRIC_REQUEST_TIMEOUT,

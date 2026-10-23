@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
 const { validateUrl } = require("../lyricTransport");
+const { requestNetease } = require("../neteaseRequest");
 
 const SEARCH =
   "https://music.163.com/api/search/get/web?s=test&type=1&offset=0&limit=20";
@@ -45,6 +46,7 @@ function harness() {
     neteaseLyricSession,
     directLyricFetch,
     validateUrl,
+    requestNetease,
     lyricRequests: new Map(),
     ipcMain: { handle: (name, callback) => handlers.set(name, callback) },
     requestLyric: async (fetch, url) => {
