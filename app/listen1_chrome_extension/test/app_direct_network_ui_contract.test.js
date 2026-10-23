@@ -38,6 +38,7 @@ function createController({ electron = true, invoke } = {}) {
   };
   const ipcRenderer = {
     invoke(channel, ...args) {
+      if (channel.startsWith('appearance:')) return Promise.resolve({ ok: false });
       calls.push({ channel, args });
       return invoke ? invoke(channel, ...args) : Promise.resolve(null);
     },

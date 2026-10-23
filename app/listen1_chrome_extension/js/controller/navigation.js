@@ -80,6 +80,16 @@ angular.module('listenone').controller('NavigationController', [
       $scope.closeWindow();
     };
 
+    $scope.showThemeGallery = () => {
+      $scope.showTag(4);
+      $timeout(() => {
+        const heading = document.getElementById('theme-gallery-heading');
+        if (!heading) return;
+        heading.scrollIntoView({ block: 'start', behavior: 'auto' });
+        heading.focus({ preventScroll: true });
+      });
+    };
+
     $scope.$on('search:keyword_change', (event, data) => {
       $scope.showTag(3);
     });

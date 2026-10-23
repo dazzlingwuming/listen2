@@ -439,17 +439,21 @@ test("manual registry uses entered query only, independently of track artist", a
         { artist: "Wrong uploader", duration: 123 },
         { title: `  ${title}  `, artist: `  ${artist}  ` }
       );
-      assert.equal(calls.length, 5);
+      assert.equal(calls.length, artist ? 10 : 5);
       assert(
         calls.every(
           ({ hints }) =>
             hints.title === title &&
             hints.artist === artist &&
-            hints.query === [title, artist].filter(Boolean).join(" ") &&
+            [title, [title, artist].filter(Boolean).join(" ")].includes(hints.query) &&
             hints.duration === 0 &&
             hints.manual
         )
       );
+      if (artist) {
+        assert.equal(calls.filter(({ hints }) => hints.query === title).length, 5);
+        assert.equal(calls.filter(({ hints }) => hints.query === `${title} ${artist}`).length, 5);
+      }
     }
   }
   calls.length = 0;

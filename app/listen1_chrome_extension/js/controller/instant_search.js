@@ -6,134 +6,148 @@ angular.module('listenone').controller('InstantSearchController', [
   '$rootScope',
   ($scope, $timeout, $rootScope) => {
     $scope.originpagelog = { allmusic: 1 };
-    sourceList.forEach((i) => {
-      $scope.originpagelog[i.name] = 1;
+    sourceList.forEach((item) => {
+      $scope.originpagelog[item.name] = 1;
     });
-    $scope.sourceList = sourceList.filter((i) => i.searchable !== false);
+    $scope.sourceList = sourceList.filter((item) => item.searchable !== false);
     $scope.tab = sourceList[0].name;
     $scope.keywords = '';
     $scope.loading = false;
+    $scope.result = [];
+    $scope.searchStatus = 'idle';
     $scope.curpagelog = { ...$scope.originpagelog };
     $scope.totalpagelog = { ...$scope.originpagelog };
     $scope.curpage = 1;
     $scope.totalpage = 1;
     $scope.searchType = 0;
-
-    function updateCurrentPage(cp) {
-      if (cp === -1) {
-        // when search words changes,pagenums should be reset.
-        $scope.curpagelog = { ...$scope.originpagelog };
-        $scope.curpage = 1;
-      } else if (cp >= 0) {
-        $scope.curpagelog[$scope.tab] = cp;
-        $scope.curpage = $scope.curpagelog[$scope.tab];
-      } else {
-        // only tab changed
-        $scope.curpage = $scope.curpagelog[$scope.tab];
-      }
+    let version = 0;
+    let scheduled;
+    let deadline;
+    let destroyed = false;
+    function invalidate() {
+      version += 1;
+      $timeout.cancel(scheduled);
+      $timeout.cancel(deadline);
+      $scope.loading = false;
+      $scope.searchStatus = 'idle';
     }
-
-    function updateTotalPage(totalItem) {
-      if (totalItem === -1) {
-        $scope.totalpagelog = { ...$scope.originpagelog };
-        $scope.totalpage = 1;
-      } else if (totalItem >= 0) {
-        $scope.totalpage = Math.ceil(totalItem / 20);
-        $scope.totalpagelog[$scope.tab] = $scope.totalpage;
-      } else {
-        // just switch tab
-        $scope.totalpage = $scope.totalpagelog[$scope.tab];
-      }
+    function resetPages() {
+      $scope.curpagelog = { ...$scope.originpagelog };
+      $scope.totalpagelog = { ...$scope.originpagelog };
+      $scope.curpage = 1;
+      $scope.totalpage = 1;
     }
-
     function performSearch() {
-      $rootScope.$broadcast('search:keyword_change', $scope.keywords);
-      MediaService.search($scope.tab, {
-        keywords: $scope.keywords,
+      invalidate();
+      const requestVersion = version;
+      const source = $scope.tab;
+      const options = {
+        keywords: $scope.keywords.trim(),
         curpage: $scope.curpage,
         type: $scope.searchType,
-      }).success((data) => {
-        // update the textarea
-        data.result.forEach((r) => {
-          r.sourceName = i18next.t(r.source);
+      };
+      $scope.result = [];
+      if (!options.keywords) return;
+      $scope.loading = true;
+      $scope.searchStatus = 'loading';
+      $rootScope.$broadcast('search:keyword_change', options.keywords);
+      const current = () =>
+        !destroyed &&
+        version === requestVersion &&
+        $scope.keywords.trim() === options.keywords &&
+        $scope.tab === source &&
+        $scope.searchType === options.type &&
+        $scope.curpage === options.curpage;
+      deadline = $timeout(() => {
+        if (!current()) return;
+        version += 1;
+        $scope.loading = false;
+        $scope.searchStatus = 'unavailable';
+      }, 15000);
+      const receive = (data) => {
+        if (!current()) return;
+        $scope.$evalAsync(() => {
+          if (!current()) return;
+          $timeout.cancel(deadline);
+          const results = data && Array.isArray(data.result) ? data.result : [];
+          $scope.result = results.map((item) => ({
+            ...item,
+            sourceName: i18next.t(item.source),
+          }));
+          $scope.totalpage = Math.max(
+            1,
+            Math.ceil((Number(data && data.total) || 0) / 20)
+          );
+          $scope.totalpagelog[source] = $scope.totalpage;
+          $scope.searchStatus = results.length
+            ? 'success'
+            : (data && data.status) || 'empty';
+          $scope.loading = false;
+          const container =
+            document.querySelector('.modern-body .site-wrapper-innerd') ||
+            document.querySelector('.site-wrapper-innerd');
+          if (container) container.scrollTo({ top: 0 });
         });
-        $scope.result = data.result;
-        updateTotalPage(data.total);
-        $scope.loading = false;
-        // scroll back to top when finish searching
-        document.querySelector('.site-wrapper-innerd').scrollTo({ top: 0 });
-      });
+      };
+      try {
+        MediaService.search(source, options).success(receive);
+      } catch (_) {
+        receive({ result: [], total: 0, status: 'unavailable' });
+      }
     }
-
-    $scope.changeSourceTab = (newTab) => {
-      $scope.loading = true;
-      $scope.tab = newTab;
-      $scope.result = [];
-      updateCurrentPage();
-      updateTotalPage();
-
-      if ($scope.keywords === '') {
-        $scope.loading = false;
-      } else {
-        performSearch();
-      }
+    $scope.changeSourceTab = (source) => {
+      $scope.tab = source;
+      $scope.curpage = $scope.curpagelog[source] || 1;
+      $scope.totalpage = $scope.totalpagelog[source] || 1;
+      performSearch();
     };
-
-    $scope.changeSearchType = (newSearchType) => {
-      $scope.loading = true;
-      $scope.searchType = newSearchType;
-      $scope.result = [];
-      updateCurrentPage();
-      updateTotalPage();
-
-      if ($scope.keywords === '') {
-        $scope.loading = false;
-      } else {
-        performSearch();
-      }
+    $scope.changeSearchType = (type) => {
+      $scope.searchType = type;
+      resetPages();
+      performSearch();
     };
     $scope.isActiveTab = (tab) => $scope.tab === tab;
-
-    $scope.isSearchType = (searchType) => $scope.searchType === searchType;
-
-    // eslint-disable-next-line consistent-return
-    function renderSearchPage() {
-      updateCurrentPage(-1);
-      updateTotalPage(-1);
-      if (!$scope.keywords || $scope.keywords.length === 0) {
-        $scope.result = [];
-        return 0;
-      }
-
-      performSearch();
-    }
-
-    $scope.$watch('keywords', (tmpStr) => {
-      if (tmpStr === $scope.keywords) {
-        // if searchStr is still the same..
-        // go ahead and retrieve the data
-        renderSearchPage();
-      }
+    $scope.isSearchType = (type) => $scope.searchType === type;
+    $scope.$watch('keywords', () => {
+      invalidate();
+      resetPages();
+      $scope.result = [];
+      if ($scope.keywords.trim()) scheduled = $timeout(performSearch, 250);
     });
-
-    $scope.enterEvent = (e) => {
-      const keycode = window.event ? e.keyCode : e.which;
-      if (keycode === 13) {
-        // enter key
-        renderSearchPage();
+    $scope.enterEvent = (event) => {
+      if ((event.keyCode || event.which) === 13) {
+        resetPages();
+        performSearch();
       }
     };
-
+    $scope.retrySearch = performSearch;
+    $scope.verifySearchSource = () =>
+      MediaService.verifyNeteaseLyrics().then((state) => {
+        if (state && state.ok && !destroyed && $scope.tab === 'netease')
+          $scope.$evalAsync(performSearch);
+      });
+    $scope.searchFeedbackKey = () =>
+      ({
+        empty: '_SEARCH_EMPTY_RESULT',
+        'verification-required': '_SEARCH_VERIFY_RESULT',
+        'invalid-response': '_SEARCH_INVALID_RESULT',
+        unavailable: '_SEARCH_UNAVAILABLE_RESULT',
+      }[$scope.searchStatus] || '');
     $scope.nextPage = () => {
-      $scope.curpagelog[$scope.tab] += 1;
-      $scope.curpage = $scope.curpagelog[$scope.tab];
+      if ($scope.loading || $scope.curpage >= $scope.totalpage) return;
+      $scope.curpage += 1;
+      $scope.curpagelog[$scope.tab] = $scope.curpage;
       performSearch();
     };
-
     $scope.previousPage = () => {
-      $scope.curpagelog[$scope.tab] -= 1;
-      $scope.curpage = $scope.curpagelog[$scope.tab];
+      if ($scope.loading || $scope.curpage <= 1) return;
+      $scope.curpage -= 1;
+      $scope.curpagelog[$scope.tab] = $scope.curpage;
       performSearch();
     };
+    $scope.$on('$destroy', () => {
+      destroyed = true;
+      invalidate();
+    });
   },
 ]);

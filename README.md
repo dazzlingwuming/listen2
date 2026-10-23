@@ -5,7 +5,7 @@
 ### 把 Bilibili 与多平台音乐内容，整理成更好用的桌面播放器
 
 [![License](https://img.shields.io/badge/license-MIT-7c5cff.svg)](./LICENSE.md)
-[![Version](https://img.shields.io/badge/version-2.35.5-8b5cf6.svg)](https://github.com/dazzlingwuming/listen2/releases/tag/v2.35.5)
+[![Version](https://img.shields.io/badge/version-2.35.6-8b5cf6.svg)](https://github.com/dazzlingwuming/listen2/releases/tag/v2.35.6)
 [![Electron](https://img.shields.io/badge/Electron-32-38bdf8.svg)](https://www.electronjs.org/)
 [![Windows](https://img.shields.io/badge/Windows-x64-2563eb.svg)](https://github.com/dazzlingwuming/listen2/releases/latest)
 [![macOS](https://img.shields.io/badge/macOS-Universal-111827.svg)](#平台支持)
@@ -18,6 +18,24 @@
 Listen2 是 [Listen1](https://github.com/listen1/listen1) 的社区增强版本。它保留多平台聚合搜索、播放和歌单能力，并重点改善 Bilibili 音乐播放、同步歌词、歌词翻译、桌面歌词、MV 和现代化桌面体验。
 
 > Listen2 只整理和播放用户本来就有权访问的内容，不解锁会员、付费、DRM、地区限制或其他受限资源。
+
+![用户实机截图：自定义图片背景与自动配色](docs/screenshots/personal-theme-user.png)
+
+用户实机效果：选择喜欢的背景，侧栏、按钮、频谱和歌词高亮会一起跟随图片配色。
+
+## v2.35.6 更新
+
+**让照片成为主题。** 本次把主题馆扩展到 13 套内置主题，并加入可以自己上传图片的「我的风景」。
+
+- 新增黑胶、金属工作室、泳池、酸性图形、终端、沙丘、海浪、紫色群山八套主题，各自包含首页与播放页设计。
+- 导入 JPG、PNG 或 WebP 图片，自动提取颜色，匹配背景、按钮、频谱和歌词高亮；支持跟随图片、浅色和深色。图片仅保存在本机，重启后继续使用。
+- 新增整个窗口的透明度调节（0–55%），所有主题通用，可一键恢复不透明，并自动记忆。
+- 修复网易云搜索中的中文请求、异常返回和旧结果覆盖问题；歌曲与歌单支持分页，网络错误及官方验证状态有明确提示。保留结果的真实歌手，不把翻唱标为原唱。
+- 改善手动歌词搜索：歌名与歌手组合无结果时尝试仅歌名，继续寻找有同步歌词的候选，找到的结果逐条显示；取消或超时后不再接收迟到结果。
+
+点击顶部调色盘，进入「用自己的图片生成主题」即可使用。Windows 从托盘退出旧版后覆盖安装，无需先卸载。
+
+已通过 183 项桌面测试、修改文件的 ESLint 检查与 Windows 安装包内功能验证；前端 25/27 通过，另两项为已确认的上游旧断言失败。使用方式、实测结果和验证范围见 [图片主题与搜索说明](https://github.com/dazzlingwuming/listen2/blob/v2.35.6/docs/PERSONAL_THEMES_AND_SEARCH.md)。
 
 ## v2.35.5 更新
 
@@ -44,6 +62,16 @@ Listen2 是 [Listen1](https://github.com/listen1/listen1) 的社区增强版本�
 - macOS 延后 Keychain 检查，避免在启动阶段提前检查钥匙串。
 
 102 项相关测试与 6 项契约检查通过，并核对了《折风渡夜》《青花瓷》的公开歌词样例。本次未验证安装界面、网易真实账号认证或 Windows 实机；歌词来源与网络服务仍可能波动。macOS 沿用 v2.35.1 的打包配置，不新增签名证书，也不作 Apple 公证承诺；安装包状态以本版本 Release 页面为准。
+
+## 主题馆
+
+现在有 **13 套内置主题**，导入图片后还可使用自动配色的「我的风景」。点击顶部调色盘按钮，或进入「设置 → 主题」，即可查看真实界面预览，按实体灵感、大胆图形、沉浸风景、插画、浅色和深色筛选；选择即时生效并记忆，不中断正在播放的音乐。
+
+新增黑胶沙龙、银翼工作室、假日离线、酸性声场、午夜终端、沙丘来信、深海蓝调、暮色紫霞。各套包含独立的首页构图、播放页材质、歌词与播放栏配色，原有现代白、现代黑和三套插画主题继续保留。
+
+![Listen2 Selects 八套新增主题的真实界面预览](docs/screenshots/selects-overview.webp)
+
+场景图片随应用打包；黑胶转动仅在高画质模式且播放时启用，减少动态偏好优先。设计参考与素材提示词见 [主题素材记录](docs/THEME_ART.md)，验证范围见 [外观交付记录](docs/APPEARANCE_AND_WINDOWS.md#2026-10-23--主题馆扩展)。新增主题与自定义图片功能从 v2.35.6 提供。
 
 ## v2.35.2 更新
 
@@ -85,7 +113,7 @@ Windows 未使用商业代码签名；macOS 沿用 v2.35.1 的打包流程，无
 
 ### 现代化播放器
 
-- 现代黑、现代白两套主题，覆盖音乐库、播放详情、弹窗与底部播放栏。
+- 十三套主题，覆盖音乐库、播放详情、弹窗与底部播放栏；支持风格筛选、真实预览与一键切换。
 - 沉浸式播放详情页，包含圆形封面、环形进度、背景氛围光和分层信息布局。
 - 由真实音频分析驱动的频谱与动态效果，而不是与音乐无关的预设动画。
 - 提供八种桌面音效预设、原音对比与失败回退；实际听感取决于播放设备和系统音频链路。

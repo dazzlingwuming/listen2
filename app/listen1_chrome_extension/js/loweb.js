@@ -794,11 +794,18 @@ const MediaService = {
         : []
     ).map(([id, method]) => ({
       id,
-      load: (request) =>
-        bilibili[method]({
+      load: async (request) => {
+        const items = await bilibili[method]({
           ...hints,
           ...request,
-        }),
+        });
+        // An optional artist can overconstrain a provider's catalog. Retry the
+        // explicit title once, keeping the artist as a ranking hint.
+        if (!items.length && artist && !request.signal.aborted) {
+          return bilibili[method]({ ...hints, ...request, query: title });
+        }
+        return items;
+      },
     }));
     return Listen2LyricSearch.search(providers, { title, artist }, options);
   },
