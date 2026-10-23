@@ -17,7 +17,7 @@ const mobileLibraryHubStart = modernBody.indexOf('class="mobile-library-hub"');
 const mobileLibraryHub = modernBody.slice(mobileLibraryHubStart);
 const mobileMarker = '/*\n * Mobile shell contract';
 const mobileCssStart = css.indexOf(mobileMarker);
-const mobileCss = css.slice(mobileCssStart);
+const mobileCss = css.slice(mobileCssStart, css.indexOf('/* Transfers remain visible independently', mobileCssStart));
 const navigationSource = read('js/controller/navigation.js');
 
 function loadNavigationController() {

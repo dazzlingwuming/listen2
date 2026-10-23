@@ -5,7 +5,7 @@
 ### 把 Bilibili 与多平台音乐内容，整理成更好用的桌面播放器
 
 [![License](https://img.shields.io/badge/license-MIT-7c5cff.svg)](./LICENSE.md)
-[![Version](https://img.shields.io/badge/version-2.35.2-8b5cf6.svg)](https://github.com/dazzlingwuming/listen2/releases/tag/v2.35.2)
+[![Version](https://img.shields.io/badge/version-2.35.6-8b5cf6.svg)](https://github.com/dazzlingwuming/listen2/releases/tag/v2.35.6)
 [![Electron](https://img.shields.io/badge/Electron-32-38bdf8.svg)](https://www.electronjs.org/)
 [![Windows](https://img.shields.io/badge/Windows-x64-2563eb.svg)](https://github.com/dazzlingwuming/listen2/releases/latest)
 [![macOS](https://img.shields.io/badge/macOS-Universal-111827.svg)](#平台支持)
@@ -13,11 +13,67 @@
 
 [下载最新版](https://github.com/dazzlingwuming/listen2/releases/latest) · [报告问题](https://github.com/dazzlingwuming/listen2/issues) · [构建说明](#本地开发与构建)
 
+[安卓 B 站版 APK](https://github.com/dazzlingwuming/listen2/releases/tag/v2.35.6-android.1) · [安卓功能与构建](android/README.md)
+
 </div>
 
 Listen2 是 [Listen1](https://github.com/listen1/listen1) 的社区增强版本。它保留多平台聚合搜索、播放和歌单能力，并重点改善 Bilibili 音乐播放、同步歌词、歌词翻译、桌面歌词、MV 和现代化桌面体验。
 
 > Listen2 只整理和播放用户本来就有权访问的内容，不解锁会员、付费、DRM、地区限制或其他受限资源。
+
+![用户实机截图：自定义图片背景与自动配色](docs/screenshots/personal-theme-user.png)
+
+用户实机效果：选择喜欢的背景，侧栏、按钮、频谱和歌词高亮会一起跟随图片配色。
+
+## v2.35.6 更新
+
+**让照片成为主题。** 本次把主题馆扩展到 13 套内置主题，并加入可以自己上传图片的「我的风景」。
+
+- 新增黑胶、金属工作室、泳池、酸性图形、终端、沙丘、海浪、紫色群山八套主题，各自包含首页与播放页设计。
+- 导入 JPG、PNG 或 WebP 图片，自动提取颜色，匹配背景、按钮、频谱和歌词高亮；支持跟随图片、浅色和深色。图片仅保存在本机，重启后继续使用。
+- 新增整个窗口的透明度调节（0–55%），所有主题通用，可一键恢复不透明，并自动记忆。
+- 修复网易云搜索中的中文请求、异常返回和旧结果覆盖问题；歌曲与歌单支持分页，网络错误及官方验证状态有明确提示。保留结果的真实歌手，不把翻唱标为原唱。
+- 改善手动歌词搜索：歌名与歌手组合无结果时尝试仅歌名，继续寻找有同步歌词的候选，找到的结果逐条显示；取消或超时后不再接收迟到结果。
+
+点击顶部调色盘，进入「用自己的图片生成主题」即可使用。Windows 从托盘退出旧版后覆盖安装，无需先卸载。
+
+已通过 183 项桌面测试、修改文件的 ESLint 检查与 Windows 安装包内功能验证；前端 25/27 通过，另两项为已确认的上游旧断言失败。使用方式、实测结果和验证范围见 [图片主题与搜索说明](https://github.com/dazzlingwuming/listen2/blob/v2.35.6/docs/PERSONAL_THEMES_AND_SEARCH.md)。
+
+## v2.35.5 更新
+
+- 新增“仅本应用直连”，仅影响本应用的搜索、播放、歌词、翻译和更新；电脑代理可继续供其他软件使用。
+- 本应用使用独立安全 DNS，减少默认 Fake-IP 解析对应用网络请求的影响，并提供异步切换回执及设置保存、恢复。
+- 修复 DeepSeek 翻译遇到不完整响应时的恢复处理（c9ce651）。
+
+此功能不保证所有歌曲都能直连，也不承诺绕过系统级 TUN 网络接管；实际连接仍受系统网络环境和内容服务影响。
+
+## v2.35.4 更新
+
+- 手动歌词候选窗口保留右侧搜索区，并扩展候选列表可用高度。
+- 来源阶段信息默认折叠；候选列表直接显示歌名、歌手、来源和时长。
+- 窄窗口下仍可查看和操作候选，搜索与候选操作支持键盘使用。
+
+已通过 26 项相关测试、4 项前端契约检查，以及 6 种窗口尺寸的布局与操作检查。在 1112×802 窗口中默认可完整看到 4 条候选。界面验证使用隔离的模拟搜索结果，未启动或替换用户正在使用的应用；实际安装与平台账号验证未在本轮覆盖。
+
+## v2.35.3 更新
+
+- 手动歌词搜索要求填写歌名，歌手可选；用户确认后才开始检索。修改输入会取消旧请求，避免旧结果覆盖新查询。
+- 按来源展示目录、歌词、平台验证和超时等阶段信息；酷狗纯歌名搜索补齐目录检索链路。
+- 对连接不可达地址增加有界的备用解析服务回退，限制额外尝试次数。
+- 网易歌词新增官方验证入口，并在验证后复用专用持久会话。真实用户账号认证未在本次验证中覆盖；平台风控仍可能影响访问。
+- macOS 延后 Keychain 检查，避免在启动阶段提前检查钥匙串。
+
+102 项相关测试与 6 项契约检查通过，并核对了《折风渡夜》《青花瓷》的公开歌词样例。本次未验证安装界面、网易真实账号认证或 Windows 实机；歌词来源与网络服务仍可能波动。macOS 沿用 v2.35.1 的打包配置，不新增签名证书，也不作 Apple 公证承诺；安装包状态以本版本 Release 页面为准。
+
+## 主题馆
+
+现在有 **13 套内置主题**，导入图片后还可使用自动配色的「我的风景」。点击顶部调色盘按钮，或进入「设置 → 主题」，即可查看真实界面预览，按实体灵感、大胆图形、沉浸风景、插画、浅色和深色筛选；选择即时生效并记忆，不中断正在播放的音乐。
+
+新增黑胶沙龙、银翼工作室、假日离线、酸性声场、午夜终端、沙丘来信、深海蓝调、暮色紫霞。各套包含独立的首页构图、播放页材质、歌词与播放栏配色，原有现代白、现代黑和三套插画主题继续保留。
+
+![Listen2 Selects 八套新增主题的真实界面预览](docs/screenshots/selects-overview.webp)
+
+场景图片随应用打包；黑胶转动仅在高画质模式且播放时启用，减少动态偏好优先。设计参考与素材提示词见 [主题素材记录](docs/THEME_ART.md)，验证范围见 [外观交付记录](docs/APPEARANCE_AND_WINDOWS.md#2026-10-23--主题馆扩展)。新增主题与自定义图片功能从 v2.35.6 提供。
 
 ## v2.35.2 更新
 
@@ -32,7 +88,7 @@ Listen2 是 [Listen1](https://github.com/listen1/listen1) 的社区增强版本�
 
 Windows 安装版选择 `listen1_2.35.2_win_x64.exe`，免安装压缩包选择 `.7z`。macOS 提供 x64、arm64、universal DMG。
 
-本版本未进行代码签名。频谱与缓存后续修正通过语法和前端静态检查；未执行本轮自动化回归或实机播放回归。主题预览、首版实测数据及具体修正记录见 [交付记录](docs/APPEARANCE_AND_WINDOWS.md)，其中首版性能数字不代表本次全部改动的回归结果。
+Windows 未使用商业代码签名；macOS 沿用 v2.35.1 的打包流程，无需新增证书配置，未使用 Developer ID 或 Apple 公证。频谱与缓存后续修正通过语法和前端静态检查；未执行本轮自动化回归或实机播放回归。主题预览、首版实测数据及具体修正记录见 [交付记录](docs/APPEARANCE_AND_WINDOWS.md)，其中首版性能数字不代表本次全部改动的回归结果。
 
 ## v2.35.1 更新
 
@@ -59,7 +115,7 @@ Windows 安装版选择 `listen1_2.35.2_win_x64.exe`，免安装压缩包选择 
 
 ### 现代化播放器
 
-- 现代黑、现代白两套主题，覆盖音乐库、播放详情、弹窗与底部播放栏。
+- 十三套主题，覆盖音乐库、播放详情、弹窗与底部播放栏；支持风格筛选、真实预览与一键切换。
 - 沉浸式播放详情页，包含圆形封面、环形进度、背景氛围光和分层信息布局。
 - 由真实音频分析驱动的频谱与动态效果，而不是与音乐无关的预设动画。
 - 提供八种桌面音效预设、原音对比与失败回退；实际听感取决于播放设备和系统音频链路。
@@ -149,7 +205,15 @@ Windows 安装版选择 `listen1_2.35.2_win_x64.exe`，免安装压缩包选择 
 
 ### macOS
 
-下载 x64、arm64 或 Universal DMG 后拖入“应用程序”。当前 macOS 构建未使用 Apple Developer ID 签名或公证，首次打开时可能出现系统安全提示。
+Intel Mac 下载 x64 DMG，Apple Silicon（M 系列）下载 arm64 DMG；Universal DMG 同时支持两者。打开 DMG 后将 Listen1 拖入“应用程序”。
+
+macOS 沿用 v2.35.1 的打包流程，无需新增签名证书或信任配置。安装包未使用 Apple Developer ID，也未经过 Apple 公证，因此首次从浏览器下载后仍可能被 Gatekeeper 拦截。请先核对 [官方 Release](https://github.com/dazzlingwuming/listen2/releases/latest) 来源和 SHA-256，然后：
+
+1. 从“应用程序”打开 Listen1 一次，关闭系统拦截提示。
+2. 打开“系统设置 → 隐私与安全性”，在安全性区域找到 Listen1 的提示，点击“仍要打开”（Open Anyway）。
+3. 按系统要求确认或输入管理员密码，再点击“打开”。此操作仅允许这份应用运行；后续通常可正常打开。更新后系统可能再次要求确认。
+
+更新后的系统确认和钥匙串授权取决于本机状态，不能保证所有版本均免密码。如果系统未提供“仍要打开”，请保留提示文字并反馈，不要关闭 Gatekeeper。
 
 本版本只发布 Windows x64 的 NSIS 与 7z，以及 macOS x64、arm64 和 Universal DMG；不发布 Linux、Windows ia32 或 Windows arm64 制品。
 
@@ -160,7 +224,7 @@ Windows 安装版选择 `listen1_2.35.2_win_x64.exe`，免安装压缩包选择 
 | 平台                        | 状态         | 说明                                                                  |
 | --------------------------- | ------------ | --------------------------------------------------------------------- |
 | Windows 10/11 x64           | 发布目标     | 提供 NSIS 安装包与 7z；包含现代 UI、Bilibili、MV、桌面歌词与 DeepSeek 翻译 |
-| macOS Intel / Apple Silicon | 发布目标     | 提供 x64、arm64 与 Universal DMG；当前未签名或公证                    |
+| macOS Intel / Apple Silicon | 发布目标     | 提供 x64、arm64 与 Universal DMG；无需新增证书配置，未使用 Developer ID 或公证 |
 | Windows ia32 / arm64        | 不发布       | 本版本不提供对应制品                                                  |
 | Linux                       | 不发布       | 本版本不提供 Linux 制品                                               |
 
@@ -169,6 +233,12 @@ Windows 安装版选择 `listen1_2.35.2_win_x64.exe`，免安装压缩包选择 
 ### Bilibili 登录
 
 在账号区域选择 Bilibili 登录并使用手机客户端扫码。登录 Cookie 保存在 Electron 会话中，刷新令牌使用系统安全存储加密；退出登录会同时清理服务端会话与本地数据。
+
+### 网易歌词验证
+
+手动歌词搜索提示“需要完成平台验证”时，点击该来源旁的“去验证”，在网易官方页面操作后关闭窗口。应用会复用同一网易会话重新搜索；窗口关闭本身不表示验证成功。平台下发的有效持久 Cookie 由专用本机会话保存，后续网易歌词请求自动使用，其他歌词来源不携带这些 Cookie。
+
+Cookie 到期、被平台撤销或再次触发验证时仍需重做验证。验证入口失效时先重新搜索获取新入口。此过程不改变播放代理或系统 DNS，也不会把 Cookie 写进安装包或 GitHub。
 
 ### DeepSeek 歌词翻译
 
@@ -208,7 +278,7 @@ npm run dist:win
 npm run dist:mac
 ```
 
-构建产物位于 `dist/`。公开分发前，请在目标系统实机测试并按平台要求完成代码签名。
+构建产物位于 `dist/`。macOS 沿用 v2.35.1 的 electron-builder 流程，不配置自定义签名 hook，也不要求创建本机签名证书或修改钥匙串信任。公开分发前，请在目标系统实机测试。
 
 ### 运行测试
 

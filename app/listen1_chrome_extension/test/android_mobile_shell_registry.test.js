@@ -22,6 +22,7 @@ function controllerScope(overrides = {}) {
   const timeouts = [];
   const watches = [];
   const scope = {
+    $evalAsync(fn) { fn(); },
     $on(name, handler) {
       events[name] = handler;
     },
@@ -320,7 +321,7 @@ async function run() {
     MediaService: {
       search(sourceId, options) {
         desktopRequests.push({ sourceId, ...options });
-        return { success() {} };
+        return { success(reply) { reply({ result: [], total: 40 }); } };
       },
     },
   });

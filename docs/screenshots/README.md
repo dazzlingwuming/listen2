@@ -1,5 +1,17 @@
 # README 截图指南
 
+## Listen2 Selects（2026-10-23）
+
+- [用户实机截图：自选背景与自动配色](personal-theme-user.png)
+- [自定义图片主题播放页](personal-theme-player.webp)
+- [上传图片与窗口透明度](personal-theme-gallery.webp)
+- [八套新主题总览](selects-overview.webp)：每套包含实际首页与播放页。
+- [黑胶沙龙播放页](selects-vinyl-player.webp)
+- [沙丘来信播放页](selects-dune-player.webp)
+- [酸性声场播放页](selects-acid-player.webp)
+
+`personal-theme-user.png` 是用户提供的实际使用截图，展示自选背景和自动配色。其余截图使用独立测试会话、项目内的生成场景封面与自写歌词。主题选择器内的缩略图保存在 `app/listen1_chrome_extension/images/themes/`；没有将测试歌曲写进生产数据。
+
 主 README 已预留截图布局。完成截图后，把图片保存到当前目录，并删除根目录 `README.md` 中 `SCREENSHOTS:START` 和 `SCREENSHOTS:END` 所在的 HTML 注释标记即可显示。
 
 ## 推荐截图

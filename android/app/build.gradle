@@ -23,6 +23,7 @@ tasks.register('syncListen1Assets', Copy) {
         include 'js/controller/*.js'
         include 'js/app.js'
         include 'js/appearance.js'
+        include 'js/wallpaper_theme.js'
         include 'js/audio_visualizer.js'
         include 'js/bilibili_mv_player.js'
         include 'js/bilibili_qr.js'
@@ -53,8 +54,8 @@ android {
         applicationId 'com.dazzlingwuming.listen2'
         minSdk 26
         targetSdk 35
-        versionCode 23502
-        versionName '2.35.2'
+        versionCode 2350601
+        versionName '2.35.6-android.1'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
 
         javaCompileOptions {
@@ -66,6 +67,17 @@ android {
         }
     }
 
+    signingConfigs {
+        release {
+            if (System.getenv('LISTEN2_KEYSTORE')) {
+                storeFile file(System.getenv('LISTEN2_KEYSTORE'))
+                storePassword System.getenv('LISTEN2_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('LISTEN2_KEY_ALIAS') ?: 'listen2-android'
+                keyPassword System.getenv('LISTEN2_KEY_PASSWORD') ?: System.getenv('LISTEN2_KEYSTORE_PASSWORD')
+            }
+        }
+    }
+
     buildTypes {
         debug {
             debuggable true
@@ -73,8 +85,10 @@ android {
             versionNameSuffix '-debug'
         }
         release {
+            applicationIdSuffix '.android'
             debuggable false
             minifyEnabled true
+            if (System.getenv('LISTEN2_KEYSTORE')) signingConfig signingConfigs.release
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }

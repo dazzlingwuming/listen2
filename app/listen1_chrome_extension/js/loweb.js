@@ -1245,24 +1245,81 @@ const MediaService = {
     );
   },
 
-  searchLyrics(trackInfo, query, options = {}) {
+  verifyNeteaseLyrics() {
+    const ipcRenderer = getDesktopLocalDataIpcRenderer();
+    if (!ipcRenderer) {
+      return Promise.resolve({ ok: false, status: 'unsupported' });
+    }
+    // The desktop process owns the official challenge and session. Never pass
+    // a renderer URL or return credentials from the verification window.
+    return Promise.resolve()
+      .then(() => ipcRenderer.invoke('lyrics:verify-netease'))
+      .then((response) => {
+        if (
+          response &&
+          response.ok === true &&
+          response.status === 'retry-ready'
+        ) {
+          return { ok: true, status: 'retry-ready' };
+        }
+        const failures = [
+          'unavailable',
+          'invalid-response',
+          'already-open',
+          'verification-unavailable',
+        ];
+        if (
+          response &&
+          response.ok === false &&
+          failures.includes(response.status)
+        ) {
+          return { ok: false, status: response.status };
+        }
+        return { ok: false, status: 'invalid-response' };
+      })
+      .catch(() => ({ ok: false, status: 'unavailable' }));
+  },
+
+  searchLyrics(trackInfo, input, options = {}) {
+    const title = String(
+      input && typeof input === 'object' ? input.title || '' : input || ''
+    ).trim();
+    const artist = String(
+      input && typeof input === 'object' ? input.artist || '' : ''
+    ).trim();
     const hints = {
-      query,
-      title: query,
-      artist: '',
+      query: [title, artist].filter(Boolean).join(' '),
+      title,
+      artist,
       duration: 0,
       manual: true,
     };
-    const providers = [
-      ['QQ', 'search_qq_lyric_candidates'],
-      ['网易云', 'search_netease_lyric_candidates'],
-      ['LRCLIB', 'search_lrclib_lyric_candidates'],
-      ['KUWO', 'search_kuwo_lyric_candidates'],
-    ].map(([id, method]) => ({
+    const providers = (
+      title
+        ? [
+            ['QQ', 'search_qq_lyric_candidates'],
+            ['LRCLIB', 'search_lrclib_lyric_candidates'],
+            ['KUGOU', 'search_kugou_lyric_candidates'],
+            ['网易云', 'search_netease_lyric_candidates'],
+            ['KUWO', 'search_kuwo_lyric_candidates'],
+          ]
+        : []
+    ).map(([id, method]) => ({
       id,
-      load: (request) => bilibili[method]({ ...hints, ...request }),
+      load: async (request) => {
+        const items = await bilibili[method]({
+          ...hints,
+          ...request,
+        });
+        // An optional artist can overconstrain a provider's catalog. Retry the
+        // explicit title once, keeping the artist as a ranking hint.
+        if (!items.length && artist && !request.signal.aborted) {
+          return bilibili[method]({ ...hints, ...request, query: title });
+        }
+        return items;
+      },
     }));
-    return Listen2LyricSearch.search(providers, query, options);
+    return Listen2LyricSearch.search(providers, { title, artist }, options);
   },
 
   searchLyricCandidates(trackInfo, query) {

@@ -424,16 +424,24 @@
   border-color: var(--ui-border);
   backdrop-filter: none;
 }
+/* Source details have a bounded scroll area, leaving room for candidates. */
 .modern-body .lyric-source-status {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 12px 16px;
+  max-height: min(120px, 22vh);
+  box-sizing: border-box;
+  overflow-y: auto;
+  flex-direction: column;
+  gap: 5px;
+  padding: 2px 0 8px;
   font-size: 11px;
-  color: var(--ui-muted);
-  border-bottom: 1px solid var(--ui-border);
+  color: var(--stage-muted, var(--ui-muted));
+  scrollbar-width: thin;
 }
 .modern-body .lyric-source-status > span {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
   padding: 4px 7px;
   background: var(--ui-surface-soft);
   border-radius: 5px;
@@ -441,19 +449,22 @@
 .modern-body .lyric-source-status [data-state='success'] {
   color: var(--ui-accent);
 }
-.modern-body .lyric-partial-notice {
-  margin: 10px 16px;
-  color: var(--ui-muted);
-  font-size: 12px;
-  line-height: 1.5;
+.modern-body .lyric-picker-notices .lyric-partial-notice {
+  flex: 1 1 180px;
+  margin: 0;
+  color: var(--stage-muted, var(--ui-muted));
+  font-size: 11px;
+  line-height: 1.4;
 }
 .modern-body .lyric-retry {
-  padding: 8px 14px;
-  margin: 8px 16px;
+  padding: 4px 8px;
+  margin: 0;
   background: var(--ui-accent-soft);
   color: var(--ui-accent);
   border: 1px solid var(--ui-border);
-  border-radius: 8px;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 11px;
   cursor: pointer;
 }
 .modern-body.theme-anime .lyric-picker :is(input, button) {
@@ -556,4 +567,14 @@
 }
 .modern-body.theme-mint .lyric p.highlight::before {
   display: none;
+}
+
+/* Keep the desktop picker in a full-height right column on short themes. */
+@media (min-width: 761px) and (max-height: 620px),
+  (min-width: 761px) and (max-width: 1050px) {
+  .modern-body.theme-anime .now-playing-layout:has(.lyric-picker) {
+    grid-template-columns: minmax(230px, 0.85fr) minmax(270px, 1.15fr);
+    grid-template-rows: minmax(0, 1fr);
+    column-gap: 28px;
+  }
 }

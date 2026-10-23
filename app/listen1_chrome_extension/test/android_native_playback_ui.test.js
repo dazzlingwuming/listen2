@@ -19,6 +19,33 @@ function requireText(source, expected, explanation) {
 }
 
 function run() {
+  const keyboardScope = {
+    androidPlaybackEnabled: true,
+    androidPlaybackDetailOpen: true,
+    androidUi: {},
+    androidQueueConfirmation: { open: false },
+    lyricPickerOpen: true,
+    closeLyricPicker() { this.lyricPickerOpen = false; },
+    closeAndroidPlayerDetail() { this.androidPlaybackDetailOpen = false; },
+    $evalAsync(fn) { fn(); },
+  };
+  const keyboardContext = { $scope: keyboardScope };
+  vm.runInNewContext(controller.slice(
+    controller.indexOf('$scope.handleAndroidPlayerBack ='),
+    controller.indexOf("$scope.$on('android:playback-back'")
+  ) + '\nthis.keydown = handleAndroidPlayerKeydown;', keyboardContext);
+  for (const [key, keyCode] of [['a', 65], ['Enter', 13], ['Backspace', 8], ['Process', 229], ['Tab', 9]]) {
+    const event = { type: 'keydown', key, keyCode, preventDefault() { throw new Error('Ordinary input was consumed'); } };
+    keyboardScope.handleAndroidPlayerBack(event);
+    keyboardContext.keydown(event);
+    assert.ok(keyboardScope.lyricPickerOpen && keyboardScope.androidPlaybackDetailOpen,
+      'typing and submitting lyrics must preserve both panels');
+  }
+  keyboardContext.keydown({ key: 'Escape', keyCode: 27, preventDefault() {} });
+  assert.strictEqual(keyboardScope.lyricPickerOpen, false);
+  assert.strictEqual(keyboardScope.androidPlaybackDetailOpen, true, 'Escape closes only the top panel');
+  keyboardScope.handleAndroidPlayerBack({ preventDefault() {} });
+  assert.strictEqual(keyboardScope.androidPlaybackDetailOpen, false, 'native Back still works');
   const actionContext = { $scope: { androidPlaybackEnabled: true, androidPlaybackSnapshot: {
     revision: 7, actions: { play: true, pause: false, next: true, seek: true, retry: true },
   } } };

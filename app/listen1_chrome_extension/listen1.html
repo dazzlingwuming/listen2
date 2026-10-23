@@ -20,9 +20,12 @@
     <link href="css/redesign.css?v=audio-reactive-stage-8" rel="stylesheet" />
 
     <link href="css/appearance.css" rel="stylesheet" />
+    <link href="css/theme-collection.css" rel="stylesheet" />
     <link href="css/performance.css" rel="stylesheet" />
     <link href="css/android_mobile.css" rel="stylesheet" />
+    <link href="css/android_refined.css" rel="stylesheet" />
     <script src="js/appearance.js"></script>
+    <script src="js/wallpaper_theme.js"></script>
     <link href="images/logo_16.png" rel="shortcut icon" />
     <link href="images/logo_16.png" rel="bookmark" />
     <script>
@@ -586,9 +589,19 @@
                           ng-options="mode.displayText for mode in proxyModes"
                           ng-model="proxyModeInput"
                           ng-change="changeProxyMode(proxyModeInput)"
+                          ng-disabled="proxyApplyPending || !proxyNetworkAvailable"
                         ></select>
+                        <p>{{_PROXY_APP_DIRECT_HELP}}</p>
+                        <p
+                          class="proxy-feedback"
+                          role="status"
+                          aria-live="polite"
+                          aria-atomic="true"
+                        >
+                          {{proxyFeedbackText()}}
+                        </p>
                         <div
-                          ng-show="proxyModeInput.name=='custom'"
+                          ng-show="proxyModeInput && proxyModeInput.name=='custom'"
                           class="custom-proxy"
                         >
                           <div class="rule-input">
@@ -607,7 +620,8 @@
                         <div class="buttons">
                           <button
                             class="btn btn-primary confirm-button"
-                            ng-click="setProxyConfig();closeDialog();"
+                            ng-click="setProxyConfig()"
+                            ng-disabled="proxyApplyPending || !proxyNetworkAvailable || !proxyModeInput"
                           >
                             {{_CONFIRM}}
                           </button>
@@ -1182,6 +1196,14 @@
                                     </li>
                                   </div>
                                 </ul>
+                                <div class="search-feedback" ng-if="searchFeedbackKey()" role="status" aria-live="polite">
+                                  <span>{{this[searchFeedbackKey()]}}</span>
+                                  <button type="button" ng-click="retrySearch()">{{_SEARCH_RETRY}}</button>
+                                  <button type="button" ng-if="searchStatus === 'verification-required' && tab === 'netease'" ng-click="verifySearchSource()">{{_SEARCH_VERIFY}}</button>
+                                  <button type="button" ng-if="tab !== 'allmusic'" ng-click="changeSourceTab('allmusic')">{{_SEARCH_ALL_SOURCES}}</button>
+                                </div>
+                                <p class="appearance-note" ng-if="tab === 'netease' && searchType === 0 && searchStatus === 'success'">{{_SEARCH_NETEASE_NOTE}}</p>
+
                                 <ul class="detail-songlist">
                                   <li class="head" ng-if="searchType===0 ">
                                     <div class="title"><a>{{_SONGS}}</a></div>
@@ -1933,7 +1955,7 @@
                                 </div>
                                 <p
                                   class="machine-translation-error"
-                                  ng-if="!machineTranslationConfig.secureStorageAvailable"
+                                  ng-if="machineTranslationConfig.secureStorageAvailable === false"
                                 >
                                   {{_MACHINE_TRANSLATION_SECURE_STORAGE_UNAVAILABLE}}
                                 </p>
@@ -2288,13 +2310,40 @@
                               </div>
                               <div class="settings-content" ng-if="!isChrome">
                                 <span>{{_PROXY_CONFIG}}:</span>
-                                {{proxyMode.displayText}}
-                                <span ng-show="proxyMode.name=='custom'"
+                                <p>{{_PROXY_APP_DIRECT_HELP}}</p>
+                                <span ng-if="proxyStateKnown">{{proxyMode.displayText}}</span>
+                                <span ng-if="!proxyStateKnown">{{_PROXY_STATE_UNKNOWN}}</span>
+                                <span ng-show="proxyMode && proxyMode.name=='custom'"
                                   >{{proxyRules}}</span
                                 >
-                                <button ng-click="showDialog(12)">
+                                <button
+                                  class="btn btn-default"
+                                  ng-click="applyEnhancedDirect()"
+                                  ng-if="!proxyStateKnown || proxyMode.name !== 'enhanced-direct'"
+                                  ng-disabled="proxyApplyPending || !proxyNetworkAvailable"
+                                >{{_PROXY_ENABLE_APP_DIRECT}}</button>
+                                <button
+                                  class="btn btn-default"
+                                  ng-click="restoreSystemProxy()"
+                                  ng-if="!proxyStateKnown || proxyMode.name === 'enhanced-direct'"
+                                  ng-disabled="proxyApplyPending || !proxyNetworkAvailable"
+                                >{{_PROXY_RESTORE_SYSTEM}}</button>
+                                <button
+                                  class="btn btn-default"
+                                  ng-click="retryProxyState()"
+                                  ng-if="!proxyStateKnown"
+                                  ng-disabled="proxyStatePending || !proxyNetworkAvailable"
+                                >{{_PROXY_RETRY}}</button>
+                                <button ng-click="showDialog(12)" ng-disabled="proxyApplyPending || !proxyNetworkAvailable">
                                   {{_MODIFY}}
                                 </button>
+                                <span
+                                  class="proxy-feedback"
+                                  role="status"
+                                  aria-live="polite"
+                                  aria-atomic="true"
+                                  >{{proxyFeedbackText()}}</span
+                                >
                               </div>
                               <div class="settings-title">
                                 <span>{{_ABOUT}}</span>
@@ -2331,7 +2380,7 @@
                                   {{_DESIGNER}} ({{_THEME_MODERN_BLACK}},
                                   {{_THEME_MODERN_WHITE}}): 814959822, Antion
                                 </p>
-                                <p>{{_VERSION}}: v2.35.2 {{_LICENSE_NOTICE}}</p>
+                                <p>{{_VERSION}}: v2.35.5 {{_LICENSE_NOTICE}}</p>
                                 <p ng-show='lastestVersion!=""'>
                                   {{_LATEST_VERSION}}: {{lastestVersion}}
                                 </p>
@@ -3851,9 +3900,19 @@
                           ng-options="mode.displayText for mode in proxyModes"
                           ng-model="proxyModeInput"
                           ng-change="changeProxyMode(proxyModeInput)"
+                          ng-disabled="proxyApplyPending || !proxyNetworkAvailable"
                         ></select>
+                        <p>{{_PROXY_APP_DIRECT_HELP}}</p>
+                        <p
+                          class="proxy-feedback"
+                          role="status"
+                          aria-live="polite"
+                          aria-atomic="true"
+                        >
+                          {{proxyFeedbackText()}}
+                        </p>
                         <div
-                          ng-show="proxyModeInput.name=='custom'"
+                          ng-show="proxyModeInput && proxyModeInput.name=='custom'"
                           class="custom-proxy"
                         >
                           <div class="rule-input">
@@ -3872,7 +3931,8 @@
                         <div class="buttons">
                           <button
                             class="btn btn-primary confirm-button"
-                            ng-click="setProxyConfig();closeDialog();"
+                            ng-click="setProxyConfig()"
+                            ng-disabled="proxyApplyPending || !proxyNetworkAvailable || !proxyModeInput"
                           >
                             {{_CONFIRM}}
                           </button>
@@ -3924,7 +3984,7 @@
                                 />
                               </svg>
                             </div>
-                            <span class="modern-wordmark">LISTEN ONE</span>
+                            <span class="modern-wordmark">LISTEN2</span>
                           </div>
                           <div class="sidebar-scroll-content">
                             <div class="menu-title">
@@ -4443,6 +4503,23 @@
                             aria-label="搜索当前音乐来源"
                           />
                         </div>
+                        <button
+                          type="button"
+                          class="theme-gallery-launcher"
+                          ng-click="showThemeGallery()"
+                          title="{{_THEME_GALLERY_TITLE}}"
+                          aria-label="{{_THEME_GALLERY_TITLE}}"
+                        >
+                          <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path
+                              d="M12 3a9 9 0 1 0 0 18h1a2 2 0 0 0 1.6-3.2 1.4 1.4 0 0 1 1.1-2.3H17A4 4 0 0 0 21 12a9 9 0 0 0-9-9Z"
+                            />
+                            <circle cx="7.5" cy="10" r=".8" />
+                            <circle cx="10.5" cy="6.8" r=".8" />
+                            <circle cx="15" cy="7.5" r=".8" />
+                            <circle cx="17.3" cy="11" r=".8" />
+                          </svg>
+                        </button>
                         <div
                           ng-class="{ 'active': (current_tag==4) && (window_url_stack.length ==0)}"
                           ng-click="showTag(5)"
@@ -4679,21 +4756,23 @@
                              the whole product. It uses existing actions and never
                              fabricates Android storage/account/media success. -->
                         <section class="mobile-product-surface android-library" ng-if="androidPlaybackEnabled && current_tag==1 && is_window_hidden==1 && !mobileProductPage" aria-label="音乐库">
-                          <header class="android-section-heading"><div><p class="android-eyebrow">YOUR COLLECTION</p><h1>音乐库</h1></div><button type="button" class="android-icon-button" ng-click="openMobileCapability('playlists'); beginMobilePlaylistCreate()" aria-label="新建歌单"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></header>
+                          <header class="android-section-heading"><div><p class="android-eyebrow">LISTEN2</p><h1>音乐库</h1></div><button type="button" class="android-icon-button" ng-click="openMobileCapability('playlists'); beginMobilePlaylistCreate()" aria-label="新建歌单"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></header>
+                          <div class="android-library-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg><input type="search" ng-model="mobileLibraryQuery.value" placeholder="搜索你的歌单" aria-label="搜索你的歌单" /></div>
                           <div class="android-library-shortcuts"><button type="button" ng-click="openMobileCapability('history')"><span>◷</span>听歌记录</button><button type="button" ng-click="openMobileCapability('cache')"><span>↓</span>缓存与下载</button><button type="button" ng-click="openMobileCapability('backup')"><span>⇄</span>歌单备份</button></div>
                           <p class="android-helper" ng-if="mobileLocalData.loading">正在读取音乐库…</p><p class="android-helper" ng-if="mobileLocalData.error" role="status">{{mobileLocalData.error}}</p>
                           <div class="android-section-subheading"><h2>我喜欢的</h2><button type="button" ng-if="currentPlaying.id" ng-click="toggleCurrentMobileFavorite(true)" ng-disabled="mobileLocalData.actionPending">收藏当前歌曲 ＋</button></div>
-                          <p class="android-library-empty" ng-if="!mobileLocalData.favorites.length">收藏喜欢的音乐，下次从这里继续听。</p>
+                          <p class="android-library-empty" ng-if="!mobileLocalData.favorites.length">喜欢的歌曲，随时收藏。</p>
                           <div class="android-saved-tracks"><button type="button" ng-repeat="item in mobileLocalData.favorites track by item.source + ':' + item.providerTrackId" ng-click="playMobileSavedTrack(item)" ng-disabled="mobileLocalData.actionPending"><span class="android-library-note">♪</span><span><strong>{{androidTrackDisplay({id:'bitrack_v_'+item.providerTrackId, title:item.title, artist:item.artist}).title}}</strong><small>{{item.artist}}</small></span><b>▷</b></button></div>
                           <div class="android-section-subheading"><h2>我的歌单</h2><button type="button" ng-click="openMobileCapability('playlists')">管理 ›</button></div>
                           <button type="button" class="android-library-create" ng-if="!mobileLocalData.playlists.length" ng-click="openMobileCapability('playlists'); beginMobilePlaylistCreate()"><span>＋</span><strong>创建第一张歌单</strong><small>把喜欢的 B 站音乐收在一起</small></button>
-                          <div class="android-saved-tracks"><button type="button" ng-repeat="item in mobileLocalData.playlists track by item.playlistId" ng-click="openMobilePlaylist(item)"><span class="android-library-note">≡</span><span><strong>{{item.name}}</strong><small>{{item.tracks.length}} 首歌曲</small></span><b>›</b></button></div>
+                          <div class="android-saved-tracks android-playlist-library"><button type="button" ng-repeat="item in mobileLocalData.playlists | filter:{name:mobileLibraryQuery.value} track by item.playlistId" ng-click="openMobilePlaylist(item)"><span class="android-library-note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5l11-2v13M9 9l11-2"/><ellipse cx="6" cy="18" rx="3" ry="2.5"/><ellipse cx="17" cy="16" rx="3" ry="2.5"/></svg></span><span><strong>{{item.name}}</strong><small>{{item.tracks.length}} 首歌曲</small></span><b>›</b></button></div>
                         </section>
                         <section class="mobile-product-home mobile-product-surface" ng-if="current_tag==2 && is_window_hidden==1 && !mobileProductPage" aria-labelledby="mobile-product-home-title">
-                          <header class="android-section-heading"><div><p class="android-eyebrow">LISTEN2 · 哔哩哔哩</p><h1 id="mobile-product-home-title">继续收听</h1></div><button type="button" class="android-icon-button" ng-click="showTag(4)" aria-label="打开设置"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16M8 4v6M16 14v6"/></svg></button></header>
+                          <header class="android-section-heading"><div><p class="android-eyebrow">你的音乐，随身聆听</p><h1 id="mobile-product-home-title">Listen2<span class="android-brand-dot">.</span></h1></div><button type="button" class="android-home-theme" ng-click="openMobileAppearance()" aria-label="打开主题馆"><img ng-src="{{mobileThemeArtwork()}}" alt="" /></button></header>
+                          <div class="android-home-scene" aria-hidden="true"><img ng-src="{{themeSceneUrl || mobileThemeArtwork()}}" alt="" /><span>{{this[selectedTheme.label]}}</span></div>
                           <button type="button" class="android-home-current" ng-if="androidPlaybackHasCurrent()" ng-click="openAndroidPlayerDetail($event)" aria-label="打开正在播放">
                             <span class="android-home-art"><img referrerpolicy="no-referrer" ng-if="currentPlaying.img_url" ng-src="{{currentPlaying.img_url}}" alt="" /><span ng-if="!currentPlaying.img_url" aria-hidden="true">♪</span></span>
-                            <span class="android-home-current-copy"><small>{{androidPlaybackStateCopy()}}</small><strong>{{androidTrackDisplay().title}}</strong><span>{{androidTrackDisplay().artist}}</span><b>打开播放器 <span>↗</span></b></span>
+                            <span class="android-home-current-copy"><small>继续聆听</small><strong>{{androidTrackDisplay().title}}</strong><span>{{androidTrackDisplay().artist}}</span><b>打开播放器 <span>↗</span></b></span>
                           </button>
                           <div class="android-home-empty" ng-if="!androidPlaybackHasCurrent()"><span aria-hidden="true">♪</span><h2>今天想听什么？</h2><p>从 B 站找到喜欢的音乐。</p></div>
                           <button type="button" class="android-home-search" ng-click="showTag(3); focusMobileSearch()"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg><span>搜索歌曲、歌手或视频</span><span>›</span></button>
@@ -4725,7 +4804,8 @@
                           <button type="button" class="android-account-entry" ng-click="showTag(5)"><span class="android-account-avatar">B</span><span><strong>哔哩哔哩账户</strong><small>{{androidAccountState.message || '登录与账号管理'}}</small></span><b>›</b></button>
                           <h2 class="android-settings-group-title">外观与播放</h2>
                           <div class="mobile-product-list" role="list">
-                            <button type="button" role="listitem" ng-click="openMobileCapability('settings')"><span><strong>主题与偏好</strong><small>主题、语言和歌词显示</small></span><b aria-hidden="true">›</b></button>
+                            <button type="button" role="listitem" ng-click="openMobileAppearance()"><span><strong>主题馆</strong><small>{{this[selectedTheme.label]}} · 让音乐拥有自己的颜色</small></span><b aria-hidden="true">›</b></button>
+                            <button type="button" role="listitem" ng-click="openMobileCapability('settings')"><span><strong>播放与显示</strong><small>歌词字号、翻译和界面语言</small></span><b aria-hidden="true">›</b></button>
                             <button type="button" role="listitem" ng-click="openMobileCapability('translation')"><span><strong>歌词翻译</strong><small>{{mobileDeepSeekStatus.hasApiKey ? 'DeepSeek · 已配置' : '配置 DeepSeek API Key'}}</small></span><b aria-hidden="true">›</b></button>
                             <button type="button" role="listitem" ng-click="openMobileCapability('cache')" ng-disabled="!mobileLocalData.capabilities.cache"><span><strong>下载与缓存</strong><small>离线歌曲、存储空间</small></span><b aria-hidden="true">›</b></button>
                           </div>
@@ -4736,20 +4816,20 @@
                             <button type="button" role="listitem" ng-click="openMobileGitHub()"><span><strong>GitHub 歌单同步</strong><small>与电脑共用歌单 · 上传与下载</small></span><b aria-hidden="true">›</b></button>
                             <button type="button" role="listitem" ng-click="openMobileCapability('local')" ng-disabled="!mobileLocalData.capabilities.saf"><span><strong>本地音乐</strong><small>导入文件或音乐文件夹</small></span><b aria-hidden="true">›</b></button>
                           </div>
-                          <p class="android-about">Listen2 · 2.35.2<br><span>Android / Bilibili</span></p>
+                          <p class="android-about">Listen2 · 2.35.6<br><span>Android / Bilibili</span></p>
                         </section>
 
                         <section
                           class="mobile-product-sheet"
                           ng-if="mobileProductPage"
-                          ng-class="{'android-playlist-sheet': mobileProductPage === 'playlist'}"
+                          ng-class="{'android-playlist-sheet': mobileProductPage === 'playlist', 'android-appearance-sheet': mobileProductPage === 'appearance'}"
                           role="dialog"
                           aria-modal="true"
                           aria-labelledby="mobile-product-sheet-title"
                         >
                           <header>
                             <button type="button" ng-click="closeMobileProductPage()" aria-label="返回设置或首页">‹</button>
-                            <div><p>Listen2 手机版</p><h2 id="mobile-product-sheet-title">{{mobileProductPage === 'playlist' ? '歌单' : mobileProductPage === 'github' ? 'GitHub 歌单同步' : mobileProductPage === 'status' ? '暂不可用' : mobileProductPage === 'library' ? '歌单与收藏' : mobileProductPage === 'history' ? '历史与年度回响' : mobileProductPage === 'cache' ? '缓存与下载' : mobileProductPage === 'settings' ? '手机设置' : mobileProductPage === 'backup' ? '歌单备份' : 'DeepSeek 翻译'}}</h2></div>
+                            <div><p>Listen2 手机版</p><h2 id="mobile-product-sheet-title">{{mobileProductPage === 'appearance' ? '主题馆' : mobileProductPage === 'playlist' ? '歌单' : mobileProductPage === 'github' ? 'GitHub 歌单同步' : mobileProductPage === 'status' ? '暂不可用' : mobileProductPage === 'library' ? '歌单与收藏' : mobileProductPage === 'history' ? '历史与年度回响' : mobileProductPage === 'cache' ? '缓存与下载' : mobileProductPage === 'settings' ? '播放与显示' : mobileProductPage === 'backup' ? '歌单备份' : 'DeepSeek 翻译'}}</h2></div>
                           </header>
                           <div class="mobile-product-sheet-content">
                             <p class="mobile-product-loading" ng-if="mobileLocalData.loading" role="status" aria-live="polite">正在读取 Android 数据…</p>
@@ -4858,9 +4938,16 @@
                               <button type="button" ng-click="runMobileLocalCommand('cache.refresh', {}, 'cache')" ng-disabled="mobileLocalData.actionPending">检查缓存完整性</button>
                               <button type="button" ng-click="loadMobileLocalPage('cache')" ng-disabled="mobileLocalData.loading">刷新缓存状态</button>
                             </section>
+                            <section ng-if="mobileProductPage === 'appearance'" class="android-appearance">
+                              <div class="android-theme-current"><img ng-src="{{themeSceneUrl || mobileThemeArtwork()}}" alt="" /><div><small>当前主题</small><strong>{{this[selectedTheme.label]}}</strong></div></div>
+                              <div class="android-theme-filter" role="group" aria-label="筛选主题"><button type="button" ng-click="mobileThemeFilter.value='all'" ng-class="{'is-active': mobileThemeFilter.value==='all'}">全部</button><button type="button" ng-click="mobileThemeFilter.value='light'" ng-class="{'is-active': mobileThemeFilter.value==='light'}">浅色</button><button type="button" ng-click="mobileThemeFilter.value='dark'" ng-class="{'is-active': mobileThemeFilter.value==='dark'}">深色</button></div>
+                              <div class="android-theme-choices"><button type="button" ng-repeat="item in themeOptions track by item.id" ng-if="mobileThemeVisible(item)" ng-click="selectMobileTheme(item.id)" ng-class="{'is-selected': theme === item.id}" aria-pressed="{{theme === item.id}}" aria-label="使用{{this[item.label]}}主题"><img ng-src="{{item.id === 'custom' ? customWallpaper.image : 'images/themes/' + item.id + '-preview.webp'}}" alt="" /><span>{{this[item.label]}}<small>{{theme === item.id ? '使用中' : item.base === 'dark' ? '深色' : '浅色'}}</small></span></button></div>
+                              <div class="android-custom-theme"><div><h3>我的风景</h3><p>选一张喜欢的照片，生成专属配色。</p></div><button type="button" ng-click="chooseMobileWallpaper()" ng-disabled="customWallpaperBusy">{{customWallpaperBusy ? '处理中…' : customWallpaper ? '更换图片' : '选择图片'}}</button></div>
+                              <input id="android-wallpaper-file" type="file" accept="image/jpeg,image/png,image/webp" hidden onchange="angular.element(this).scope().importWallpaper(this.files[0]); this.value='';" />
+                              <p ng-if="customWallpaperError" role="alert">{{this[customWallpaperError]}}</p>
+                              <div class="android-custom-theme-modes" ng-if="customWallpaper"><button type="button" ng-repeat="mode in ['auto', 'light', 'dark']" ng-click="setWallpaperMode(mode)" ng-class="{'is-active': customWallpaper.mode === mode}">{{mode === 'auto' ? '跟随图片' : mode === 'light' ? '浅色' : '深色'}}</button><button type="button" ng-click="removeWallpaper()">移除图片</button></div>
+                            </section>
                             <section ng-if="mobileProductPage === 'settings'" class="android-preferences">
-                              <h3>选择主题</h3>
-                              <div class="android-theme-choices"><button type="button" ng-repeat="item in themeOptions track by item.id" ng-click="selectMobileTheme(item.id)" ng-class="{'is-selected': theme === item.id}" aria-pressed="{{theme === item.id}}"><img ng-src="images/themes/{{item.id}}-preview.webp" alt="" /><span>{{this[item.label]}} <b ng-if="theme === item.id">✓</b></span></button></div>
                               <h3>歌词</h3>
                               <div class="android-option-row"><span>歌词字号</span><div class="android-segmented"><button type="button" ng-click="setAndroidLyricFontSize(18)" ng-class="{'is-active': androidUi.lyricFontSize === 18}">小</button><button type="button" ng-click="setAndroidLyricFontSize(22)" ng-class="{'is-active': androidUi.lyricFontSize === 22}">中</button><button type="button" ng-click="setAndroidLyricFontSize(27)" ng-class="{'is-active': androidUi.lyricFontSize === 27}">大</button></div></div>
                               <label class="android-option-row"><span>显示歌词翻译</span><input type="checkbox" ng-model="androidUi.showTranslation" ng-change="setAndroidLyricTranslationVisible(androidUi.showTranslation)" /></label>
@@ -4954,6 +5041,12 @@
                               aria-labelledby="editorial-hero-title"
                             >
                               <img
+                                class="collection-hero-scene"
+                                ng-if="selectedTheme.scene && themeSceneUrl"
+                                ng-src="{{themeSceneUrl}}"
+                                alt=""
+                              />
+                              <img
                                 class="theme-hero-scene"
                                 ng-if="selectedTheme.assets && showCharacterArt"
                                 ng-src="images/themes/{{selectedTheme.assets}}-scene.webp"
@@ -4967,16 +5060,21 @@
                               />
                               <div class="editorial-hero-copy">
                                 <p class="editorial-kicker">
-                                  {{selectedTheme.assets ? 'LISTEN2 / ' +
-                                  this[selectedTheme.label] :
+                                  {{selectedTheme.edition ? 'LISTEN2 SELECTS / '
+                                  + selectedTheme.edition : selectedTheme.assets
+                                  ? 'LISTEN2 / ' + this[selectedTheme.label] :
                                   _EDITORIAL_HERO_KICKER}}
                                 </p>
                                 <h1 id="editorial-hero-title">
-                                  {{selectedTheme.assets ? this['_HERO_' +
-                                  theme.toUpperCase()] : _EDITORIAL_HERO_TITLE}}
+                                  {{selectedTheme.headline ||
+                                  (selectedTheme.assets ? this['_HERO_' +
+                                  theme.toUpperCase()] :
+                                  _EDITORIAL_HERO_TITLE)}}
                                 </h1>
                                 <p class="editorial-intro">
-                                  {{selectedTheme.assets ? _ANIME_HERO_INTRO :
+                                  {{selectedTheme.edition ? this['_THEME_' +
+                                  theme.toUpperCase() + '_INTRO'] :
+                                  selectedTheme.assets ? _ANIME_HERO_INTRO :
                                   _EDITORIAL_HERO_INTRO}}
                                 </p>
                                 <div
@@ -4988,6 +5086,43 @@
                                   >
                                   <i aria-hidden="true"></i>
                                   <span>{{_EDITORIAL_HERO_FACT_ENTRY}}</span>
+                                </div>
+                              </div>
+                              <div
+                                class="theme-object"
+                                ng-if="selectedTheme.object"
+                                ng-attr-data-object="{{selectedTheme.object}}"
+                                aria-hidden="true"
+                              >
+                                <div class="object-plinth">
+                                  <div class="object-label">
+                                    <span>LISTEN2</span
+                                    ><span
+                                      >{{selectedTheme.edition}} / STEREO</span
+                                    >
+                                  </div>
+                                  <div class="object-disc"><i></i></div>
+                                  <div class="object-reel"><i></i></div>
+                                  <div class="object-arm"></div>
+                                  <div class="object-display">
+                                    <span>PLAY / SIDE A</span><b>33⅓</b>
+                                  </div>
+                                  <div class="object-switches">
+                                    <i></i><i></i><i></i>
+                                  </div>
+                                  <div class="object-terminal">
+                                    <span>listen2 / music for humans</span
+                                    ><span>01 &nbsp; find your frequency</span
+                                    ><span>02 &nbsp; tune out the noise</span
+                                    ><span>03 &nbsp; press play</span
+                                    ><strong
+                                      >&gt; play something good<span
+                                        class="terminal-cursor"
+                                        >_</span
+                                      ></strong
+                                    >
+                                  </div>
+                                  <span class="object-sticker">L2</span>
                                 </div>
                               </div>
                               <div
@@ -5362,6 +5497,14 @@
                                     </li>
                                   </div>
                                 </ul>
+                                <div class="search-feedback" ng-if="searchFeedbackKey()" role="status" aria-live="polite">
+                                  <span>{{this[searchFeedbackKey()]}}</span>
+                                  <button type="button" ng-click="retrySearch()">{{_SEARCH_RETRY}}</button>
+                                  <button type="button" ng-if="searchStatus === 'verification-required' && tab === 'netease'" ng-click="verifySearchSource()">{{_SEARCH_VERIFY}}</button>
+                                  <button type="button" ng-if="tab !== 'allmusic'" ng-click="changeSourceTab('allmusic')">{{_SEARCH_ALL_SOURCES}}</button>
+                                </div>
+                                <p class="appearance-note" ng-if="tab === 'netease' && searchType === 0 && searchStatus === 'success'">{{_SEARCH_NETEASE_NOTE}}</p>
+
                                 <h1
                                   style="
                                     margin-top: 32px;
@@ -5682,62 +5825,164 @@
                                 <span>{{_THEME}}</span>
                               </div>
                               <div class="settings-content appearance-settings">
-                                <div class="theme-gallery">
+                                <div
+                                  class="theme-gallery-heading"
+                                  id="theme-gallery-heading"
+                                  tabindex="-1"
+                                >
+                                  <div>
+                                    <p class="theme-gallery-eyebrow">
+                                      LISTEN2 / APPEARANCE
+                                    </p>
+                                    <h2>
+                                      {{_THEME_GALLERY_TITLE}}<span
+                                        >{{themeOptions.length}}</span
+                                      >
+                                    </h2>
+                                    <p class="theme-gallery-subtitle">
+                                      {{_THEME_GALLERY_INTRO}}
+                                    </p>
+                                  </div>
+                                  <div
+                                    class="theme-current"
+                                    role="status"
+                                    aria-live="polite"
+                                  >
+                                    <span class="theme-current-dot"></span>
+                                    <div>
+                                      <small>{{_THEME_CURRENT}}</small
+                                      ><strong
+                                        >{{this[selectedTheme.label]}}</strong
+                                      >
+                                    </div>
+                                  </div>
+                                </div>
+                                  <div class="window-transparency" ng-if="windowAppearance.supported">
+                                    <label for="window-transparency">{{_WINDOW_TRANSPARENCY}} <output>{{windowAppearance.transparency}}%</output></label>
+                                    <div class="window-transparency-control"><input id="window-transparency" type="range" min="0" max="55" step="1" ng-model="windowAppearance.transparency" ng-model-options="{debounce: 60}" ng-change="setWindowTransparency()" aria-label="{{_WINDOW_TRANSPARENCY}}" /><button type="button" ng-click="windowAppearance.transparency = 0; setWindowTransparency()">{{_WINDOW_OPAQUE}}</button></div>
+                                    <p class="appearance-note">{{_WINDOW_TRANSPARENCY_NOTE}}</p>
+                                  </div>
+                                <section class="wallpaper-studio" aria-labelledby="wallpaper-studio-title" ng-class="{'has-wallpaper': customWallpaper}">
+                                  <div class="wallpaper-studio-image">
+                                    <img ng-if="customWallpaper" ng-src="{{customWallpaper.image}}" alt="{{_WALLPAPER_PREVIEW}}" />
+                                    <span ng-if="!customWallpaper" aria-hidden="true">＋</span>
+                                    <div class="wallpaper-palette" ng-if="customWallpaper" aria-hidden="true"><i ng-repeat="color in customPalette.colors track by $index" ng-style="{'background-color': color}"></i></div>
+                                  </div>
+                                  <div class="wallpaper-studio-content">
+                                    <span class="wallpaper-eyebrow">PERSONAL / YOUR SCENERY</span>
+                                    <h3 id="wallpaper-studio-title">{{_WALLPAPER_TITLE}}</h3>
+                                    <p>{{_WALLPAPER_DESCRIPTION}}</p>
+                                    <p class="wallpaper-file-name" ng-if="customWallpaper">{{customWallpaper.name}}</p>
+                                    <input id="custom-wallpaper-file" type="file" accept="image/jpeg,image/png,image/webp" hidden onchange="angular.element(this).scope().importWallpaper(this.files[0]); this.value = '';" />
+                                    <div class="wallpaper-actions">
+                                      <button type="button" class="wallpaper-upload" ng-click="chooseWallpaper()" ng-disabled="customWallpaperBusy">{{customWallpaperBusy ? _WALLPAPER_PROCESSING : customWallpaper ? _WALLPAPER_REPLACE : _WALLPAPER_CHOOSE}}</button>
+                                      <button type="button" ng-if="customWallpaper" ng-click="removeWallpaper()" ng-disabled="customWallpaperBusy">{{_WALLPAPER_REMOVE}}</button>
+                                    </div>
+                                    <div class="wallpaper-modes" ng-if="customWallpaper" role="group" aria-label="{{_WALLPAPER_MODE}}">
+                                      <button type="button" ng-repeat="mode in ['auto', 'light', 'dark']" ng-click="setWallpaperMode(mode)" ng-disabled="customWallpaperBusy" ng-class="{active: customWallpaper.mode === mode}" aria-pressed="{{customWallpaper.mode === mode}}">{{this['_WALLPAPER_MODE_' + mode.toUpperCase()]}}</button>
+                                    </div>
+                                    <p class="wallpaper-error" role="alert" ng-if="customWallpaperError">{{this[customWallpaperError]}}</p>
+                                    <small>{{_WALLPAPER_LOCAL_NOTE}}</small>
+                                  </div>
+                                </section>
+                                <div
+                                  class="theme-filters"
+                                  role="group"
+                                  aria-label="{{_THEME_FILTER_LABEL}}"
+                                >
+                                  <button
+                                    type="button"
+                                    ng-repeat="filter in themeFilters track by filter"
+                                    ng-click="setThemeFilter(filter)"
+                                    ng-class="{active: themeFilter === filter}"
+                                    aria-pressed="{{themeFilter === filter}}"
+                                  >
+                                    {{this['_THEME_FILTER_' +
+                                    filter.toUpperCase()]}}
+                                  </button>
+                                </div>
+                                <div
+                                  class="theme-gallery"
+                                  aria-label="{{_THEME_GALLERY_TITLE}}"
+                                >
                                   <button
                                     type="button"
                                     class="theme-choice"
                                     ng-repeat="item in themeOptions track by item.id"
+                                    ng-show="matchesThemeFilter(item)"
                                     ng-class="{active: theme === item.id}"
                                     ng-click="setTheme(item.id)"
                                     aria-pressed="{{theme === item.id}}"
+                                    aria-label="{{this[item.label]}} · {{this['_THEME_' + item.id.toUpperCase() + '_DESC']}}"
                                   >
-                                    <img
-                                      class="theme-preview"
-                                      ng-src="images/themes/{{item.id}}-preview.webp"
-                                      alt=""
-                                      loading="lazy"
-                                      width="240"
-                                      height="150"
-                                    />
-                                    <span>{{this[item.label]}}</span
-                                    ><span
-                                      class="theme-selected"
-                                      ng-if="theme === item.id"
-                                      >✓</span
+                                    <span class="theme-preview-wrap"
+                                      ><img
+                                        class="theme-preview"
+                                        ng-src="{{item.id === 'custom' ? customWallpaper.image : 'images/themes/' + item.id + '-preview.webp'}}"
+                                        alt=""
+                                        loading="lazy"
+                                        width="480"
+                                        height="300"
+                                      /><span
+                                        class="theme-edition"
+                                        ng-if="item.edition"
+                                        >SELECTS / {{item.edition}}</span
+                                      ><span
+                                        class="theme-selected"
+                                        ng-if="theme === item.id"
+                                        aria-hidden="true"
+                                        >✓</span
+                                      ></span
+                                    >
+                                    <span class="theme-choice-meta"
+                                      ><strong>{{this[item.label]}}</strong
+                                      ><span
+                                        class="theme-swatches"
+                                        aria-hidden="true"
+                                        ><i
+                                          ng-repeat="color in item.colors track by $index"
+                                          ng-style="{'background-color': color}"
+                                        ></i></span
+                                    ></span>
+                                    <span class="theme-choice-description"
+                                      >{{this['_THEME_' + item.id.toUpperCase()
+                                      + '_DESC']}}</span
                                     >
                                   </button>
                                 </div>
-                                <label class="appearance-toggle"
-                                  ><input
-                                    type="checkbox"
-                                    ng-checked="showCharacterArt"
-                                    ng-click="setCharacterArt(!showCharacterArt)"
-                                  />
-                                  {{_SHOW_CHARACTER_ART}}</label
-                                >
-                                <p class="appearance-note">
-                                  {{_THEME_ART_NOTE}}
-                                </p>
-                                <div
-                                  class="performance-options"
-                                  role="group"
-                                  aria-label="{{_PERFORMANCE_MODE}}"
-                                >
-                                  <strong>{{_PERFORMANCE_MODE}}</strong>
-                                  <button
-                                    type="button"
-                                    ng-repeat="mode in ['balanced','quality','reduced']"
-                                    ng-click="setPerformanceMode(mode)"
-                                    ng-class="{active: performanceMode === mode}"
-                                    aria-pressed="{{performanceMode === mode}}"
+                                <div class="appearance-preferences">
+                                  <label class="appearance-toggle"
+                                    ><input
+                                      type="checkbox"
+                                      ng-checked="showCharacterArt"
+                                      ng-click="setCharacterArt(!showCharacterArt)"
+                                    />
+                                    {{_SHOW_CHARACTER_ART}}</label
                                   >
-                                    {{this['_PERFORMANCE_' +
-                                    mode.toUpperCase()]}}
-                                  </button>
+                                  <p class="appearance-note">
+                                    {{_THEME_ART_NOTE}}
+                                  </p>
+                                  <div
+                                    class="performance-options"
+                                    role="group"
+                                    aria-label="{{_PERFORMANCE_MODE}}"
+                                  >
+                                    <strong>{{_PERFORMANCE_MODE}}</strong>
+                                    <button
+                                      type="button"
+                                      ng-repeat="mode in ['balanced','quality','reduced']"
+                                      ng-click="setPerformanceMode(mode)"
+                                      ng-class="{active: performanceMode === mode}"
+                                      aria-pressed="{{performanceMode === mode}}"
+                                    >
+                                      {{this['_PERFORMANCE_' +
+                                      mode.toUpperCase()]}}
+                                    </button>
+                                  </div>
+                                  <p class="appearance-note">
+                                    {{_PERFORMANCE_NOTE}}
+                                  </p>
                                 </div>
-                                <p class="appearance-note">
-                                  {{_PERFORMANCE_NOTE}}
-                                </p>
                               </div>
                               <div class="settings-title">
                                 <span>{{_AUTO_CHOOSE_SOURCE}}</span>
@@ -6285,7 +6530,7 @@
                                 </div>
                                 <p
                                   class="machine-translation-error"
-                                  ng-if="!machineTranslationConfig.secureStorageAvailable"
+                                  ng-if="machineTranslationConfig.secureStorageAvailable === false"
                                 >
                                   {{_MACHINE_TRANSLATION_SECURE_STORAGE_UNAVAILABLE}}
                                 </p>
@@ -6640,13 +6885,40 @@
                               </div>
                               <div class="settings-content" ng-if="!isChrome">
                                 <span>{{_PROXY_CONFIG}}:</span>
-                                {{proxyMode.displayText}}
-                                <span ng-show="proxyMode.name=='custom'"
+                                <p>{{_PROXY_APP_DIRECT_HELP}}</p>
+                                <span ng-if="proxyStateKnown">{{proxyMode.displayText}}</span>
+                                <span ng-if="!proxyStateKnown">{{_PROXY_STATE_UNKNOWN}}</span>
+                                <span ng-show="proxyMode && proxyMode.name=='custom'"
                                   >{{proxyRules}}</span
                                 >
-                                <button ng-click="showDialog(12)">
+                                <button
+                                  class="btn btn-default"
+                                  ng-click="applyEnhancedDirect()"
+                                  ng-if="!proxyStateKnown || proxyMode.name !== 'enhanced-direct'"
+                                  ng-disabled="proxyApplyPending || !proxyNetworkAvailable"
+                                >{{_PROXY_ENABLE_APP_DIRECT}}</button>
+                                <button
+                                  class="btn btn-default"
+                                  ng-click="restoreSystemProxy()"
+                                  ng-if="!proxyStateKnown || proxyMode.name === 'enhanced-direct'"
+                                  ng-disabled="proxyApplyPending || !proxyNetworkAvailable"
+                                >{{_PROXY_RESTORE_SYSTEM}}</button>
+                                <button
+                                  class="btn btn-default"
+                                  ng-click="retryProxyState()"
+                                  ng-if="!proxyStateKnown"
+                                  ng-disabled="proxyStatePending || !proxyNetworkAvailable"
+                                >{{_PROXY_RETRY}}</button>
+                                <button ng-click="showDialog(12)" ng-disabled="proxyApplyPending || !proxyNetworkAvailable">
                                   {{_MODIFY}}
                                 </button>
+                                <span
+                                  class="proxy-feedback"
+                                  role="status"
+                                  aria-live="polite"
+                                  aria-atomic="true"
+                                  >{{proxyFeedbackText()}}</span
+                                >
                               </div>
                               <div class="settings-title">
                                 <span>{{_ABOUT}}</span>
@@ -6683,7 +6955,7 @@
                                   {{_DESIGNER}} ({{_THEME_MODERN_BLACK}},
                                   {{_THEME_MODERN_WHITE}}): 814959822, Antion
                                 </p>
-                                <p>{{_VERSION}}: v2.35.2 {{_LICENSE_NOTICE}}</p>
+                                <p>{{_VERSION}}: v2.35.5 {{_LICENSE_NOTICE}}</p>
                                 <p ng-show='lastestVersion!=""'>
                                   {{_LATEST_VERSION}}: {{lastestVersion}}
                                 </p>
@@ -7670,6 +7942,16 @@
                           class="playsong-detail now-playing-layout"
                           ng-class="{'now-playing-no-lyrics': !lyricArray || lyricArray.length === 0}"
                         >
+                          <div
+                            class="collection-stage-backdrop"
+                            ng-if="selectedTheme.scene && themeSceneUrl"
+                            aria-hidden="true"
+                          >
+                            <img
+                              ng-src="{{themeSceneUrl}}"
+                              alt=""
+                            />
+                          </div>
                           <section
                             class="detail-head now-playing-left"
                             aria-label="{{_NOW_PLAYING_STAGE}}"
@@ -7694,6 +7976,17 @@
                               >
                             </div>
                             <div class="now-playing-card-core">
+                          <div
+                                class="collection-player-label"
+                                ng-if="selectedTheme.edition"
+                                aria-hidden="true"
+                              >
+                                <span
+                                  >LISTEN2 /
+                                  {{selectedTheme.headline.replace('\n', '
+                                  ')}}</span
+                                ><span>{{selectedTheme.edition}}</span>
+                              </div>
                               <div
                                 class="detail-head-cover"
                                 album-art-parallax=""
@@ -7733,7 +8026,7 @@
                                 </p>
                                 <div class="detail-head-title">
                                   <div class="title">
-                                    <h2>{{ currentPlaying.title }}</h2>
+                                    <h2 title="{{ currentPlaying.title }}">{{ currentPlaying.title }}</h2>
                                   </div>
                                   <div class="info">
                                     <div class="singer">
@@ -7945,25 +8238,33 @@
                                 class="lyric-picker-search"
                                 ng-submit="searchLyricCandidates()"
                               >
-                                <svg
-                                  viewBox="0 0 24 24"
-                                  aria-hidden="true"
-                                  focusable="false"
-                                >
-                                  <circle cx="11" cy="11" r="6"></circle>
-                                  <path d="m16 16 4 4"></path>
-                                </svg>
-                                <input
-                                  type="search"
-                                  ng-model="lyricSearch.query"
-                                  placeholder="{{_LYRIC_SEARCH_PLACEHOLDER}}"
-                                  aria-label="{{_LYRIC_SEARCH_PLACEHOLDER}}"
-                                  autocomplete="off"
-                                />
+                                <label class="lyric-search-field">
+                                  <span>{{_LYRIC_SEARCH_TITLE_LABEL}}</span>
+                                  <input
+                                    type="search"
+                                    ng-model="lyricSearch.title"
+                                    ng-change="editLyricSearch()"
+                                    placeholder="{{_LYRIC_SEARCH_TITLE_PLACEHOLDER}}"
+                                    aria-describedby="lyric-search-help"
+                                    aria-required="true"
+                                    autocomplete="off"
+                                  />
+                                </label>
+                                <label class="lyric-search-field">
+                                  <span>{{_LYRIC_SEARCH_ARTIST_LABEL}}</span>
+                                  <input
+                                    type="search"
+                                    ng-model="lyricSearch.artist"
+                                    ng-change="editLyricSearch()"
+                                    placeholder="{{_LYRIC_SEARCH_ARTIST_PLACEHOLDER}}"
+                                    aria-describedby="lyric-search-help"
+                                    autocomplete="off"
+                                  />
+                                </label>
                                 <button
                                   type="submit"
                                   class="lyric-picker-submit"
-                                  ng-disabled="!lyricSearch.query.trim()"
+                                  ng-disabled="!lyricSearch.title.trim()"
                                 >
                                   {{_LYRIC_SEARCH_ACTION}}
                                 </button>
@@ -7977,36 +8278,98 @@
                                   ×
                                 </button>
                               </form>
-                              <div
-                                class="lyric-source-status"
-                                ng-if="lyricSearchSources.length"
-                                aria-live="polite"
-                              >
-                                <span
-                                  ng-repeat="source in lyricSearchSources track by source.source"
-                                  ng-attr-data-state="{{source.status}}"
-                                  ><b>{{source.source}}</b>
-                                  {{lyricSourceStatus(source)}}<small
-                                    ng-if="source.count"
+                              <div class="lyric-picker-tools">
+                                <div class="lyric-picker-context">
+                                  <p
+                                    id="lyric-search-help"
+                                    ng-show="!lyricSearchSubmitted"
+                                    class="lyric-search-help"
                                   >
-                                    · {{source.count}}</small
-                                  ></span
+                                    {{_LYRIC_SEARCH_HELP}}
+                                  </p>
+                                  <p
+                                    class="lyric-search-summary"
+                                    ng-if="lyricSearchSubmitted"
+                                    aria-live="polite"
+                                  >
+                                    {{_LYRIC_SEARCH_SUBMITTED}}:
+                                    {{lyricSearchSubmitted.title}}<span
+                                      ng-if="lyricSearchSubmitted.artist"
+                                    >
+                                      · {{lyricSearchSubmitted.artist}}</span
+                                    >
+                                  </p>
+                                </div>
+                                <details
+                                  class="lyric-source-details"
+                                  ng-if="lyricSearchSources.length"
                                 >
+                                  <summary>{{_LYRIC_SOURCE_DETAILS}}</summary>
+                                  <div
+                                    class="lyric-source-status"
+                                    aria-live="polite"
+                                  >
+                                    <span
+                                      ng-repeat="source in lyricSearchSources track by source.source"
+                                      ng-attr-data-state="{{source.status}}"
+                                      ><b>{{source.source}}</b>
+                                      {{lyricSourceStatus(source)}}<small
+                                        ng-if="source.count"
+                                      >
+                                        · {{source.count}}</small
+                                      ><button
+                                        type="button"
+                                        class="lyric-retry"
+                                        ng-if="canVerifyNeteaseLyrics(source)"
+                                        ng-click="verifyNeteaseLyrics(source)"
+                                        ng-disabled="neteaseLyricVerificationPending"
+                                        ng-attr-aria-busy="{{neteaseLyricVerificationPending}}"
+                                      >
+                                        {{neteaseLyricVerificationPending ?
+                                        _LYRIC_VERIFY_PENDING :
+                                        _LYRIC_VERIFY_ACTION}}
+                                      </button></span
+                                    >
+                                  </div>
+                                </details>
+                                <div
+                                  class="lyric-picker-notices"
+                                  ng-if="neteaseLyricVerificationPending || neteaseLyricVerificationError || lyricSearchPartial || (!lyricSearchPending && (lyricSearchState === 'error' || lyricSearchState === 'empty' || lyricSearchState === 'no-synced'))"
+                                >
+                                  <p
+                                    class="lyric-partial-notice"
+                                    ng-if="neteaseLyricVerificationPending || neteaseLyricVerificationError"
+                                    role="status"
+                                  >
+                                    {{neteaseLyricVerificationError ||
+                                    _LYRIC_VERIFY_HINT}}
+                                  </p>
+                                  <p
+                                    class="lyric-partial-notice"
+                                    ng-if="lyricSearchPartial"
+                                  >
+                                    {{_LYRIC_SEARCH_PARTIAL}}
+                                  </p>
+                                  <button
+                                    class="lyric-retry"
+                                    type="button"
+                                    ng-if="!lyricSearchPending && (lyricSearchState === 'error' || lyricSearchState === 'empty' || lyricSearchState === 'no-synced' || lyricSearchPartial)"
+                                    ng-click="searchLyricCandidates(true)"
+                                  >
+                                    {{_LYRIC_SEARCH_RETRY}}
+                                  </button>
+                                </div>
                               </div>
-                              <p
-                                class="lyric-partial-notice"
-                                ng-if="lyricSearchPartial"
+                              <div
+                                class="lyric-picker-status"
+                                ng-if="lyricSearchState === 'idle' || lyricSearchState === 'edited' || lyricSearchState === 'required'"
+                                role="status"
                               >
-                                {{_LYRIC_SEARCH_PARTIAL}}
-                              </p>
-                              <button
-                                class="lyric-retry"
-                                type="button"
-                                ng-if="!lyricSearchPending && (lyricSearchState === 'error' || lyricSearchState === 'empty' || lyricSearchPartial)"
-                                ng-click="searchLyricCandidates(true)"
-                              >
-                                {{_LYRIC_SEARCH_RETRY}}
-                              </button>
+                                {{lyricSearchState === 'required' ?
+                                _LYRIC_SEARCH_TITLE_REQUIRED : (lyricSearchState
+                                === 'edited' ? _LYRIC_SEARCH_EDITED :
+                                _LYRIC_SEARCH_IDLE)}}
+                              </div>
                               <div
                                 class="lyric-picker-status is-loading"
                                 ng-if="lyricSearchState === 'loading'"
@@ -8017,10 +8380,12 @@
                               </div>
                               <div
                                 class="lyric-picker-status"
-                                ng-if="lyricSearchState === 'empty'"
+                                ng-if="lyricSearchState === 'empty' || lyricSearchState === 'no-synced'"
                                 role="status"
                               >
-                                {{_LYRIC_SEARCH_EMPTY}}
+                                {{lyricSearchState === 'no-synced' ?
+                                _LYRIC_SOURCE_NO_SYNCED_LYRICS :
+                                _LYRIC_SEARCH_EMPTY}}
                               </div>
                               <div
                                 class="lyric-picker-status is-error"
@@ -8074,14 +8439,18 @@
                                   </span>
                                 </button>
                               </div>
-                              <button
-                                type="button"
-                                class="lyric-picker-restore"
+                              <div
+                                class="lyric-picker-footer"
                                 ng-if="lyricSource === 'manual-selection' || lyricSource === 'lrclib-manual'"
-                                ng-click="restoreAutoLyric()"
                               >
-                                {{_LYRIC_RESTORE_AUTO}}
-                              </button>
+                                <button
+                                  type="button"
+                                  class="lyric-picker-restore"
+                                  ng-click="restoreAutoLyric()"
+                                >
+                                  {{_LYRIC_RESTORE_AUTO}}
+                                </button>
+                              </div>
                             </div>
                             <div
                               class="lyric"
@@ -9186,7 +9555,7 @@
                       </section>
                       <section class="android-lyric-picker lyric-picker" ng-if="lyricPickerOpen" role="dialog" aria-modal="true" aria-label="搜索歌词" ng-keydown="handleLyricPickerKeydown($event)">
                         <header><h2>搜索歌词</h2><button type="button" class="android-text-action" ng-click="closeLyricPicker()">完成</button></header>
-                        <form class="lyric-picker-search" ng-submit="searchLyricCandidates()"><input type="search" ng-model="lyricSearch.query" placeholder="输入歌名" aria-label="歌词搜索关键词" /><button type="submit" ng-disabled="lyricSearchPending">搜索</button></form>
+                        <form class="lyric-picker-search" ng-submit="submitAndroidLyricSearch($event)"><input type="search" enterkeyhint="search" ng-model="lyricSearch.title" ng-change="editLyricSearch()" placeholder="输入歌名" aria-label="歌词搜索关键词" /><button type="submit" ng-disabled="lyricSearchPending || !lyricSearch.title.trim()">搜索</button></form>
                         <p class="android-helper" ng-if="lyricSearchState === 'loading'">正在搜索歌词…</p>
                         <p class="android-helper" ng-if="lyricSearchState === 'empty'">没有找到，试试更简短的歌名。</p>
                         <p class="android-helper" ng-if="lyricSearchState === 'error'">暂时无法搜索，请稍后重试。</p>

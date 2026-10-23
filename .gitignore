@@ -16,3 +16,6 @@ output/
 /android/build/
 /android/app/build/
 /android/local.properties
+*.jks
+*.keystore
+/android/keystore.properties

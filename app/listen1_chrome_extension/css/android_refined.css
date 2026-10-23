@@ -1,0 +1,112 @@
+/* Phone composition. Palette and artwork are shared with desktop themes. */
+@media (max-width: 900px) {
+  html[data-listen2-platform='android'] .modern-body {
+    --phone-radius: 18px;
+    --phone-on-accent: var(--theme-on-accent, #fff);
+    font-family: Roboto, 'Noto Sans', 'Noto Sans CJK SC', system-ui, sans-serif;
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+  }
+  html[data-listen2-platform='android'] .modern-body.theme-modern-dark { --phone-on-accent: var(--theme-on-accent, #161923); }
+  html[data-listen2-platform='android'] .modern-body :is(button, input, select, textarea) { font-family: inherit; }
+  html[data-listen2-platform='android'] .modern-body :is(.android-player-detail, .mobile-product-sheet, .android-queue-sheet) { font-family: inherit; }
+  html[data-listen2-platform='android'] .modern-body :is(.mobile-product-sheet, .android-mode-panel, .android-queue-sheet-panel, .android-options-panel) { box-sizing: border-box; }
+  html[data-listen2-platform='android'] .modern-body .mobile-product-surface { display: block; width: 100%; max-width: 100%; box-sizing: border-box; padding: 24px 22px 32px; }
+  html[data-listen2-platform='android'] .modern-body .mobile-product-surface > * { min-width: 0; box-sizing: border-box; }
+  html[data-listen2-platform='android'] .modern-body .android-section-heading { margin-bottom: 22px; }
+  html[data-listen2-platform='android'] .modern-body .android-section-heading h1 { margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -.7px; }
+  html[data-listen2-platform='android'] .modern-body .android-eyebrow { font-size: 10px; font-weight: 500; letter-spacing: 1px; margin-bottom: 7px; }
+  html[data-listen2-platform='android'] .modern-body .android-brand-dot { color: var(--ui-accent); }
+  html[data-listen2-platform='android'] .modern-body .android-home-theme { width: 42px; min-width: 42px; height: 42px; min-height: 42px; padding: 0; border: 2px solid var(--ui-border); border-radius: 50%; overflow: hidden; background: var(--ui-surface); }
+  html[data-listen2-platform='android'] .modern-body .android-home-theme img { width: 100%; height: 100%; object-fit: cover; }
+  html[data-listen2-platform='android'] .modern-body .android-home-scene { position: relative; height: 156px; margin: 0 -22px 24px; overflow: hidden; background: var(--ui-surface); }
+  html[data-listen2-platform='android'] .modern-body .android-home-scene > img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center 45%; }
+  html[data-listen2-platform='android'] .modern-body .android-home-scene > span { position: absolute; bottom: 12px; right: 18px; background: rgba(0,0,0,.48); color: #fff; border-radius: 20px; padding: 5px 10px; font-size: 10px; }
+  html[data-listen2-platform='android'] .modern-body .android-home-current { gap: 16px; padding: 0; background: transparent; border: 0; box-shadow: none; }
+  html[data-listen2-platform='android'] .modern-body .android-home-art { width: 104px; height: 104px; flex-basis: 104px; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,.10); }
+  html[data-listen2-platform='android'] .modern-body .android-home-current-copy strong { font-size: 20px; font-weight: 650; line-height: 1.4; }
+  html[data-listen2-platform='android'] .modern-body .android-home-current-copy > small { text-transform: none; letter-spacing: 1px; font-size: 10px; margin-bottom: 7px; }
+  html[data-listen2-platform='android'] .modern-body .android-home-current-copy b { margin-top: 12px; font-size: 11px; font-weight: 500; color: var(--ui-accent); }
+  html[data-listen2-platform='android'] .modern-body .android-home-search { min-height: 50px; margin: 24px 0; padding: 0 15px; border: 0; border-radius: 14px; background: var(--ui-surface); font-size: 13px; }
+  html[data-listen2-platform='android'] .modern-body .android-recent-heading { margin: 24px 0 8px; }
+  html[data-listen2-platform='android'] .modern-body .android-recent-heading h2 { font-size: 18px; font-weight: 650; }
+  html[data-listen2-platform='android'] .modern-body .android-recent-list > button { padding: 11px 0; }
+  html[data-listen2-platform='android'] .modern-body .android-recent-art { width: 48px; height: 48px; flex-basis: 48px; border-radius: 10px; }
+  html[data-listen2-platform='android'] .modern-body .android-library-search { display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 14px; border-radius: 14px; background: var(--ui-surface); }
+  html[data-listen2-platform='android'] .modern-body .android-library-search svg { width: 18px; height: 18px; fill: none; stroke: var(--ui-muted); stroke-width: 1.7; }
+  html[data-listen2-platform='android'] .modern-body .android-library-search input { flex: 1; min-width: 0; margin: 0; border: 0; padding: 0; background: transparent; color: var(--ui-text); font-size: 13px; }
+  html[data-listen2-platform='android'] .modern-body .android-library-shortcuts { margin: 16px 0 26px; gap: 8px; }
+  html[data-listen2-platform='android'] .modern-body .android-library-shortcuts button { min-height: 64px; border: 0; border-radius: 14px; background: var(--ui-surface); font-size: 11px; }
+  html[data-listen2-platform='android'] .modern-body .android-section-subheading { margin: 26px 0 10px; }
+  html[data-listen2-platform='android'] .modern-body .android-section-subheading h2 { font-size: 18px; font-weight: 650; }
+  html[data-listen2-platform='android'] .modern-body .android-playlist-library > button { gap: 14px; min-height: 80px; padding: 12px 0; border: 0; }
+  html[data-listen2-platform='android'] .modern-body .android-library-note { display: grid; place-items: center; width: 56px; height: 56px; flex: 0 0 56px; border-radius: 13px; background: var(--ui-accent-soft); color: var(--ui-accent); }
+  html[data-listen2-platform='android'] .modern-body .android-library-note svg { width: 25px; height: 25px; fill: none; stroke: currentColor; stroke-width: 1.5; }
+  html[data-listen2-platform='android'] .modern-body .android-playlist-library strong { font-size: 15px; font-weight: 550; line-height: 1.5; }
+  html[data-listen2-platform='android'] .modern-body .android-playlist-library { min-width: 0; }
+  html[data-listen2-platform='android'] .modern-body .android-playlist-library > button { width: 100%; min-width: 0; box-sizing: border-box; }
+  html[data-listen2-platform='android'] .modern-body .android-playlist-library small { margin-top: 6px; font-size: 11px; }
+  html[data-listen2-platform='android'] .modern-body .android-playlist-heading { padding: 16px 0 24px; }
+  html[data-listen2-platform='android'] .modern-body .android-playlist-heading h1 { font-size: 28px; }
+  html[data-listen2-platform='android'] .modern-body .android-playlist-song { gap: 14px; min-height: 80px; border-bottom-color: color-mix(in srgb, var(--ui-border) 65%, transparent); }
+  html[data-listen2-platform='android'] .modern-body .android-playlist-song-copy strong { font-size: 15px; }
+  html[data-listen2-platform='android'] .modern-body :is(.android-playlist-play-all, .android-player-primary, .mobile-product-primary) { color: var(--phone-on-accent); }
+  html[data-listen2-platform='android'] .modern-body .android-player-detail { background: var(--ui-bg); }
+  html[data-listen2-platform='android'] .modern-body .android-cover-view { position: relative; padding: 18px 20px 16px; }
+  html[data-listen2-platform='android'] .modern-body .android-player-artwork { border-radius: 22px; box-shadow: 0 14px 45px rgba(0,0,0,.16); }
+  html[data-listen2-platform='android'] .modern-body.theme-vinyl .android-player-artwork { border-radius: 50%; box-shadow: 0 0 0 10px var(--ui-surface), 0 0 0 11px var(--ui-border), 0 16px 45px rgba(0,0,0,.25); }
+  html[data-listen2-platform='android'] .modern-body.theme-scenic .android-cover-view::before { content: ''; position: absolute; inset: 0; background-image: var(--collection-scene); background-size: cover; background-position: center; opacity: .14; pointer-events: none; }
+  html[data-listen2-platform='android'] .modern-body .android-player-heading h2 { font-weight: 650; letter-spacing: -.3px; }
+  html[data-listen2-platform='android'] .modern-body .android-player-controls { padding-top: 5px; }
+  html[data-listen2-platform='android'] .modern-body .android-player-lyrics button { font-weight: 550; }
+  html[data-listen2-platform='android'] .modern-body .android-lyric-tools { background: var(--ui-bg); }
+  html[data-listen2-platform='android'] .modern-body .android-lyric-picker .lyric-picker-search { display: flex; align-items: center; gap: 8px; width: 100%; height: auto; margin: 12px 0 20px; padding: 0; border: 0; background: transparent; box-shadow: none; }
+  html[data-listen2-platform='android'] .modern-body .android-lyric-picker .lyric-picker-search input { flex: 1 1 0; width: 0; min-width: 0; height: 48px; margin: 0; padding: 0 14px; border: 1px solid var(--ui-border); border-radius: 12px; background: var(--ui-surface); color: var(--ui-text); font-size: 15px; }
+  html[data-listen2-platform='android'] .modern-body .android-lyric-picker .lyric-picker-search button { flex: 0 0 auto; min-width: 64px; height: 48px; padding: 0 16px; border: 0; border-radius: 12px; background: var(--ui-accent); color: var(--phone-on-accent); font-size: 14px; }
+  html[data-listen2-platform='android'] .modern-body .mobile-product-sheet > header { min-height: 68px; flex: 0 0 auto; box-sizing: border-box; padding: 10px 16px; }
+  html[data-listen2-platform='android'] .modern-body .mobile-product-sheet-content { display: block; padding: 12px 22px 30px; }
+  html[data-listen2-platform='android'] .modern-body .mobile-product-sheet-content > section { border: 0; padding: 0; border-radius: 0; background: transparent; }
+  html[data-listen2-platform='android'] .modern-body :is(.mobile-product-sheet-content input:not([type='range']):not([type='checkbox']), .mobile-product-sheet-content select) { box-sizing: border-box; min-height: 46px; border: 1px solid var(--ui-border); border-radius: 11px; background: var(--ui-surface); color: var(--ui-text); }
+  html[data-listen2-platform='android'] .modern-body .android-playlist-search input { border: 0 !important; background: transparent !important; }
+  html[data-listen2-platform='android'] .modern-body .mobile-product-list button { min-height: 76px; padding: 18px 0; }
+  html[data-listen2-platform='android'] .modern-body .mobile-product-list strong { font-size: 15px; font-weight: 550; }
+  html[data-listen2-platform='android'] .modern-body .mobile-product-list small { line-height: 1.6; }
+  html[data-listen2-platform='android'] .modern-body .android-account-entry { padding: 6px 0 24px; }
+  html[data-listen2-platform='android'] .modern-body .android-account-avatar { width: 54px; height: 54px; border-radius: 17px; }
+  html[data-listen2-platform='android'] .modern-body .android-settings-group-title { margin: 28px 0 4px; }
+  html[data-listen2-platform='android'] .modern-body .android-appearance { display: block; }
+  html[data-listen2-platform='android'] .modern-body .android-theme-current { position: relative; height: 180px; overflow: hidden; border-radius: 18px; }
+  html[data-listen2-platform='android'] .modern-body .android-theme-current > img { width: 100%; height: 100%; object-fit: cover; }
+  html[data-listen2-platform='android'] .modern-body .android-theme-current > div { position: absolute; inset: auto 0 0; padding: 24px 18px 18px; background: linear-gradient(transparent, rgba(0,0,0,.75)); color: white; }
+  html[data-listen2-platform='android'] .modern-body .android-theme-current small { display: block; margin-bottom: 5px; font-size: 10px; opacity: .8; }
+  html[data-listen2-platform='android'] .modern-body .android-theme-current strong { font-size: 22px; font-weight: 600; }
+  html[data-listen2-platform='android'] .modern-body .android-theme-filter { display: flex; gap: 8px; margin: 22px 0 16px; }
+  html[data-listen2-platform='android'] .modern-body :is(.android-theme-filter, .android-custom-theme-modes) button { min-height: 36px; padding: 0 16px; border: 0; border-radius: 20px; background: transparent; color: var(--ui-muted); font-size: 12px; }
+  html[data-listen2-platform='android'] .modern-body :is(.android-theme-filter, .android-custom-theme-modes) button.is-active { color: var(--ui-accent); background: var(--ui-accent-soft); }
+  html[data-listen2-platform='android'] .modern-body .android-theme-choices { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 18px 14px; margin-bottom: 28px; }
+  html[data-listen2-platform='android'] .modern-body .android-theme-choices > button { display: block; overflow: hidden; margin: 0; padding: 0; border: 0; border-radius: 12px; background: transparent; text-align: left; box-shadow: none; }
+  html[data-listen2-platform='android'] .modern-body .android-theme-choices img { display: block; width: 100%; height: 104px; object-fit: cover; border: 2px solid transparent; border-radius: 12px; box-sizing: border-box; }
+  html[data-listen2-platform='android'] .modern-body .android-theme-choices .is-selected img { border-color: var(--ui-accent); }
+  html[data-listen2-platform='android'] .modern-body .android-theme-choices span { display: flex; align-items: center; justify-content: space-between; gap: 3px; padding: 9px 2px 0; font-size: 12px; font-weight: 500; color: var(--ui-text); }
+  html[data-listen2-platform='android'] .modern-body .android-theme-choices small { flex: 0 0 auto; color: var(--ui-muted); font-size: 9px; font-weight: 400; }
+  html[data-listen2-platform='android'] .modern-body .android-custom-theme { display: flex; align-items: center; gap: 12px; border-top: 1px solid var(--ui-border); padding-top: 16px; }
+  html[data-listen2-platform='android'] .modern-body .android-custom-theme > div { flex: 1; }
+  html[data-listen2-platform='android'] .modern-body .android-custom-theme h3 { margin: 0 0 6px; font-size: 15px; }
+  html[data-listen2-platform='android'] .modern-body .android-custom-theme p { margin: 0; font-size: 11px; line-height: 1.6; color: var(--ui-muted); }
+  html[data-listen2-platform='android'] .modern-body .android-custom-theme > button { flex: 0 0 auto; min-height: 40px; padding: 0 13px; border: 0; border-radius: 20px; background: var(--ui-accent-soft); color: var(--ui-accent); font-size: 12px; }
+  html[data-listen2-platform='android'] .modern-body .android-custom-theme-modes { display: flex; flex-wrap: wrap; margin-top: 15px; gap: 4px; }
+  html[data-listen2-platform='android'] .modern-body .android-mode-backdrop { background: rgba(0,0,0,.38) !important; border-radius: 0; }
+  html[data-listen2-platform='android'] .modern-body .android-mode-panel { animation: phone-sheet-in 180ms ease-out; }
+  html[data-listen2-platform='android'] .modern-body .android-queue-sheet-panel { width: 100%; max-width: 100%; max-height: 84svh; padding: 16px 22px 24px; background: var(--ui-bg); }
+  html[data-listen2-platform='android'] .modern-body .android-queue-sheet-panel > header { flex: 0 0 auto; }
+  html[data-listen2-platform='android'] .modern-body .android-queue-sheet-panel > header button { border: 0; background: var(--ui-surface); border-radius: 50%; width: 44px; height: 44px; min-width: 44px; min-height: 44px; padding: 0; font-size: 12px; }
+  html[data-listen2-platform='android'] .modern-body .android-queue-toolbar { flex: 0 0 auto; }
+  html[data-listen2-platform='android'] .modern-body .android-queue-copy strong { font-size: 14px; }
+  html[data-listen2-platform='android'] .modern-body .android-mini-player { margin: 0 12px 5px; width: calc(100% - 24px); border: 1px solid var(--ui-border); border-radius: 16px; background: var(--ui-surface); box-shadow: 0 5px 20px rgba(0,0,0,.05); }
+  html[data-listen2-platform='android'] .modern-body .mobile-bottom-tabs { background: var(--ui-bg); border-top: 0; }
+  html[data-listen2-platform='android'] .modern-body button:active { transition: opacity 120ms ease; }
+  @keyframes phone-sheet-in { from { transform: translateY(16px); opacity: .4; } to { transform: translateY(0); opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) {
+    html[data-listen2-platform='android'] .modern-body .android-mode-panel { animation: none; }
+  }
+}

@@ -74,6 +74,8 @@ public final class MainActivity extends Activity {
     private static final int REQUEST_OPEN_AUDIO_TREE = 4102;
     private static final int REQUEST_CREATE_BACKUP_DOCUMENT = 4103;
     private static final int REQUEST_OPEN_BACKUP_DOCUMENT = 4104;
+    private static final int REQUEST_THEME_IMAGE = 4105;
+    private android.webkit.ValueCallback<Uri[]> themeImageCallback;
 
     private WebView webView;
     private View loadingView;
@@ -426,6 +428,14 @@ public final class MainActivity extends Activity {
     @SuppressWarnings("deprecation")
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_THEME_IMAGE) {
+            android.webkit.ValueCallback<Uri[]> callback = themeImageCallback;
+            themeImageCallback = null;
+            Uri selected = resultCode == RESULT_OK && data != null ? data.getData() : null;
+            if (callback != null) callback.onReceiveValue(selected != null && "content".equals(selected.getScheme())
+                    ? new Uri[] { selected } : null);
+            return;
+        }
         if (requestCode == REQUEST_CREATE_BACKUP_DOCUMENT || requestCode == REQUEST_OPEN_BACKUP_DOCUMENT) {
             completeBackupPicker(data, resultCode);
             return;
@@ -572,6 +582,21 @@ public final class MainActivity extends Activity {
         view.setOverScrollMode(View.OVER_SCROLL_NEVER);
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG);
         view.setWebViewClient(new PackagedUiClient());
+        view.setWebChromeClient(new android.webkit.WebChromeClient() {
+            @Override public boolean onShowFileChooser(WebView host, android.webkit.ValueCallback<Uri[]> callback,
+                    FileChooserParams params) {
+                if (themeImageCallback != null) themeImageCallback.onReceiveValue(null);
+                themeImageCallback = callback;
+                Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+                        .setType("image/*").putExtra(Intent.EXTRA_MIME_TYPES,
+                                new String[] { "image/jpeg", "image/png", "image/webp" });
+                try { startActivityForResult(picker, REQUEST_THEME_IMAGE); }
+                catch (android.content.ActivityNotFoundException unavailable) {
+                    themeImageCallback = null; callback.onReceiveValue(null);
+                }
+                return true;
+            }
+        });
     }
 
     private View createLoadingView() {
@@ -626,6 +651,7 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (themeImageCallback != null) { themeImageCallback.onReceiveValue(null); themeImageCallback = null; }
         WebView retiringWebView = webView;
         webView = null;
         navigationInProgress = false;

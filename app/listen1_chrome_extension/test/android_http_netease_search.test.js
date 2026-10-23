@@ -76,10 +76,11 @@ function createProviderContext(options = {}) {
   let cookieSetCalls = 0;
   Object.assign(context, {
     axios: {
-      post(url, body) {
-        axiosCalls.push({ body: body.toString(), url });
+      get(url, options) {
+        axiosCalls.push({ options, url });
         return Promise.resolve({
           data: {
+            code: 200,
             result: {
               songCount: 1,
               songs: [
@@ -206,10 +207,11 @@ async function run() {
     });
     assert.strictEqual(axiosCalls.length, 1);
     assert.strictEqual(
-      axiosCalls[0].url,
-      'https://music.163.com/api/search/pc'
+      new URL(axiosCalls[0].url).pathname,
+      '/api/search/get/web'
     );
-    assert.match(axiosCalls[0].body, /s=Desktop/);
+    assert.strictEqual(new URL(axiosCalls[0].url).searchParams.get('s'), 'Desktop');
+    assert.strictEqual(axiosCalls[0].options.timeout, 8000);
     assert.strictEqual(cookieSetCalls(), 0);
     assert.strictEqual(result.result[0].title, 'Desktop Song');
   }

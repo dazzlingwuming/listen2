@@ -1330,8 +1330,9 @@
         };
 
         const refreshPalette = () => {
-          const root = host.closest('.modern-body') || host;
-          const styles = $window.getComputedStyle(root);
+          // Listening stages can have their own palette (e.g. a dark scene
+          // inside a light theme). Read the inherited colors at the canvas.
+          const styles = $window.getComputedStyle(host);
           palette = {
             accent:
               styles.getPropertyValue('--ui-accent-rgb').trim() ||

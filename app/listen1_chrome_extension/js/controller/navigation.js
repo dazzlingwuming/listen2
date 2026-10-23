@@ -82,6 +82,16 @@ angular.module('listenone').controller('NavigationController', [
       playlistNewName: '',
     };
     $scope.mobileAdvancedMediaEnabled = false;
+    $scope.mobileLibraryQuery = { value: '' };
+    $scope.mobileThemeFilter = { value: 'all' };
+    $scope.mobileThemeVisible = (item) => $scope.mobileThemeFilter.value === 'all' || item.base === $scope.mobileThemeFilter.value;
+    $scope.mobileThemeArtwork = () => $scope.theme === 'custom' && $scope.customWallpaper
+      ? $scope.customWallpaper.image : `images/themes/${$scope.theme || 'sakura'}-preview.webp`;
+    $scope.openMobileAppearance = () => {
+      $scope.openMobileProductPage('appearance');
+      $scope.loadMobileLocalPage('settings');
+    };
+    $scope.chooseMobileWallpaper = () => document.getElementById('android-wallpaper-file').click();
     $scope.mobilePlaylistView = { playlist: null, query: '', rows: [], limit: 80, pending: false, error: '' };
     $scope.filterMobilePlaylist = () => {
       const view = $scope.mobilePlaylistView;
@@ -1221,6 +1231,16 @@ angular.module('listenone').controller('NavigationController', [
         $rootScope.$broadcast('myplatform:update', tag_params.user);
       }
       $scope.closeWindow();
+    };
+
+    $scope.showThemeGallery = () => {
+      $scope.showTag(4);
+      $timeout(() => {
+        const heading = document.getElementById('theme-gallery-heading');
+        if (!heading) return;
+        heading.scrollIntoView({ block: 'start', behavior: 'auto' });
+        heading.focus({ preventScroll: true });
+      });
     };
 
     $scope.$on('search:keyword_change', (event, data) => {

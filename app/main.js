@@ -16,6 +16,10 @@ const {
 const Store = require("electron-store");
 const { autoUpdater } = require("electron-updater");
 const { createDesktopUpdater } = require("./desktopUpdater");
+const { createDesktopNetworkPolicy } = require("./desktopNetworkPolicy");
+const { createDesktopNetworkBridge } = require("./desktopNetworkBridge");
+const { createWindowAppearance } = require("./windowAppearance");
+const { pathToFileURL } = require("url");
 const remoteMain = require("@electron/remote/main");
 const { createHash } = require("crypto");
 const { join } = require("path");
@@ -32,6 +36,7 @@ const {
   getEffectiveStyleHint,
   normalizeDeepSeekTranslationInput,
   normalizeStyleHint,
+  sanitizeDeepSeekDiagnostics,
   testDeepSeekApiKey,
   translateWholeLyricWithDeepSeek,
 } = require("./machineTranslation");
@@ -43,6 +48,17 @@ const { LyricCacheStore } = require(`${__dirname}/lyricCacheStore`);
 const { ListeningHistoryStore } = require(`${__dirname}/listeningHistoryStore`);
 
 const { requestLyric, validateUrl } = require("./lyricTransport");
+const { requestNetease } = require("./neteaseRequest");
+const { createDirectLyricFetch } = require("./lyricDirectTransport");
+const { createNeteaseVerificationSession } = require("./neteaseVerificationSession");
+const neteaseLyricSession = createNeteaseVerificationSession({
+  session,
+  BrowserWindow,
+  dnsFetch: (url, options) => electron.net.fetch(url, options),
+});
+const directLyricFetch = createDirectLyricFetch({
+  dnsFetch: (url, options) => electron.net.fetch(url, options),
+});
 const lyricRequests = new Map();
 ipcMain.handle("lyrics:request", async (event, request) => {
   if (
@@ -68,8 +84,17 @@ ipcMain.handle("lyrics:request", async (event, request) => {
   const controller = new AbortController();
   lyricRequests.set(request.id, controller);
   try {
+    if (new URL(request.url).hostname === "music.163.com") {
+      return await requestNetease({
+        url: request.url,
+        signal: controller.signal,
+        neteaseSession: neteaseLyricSession,
+        publicFetch: directLyricFetch,
+        request: requestLyric,
+      });
+    }
     return await requestLyric(
-      electron.net.fetch.bind(electron.net),
+      directLyricFetch,
       request.url,
       controller.signal
     );
@@ -84,6 +109,21 @@ ipcMain.on("lyrics:cancel", (event, id) => {
     lyricRequests.has(id)
   )
     lyricRequests.get(id).abort();
+});
+
+// Only the trusted local player may request the server-provided official page.
+// No renderer URL, Cookie, or challenge token is accepted by this IPC.
+ipcMain.handle("lyrics:verify-netease", async (event) => {
+  if (
+    !mainWindow ||
+    event.sender !== mainWindow.webContents ||
+    event.senderFrame !== mainWindow.webContents.mainFrame
+  ) return { ok: false, status: "unavailable" };
+  try {
+    return await neteaseLyricSession.openVerification(mainWindow);
+  } catch (_) {
+    return { ok: false, status: "unavailable" };
+  }
 });
 
 const store = new Store();
@@ -120,6 +160,11 @@ let audioCacheQuitCleanupComplete = false;
 let playerIsPlaying = false;
 /** @type {electron.BrowserWindow} */
 let mainWindow;
+const windowAppearance = createWindowAppearance({
+  ipcMain,
+  store,
+  getWindow: () => mainWindow,
+});
 /** @type {electron.BrowserWindow} */
 let floatingWindow;
 /** @type {electron.Tray} */
@@ -154,6 +199,34 @@ const windowState = store.get("windowState") || {
 let proxyConfig = store.get("proxyConfig") || {
   mode: "system",
 };
+const mainPlayerUrl = pathToFileURL(
+  join(__dirname, "listen1_chrome_extension", "listen1.html")
+).href;
+let desktopUpdater;
+const desktopNetworkPolicy = createDesktopNetworkPolicy({
+  configureHostResolver: (config) => app.configureHostResolver(config),
+  getManagedSessions: () => [
+    { name: "default", session: session.defaultSession },
+    {
+      name: "electron-updater",
+      session: session.fromPartition("electron-updater", { cache: false }),
+    },
+  ],
+  persist: (snapshot) => {
+    store.set(snapshot);
+    proxyConfig = snapshot.proxyConfig;
+  },
+  platform: process.platform,
+});
+const desktopNetworkBridge = createDesktopNetworkBridge({
+  policy: desktopNetworkPolicy,
+  ipcMain,
+  getMainWindow: () => mainWindow,
+  mainUrl: mainPlayerUrl,
+  startUpdater: () => desktopUpdater.start(),
+});
+desktopNetworkBridge.register();
+
 
 function getStoredMachineTranslationConfig() {
   const config = store.get("machineTranslation") || {};
@@ -175,13 +248,25 @@ function getStoredMachineTranslationConfig() {
   };
 }
 
+// null means secure storage has not been needed in this process. Merely
+// opening settings must not request macOS Keychain access.
+let machineTranslationSecureStorageAvailable = null;
+
+function checkMachineTranslationSecureStorage() {
+  machineTranslationSecureStorageAvailable = false;
+  machineTranslationSecureStorageAvailable = Boolean(
+    safeStorage.isEncryptionAvailable()
+  );
+  return machineTranslationSecureStorageAvailable;
+}
+
 function getPublicMachineTranslationConfig() {
   const config = getStoredMachineTranslationConfig();
   return {
     provider: config.provider,
     model: config.model,
     hasApiKey: Boolean(config.encryptedApiKey),
-    secureStorageAvailable: safeStorage.isEncryptionAvailable(),
+    secureStorageAvailable: machineTranslationSecureStorageAvailable,
     targetLanguage: DEEPSEEK_TARGET_LANGUAGE,
     promptVersion: DEEPSEEK_PROMPT_VERSION,
     promptFingerprint: getDeepSeekPromptFingerprint({
@@ -200,7 +285,7 @@ function getPublicMachineTranslationConfig() {
 }
 
 function encryptMachineTranslationApiKey(apiKey) {
-  if (!safeStorage.isEncryptionAvailable()) {
+  if (!checkMachineTranslationSecureStorage()) {
     throw Object.assign(
       new Error("Secure credential storage is unavailable."),
       { code: "secure-storage-unavailable" }
@@ -215,15 +300,13 @@ function decryptMachineTranslationApiKey(encryptedApiKey) {
   if (!encryptedApiKey) {
     return "";
   }
-  if (!safeStorage.isEncryptionAvailable()) {
+  if (!checkMachineTranslationSecureStorage()) {
     throw Object.assign(
       new Error("Secure credential storage is unavailable."),
       { code: "secure-storage-unavailable" }
     );
   }
-  return safeStorage.decryptString(
-    Buffer.from(encryptedApiKey, "base64")
-  );
+  return safeStorage.decryptString(Buffer.from(encryptedApiKey, "base64"));
 }
 
 function getMachineTranslationFetch() {
@@ -288,9 +371,9 @@ function getListeningHistoryStore() {
   return listeningHistoryStore;
 }
 
-async function withMachineTranslationTimeout(operation) {
+async function withMachineTranslationTimeout(operation, timeoutMs = 30000) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await operation(controller.signal);
   } catch (error) {
@@ -404,15 +487,56 @@ function deleteMachineTranslationCacheEntries(cacheKeys) {
   }
 }
 
-function machineTranslationFailure(error) {
-  return {
-    ok: false,
-    status:
-      error && typeof error.code === "string"
-        ? error.code
-        : "request-failed",
-    httpStatus: Number((error && error.status) || 0),
-  };
+function machineTranslationFailure(error, operation) {
+  // IPC errors contain only fixed status names and bounded metadata, never provider text.
+  const statuses = new Set([
+    "request-failed",
+    "request-timeout",
+    "ipc-forbidden",
+    "missing-api-key",
+    "invalid-api-key",
+    "secure-storage-unavailable",
+    "quota-exceeded",
+    "rate-limited",
+    "bad-request",
+    "invalid-request",
+    "server-error",
+    "service-unavailable",
+    "fetch-unavailable",
+    "invalid-style-hint",
+    "unsupported-target-language",
+    "empty-lyric",
+    "no-timed-lines",
+    "lyric-too-large",
+    "too-many-timed-lines",
+    "lyric-line-too-long",
+    "response-too-large",
+    "invalid-json",
+    "invalid-response-json",
+    "invalid-response",
+    "empty-content",
+    "invalid-alignment",
+    "unexpected-finish-reason",
+    "unexpected-test-result",
+    "refused",
+  ]);
+  const status =
+    error && statuses.has(error.code) ? error.code : "request-failed";
+  const httpStatus =
+    error &&
+    Number.isInteger(error.status) &&
+    error.status >= 100 &&
+    error.status <= 599
+      ? error.status
+      : 0;
+  const response = { ok: false, status, httpStatus };
+  const diagnostics = sanitizeDeepSeekDiagnostics(error && error.diagnostics);
+  delete diagnostics.operation;
+  if (operation === "test" || operation === "translate") {
+    diagnostics.operation = operation;
+  }
+  if (Object.keys(diagnostics).length) response.diagnostics = diagnostics;
+  return response;
 }
 
 function ensureTrustedMachineTranslationSender(event) {
@@ -720,7 +844,7 @@ ipcMain.handle("machine-translation:test", async (event) => {
       ...usage,
     };
   } catch (error) {
-    return machineTranslationFailure(error);
+    return machineTranslationFailure(error, "test");
   }
 });
 
@@ -775,17 +899,19 @@ ipcMain.handle(
         return { ok: false, status: "missing-api-key" };
       }
 
-      const result = await withMachineTranslationTimeout((signal) =>
-        translateWholeLyricWithDeepSeek({
-          fetchImpl: getMachineTranslationFetch(),
-          apiKey,
-          lyric: input.lyric,
-          targetLanguage: input.targetLanguage,
-          title: input.title,
-          artist: input.artist,
-          styleHint: input.styleHint,
-          signal,
-        })
+      const result = await withMachineTranslationTimeout(
+        (signal) =>
+          translateWholeLyricWithDeepSeek({
+            fetchImpl: getMachineTranslationFetch(),
+            apiKey,
+            lyric: input.lyric,
+            targetLanguage: input.targetLanguage,
+            title: input.title,
+            artist: input.artist,
+            styleHint: input.styleHint,
+            signal,
+          }),
+        120000
       );
       saveMachineTranslationCacheEntry(cacheKey, result);
       await attachMachineTranslationToLyricCache(
@@ -806,7 +932,7 @@ ipcMain.handle(
         cached: false,
       };
     } catch (error) {
-      return machineTranslationFailure(error);
+      return machineTranslationFailure(error, "translate");
     }
   }
 );
@@ -1008,15 +1134,6 @@ async function updateFloatingWindow(cssStyle) {
   } catch (err) {
     console.log(err);
   }
-}
-/**
- * @param {electron.Config} params
- */
-async function updateProxyConfig(params) {
-  proxyConfig = params;
-
-  await mainWindow.webContents.session.setProxy(params);
-  await mainWindow.webContents.session.forceReloadProxyConfig();
 }
 
 function destroyFloatingWindow() {
@@ -1259,6 +1376,7 @@ function createWindow() {
     lyricRequests.forEach(controller => controller.abort());
     lyricRequests.clear();
   });
+  windowAppearance.apply();
   mainWindow.on("ready-to-show", () => {
     if (windowState.maximized) {
       mainWindow.maximize();
@@ -1291,12 +1409,7 @@ function createWindow() {
   const ua =
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.119 Safari/537.36";
 
-  mainWindow.webContents.session.setProxy(proxyConfig).then(() => {
-    mainWindow.loadURL(
-      `file://${__dirname}/listen1_chrome_extension/listen1.html`,
-      { userAgent: ua }
-    );
-  });
+  mainWindow.loadURL(mainPlayerUrl, { userAgent: ua });
 
   setThumbarPause();
   // Emitted when the window is closed.
@@ -1603,11 +1716,8 @@ ipcMain.on("control", async (event, arg, params) => {
       break;
 
     case "get_proxy_config":
-      mainWindow.webContents.send("proxyConfig", proxyConfig);
-      break;
-
     case "update_proxy_config":
-      await updateProxyConfig(params);
+      await desktopNetworkBridge.handleLegacy(event, arg, params);
       break;
 
     default:
@@ -1660,6 +1770,10 @@ if (!gotTheLock) {
 
   // Create myWindow, load the rest of the app, etc...
   app.on("ready", async () => {
+    const networkStartupState = await desktopNetworkPolicy.initialize({
+      proxyConfig,
+      networkPolicy: store.get("networkPolicy"),
+    });
     try {
       await getAudioCache().initialize();
       if (
@@ -1679,14 +1793,14 @@ if (!gotTheLock) {
       audioCacheStartupError = error;
     }
     createWindow();
-    const desktopUpdater = createDesktopUpdater({
+    desktopUpdater = createDesktopUpdater({
       updater: autoUpdater,
       dialog,
       shell,
       platform: process.platform,
       getParentWindow: () => mainWindow,
     });
-    void desktopUpdater.start();
+    desktopNetworkBridge.maybeStartUpdater(networkStartupState);
     remoteMain.initialize();
     remoteMain.enable(mainWindow.webContents);
   });
@@ -1707,6 +1821,7 @@ app.on("activate", () => mainWindow.show());
 /* 'before-quit' is emitted when Electron receives
  * the signal to exit and wants to start closing windows */
 app.on("before-quit", (event) => {
+  windowAppearance.flush();
   willQuitApp = true;
   if (
     mainWindow &&
@@ -1719,7 +1834,6 @@ app.on("before-quit", (event) => {
     store.set("floatingWindowBounds", floatingWindow.getBounds());
   }
   store.set("windowState", windowState);
-  store.set("proxyConfig", proxyConfig);
   if (audioCache && !audioCacheQuitCleanupComplete) {
     event.preventDefault();
     if (!audioCacheQuitCleanupStarted) {
@@ -1740,6 +1854,8 @@ app.on("before-quit", (event) => {
 });
 
 app.on("will-quit", () => {
+  // Cleanup must not leak Cookie/challenge details through shutdown errors.
+  Promise.resolve(neteaseLyricSession.dispose()).catch(() => {});
   if (bilibiliService) {
     bilibiliService.shutdown();
   }
