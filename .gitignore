@@ -11,3 +11,8 @@ yarn.lock
 
 output/
 .playwright-cli/
+
+/android/.gradle/
+/android/build/
+/android/app/build/
+/android/local.properties

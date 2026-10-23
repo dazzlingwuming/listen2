@@ -1,6 +1,6 @@
 /* eslint-disable no-shadow */
 /* global l1Player require */
-/* global angular isElectron i18next i18nextHttpBackend Notyf notyf */
+/* global angular isElectron i18next i18nextHttpBackend Notyf notyf MobileProviderRegistry */
 /* global setPrototypeOfLocalStorage  */
 /* eslint-disable global-require */
 /* eslint-disable no-unused-vars */
@@ -8,38 +8,19 @@
 /* eslint-disable import/no-unresolved */
 /* eslint-disable import/no-extraneous-dependencies */
 
-const sourceList = [
-  {
-    name: 'netease',
-    displayId: '_NETEASE_MUSIC',
-  },
-  {
-    name: 'qq',
-    displayId: '_QQ_MUSIC',
-  },
-  {
-    name: 'kugou',
-    displayId: '_KUGOU_MUSIC',
-  },
-  {
-    name: 'kuwo',
-    displayId: '_KUWO_MUSIC',
-  },
-  {
-    name: 'bilibili',
-    displayId: '_BILIBILI_MUSIC',
-  },
-  {
-    name: 'migu',
-    displayId: '_MIGU_MUSIC',
-  },
-  {
-    name: 'taihe',
-    displayId: '_TAIHE_MUSIC',
-  },
-];
+const sourceList = MobileProviderRegistry.desktopSources.map((source) => ({
+  name: source.id,
+  displayId: source.displayId,
+}));
 
 const main = () => {
+  if (
+    window.Listen2AndroidHttpAdapter &&
+    typeof window.Listen2AndroidHttpAdapter.isAvailable === 'function' &&
+    window.Listen2AndroidHttpAdapter.isAvailable()
+  ) {
+    document.documentElement.setAttribute('data-listen2-platform', 'android');
+  }
   const app = angular.module('listenone', []);
   setPrototypeOfLocalStorage();
   app.config([
@@ -499,7 +480,6 @@ i18next.use(i18nextHttpBackend).init({
   lng: 'zh-CN',
   fallbackLng: 'zh-CN',
   supportedLngs: ['zh-CN', 'zh-TC', 'en-US', 'fr-FR', 'ko-KR', 'pt-BR'],
-  preload: ['zh-CN', 'zh-TC', 'en-US', 'fr-FR', 'ko-KR', 'pt-BR'],
   debug: false,
   backend: {
     loadPath: 'i18n/{{lng}}.json',

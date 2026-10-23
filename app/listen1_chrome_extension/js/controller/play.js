@@ -135,6 +135,46 @@ function decorateLyricCandidate(candidate) {
   };
 }
 
+function classifyNativeLyricState(input) {
+  const value = input || {};
+  if (value.identityAccepted !== true) return 'stale';
+  const terminal = String(value.terminalStatus || '');
+  if (
+    [
+      'no-lyric',
+      'provider-refusal',
+      'timeout',
+      'cancelled',
+      'schema-error',
+    ].includes(terminal)
+  ) {
+    return terminal;
+  }
+  const lines = Math.max(0, Number(value.lineCount) || 0);
+  const timedLines = Math.max(0, Number(value.timedLineCount) || 0);
+  if (!lines) return 'no-lyric';
+  const durationMs = Math.max(0, Number(value.durationMs) || 0);
+  const matchedDurationMs = Math.max(0, Number(value.matchedDurationMs) || 0);
+  const mismatchTolerance = Math.max(10000, durationMs * 0.1);
+  if (
+    durationMs > 0 &&
+    matchedDurationMs > 0 &&
+    Math.abs(durationMs - matchedDurationMs) > mismatchTolerance
+  ) {
+    return 'duration-mismatch';
+  }
+  if (timedLines >= 3 && timedLines / lines >= 0.6) return 'synchronized';
+  return timedLines > 0 ? 'insufficient-timestamp' : 'text-only';
+}
+
+function normalizeLyricTerminalStatus(value) {
+  const status = String(value || '');
+  if (/cancel/i.test(status)) return 'cancelled';
+  if (/timeout/i.test(status)) return 'timeout';
+  if (/refus|denied|entitlement/i.test(status)) return 'provider-refusal';
+  return status;
+}
+
 function compareLyricCandidates(left, right) {
   const scoreDifference =
     Number(right.matchScore || 0) - Number(left.matchScore || 0);
@@ -179,6 +219,15 @@ angular.module('listenone').controller('PlayController', [
 
     $scope.enableGloablShortcut = false;
     $scope.isChrome = !isElectron();
+    const isAndroidTranslationSurface = () =>
+      Boolean(
+        !isElectron() &&
+          typeof window !== 'undefined' &&
+          window.Listen2AndroidHttpAdapter &&
+          typeof window.Listen2AndroidHttpAdapter.isAvailable === 'function' &&
+          window.Listen2AndroidHttpAdapter.isAvailable()
+      );
+    $scope.isAndroidSurface = isAndroidTranslationSurface;
     $scope.isMac = false;
 
     $scope.currentDuration = '0:00';
@@ -194,11 +243,604 @@ angular.module('listenone').controller('PlayController', [
     $scope.lyricSearchResults = [];
     $scope.lyricSearchState = 'idle';
     $scope.lyricSearchPending = false;
+    $scope.foregroundPlaybackState = 'idle';
+    $scope.foregroundPlaybackFailure = null;
+    const androidPlaybackAdapter =
+      typeof window !== 'undefined' &&
+      window.Listen2AndroidHttpAdapter &&
+      typeof window.Listen2AndroidHttpAdapter.isAvailable === 'function' &&
+      window.Listen2AndroidHttpAdapter.isAvailable()
+        ? window.Listen2AndroidHttpAdapter
+        : null;
+    let androidPlaybackRefreshTimer = null;
+    let androidPlaybackLastAnnouncementRevision = 0;
+    let androidPlaybackReturnFocus = null;
+    let playControllerDestroyed = false;
+    $scope.androidPlaybackEnabled = Boolean(androidPlaybackAdapter);
+    $scope.androidPlaybackDetailOpen = false;
+    $scope.androidUi = {
+      tab: 'cover', settingsOpen: false,
+      showTranslation: localStorage.getObject('android-lyric-show-translation') !== false,
+      lyricFontSize: Number(localStorage.getObject('android-lyric-font-size')) || 22,
+    };
+    $scope.androidRecentTracks = [];
+    $scope.androidTrackDisplay = (track) => MediaService.getMobileTrackDisplay(
+      track || $scope.currentPlaying || $scope.androidPlaybackSnapshot.metadata
+    );
+    $scope.setAndroidLyricFontSize = (size) => {
+      $scope.androidUi.lyricFontSize = Math.max(16, Math.min(30, Number(size) || 22));
+      localStorage.setObject('android-lyric-font-size', $scope.androidUi.lyricFontSize);
+    };
+    $scope.setAndroidLyricTranslationVisible = (visible) => {
+      $scope.androidUi.showTranslation = Boolean(visible);
+      localStorage.setObject('android-lyric-show-translation', $scope.androidUi.showTranslation);
+    };
+    $scope.openAndroidAppSettings = (page = '') => {
+      $scope.androidPlaybackDetailOpen = false;
+      $scope.androidUi.settingsOpen = false;
+      $rootScope.$broadcast('android:open-settings', page);
+    };
+    $scope.playAndroidRecent = (track) => {
+      l1Player.addTrack(track);
+      return l1Player.playById(track.id);
+    };
+    $scope.androidPlaybackCommandPending = '';
+    $scope.androidPlaybackSeekDraft = null;
+    $scope.androidPlaybackSeekAdjusting = false;
+    $scope.androidPlaybackSeekUnavailable = false;
+    $scope.androidPlaybackVolumeDraft = 100;
+    $scope.androidPlaybackBusy = true;
+    $scope.androidPlaybackRetryAttempt = 1;
+    $scope.androidPlaybackRetryMax = 2;
+    $scope.androidPlaybackQueue = [];
+    $scope.androidPlaybackSnapshot = {
+      revision: 0,
+      state: 'connecting',
+      metadata: { title: '', artist: '', artworkState: 'bundled-placeholder' },
+      positionMs: 0,
+      durationMs: 0,
+      volumePercent: 100,
+      muted: false,
+      mode: 'sequential',
+      actions: {},
+      queue: [],
+      recovery: { status: 'connecting', retryable: false },
+    };
+
+    function isAndroidPlaybackActionAvailable(action) {
+      return (
+        $scope.androidPlaybackEnabled &&
+        $scope.androidPlaybackSnapshot &&
+        $scope.androidPlaybackSnapshot.actions &&
+        (['mode', 'volume', 'mute'].includes(action)
+          ? $scope.androidPlaybackSnapshot.revision > 0
+          : $scope.androidPlaybackSnapshot.actions[action] === true)
+      );
+    }
+
+    function androidPlaybackStateCopy(snapshot) {
+      const safeSnapshot = snapshot || {};
+      const recovery = safeSnapshot.recovery || {};
+      if (!safeSnapshot.revision) return '正在连接播放器…';
+      if (safeSnapshot.state === 'error') {
+        const status = String(recovery.status || '');
+        if (status === 'media-network-unavailable')
+          return '音频网络连接失败，请稍后重试';
+        if (/^bilibili-(detail|manifest|legacy)-http-0$/.test(status))
+          return '网络连接失败，暂时无法播放这首歌曲';
+        if (
+          /^bilibili-(detail|manifest|legacy)-(http-(403|412|429)|provider--?\d{1,7})$/.test(
+            status
+          )
+        )
+          return '来源暂时拒绝提供这首歌曲的音频';
+        if (/^bilibili-(detail|manifest)-map-/.test(status))
+          return '来源返回的音频信息暂时无法使用';
+        if (status === 'candidate-rejected') return '音频地址暂时无法使用';
+        return '当前歌曲暂时无法播放';
+      }
+      if (recovery.status === 'buffering') return '正在缓冲…';
+      if (recovery.status === 'retrying') {
+        return `正在尝试恢复播放（${$scope.androidPlaybackRetryAttempt}/${$scope.androidPlaybackRetryMax}）…`;
+      }
+      if (recovery.status === 'interrupted') return '播放已暂停';
+      if (recovery.status === 'restored') return '已恢复播放队列';
+      if (safeSnapshot.state === 'resolving') return '正在准备播放…';
+      if (safeSnapshot.state === 'playing') return '正在播放';
+      if (safeSnapshot.state === 'paused') return '已暂停';
+      return '还没有正在播放的内容';
+    }
+
+    $scope.androidPlaybackStateCopy = () =>
+      androidPlaybackStateCopy($scope.androidPlaybackSnapshot);
+    $scope.androidPlaybackHasCurrent = () =>
+      Boolean(
+        $scope.androidPlaybackSnapshot &&
+          $scope.androidPlaybackSnapshot.metadata &&
+          $scope.androidPlaybackSnapshot.metadata.title
+      );
+    $scope.androidPlaybackCan = (action) =>
+      isAndroidPlaybackActionAvailable(action) &&
+      !$scope.androidPlaybackCommandPending;
+    $scope.androidPlaybackModeLabel = () => {
+      const labels = {
+        sequential: '顺序播放',
+        'repeat-one': '单曲循环',
+        shuffle: '随机播放',
+      };
+      return labels[$scope.androidPlaybackSnapshot.mode] || '顺序播放';
+    };
+    $scope.androidPlaybackElapsed = () =>
+      formatSecond(
+        Number($scope.androidPlaybackSnapshot.positionMs || 0) / 1000
+      );
+    $scope.androidPlaybackDuration = () =>
+      formatSecond(
+        Number($scope.androidPlaybackSnapshot.durationMs || 0) / 1000
+      );
+    $scope.androidPlaybackSeekValue = () => {
+      if ($scope.androidPlaybackSeekDraft !== null) {
+        return $scope.androidPlaybackSeekDraft;
+      }
+      return Number($scope.androidPlaybackSnapshot.positionMs || 0);
+    };
+
+    function applyAndroidPlaybackSnapshot(snapshot) {
+      if (!androidPlaybackAdapter || !snapshot) return;
+      const revision = Number(snapshot.revision || 0);
+      if (
+        revision &&
+        revision < Number($scope.androidPlaybackSnapshot.revision || 0)
+      ) {
+        return;
+      }
+      const metadata = snapshot.metadata || {};
+      const safeSnapshot = {
+        revision,
+        state: snapshot.state || 'idle',
+        metadata: {
+          title: typeof metadata.title === 'string' ? metadata.title : '',
+          artist: typeof metadata.artist === 'string' ? metadata.artist : '',
+          artworkState:
+            typeof metadata.artworkState === 'string'
+              ? metadata.artworkState
+              : 'bundled-placeholder',
+        },
+        positionMs: Math.max(0, Number(snapshot.positionMs) || 0),
+        durationMs: Math.max(0, Number(snapshot.durationMs) || 0),
+        volumePercent: Math.max(
+          0,
+          Math.min(100, Number(snapshot.volumePercent) || 0)
+        ),
+        muted: snapshot.muted === true,
+        mode: snapshot.mode || 'sequential',
+        currentOccurrenceId: snapshot.lyric ? snapshot.lyric.occurrenceId : '',
+        actions:
+          snapshot.actions && typeof snapshot.actions === 'object'
+            ? snapshot.actions
+            : {},
+        queue: Array.isArray(snapshot.queue) ? snapshot.queue : [],
+        recovery:
+          snapshot.recovery && typeof snapshot.recovery === 'object'
+            ? snapshot.recovery
+            : { status: 'ready', retryable: false },
+      };
+      $scope.androidPlaybackSnapshot = safeSnapshot;
+      if (typeof l1Player.getNativeCurrentTrack === 'function') {
+        const track = l1Player.getNativeCurrentTrack();
+        if (track) {
+          if (!$scope.currentPlaying || $scope.currentPlaying.id !== track.id) {
+            $scope.androidRecentTracks = l1Player.getNativeRecentTracks();
+          }
+          $scope.currentPlaying = track;
+          if (!track.img_url && !track.androidArtworkRequested && track.source === 'bilibili' &&
+              typeof MediaService.getVideoContext === 'function') {
+            track.androidArtworkRequested = true;
+            MediaService.getVideoContext(track).then((context) => {
+              if (!context || !context.img_url || playControllerDestroyed) return;
+              $scope.$evalAsync(() => {
+                track.img_url = context.img_url;
+                l1Player.rememberNativeTrackMetadata(track);
+                $scope.androidRecentTracks = l1Player.getNativeRecentTracks();
+              });
+            }).catch(() => {});
+          }
+        }
+        else if (!safeSnapshot.metadata.title) $scope.currentPlaying = null;
+      }
+      $scope.androidPlaybackQueue = safeSnapshot.queue;
+      $scope.androidPlaybackVolumeDraft = safeSnapshot.volumePercent;
+      $scope.androidPlaybackBusy =
+        !safeSnapshot.revision || safeSnapshot.state === 'resolving';
+      $scope.androidPlaybackCommandPending = '';
+      $scope.androidPlaybackSeekDraft = safeSnapshot.positionMs;
+      $scope.androidUi.seekMs = safeSnapshot.positionMs;
+      $scope.androidPlaybackSeekAdjusting = false;
+      $scope.androidPlaybackSeekUnavailable = false;
+      if (revision > androidPlaybackLastAnnouncementRevision) {
+        androidPlaybackLastAnnouncementRevision = revision;
+      }
+      // The Android renderer may display state, but its page player never owns
+      // lyric time. Consume only the facade's accepted Media3 projection.
+      if (typeof $scope.syncAndroidLyricClock === 'function') {
+        $scope.syncAndroidLyricClock();
+      }
+    }
+
+    $scope.applyAndroidPlaybackSnapshot = applyAndroidPlaybackSnapshot;
+
+    function refreshAndroidPlaybackSnapshot() {
+      if (!androidPlaybackAdapter || playControllerDestroyed) return;
+      const snapshot = androidPlaybackAdapter.getPlaybackSnapshot();
+      if (snapshot) {
+        $scope.$evalAsync(() => applyAndroidPlaybackSnapshot(snapshot));
+      }
+      androidPlaybackRefreshTimer = $timeout(
+        refreshAndroidPlaybackSnapshot,
+        350
+      );
+    }
+
+    $scope.sendAndroidPlaybackCommand = (command, payload = {}) => {
+      if (
+        !androidPlaybackAdapter ||
+        $scope.androidPlaybackCommandPending ||
+        !isAndroidPlaybackActionAvailable(command)
+      ) {
+        return Promise.resolve(null);
+      }
+      $scope.androidPlaybackCommandPending = command;
+      return androidPlaybackAdapter
+        .command(command, payload)
+        .then((snapshot) => {
+          $scope.$evalAsync(() => applyAndroidPlaybackSnapshot(snapshot));
+          return snapshot;
+        })
+        .catch(() => {
+          $scope.$evalAsync(() => {
+            $scope.androidPlaybackCommandPending = '';
+          });
+          return null;
+        });
+    };
+
+    $scope.toggleAndroidPlayback = () => {
+      const snapshot = $scope.androidPlaybackSnapshot;
+      return $scope.sendAndroidPlaybackCommand(
+        snapshot.state === 'playing' ? 'pause' : 'play'
+      );
+    };
+    $scope.cycleAndroidPlaybackMode = () => {
+      const order = ['sequential', 'shuffle', 'repeat-one'];
+      const index = order.indexOf($scope.androidPlaybackSnapshot.mode);
+      return $scope.sendAndroidPlaybackCommand('mode', {
+        mode: order[(index + 1) % order.length],
+      });
+    };
+    $scope.openAndroidPlaybackModes = () => {
+      $scope.androidUi.modeError = '';
+      $scope.androidUi.modeMenuOpen = true;
+    };
+    $scope.chooseAndroidPlaybackMode = (mode) => {
+      if (!['sequential', 'shuffle', 'repeat-one'].includes(mode)) return;
+      $scope.androidUi.modeError = '';
+      $scope.sendAndroidPlaybackCommand('mode', { mode }).then((snapshot) => $scope.$evalAsync(() => {
+        if (snapshot) $scope.androidUi.modeMenuOpen = false;
+        else $scope.androidUi.modeError = '切换未完成，请再试一次。';
+      }));
+    };
+    $scope.adjustAndroidPlaybackVolume = (event) => {
+      const rawValue = event && event.target ? event.target.value : event;
+      const value = Math.max(0, Math.min(100, Number(rawValue) || 0));
+      return $scope.sendAndroidPlaybackCommand('volume', {
+        volumePercent: value,
+      });
+    };
+    $scope.toggleAndroidPlaybackMute = () =>
+      $scope.sendAndroidPlaybackCommand('mute', {
+        muted: !$scope.androidPlaybackSnapshot.muted,
+      });
+    $scope.previewAndroidSeek = (event) => {
+      $scope.androidPlaybackSeekDraft = Math.max(
+        0,
+        Math.min(
+          Number($scope.androidPlaybackSnapshot.durationMs || 0),
+          Number(event.target.value) || 0
+        )
+      );
+      $scope.androidPlaybackSeekAdjusting = true;
+    };
+    $scope.commitAndroidSeek = (draft = $scope.androidPlaybackSeekDraft) => {
+      if (!isAndroidPlaybackActionAvailable('seek')) {
+        $scope.androidPlaybackSeekUnavailable = true;
+        return Promise.resolve(null);
+      }
+      // The range input lives inside ng-if's child scope. Pass its draft
+      // explicitly so the parent controller does not seek to the old snapshot.
+      const requestedPosition = Number(draft);
+      if (!Number.isFinite(requestedPosition)) return Promise.resolve(null);
+      const positionMs = Math.max(0, Math.round(requestedPosition));
+      $scope.androidPlaybackSeekAdjusting = true;
+      return $scope.sendAndroidPlaybackCommand('seek', { positionMs });
+    };
+    $scope.openAndroidPlayerDetail = (event) => {
+      if (!$scope.androidPlaybackHasCurrent()) return;
+      androidPlaybackReturnFocus = event && event.currentTarget;
+      $scope.androidPlaybackDetailOpen = true;
+    };
+    $scope.closeAndroidPlayerDetail = () => {
+      $scope.androidPlaybackDetailOpen = false;
+      $scope.androidUi.settingsOpen = false;
+      if ($scope.lyricPickerOpen) $scope.closeLyricPicker();
+      $timeout(() => {
+        if (
+          androidPlaybackReturnFocus &&
+          document.contains(androidPlaybackReturnFocus)
+        ) {
+          androidPlaybackReturnFocus.focus();
+        }
+      });
+    };
+    $scope.androidQueueSheetOpen = false;
+    $scope.androidQueueView = { limit: 80, editing: false, error: '' };
+    $scope.playAndroidQueueEntry = (entry) => {
+      $scope.androidQueueView.error = '';
+      sendAndroidQueueCommand('jump', { occurrenceId: entry.occurrenceId })
+        .then((snapshot) => $scope.$evalAsync(() => {
+          if (!snapshot) $scope.androidQueueView.error = '这首歌曲暂时无法播放，请重试。';
+        }));
+    };
+    $scope.androidQueueConfirmation = {
+      open: false,
+      kind: '',
+      entry: null,
+    };
+    let androidQueueReturnFocus = null;
+    let androidQueueConfirmationReturnFocus = null;
+    let androidQueueDragOccurrenceId = '';
+
+    function focusAndroidQueueTarget(selector) {
+      $timeout(() => {
+        const target = document.querySelector(selector);
+        if (target) target.focus();
+      });
+    }
+
+    function sendAndroidQueueCommand(command, payload) {
+      if (
+        !androidPlaybackAdapter ||
+        $scope.androidPlaybackCommandPending ||
+        !$scope.androidPlaybackSnapshot.revision
+      ) {
+        return Promise.resolve(null);
+      }
+      $scope.androidPlaybackCommandPending = `queue:${command}`;
+      return androidPlaybackAdapter
+        .command(command, payload)
+        .then((snapshot) => {
+          $scope.$evalAsync(() => applyAndroidPlaybackSnapshot(snapshot));
+          return snapshot;
+        })
+        .catch(() => {
+          $scope.$evalAsync(() => {
+            $scope.androidPlaybackCommandPending = '';
+          });
+          return null;
+        });
+    }
+
+    $scope.retryAndroidPlayback = () => {
+      const currentOccurrence = $scope.androidPlaybackQueue[0];
+      if (
+        !isAndroidPlaybackActionAvailable('retry') ||
+        !currentOccurrence ||
+        !currentOccurrence.occurrenceId
+      ) {
+        return Promise.resolve(null);
+      }
+      return sendAndroidQueueCommand('retry', {
+        occurrenceId: currentOccurrence.occurrenceId,
+      });
+    };
+
+    $scope.openAndroidQueueSheet = (event) => {
+      if (!$scope.androidPlaybackDetailOpen) return;
+      androidQueueReturnFocus = event && event.currentTarget;
+      $scope.androidQueueSheetOpen = true;
+      $scope.androidQueueView = { limit: 80, editing: false, error: '' };
+      focusAndroidQueueTarget(
+        '[data-android-queue-sheet] [data-android-queue-close]'
+      );
+    };
+    $scope.closeAndroidQueueSheet = () => {
+      if ($scope.androidQueueConfirmation.open) {
+        $scope.closeAndroidQueueConfirmation(true);
+      }
+      $scope.androidQueueSheetOpen = false;
+      $timeout(() => {
+        if (
+          androidQueueReturnFocus &&
+          document.contains(androidQueueReturnFocus)
+        ) {
+          androidQueueReturnFocus.focus();
+        }
+      });
+    };
+    $scope.requestAndroidQueueMove = (entry, targetIndex) => {
+      const sourceIndex = $scope.androidPlaybackQueue.findIndex(
+        (candidate) => candidate.occurrenceId === (entry && entry.occurrenceId)
+      );
+      if (
+        sourceIndex < 0 ||
+        targetIndex < 0 ||
+        targetIndex >= $scope.androidPlaybackQueue.length ||
+        sourceIndex === targetIndex
+      ) {
+        return Promise.resolve(null);
+      }
+      return sendAndroidQueueCommand('reorder', {
+        occurrenceId: entry.occurrenceId,
+        targetIndex,
+      });
+    };
+    $scope.startAndroidQueueDrag = (entry, event) => {
+      androidQueueDragOccurrenceId = entry && entry.occurrenceId;
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData(
+          'text/plain',
+          androidQueueDragOccurrenceId || ''
+        );
+      }
+    };
+    $scope.dropAndroidQueueAt = (entry, event) => {
+      event.preventDefault();
+      const occurrenceId =
+        (event.dataTransfer && event.dataTransfer.getData('text/plain')) ||
+        androidQueueDragOccurrenceId;
+      androidQueueDragOccurrenceId = '';
+      const source = $scope.androidPlaybackQueue.find(
+        (candidate) => candidate.occurrenceId === occurrenceId
+      );
+      const targetIndex = $scope.androidPlaybackQueue.findIndex(
+        (candidate) => candidate.occurrenceId === (entry && entry.occurrenceId)
+      );
+      return $scope.requestAndroidQueueMove(source, targetIndex);
+    };
+    $scope.requestAndroidQueueRemove = (entry, event) => {
+      if (!entry || !entry.occurrenceId) return;
+      androidQueueConfirmationReturnFocus = event && event.currentTarget;
+      $scope.androidQueueConfirmation = { open: true, kind: 'remove', entry };
+      focusAndroidQueueTarget(
+        '[data-android-queue-confirmation] [data-android-queue-confirm]'
+      );
+    };
+    $scope.requestAndroidQueueClear = (event) => {
+      if (!$scope.androidPlaybackQueue.length) return;
+      androidQueueConfirmationReturnFocus = event && event.currentTarget;
+      $scope.androidQueueConfirmation = {
+        open: true,
+        kind: 'clear',
+        entry: null,
+      };
+      focusAndroidQueueTarget(
+        '[data-android-queue-confirmation] [data-android-queue-confirm]'
+      );
+    };
+    $scope.closeAndroidQueueConfirmation = (restoreFocus) => {
+      const wasOpen = $scope.androidQueueConfirmation.open;
+      $scope.androidQueueConfirmation = { open: false, kind: '', entry: null };
+      if (
+        restoreFocus &&
+        wasOpen &&
+        androidQueueConfirmationReturnFocus &&
+        document.contains(androidQueueConfirmationReturnFocus)
+      ) {
+        $timeout(() => androidQueueConfirmationReturnFocus.focus());
+      }
+    };
+    $scope.confirmAndroidQueueMutation = () => {
+      const confirmation = $scope.androidQueueConfirmation;
+      if (!confirmation.open) return Promise.resolve(null);
+      const command = confirmation.kind === 'clear' ? 'clear' : 'remove';
+      const payload =
+        command === 'clear'
+          ? {}
+          : {
+              occurrenceId:
+                confirmation.entry && confirmation.entry.occurrenceId,
+            };
+      if (!payload.occurrenceId && command === 'remove')
+        return Promise.resolve(null);
+      return sendAndroidQueueCommand(command, payload).then((snapshot) => {
+        if (snapshot) $scope.closeAndroidQueueConfirmation(true);
+        return snapshot;
+      });
+    };
+    $scope.handleAndroidQueueKeydown = (event) => {
+      if (event.key === 'Escape' || event.keyCode === 27) {
+        event.preventDefault();
+        if ($scope.androidQueueConfirmation.open) {
+          $scope.closeAndroidQueueConfirmation(true);
+        } else {
+          $scope.closeAndroidQueueSheet();
+        }
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const dialog = event.currentTarget;
+      const focusable = Array.from(
+        dialog.querySelectorAll('button:not([disabled]), input:not([disabled])')
+      ).filter((element) => element.offsetParent !== null);
+      if (!focusable.length) {
+        event.preventDefault();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    $scope.handleAndroidPlayerBack = (event) => {
+      if (!$scope.androidPlaybackEnabled) return false;
+      if ($scope.androidUi.modeMenuOpen) {
+        event.preventDefault();
+        $scope.androidUi.modeMenuOpen = false;
+        return true;
+      }
+      if ($scope.androidQueueConfirmation.open) {
+        event.preventDefault();
+        $scope.closeAndroidQueueConfirmation(true);
+        return true;
+      }
+      if ($scope.androidQueueSheetOpen) {
+        event.preventDefault();
+        $scope.closeAndroidQueueSheet();
+        return true;
+      }
+      if (!$scope.androidPlaybackDetailOpen) return false;
+      event.preventDefault();
+      if ($scope.lyricPickerOpen) {
+        $scope.closeLyricPicker();
+        return true;
+      }
+      if ($scope.androidUi.settingsOpen) {
+        $scope.androidUi.settingsOpen = false;
+        return true;
+      }
+      $scope.closeAndroidPlayerDetail();
+      return true;
+    };
+    $scope.$on('android:playback-back', (angularEvent, playbackBack) => {
+      if (!playbackBack || typeof playbackBack !== 'object') return;
+      playbackBack.handled = $scope.handleAndroidPlayerBack({
+        preventDefault() {},
+      });
+    });
+    $scope.primaryLyricState = {
+      state: 'idle',
+      trackId: '',
+      token: 0,
+    };
     $scope.lyricTranslationLookupPending = false;
     $scope.lyricTranslationConfirmOpen = false;
     $scope.lyricTranslationConfirmPending = false;
     $scope.lyricTranslationConfirmError = '';
     $scope.lyricTranslationConfirmMode = 'translate';
+    $scope.lyricTranslationConsent = {
+      lyrics: false,
+      title: false,
+      artist: false,
+      possibleCost: false,
+      cancellation: false,
+      failureImpact: false,
+    };
+    let activeLyricTranslationHandle = null;
     $scope.lyricTranslationSourceSnapshot = null;
     $scope.lyricPickerModal = false;
     $scope.machineTranslationConfig = {
@@ -207,6 +849,7 @@ angular.module('listenone').controller('PlayController', [
       targetLanguage: 'zh-CN',
       hasApiKey: false,
       secureStorageAvailable: false,
+      nativeClientAvailable: false,
       apiKeyInput: '',
       defaultStyleHint: '',
       effectiveStyleHint: '',
@@ -218,6 +861,7 @@ angular.module('listenone').controller('PlayController', [
       promptTemplatePreview: '',
     };
     $scope.machineTranslationConfigPending = false;
+    $scope.machineTranslationTestState = { state: 'idle', message: '' };
     $scope.machineTranslationRulesOpen = false;
     $scope.audioCacheSettings = {
       supported: false,
@@ -393,11 +1037,249 @@ angular.module('listenone').controller('PlayController', [
     let manualLyricResolveToken = 0;
     let manualLyricSelectionToken = 0;
     let lyricTranslationRequestToken = 0;
+    let nativeLyricRequestIdentity = null;
+    let activeNativeLyricIdentity = null;
+    let nativeLyricOffsetPending = null;
+    let nativeManualLyricPending = null;
+    let nativeManualLyricClearPending = null;
     let bilibiliMvPlayer = null;
     let lastMvPosition = 0;
     const AUDIO_CACHE_STATUS_POLL_MS = 2000;
     let audioCacheStatusPollTimer = null;
-    let playControllerDestroyed = false;
+
+    function setPrimaryLyricState(track, state) {
+      if (!track || !track.id) return;
+      $scope.primaryLyricState = {
+        state,
+        trackId: track.id,
+        token: lyricRequestToken,
+      };
+    }
+
+    function getNativeLyricIdentity() {
+      if (
+        !androidPlaybackAdapter ||
+        !l1Player ||
+        typeof l1Player.getNativeLyricSnapshot !== 'function'
+      ) {
+        return null;
+      }
+      const snapshot = l1Player.getNativeLyricSnapshot();
+      if (
+        !snapshot ||
+        !snapshot.pageEpoch ||
+        !snapshot.trackHandle ||
+        !snapshot.occurrenceId ||
+        !snapshot.source ||
+        !Number.isSafeInteger(Number(snapshot.selectionGeneration)) ||
+        !Number.isSafeInteger(Number(snapshot.playbackRevision))
+      ) {
+        return null;
+      }
+      return snapshot;
+    }
+
+    function getCurrentLyricTrack(track) {
+      const snapshot = getNativeLyricIdentity();
+      if (!androidPlaybackAdapter || !snapshot) return track;
+      return {
+        ...track,
+        pageEpoch: snapshot.pageEpoch,
+        nativeLyricIdentity: {
+          selectionIdentity: snapshot.trackHandle,
+          selectionRevision: snapshot.selectionGeneration,
+          selectionToken: snapshot.occurrenceId,
+        },
+      };
+    }
+
+    function canUseManualLyric(track) {
+      if (!track || !track.id) return false;
+      if (!androidPlaybackAdapter) {
+        // eslint-disable-next-line no-use-before-define
+        return isBilibiliTrack(track);
+      }
+      const snapshot = getNativeLyricIdentity();
+      return Boolean(
+        snapshot &&
+          snapshot.source === track.source &&
+          String(snapshot.capability || '').includes('manual')
+      );
+    }
+
+    function isSameNativeLyricSelection(left, right) {
+      return Boolean(
+        left &&
+          right &&
+          left.pageEpoch === right.pageEpoch &&
+          left.source === right.source &&
+          left.trackHandle === right.trackHandle &&
+          left.occurrenceId === right.occurrenceId &&
+          Number(left.selectionGeneration) === Number(right.selectionGeneration)
+      );
+    }
+
+    function isCurrentNativeLyricIdentity(identity) {
+      const current = getNativeLyricIdentity();
+      return Boolean(
+        identity &&
+          current &&
+          isSameNativeLyricSelection(identity, current) &&
+          Number(identity.playbackRevision) <= Number(current.playbackRevision)
+      );
+    }
+
+    function syncAndroidLyricClock() {
+      const snapshot = getNativeLyricIdentity();
+      if (!snapshot) return;
+      if (!isSameNativeLyricSelection(activeNativeLyricIdentity, snapshot)) {
+        activeNativeLyricIdentity = snapshot;
+        nativeLyricRequestIdentity = null;
+        lyricRequestToken += 1;
+        $scope.lyricLineNumber = -1;
+        $scope.lyricLineNumberTrans = -1;
+        const track = $scope.currentPlaying;
+        if (track && track.id) {
+          resetLyricDisplay();
+          $scope.lyricOffsetMs = getTrackLyricOffset(track.id);
+          setPrimaryLyricState(track, 'loading');
+          requestTrackLyric(track);
+        }
+      }
+      if (
+        nativeLyricOffsetPending &&
+        isSameNativeLyricSelection(
+          nativeLyricOffsetPending.identity,
+          snapshot
+        ) &&
+        Number(snapshot.playbackRevision) >
+          Number(nativeLyricOffsetPending.revision)
+      ) {
+        $scope.lyricOffsetMs = nativeLyricOffsetPending.offsetMs;
+        nativeLyricOffsetPending = null;
+      }
+      if (
+        nativeManualLyricPending &&
+        isSameNativeLyricSelection(
+          nativeManualLyricPending.identity,
+          snapshot
+        ) &&
+        Number(snapshot.playbackRevision) >
+          Number(nativeManualLyricPending.revision)
+      ) {
+        const pending = nativeManualLyricPending;
+        nativeManualLyricPending = null;
+        // eslint-disable-next-line no-use-before-define
+        applyLyricResult(pending.track, pending.result);
+      }
+      if (
+        nativeManualLyricClearPending &&
+        isSameNativeLyricSelection(
+          nativeManualLyricClearPending.identity,
+          snapshot
+        ) &&
+        Number(snapshot.playbackRevision) >
+          Number(nativeManualLyricClearPending.revision)
+      ) {
+        const pending = nativeManualLyricClearPending;
+        nativeManualLyricClearPending = null;
+        // eslint-disable-next-line no-use-before-define
+        requestTrackLyric(pending.track);
+      }
+      if (!Array.isArray($scope.lyricArray) || !$scope.lyricArray.length) {
+        return;
+      }
+      const currentMs =
+        Math.max(0, Number(snapshot.positionMs) || 0) +
+        (Number($scope.lyricOffsetMs) || 0);
+      let activeOriginal = null;
+      let activeTranslation = null;
+      $scope.lyricArray.forEach((line) => {
+        if (currentMs < Number(line.seconds || 0)) return;
+        if (line.translationFlag === true) activeTranslation = line;
+        else activeOriginal = line;
+      });
+      const previousLine = $scope.lyricLineNumber;
+      $scope.lyricLineNumber = activeOriginal ? activeOriginal.lineNumber : -1;
+      $scope.lyricLineNumberTrans = activeTranslation
+        ? activeTranslation.lineNumber
+        : -1;
+      if ($scope.androidUi.tab === 'lyrics' && previousLine !== $scope.lyricLineNumber) {
+        $timeout(() => {
+          const container = document.querySelector('.android-player-lyrics');
+          const line = container && container.querySelector(`[data-line="${$scope.lyricLineNumber}"]`);
+          if (line) container.scrollTo({
+            top: Math.max(0, container.scrollTop + line.getBoundingClientRect().top
+              - container.getBoundingClientRect().top - container.clientHeight * 0.35),
+            behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+          });
+        }, 0, false);
+      }
+    }
+
+    $scope.syncAndroidLyricClock = syncAndroidLyricClock;
+
+    $scope.toggleAndroidLyricCalibration = () => {
+      $scope.androidUi.calibrationOpen = !$scope.androidUi.calibrationOpen;
+      $timeout(() => {
+        $scope.lyricLineNumber = -1;
+        syncAndroidLyricClock();
+      }, 0);
+    };
+
+    function isCurrentPrimaryLyricState(track, requestToken) {
+      return (
+        !playControllerDestroyed &&
+        // The legacy resolver below owns the active lyric token.
+        // eslint-disable-next-line no-use-before-define
+        isCurrentLyricRequest(track, requestToken) &&
+        $scope.primaryLyricState.trackId === track.id &&
+        $scope.primaryLyricState.token === requestToken
+      );
+    }
+
+    $scope.openPrimaryLyrics = () => {
+      const track = $scope.currentPlaying;
+      if (androidPlaybackAdapter) {
+        $scope.androidPlaybackDetailOpen = true;
+        $scope.androidUi.tab = 'lyrics';
+        if (!track || !track.id) return;
+        $scope.lyricLineNumber = -1;
+        syncAndroidLyricClock();
+        if ($scope.primaryLyricState.trackId !== track.id || $scope.primaryLyricState.state === 'idle')
+          requestTrackLyric(track);
+        return;
+      }
+      if (!track || !track.id) return;
+      if (
+        $scope.window_type !== 'track' &&
+        typeof $scope.toggleNowPlaying === 'function'
+      ) {
+        $scope.toggleNowPlaying();
+      }
+      if (
+        $scope.primaryLyricState.trackId !== track.id ||
+        $scope.primaryLyricState.state === 'idle'
+      ) {
+        // eslint-disable-next-line no-use-before-define
+        requestTrackLyric(track);
+      }
+    };
+
+    $scope.cancelPrimaryLyrics = () => {
+      lyricRequestToken += 1;
+      const track = $scope.currentPlaying;
+      if (track && track.id) {
+        setPrimaryLyricState(track, 'idle');
+      }
+    };
+
+    $scope.retryPrimaryLyrics = () => {
+      if ($scope.currentPlaying && $scope.currentPlaying.id) {
+        // eslint-disable-next-line no-use-before-define
+        requestTrackLyric($scope.currentPlaying);
+      }
+    };
     const inheritedCloseDialog = $scope.closeDialog;
     if (typeof inheritedCloseDialog === 'function') {
       $scope.closeDialog = () => {
@@ -1207,34 +2089,50 @@ angular.module('listenone').controller('PlayController', [
     }
 
     $scope.adjustLyricOffset = (deltaMs) => {
-      const trackId =
-        $scope.currentPlaying && $scope.currentPlaying.id
-          ? $scope.currentPlaying.id
-          : '';
-      if (!trackId.startsWith('bitrack_')) {
+      const track = $scope.currentPlaying;
+      if (!track || !track.id || !canUseManualLyric(track)) {
         return;
       }
-      $scope.lyricOffsetMs = Math.max(
-        -MAX_LYRIC_OFFSET_MS,
-        Math.min(
-          MAX_LYRIC_OFFSET_MS,
-          $scope.lyricOffsetMs + Number(deltaMs || 0)
-        )
+      const step = Number(deltaMs || 0);
+      if (!Number.isFinite(step) || step === 0) return;
+      if (!androidPlaybackAdapter || track.id.startsWith('bitrack_')) {
+        $scope.lyricOffsetMs = Math.max(
+          -MAX_LYRIC_OFFSET_MS,
+          Math.min(MAX_LYRIC_OFFSET_MS, $scope.lyricOffsetMs + step)
+        );
+        $scope.lyricLineNumber = -1;
+        $scope.lyricLineNumberTrans = -1;
+        saveTrackLyricOffset(track.id, $scope.lyricOffsetMs);
+        if (androidPlaybackAdapter) syncAndroidLyricClock();
+        return;
+      }
+      if (nativeLyricOffsetPending) return;
+      const identity = getNativeLyricIdentity();
+      const offsetMs = Math.max(
+        -10000,
+        Math.min(10000, (Number($scope.lyricOffsetMs) || 0) + step)
       );
-      $scope.lyricLineNumber = -1;
-      $scope.lyricLineNumberTrans = -1;
-      saveTrackLyricOffset(trackId, $scope.lyricOffsetMs);
+      const result = MediaService.setLyricOffset(
+        track.id,
+        offsetMs,
+        getCurrentLyricTrack(track)
+      );
+      if (!result || !result.promise) return;
+      const pending = {
+        identity,
+        offsetMs,
+        revision: identity.playbackRevision,
+      };
+      nativeLyricOffsetPending = pending;
+      result.promise.catch(() => {
+        if (nativeLyricOffsetPending === pending)
+          nativeLyricOffsetPending = null;
+      });
     };
 
     $scope.resetLyricOffset = () => {
-      const trackId =
-        $scope.currentPlaying && $scope.currentPlaying.id
-          ? $scope.currentPlaying.id
-          : '';
-      $scope.lyricOffsetMs = 0;
-      $scope.lyricLineNumber = -1;
-      $scope.lyricLineNumberTrans = -1;
-      saveTrackLyricOffset(trackId, 0);
+      const current = $scope.lyricOffsetMs;
+      if (current !== 0) $scope.adjustLyricOffset(-current);
     };
 
     $scope.lyricOffsetLabel = () => {
@@ -1337,6 +2235,17 @@ angular.module('listenone').controller('PlayController', [
         ...$scope.machineTranslationConfig,
         ...response.config,
       };
+      if (isAndroidTranslationSurface()) {
+        // The settings page is a descendant controller. Broadcast public state
+        // only; never include the still-filled API key input in an event.
+        $rootScope.$broadcast('android:deepseek-config-changed', {
+          hasApiKey: $scope.machineTranslationConfig.hasApiKey === true,
+          secureStorageAvailable:
+            $scope.machineTranslationConfig.secureStorageAvailable === true,
+          nativeClientAvailable:
+            $scope.machineTranslationConfig.nativeClientAvailable === true,
+        });
+      }
       return true;
     }
 
@@ -1356,7 +2265,7 @@ angular.module('listenone').controller('PlayController', [
     };
 
     function loadMachineTranslationConfig() {
-      if (!isElectron()) {
+      if (!isElectron() && !isAndroidTranslationSurface()) {
         return Promise.resolve(false);
       }
       return MediaService.getMachineTranslationConfig()
@@ -1369,11 +2278,14 @@ angular.module('listenone').controller('PlayController', [
         .catch(() => false);
     }
 
+    $scope.refreshMachineTranslationConfig = () =>
+      loadMachineTranslationConfig();
+
     function saveMachineTranslationConfig(
       showNotice,
       { includeApiKey = true, includeStyleHint = true, noticeKey } = {}
     ) {
-      if (!isElectron()) {
+      if (!isElectron() && !isAndroidTranslationSurface()) {
         return Promise.resolve(false);
       }
       $scope.machineTranslationConfigPending = true;
@@ -1465,11 +2377,18 @@ angular.module('listenone').controller('PlayController', [
         shell.openExternal(url);
         return;
       }
+      if (isAndroidTranslationSurface()) {
+        window.location.href = url;
+        return;
+      }
       window.open(url, '_blank');
     };
 
     $scope.clearMachineTranslationApiKey = () => {
-      if (!isElectron() || $scope.machineTranslationConfigPending) {
+      if (
+        (!isElectron() && !isAndroidTranslationSurface()) ||
+        $scope.machineTranslationConfigPending
+      ) {
         return;
       }
       $scope.machineTranslationConfigPending = true;
@@ -1499,13 +2418,23 @@ angular.module('listenone').controller('PlayController', [
       if ($scope.machineTranslationConfigPending) {
         return;
       }
+      $scope.machineTranslationTestState = { state: 'loading', message: '' };
+      const reportTestFailure = (status) => {
+        const invalidResponse = [
+          'invalid-json',
+          'invalid-response',
+          'invalid-alignment',
+          'unexpected-finish-reason',
+        ].includes(status);
+        const message = invalidResponse
+          ? i18next.t('_MACHINE_TRANSLATION_TEST_INVALID_RESPONSE')
+          : getMachineTranslationErrorMessage(status || 'request-failed');
+        $scope.machineTranslationTestState = { state: 'error', message };
+        notyf.error(message);
+      };
       saveMachineTranslationConfig(false).then((saveResponse) => {
         if (!saveResponse || saveResponse.ok !== true) {
-          notyf.error(
-            getMachineTranslationErrorMessage(
-              (saveResponse && saveResponse.status) || 'request-failed'
-            )
-          );
+          $scope.$evalAsync(() => reportTestFailure(saveResponse && saveResponse.status));
           return;
         }
         $scope.machineTranslationConfigPending = true;
@@ -1514,20 +2443,18 @@ angular.module('listenone').controller('PlayController', [
             $scope.$evalAsync(() => {
               $scope.machineTranslationConfigPending = false;
               if (!response || response.ok !== true) {
-                notyf.error(
-                  getMachineTranslationErrorMessage(
-                    (response && response.status) || 'request-failed'
-                  )
-                );
+                reportTestFailure(response && response.status);
                 return;
               }
-              notyf.success(i18next.t('_MACHINE_TRANSLATION_TEST_SUCCESS'));
+              const message = i18next.t('_MACHINE_TRANSLATION_TEST_SUCCESS');
+              $scope.machineTranslationTestState = { state: 'success', message };
+              notyf.success(message);
             });
           })
           .catch(() => {
             $scope.$evalAsync(() => {
               $scope.machineTranslationConfigPending = false;
-              notyf.error(i18next.t('_MACHINE_TRANSLATION_FAILED'));
+              reportTestFailure('request-failed');
             });
           });
       });
@@ -1547,13 +2474,16 @@ angular.module('listenone').controller('PlayController', [
         $scope.settings = localSettings;
       }
       // apply settings
-      switchMode($scope.settings.playmode);
+      // Native playback restores its own Room-backed mode and volume. Sending
+      // renderer defaults before the Media3 session attaches creates stale,
+      // rejected startup commands and must not override native truth.
+      if (!androidPlaybackAdapter) switchMode($scope.settings.playmode);
 
       $scope.volume = $scope.settings.volume;
       if ($scope.volume === null) {
         $scope.volume = 90;
         $scope.saveLocalSettings();
-      } else {
+      } else if (!androidPlaybackAdapter) {
         l1Player.setVolume($scope.volume);
       }
       $scope.enableGlobalShortCut = localStorage.getObject(
@@ -1931,7 +2861,8 @@ angular.module('listenone').controller('PlayController', [
                 .replace(
                   /&(?:amp|lt|gt|quot|#39|apos);/g,
                   (match) => htmlUnescapes[match]
-                ),
+                )
+                .replace(/<\d{1,3}:\d{2}(?:\.\d{1,3})?>/g, ''),
               seconds:
                 parseInt(timeRegResult[1], 10) * 60 * 1000 + // min
                 parseInt(timeRegResult[2], 10) * 1000 + // sec
@@ -2108,6 +3039,7 @@ angular.module('listenone').controller('PlayController', [
       $scope.lyricTranslationSource = '';
       $scope.lyricMachineTranslationProvider = '';
       $scope.currentLyricResult = null;
+      $scope.lyricPersistenceState = 'idle';
       refreshFloatingLyric();
       const lyricElement =
         document.querySelector('.playsong-detail .detail-songinfo .lyric') ||
@@ -2119,14 +3051,46 @@ angular.module('listenone').controller('PlayController', [
 
     function applyLyricResult(track, result) {
       if (!$scope.currentPlaying || $scope.currentPlaying.id !== track.id) {
-        return;
+        return false;
       }
       const safeResult = result || {};
-      resetLyricDisplay();
-      if (!safeResult.lyric) {
-        return;
+      const lyricArray = safeResult.lyric
+        ? parseLyric(safeResult.lyric, safeResult.tlyric)
+        : [];
+      const originalLines = lyricArray.filter(
+        (line) => line.translationFlag !== true
+      );
+      const timedOriginalLines = originalLines.filter(
+        (line) => Number(line.seconds) > 0 || Number(line.seconds) === 0
+      );
+      const terminalStatus = String(safeResult.status || safeResult.code || '');
+      const classified = classifyNativeLyricState({
+        lineCount: originalLines.length || (safeResult.lyric ? 1 : 0),
+        timedLineCount: timedOriginalLines.length,
+        durationMs: androidPlaybackAdapter
+          ? Number((getNativeLyricIdentity() || {}).durationMs)
+          : Math.round(Number(track.duration || 0) * 1000),
+        matchedDurationMs: Math.round(
+          Number(safeResult.matchedDuration || safeResult.duration || 0) * 1000
+        ),
+        identityAccepted:
+          !androidPlaybackAdapter ||
+          (nativeLyricRequestIdentity &&
+            isCurrentNativeLyricIdentity(nativeLyricRequestIdentity)),
+        terminalStatus: normalizeLyricTerminalStatus(terminalStatus),
+      });
+      if (
+        !['synchronized', 'text-only', 'insufficient-timestamp'].includes(
+          classified
+        )
+      ) {
+        if (classified !== 'stale') setPrimaryLyricState(track, classified);
+        return false;
       }
+      resetLyricDisplay();
       $scope.currentLyricResult = { ...safeResult };
+      $scope.lyricPersistenceState = Number(safeResult.lyricCacheRevision) > 0
+        ? 'saved' : 'idle';
       $scope.lyricSource = safeResult.source || track.source || '';
       $scope.lyricMatchedTrack = [
         safeResult.matchedTitle,
@@ -2134,7 +3098,7 @@ angular.module('listenone').controller('PlayController', [
       ]
         .filter(Boolean)
         .join(' · ');
-      $scope.lyricArray = parseLyric(safeResult.lyric, safeResult.tlyric);
+      $scope.lyricArray = lyricArray;
       $scope.hasLyricTranslation = $scope.lyricArray.some(
         (line) =>
           line.translationFlag === true &&
@@ -2152,6 +3116,9 @@ angular.module('listenone').controller('PlayController', [
         (safeResult.machineTranslated
           ? safeResult.translationProvider || 'DeepSeek'
           : '');
+      setPrimaryLyricState(track, classified);
+      if (androidPlaybackAdapter) $timeout(syncAndroidLyricClock, 0);
+      return true;
     }
 
     function lyricResultToCandidate(track, result) {
@@ -2246,6 +3213,11 @@ angular.module('listenone').controller('PlayController', [
           if (resolvedCandidate.hasTranslation) {
             return resolvedCandidate;
           }
+          // Android sends a complete lyric only after the explicit consent
+          // dialog; automatic lookup must never create a billable request.
+          if (isAndroidTranslationSurface()) {
+            return resolvedCandidate;
+          }
           return MediaService.machineTranslateLyricCandidate(
             track,
             resolvedCandidate,
@@ -2294,7 +3266,12 @@ angular.module('listenone').controller('PlayController', [
     }
 
     function saveManualLyricOrNotify(track, candidate) {
-      const result = MediaService.saveManualLyric(track.id, candidate, track);
+      const result = MediaService.saveManualLyric(
+        track.id,
+        candidate,
+        getCurrentLyricTrack(track)
+      );
+      if (result && result.promise) return result.promise;
       if (!result || result.ok !== true) {
         notyf.warning(getLyricStorageFailureMessage(result));
         return false;
@@ -2314,11 +3291,14 @@ angular.module('listenone').controller('PlayController', [
         'manual-selection'
       );
       if (!isElectron()) {
-        return Promise.resolve(
-          saveManualLyricOrNotify(track, candidate)
-            ? { ok: true, record: null }
-            : { ok: false }
-        );
+        const saved = saveManualLyricOrNotify(track, candidate);
+        const savedPromise = saved && typeof saved.then === 'function'
+          ? saved.then((response) => ({ ...response, record: null }))
+          : Promise.resolve(saved ? { ok: true, record: null } : { ok: false });
+        return savedPromise.then((response) => {
+          if (!response.ok || !isAndroidTranslationSurface()) return response;
+          return persistAndroidLyric(track, result, 'manual');
+        });
       }
       return MediaService.putPersistentLyric(
         track,
@@ -2345,7 +3325,11 @@ angular.module('listenone').controller('PlayController', [
     }
 
     function clearManualLyricOrNotify(track) {
-      const result = MediaService.clearManualLyric(track.id, track);
+      const result = MediaService.clearManualLyric(
+        track.id,
+        getCurrentLyricTrack(track)
+      );
+      if (result && result.promise) return result.promise;
       if (!result || result.ok !== true) {
         notyf.warning(getLyricStorageFailureMessage(result));
         return false;
@@ -2356,11 +3340,26 @@ angular.module('listenone').controller('PlayController', [
     let lyricTranslationConfirmTrigger = null;
 
     function resetLyricTranslationConfirmation(restoreFocus = false) {
+      if (
+        activeLyricTranslationHandle &&
+        typeof activeLyricTranslationHandle.cancel === 'function'
+      ) {
+        activeLyricTranslationHandle.cancel();
+      }
+      activeLyricTranslationHandle = null;
       lyricTranslationRequestToken += 1;
       $scope.lyricTranslationConfirmOpen = false;
       $scope.lyricTranslationConfirmPending = false;
       $scope.lyricTranslationConfirmError = '';
       $scope.lyricTranslationConfirmMode = 'translate';
+      $scope.lyricTranslationConsent = {
+        lyrics: false,
+        title: false,
+        artist: false,
+        possibleCost: false,
+        cancellation: false,
+        failureImpact: false,
+      };
       const trigger = lyricTranslationConfirmTrigger;
       lyricTranslationConfirmTrigger = null;
       if (restoreFocus && trigger && document.contains(trigger)) {
@@ -2371,6 +3370,12 @@ angular.module('listenone').controller('PlayController', [
     $scope.closeLyricTranslationConfirmation = () => {
       resetLyricTranslationConfirmation(true);
     };
+
+    $scope.$on('android:close-transient-overlay', () => {
+      if ($scope.lyricTranslationConfirmOpen) {
+        resetLyricTranslationConfirmation(false);
+      }
+    });
 
     $scope.handleLyricTranslationConfirmationKeydown = (event) => {
       const isEscape = event.key === 'Escape' || event.keyCode === 27;
@@ -2424,6 +3429,19 @@ angular.module('listenone').controller('PlayController', [
           : '_MACHINE_TRANSLATION_CONFIRM_ACTION'
       );
 
+    $scope.cancelCurrentLyricTranslation = () => {
+      if (
+        activeLyricTranslationHandle &&
+        typeof activeLyricTranslationHandle.cancel === 'function'
+      ) {
+        activeLyricTranslationHandle.cancel();
+      }
+      activeLyricTranslationHandle = null;
+      if ($scope.lyricTranslationConfirmOpen) {
+        resetLyricTranslationConfirmation(true);
+      }
+    };
+
     function openLyricTranslationConfirmation(mode = 'translate') {
       const track = $scope.currentPlaying;
       const originalResult = $scope.currentLyricResult;
@@ -2431,7 +3449,7 @@ angular.module('listenone').controller('PlayController', [
         notyf.info(i18next.t('_LYRIC_TRANSLATION_UNAVAILABLE'));
         return;
       }
-      if (!isElectron()) {
+      if (!isElectron() && !isAndroidTranslationSurface()) {
         notyf.info(i18next.t('_LYRIC_TRANSLATION_UNAVAILABLE'));
         return;
       }
@@ -2441,6 +3459,14 @@ angular.module('listenone').controller('PlayController', [
       lyricTranslationConfirmTrigger = document.activeElement;
       $scope.lyricTranslationConfirmMode =
         mode === 'retranslate' ? 'retranslate' : 'translate';
+      $scope.lyricTranslationConsent = {
+        lyrics: false,
+        title: false,
+        artist: false,
+        possibleCost: false,
+        cancellation: false,
+        failureImpact: false,
+      };
       $scope.lyricTranslationConfirmOpen = true;
       $scope.lyricTranslationConfirmError = '';
       $timeout(() => {
@@ -2458,6 +3484,16 @@ angular.module('listenone').controller('PlayController', [
         return;
       }
       openLyricTranslationConfirmation('retranslate');
+    };
+
+    $scope.requestAndroidLyricTranslation = () => {
+      if (!$scope.machineTranslationConfig.hasApiKey) {
+        $scope.openAndroidAppSettings('translation');
+        return;
+      }
+      openLyricTranslationConfirmation(
+        $scope.lyricTranslationSource === 'machine' ? 'retranslate' : 'translate'
+      );
     };
 
     $scope.restoreSourceLyricTranslation = () => {
@@ -2488,11 +3524,21 @@ angular.module('listenone').controller('PlayController', [
       notyf.success(i18next.t('_MACHINE_TRANSLATION_SOURCE_RESTORED'));
     };
 
+    function getPersistentLyricTrack(track) {
+      return {
+        ...track,
+        pageEpoch:
+          (nativeLyricRequestIdentity &&
+            nativeLyricRequestIdentity.pageEpoch) ||
+          track.pageEpoch,
+      };
+    }
+
     $scope.confirmCurrentLyricTranslation = () => {
       const track = $scope.currentPlaying;
       const originalResult = $scope.currentLyricResult;
       if (
-        !isElectron() ||
+        (!isElectron() && !isAndroidTranslationSurface()) ||
         !isBilibiliTrack(track) ||
         !originalResult ||
         !originalResult.lyric ||
@@ -2519,15 +3565,31 @@ angular.module('listenone').controller('PlayController', [
       $scope.lyricTranslationConfirmPending = true;
       $scope.lyricTranslationConfirmError = '';
       const candidate = lyricResultToCandidate(track, originalResult);
-      MediaService.machineTranslateLyricCandidate(
+      const translationHandle = MediaService.machineTranslateLyricCandidate(
         track,
         candidate,
         getMachineTranslationTargetLanguage(),
         {
           allowNetwork: true,
           forceRefresh: retranslate,
+          styleHint: $scope.machineTranslationConfig.styleHint || '',
+          ...(isAndroidTranslationSurface()
+            ? {
+                consent: {
+                  lyrics: true,
+                  title: true,
+                  artist: true,
+                  possibleCost: true,
+                  cancellation: true,
+                  failureImpact: true,
+                  acceptedAtEpochMs: Date.now(),
+                },
+              }
+            : {}),
         }
-      )
+      );
+      activeLyricTranslationHandle = translationHandle;
+      translationHandle
         .then(decorateLyricCandidate)
         .then((resolvedCandidate) => {
           $scope.$evalAsync(() => {
@@ -2539,6 +3601,7 @@ angular.module('listenone').controller('PlayController', [
               return;
             }
             $scope.lyricTranslationConfirmPending = false;
+            activeLyricTranslationHandle = null;
             if (!resolvedCandidate.hasTranslation) {
               $scope.lyricTranslationConfirmError =
                 getMachineTranslationErrorMessage(
@@ -2553,15 +3616,31 @@ angular.module('listenone').controller('PlayController', [
             ) {
               return;
             }
-            applyLyricResult(
-              track,
-              candidateToLyricResult(resolvedCandidate, originalResult, source)
+            const translatedResult = candidateToLyricResult(
+              resolvedCandidate,
+              originalResult,
+              source
             );
+            applyLyricResult(track, translatedResult);
+            if (isAndroidTranslationSurface()) {
+              persistAndroidLyric(track, translatedResult, 'auto');
+            }
             $scope.lyricTranslationSourceSnapshot = sourceTranslationSnapshot;
             $scope.enableLyricTranslation = true;
             localStorage.setObject('enable_lyric_translation', true);
+            if (isAndroidTranslationSurface()) {
+              $scope.setAndroidLyricTranslationVisible(true);
+            }
             $scope.lyricTranslationConfirmOpen = false;
             $scope.lyricTranslationConfirmError = '';
+            $scope.lyricTranslationConsent = {
+              lyrics: false,
+              title: false,
+              artist: false,
+              possibleCost: false,
+              cancellation: false,
+              failureImpact: false,
+            };
             notifyTranslationResult(resolvedCandidate);
           });
         })
@@ -2571,6 +3650,7 @@ angular.module('listenone').controller('PlayController', [
               return;
             }
             $scope.lyricTranslationConfirmPending = false;
+            activeLyricTranslationHandle = null;
             $scope.lyricTranslationConfirmError = i18next.t(
               '_MACHINE_TRANSLATION_FAILED'
             );
@@ -2583,7 +3663,10 @@ angular.module('listenone').controller('PlayController', [
       return (
         requestToken === lyricRequestToken &&
         $scope.currentPlaying &&
-        $scope.currentPlaying.id === track.id
+        $scope.currentPlaying.id === track.id &&
+        (!androidPlaybackAdapter ||
+          (nativeLyricRequestIdentity &&
+            isCurrentNativeLyricIdentity(nativeLyricRequestIdentity)))
       );
     }
 
@@ -2594,7 +3677,15 @@ angular.module('listenone').controller('PlayController', [
           track.album_id,
           track.lyric_url,
           track.tlyric_url,
-          track
+          {
+            ...track,
+            pageEpoch:
+              (nativeLyricRequestIdentity &&
+                nativeLyricRequestIdentity.pageEpoch) ||
+              track.pageEpoch,
+            nativeLyricIdentity: nativeLyricRequestIdentity,
+            lyricIdentity: nativeLyricRequestIdentity,
+          }
         ).success((result) => resolve(result || { lyric: '' }));
       });
     }
@@ -2616,10 +3707,14 @@ angular.module('listenone').controller('PlayController', [
             if (!isCurrentLyricRequest(track, requestToken)) return;
             $scope.lyricTranslationLookupPending = false;
             if (!resolvedCandidate.hasTranslation) return;
-            applyLyricResult(
-              track,
-              candidateToLyricResult(resolvedCandidate, result)
+            const translatedResult = candidateToLyricResult(
+              resolvedCandidate,
+              result
             );
+            applyLyricResult(track, translatedResult);
+            if (isAndroidTranslationSurface()) {
+              persistAndroidLyric(track, translatedResult, 'auto');
+            }
           });
         })
         .catch(() => {
@@ -2631,19 +3726,48 @@ angular.module('listenone').controller('PlayController', [
         });
     }
 
+    function persistAndroidLyric(track, result, mode) {
+      $scope.lyricPersistenceState = 'saving';
+      return MediaService.putPersistentLyric(
+        getPersistentLyricTrack(track), result, mode
+      ).catch(() => ({ ok: false })).then((saved) => {
+        $scope.$evalAsync(() => {
+          if (!$scope.currentPlaying || $scope.currentPlaying.id !== track.id ||
+              !$scope.currentLyricResult || $scope.currentLyricResult.lyric !== result.lyric ||
+              ($scope.currentLyricResult.tlyric || '') !== (result.tlyric || '')) return;
+          $scope.lyricPersistenceState = saved && saved.ok ? 'saved' : 'error';
+          if (saved && saved.ok && saved.record) {
+            $scope.currentLyricResult.lyricCacheRevision = saved.record.revision;
+          }
+        });
+        return saved;
+      });
+    }
+
+    $scope.retryAndroidLyricSave = () => {
+      if ($scope.currentPlaying && $scope.currentLyricResult) {
+        persistAndroidLyric($scope.currentPlaying, $scope.currentLyricResult, 'auto');
+      }
+    };
+
     function persistAutomaticLyric(track, result, expectedRevision) {
-      if (!isElectron() || !result || !result.lyric) {
+      if (
+        (!isElectron() && !isAndroidTranslationSurface()) ||
+        !result ||
+        !result.lyric
+      ) {
         return Promise.resolve(null);
       }
+      if (isAndroidTranslationSurface()) return persistAndroidLyric(track, result, 'auto');
       return MediaService.putPersistentLyric(
-        track,
+        getPersistentLyricTrack(track),
         result,
         'auto',
         expectedRevision
       ).catch(() => null);
     }
 
-    function requestTrackLyric(track) {
+    function requestTrackLyric(track, forceRefresh = false) {
       if (!track || !track.id) {
         return;
       }
@@ -2652,16 +3776,62 @@ angular.module('listenone').controller('PlayController', [
       $scope.lyricTranslationLookupPending = false;
       lyricRequestToken += 1;
       const requestToken = lyricRequestToken;
-      resetLyricDisplay();
+      nativeLyricRequestIdentity = androidPlaybackAdapter
+        ? getNativeLyricIdentity()
+        : null;
+      if (androidPlaybackAdapter && !nativeLyricRequestIdentity) {
+        setPrimaryLyricState(track, 'unavailable');
+        return;
+      }
+      // Keep current readable lyrics while a current native request settles;
+      // only the accepted identity may replace them.
+      if (!androidPlaybackAdapter) resetLyricDisplay();
+      setPrimaryLyricState(track, 'loading');
       if (!isElectron()) {
-        getProviderLyric(track).then((result) => {
-          if (!isCurrentLyricRequest(track, requestToken)) return;
-          $scope.$evalAsync(() => {
+        (forceRefresh ? Promise.resolve(null) :
+          MediaService.getPersistentLyric(getPersistentLyricTrack(track)))
+          .catch(() => ({ ok: false, result: null, record: null }))
+          .then((cacheResponse) => {
+            if (!isCurrentLyricRequest(track, requestToken)) return null;
+            const cached = cacheResponse && cacheResponse.result;
+            if (cached) {
+              $scope.$evalAsync(() => {
+                if (isCurrentLyricRequest(track, requestToken)) {
+                  applyLyricResult(track, cached);
+                }
+              });
+              return null;
+            }
+            return getProviderLyric(track).then((result) => ({
+              result,
+              expectedRevision: Number(
+                (cacheResponse &&
+                  cacheResponse.record &&
+                  cacheResponse.record.revision) ||
+                  0
+              ),
+            }));
+          })
+          .then((remote) => {
+            if (!remote || !isCurrentLyricRequest(track, requestToken)) return;
+            const result = remote.result || { lyric: '' };
             if (!isCurrentLyricRequest(track, requestToken)) return;
-            applyLyricResult(track, result);
-            applyAutomaticLyricTranslation(track, result, requestToken);
+            $scope.$evalAsync(() => {
+              if (!isCurrentLyricRequest(track, requestToken)) return;
+              applyLyricResult(track, result);
+              applyAutomaticLyricTranslation(track, result, requestToken);
+            });
+            persistAutomaticLyric(track, result, remote.expectedRevision).catch(
+              () => null
+            );
+          })
+          .catch(() => {
+            $scope.$evalAsync(() => {
+              if (isCurrentPrimaryLyricState(track, requestToken)) {
+                setPrimaryLyricState(track, 'error');
+              }
+            });
           });
-        });
         return;
       }
 
@@ -2725,12 +3895,19 @@ angular.module('listenone').controller('PlayController', [
               });
             }
           );
+        })
+        .catch(() => {
+          $scope.$evalAsync(() => {
+            if (isCurrentPrimaryLyricState(track, requestToken)) {
+              setPrimaryLyricState(track, 'error');
+            }
+          });
         });
     }
 
     $scope.openLyricPicker = () => {
       const track = $scope.currentPlaying;
-      if (!isBilibiliTrack(track)) {
+      if (!canUseManualLyric(track)) {
         return;
       }
       const isNewTrack = $scope.lyricPickerTrackId !== track.id;
@@ -2821,7 +3998,79 @@ angular.module('listenone').controller('PlayController', [
       if (activeLyricSearch) activeLyricSearch.cancel();
     });
 
+    const searchAndroidLyricCandidates = () => {
+      const track = $scope.currentPlaying;
+      const query = String($scope.lyricSearch.query || '').trim();
+      if (!canUseManualLyric(track) || !query) {
+        $scope.lyricSearchResults = [];
+        $scope.lyricSearchState = 'empty';
+        $scope.lyricSearchPending = false;
+        return;
+      }
+      lyricSearchToken += 1;
+      const searchToken = lyricSearchToken;
+      const trackId = track.id;
+      const identity = getNativeLyricIdentity();
+      const lyricTrack = getCurrentLyricTrack(track);
+      const candidatesById = new Map();
+      let completedRequests = 0;
+      let failedRequests = 0;
+      $scope.lyricSearchResults = [];
+      $scope.lyricSearchState = 'loading';
+      $scope.lyricSearchPending = true;
+
+      const requests = [
+        () => MediaService.searchLyricCandidates(lyricTrack, query),
+        () => MediaService.searchSupplementalLyricCandidates(lyricTrack, query),
+      ];
+      const settleRequest = (results, failed) => {
+        completedRequests += 1;
+        if (failed) {
+          failedRequests += 1;
+        }
+        if (Array.isArray(results)) {
+          results.forEach((candidate) => {
+            if (candidate && candidate.id) {
+              candidatesById.set(
+                candidate.id,
+                decorateLyricCandidate(candidate)
+              );
+            }
+          });
+        }
+        $scope.$evalAsync(() => {
+          if (
+            searchToken !== lyricSearchToken ||
+            !$scope.currentPlaying ||
+            $scope.currentPlaying.id !== trackId ||
+            !$scope.lyricPickerOpen ||
+            (androidPlaybackAdapter && !isCurrentNativeLyricIdentity(identity))
+          ) {
+            return;
+          }
+          $scope.lyricSearchResults = Array.from(candidatesById.values());
+          $scope.lyricSearchResults.sort(compareLyricCandidates);
+          $scope.lyricSearchPending = completedRequests < requests.length;
+          if ($scope.lyricSearchResults.length > 0) {
+            $scope.lyricSearchState = 'results';
+          } else if ($scope.lyricSearchPending) {
+            $scope.lyricSearchState = 'loading';
+          } else {
+            $scope.lyricSearchState = failedRequests > 0 ? 'error' : 'empty';
+          }
+        });
+      };
+
+      requests.forEach((loadCandidates) => {
+        Promise.resolve()
+          .then(loadCandidates)
+          .then((results) => settleRequest(results, false))
+          .catch(() => settleRequest([], true));
+      });
+    };
+
     $scope.searchLyricCandidates = (force = false) => {
+      if (androidPlaybackAdapter) return searchAndroidLyricCandidates();
       const track = $scope.currentPlaying;
       const query = String($scope.lyricSearch.query || '').trim();
       if (!track || !query) return;
@@ -2877,7 +4126,7 @@ angular.module('listenone').controller('PlayController', [
 
     $scope.chooseLyricCandidate = (candidate) => {
       const track = $scope.currentPlaying;
-      if (!isBilibiliTrack(track) || !candidate || !candidate.lyric) {
+      if (!canUseManualLyric(track) || !candidate || !candidate.lyric) {
         return;
       }
       const selectedCandidate = decorateLyricCandidate(candidate);
@@ -2888,6 +4137,7 @@ angular.module('listenone').controller('PlayController', [
           $scope.currentLyricResult.lyricCacheRevision) ||
           0
       );
+      const identity = getNativeLyricIdentity();
       persistManualLyric(
         track,
         selectedCandidate,
@@ -2902,10 +4152,16 @@ angular.module('listenone').controller('PlayController', [
             notyf.warning(getLyricStorageFailureMessage(persisted));
             return Promise.resolve(null);
           }
+          if (
+            androidPlaybackAdapter &&
+            !isCurrentNativeLyricIdentity(identity)
+          ) {
+            return Promise.resolve(null);
+          }
           manualLyricResolveToken += 1;
           const resolveToken = manualLyricResolveToken;
           lyricRequestToken += 1;
-          applyLyricResult(track, {
+          const manualResult = {
             lyric: selectedCandidate.lyric,
             tlyric: selectedCandidate.tlyric || '',
             source: 'manual-selection',
@@ -2918,8 +4174,17 @@ angular.module('listenone').controller('PlayController', [
             lyricCacheRevision:
               (persisted.record && persisted.record.revision) || 0,
             lyricCacheMode: 'manual',
-          });
+          };
+          if (androidPlaybackAdapter) {
+            // A saved lyric is valid for this selection even while paused;
+            // it must not wait for a new Media3 clock revision to become visible.
+            nativeLyricRequestIdentity = identity;
+            applyLyricResult(track, manualResult);
+          } else {
+            applyLyricResult(track, manualResult);
+          }
           $scope.closeLyricPicker();
+          $scope.$evalAsync();
           if (selectedCandidate.hasTranslation) return Promise.resolve(null);
           $scope.lyricTranslationLookupPending = true;
           return resolveCandidateTranslation(track, selectedCandidate).then(
@@ -2984,12 +4249,13 @@ angular.module('listenone').controller('PlayController', [
 
     $scope.restoreAutoLyric = () => {
       const track = $scope.currentPlaying;
-      if (!isBilibiliTrack(track)) {
+      if (!canUseManualLyric(track)) {
         return;
       }
       manualLyricResolveToken += 1;
       manualLyricSelectionToken += 1;
       $scope.lyricTranslationLookupPending = false;
+      const nativeIdentity = getNativeLyricIdentity();
       const clearResult = isElectron()
         ? MediaService.clearPersistentLyric(
             track,
@@ -2999,11 +4265,16 @@ angular.module('listenone').controller('PlayController', [
                 0
             )
           )
-        : Promise.resolve(
-            clearManualLyricOrNotify(track)
-              ? { ok: true }
-              : { ok: false, status: 'request-failed' }
-          );
+        : (() => {
+            const cleared = clearManualLyricOrNotify(track);
+            return cleared && typeof cleared.then === 'function'
+              ? cleared
+              : Promise.resolve(
+                  cleared
+                    ? { ok: true }
+                    : { ok: false, status: 'request-failed' }
+                );
+          })();
       clearResult.then((response) => {
         if (!response || response.ok !== true) {
           notyf.warning(getLyricStorageFailureMessage(response));
@@ -3016,7 +4287,9 @@ angular.module('listenone').controller('PlayController', [
         }
         $scope.$evalAsync(() => {
           $scope.closeLyricPicker();
-          requestTrackLyric(track);
+          if (!androidPlaybackAdapter || isCurrentNativeLyricIdentity(nativeIdentity)) {
+            requestTrackLyric(track, isAndroidTranslationSurface());
+          }
         });
       });
     };
@@ -3054,6 +4327,24 @@ angular.module('listenone').controller('PlayController', [
 
           case 'PLAYBACK_RECOVERY': {
             $scope.playbackRecoveryNotice(msg.data);
+            break;
+          }
+
+          case 'FOREGROUND_PLAYBACK_STATE': {
+            const state = msg.data || {};
+            $scope.$evalAsync(() => {
+              if (
+                !$scope.currentPlaying ||
+                state.trackId !== $scope.currentPlaying.id
+              ) {
+                return;
+              }
+              $scope.foregroundPlaybackState = state.state || 'error';
+              $scope.foregroundPlaybackFailure =
+                state.failure && typeof state.failure === 'object'
+                  ? { kind: state.failure.kind || '' }
+                  : null;
+            });
             break;
           }
 
@@ -3213,6 +4504,10 @@ angular.module('listenone').controller('PlayController', [
             current.nowplaying_track_id = msg.data.currentPlaying.id;
             localStorage.setObject('player-settings', current);
             const track = msg.data.currentPlaying;
+            $scope.foregroundPlaybackState = isVideoTrack
+              ? 'resolving'
+              : 'idle';
+            $scope.foregroundPlaybackFailure = null;
             $scope.lyricOffsetMs = getTrackLyricOffset(track.id);
             lyricSearchToken += 1;
             resetLyricTranslationConfirmation();
@@ -3364,7 +4659,27 @@ angular.module('listenone').controller('PlayController', [
     });
 
     // connect player should run after all addListener function finished
-    l1Player.connectPlayer();
+    const playerConnection = l1Player.connectPlayer();
+    if (playerConnection && typeof playerConnection.catch === 'function') {
+      playerConnection.catch(() => {
+        if (!androidPlaybackAdapter || playControllerDestroyed) return;
+        $scope.$evalAsync(() => {
+          $scope.androidPlaybackBusy = false;
+        });
+      });
+    }
+    if (androidPlaybackAdapter) {
+      refreshAndroidPlaybackSnapshot();
+      document.addEventListener('keydown', $scope.handleAndroidPlayerBack);
+      $scope.$on('$destroy', () => {
+        playControllerDestroyed = true;
+        if (androidPlaybackRefreshTimer) {
+          $timeout.cancel(androidPlaybackRefreshTimer);
+          androidPlaybackRefreshTimer = null;
+        }
+        document.removeEventListener('keydown', $scope.handleAndroidPlayerBack);
+      });
+    }
 
     // define keybind
     // description: '播放/暂停',
@@ -3530,6 +4845,7 @@ angular.module('listenone').controller('PlayController', [
         onAudioCacheChanged
       );
       playControllerDestroyed = true;
+      lyricRequestToken += 1;
       cancelAudioCacheStatusPoll();
       if (bilibiliMvPlayer) {
         bilibiliMvPlayer.destroy();

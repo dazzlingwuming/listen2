@@ -6,7 +6,15 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-function createPlayer(mediaService, windowValues = {}) {
+function createPlayer(
+  mediaService,
+  windowValues = {},
+  navigatorValues = {
+    mediaSession: {
+      setActionHandler() {},
+    },
+  }
+) {
   const filename = path.join(__dirname, '..', 'js', 'player_thread.js');
   const source = fs.readFileSync(filename, 'utf8');
   const messages = [];
@@ -51,11 +59,7 @@ function createPlayer(mediaService, windowValues = {}) {
     },
     MediaMetadata() {},
     MediaService: mediaService,
-    navigator: {
-      mediaSession: {
-        setActionHandler() {},
-      },
-    },
+    navigator: navigatorValues,
     playerSendMessage(mode, message) {
       messages.push({ mode, message });
     },
@@ -90,6 +94,15 @@ function createPlayer(mediaService, windowValues = {}) {
     timerDelays,
   };
 }
+
+assert.doesNotThrow(() => {
+  const { player } = createPlayer(
+    { bootstrapTrack() {} },
+    {},
+    { mediaSession: undefined }
+  );
+  player.sendFrameUpdate();
+}, 'a WebView with an undefined mediaSession value must still initialize');
 
 function createMediaNode(bufferedEnd = 0) {
   const listeners = new Map();

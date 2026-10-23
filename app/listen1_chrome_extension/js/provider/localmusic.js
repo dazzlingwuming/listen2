@@ -83,12 +83,85 @@ class localmusic {
     success(sound);
   }
 
-  static lyric(url) {
+  static get_android_http_adapter() {
+    if (typeof window === 'undefined') return null;
+    const adapter = window.Listen2AndroidHttpAdapter;
+    if (
+      !adapter ||
+      typeof adapter.isAvailable !== 'function' ||
+      typeof adapter.request !== 'function'
+    ) {
+      return null;
+    }
+    try {
+      return adapter.isAvailable() ? adapter : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  static create_android_lyric_facade(handle) {
+    const promise = handle.promise
+      .then((response) => {
+        const result = response && response.result;
+        if (!result || typeof result !== 'object' || Array.isArray(result)) {
+          throw new Error('Android local lyric response was invalid.');
+        }
+        if (result.status !== 'found' && result.status !== 'no-lyric') {
+          throw new Error('Android local lyric status was invalid.');
+        }
+        return {
+          lyric: typeof result.lyric === 'string' ? result.lyric : '',
+          tlyric: typeof result.tlyric === 'string' ? result.tlyric : '',
+          source: 'localmusic',
+          status: result.status,
+        };
+      })
+      .catch((error) => ({
+        lyric: '',
+        tlyric: '',
+        error: {
+          status:
+            error && typeof error.code === 'string'
+              ? error.code
+              : 'android-rpc-local-lyric-unavailable',
+          message: 'Local lyrics are unavailable on this Android device.',
+        },
+      }));
+    return {
+      requestId: handle.requestId,
+      pageEpoch: handle.pageEpoch,
+      cancel: handle.cancel,
+      promise,
+      then: promise.then.bind(promise),
+      catch: promise.catch.bind(promise),
+      success: (fn) => promise.then(fn),
+    };
+  }
+
+  static lyric(url, options = {}) {
     const track_id = getParameterByName('track_id', url);
+    const androidHttp = this.get_android_http_adapter();
+    if (androidHttp && /^local\.track\.[a-f0-9]{64}$/.test(track_id || '')) {
+      return this.create_android_lyric_facade(
+        androidHttp.request(
+          'local.lyric.primary',
+          { localTrackId: track_id },
+          {
+            pageEpoch: Number.isInteger(options.pageEpoch)
+              ? options.pageEpoch
+              : 0,
+          }
+        )
+      );
+    }
     const playlist = localStorage.getObject('lmplaylist_reserve');
-    const track = playlist.tracks.find((item) => item.id === track_id);
+    const track =
+      playlist && Array.isArray(playlist.tracks)
+        ? playlist.tracks.find((item) => item.id === track_id)
+        : null;
     let lyric = '';
-    if (track.lyrics !== undefined) {
+    if (track && track.lyrics !== undefined) {
       [lyric] = track.lyrics;
     }
     return {

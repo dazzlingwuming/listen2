@@ -327,6 +327,7 @@
   "_MACHINE_TRANSLATION_CLEAR_KEY": "API 키 삭제",
   "_MACHINE_TRANSLATION_KEY_CLEARED": "DeepSeek API 키를 삭제했습니다.",
   "_MACHINE_TRANSLATION_TEST_SUCCESS": "DeepSeek 연결에 성공했습니다.",
+  "_MACHINE_TRANSLATION_TEST_INVALID_RESPONSE": "연결 테스트 실패: DeepSeek 응답 형식이 올바르지 않습니다. 다시 시도하세요.",
   "_MACHINE_TRANSLATION_SETTINGS_SAVED": "DeepSeek API 키를 저장했습니다.",
   "_MACHINE_TRANSLATION_READY": "{{source}}에서 전체 가사를 번역했습니다.",
   "_LYRIC_MACHINE_TRANSLATED": "DeepSeek 번역",

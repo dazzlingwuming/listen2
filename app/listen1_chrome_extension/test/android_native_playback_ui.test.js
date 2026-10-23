@@ -1,0 +1,138 @@
+/* eslint-env node */
+/* eslint-disable no-console */
+
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+
+const root = path.join(__dirname, '..');
+const controller = fs.readFileSync(
+  path.join(root, 'js', 'controller', 'play.js'),
+  'utf8'
+);
+const markup = fs.readFileSync(path.join(root, 'listen1.html'), 'utf8');
+const css = fs.readFileSync(path.join(root, 'css', 'redesign.css'), 'utf8');
+
+function requireText(source, expected, explanation) {
+  assert.ok(source.includes(expected), `${explanation}: missing ${expected}`);
+}
+
+function run() {
+  const actionContext = { $scope: { androidPlaybackEnabled: true, androidPlaybackSnapshot: {
+    revision: 7, actions: { play: true, pause: false, next: true, seek: true, retry: true },
+  } } };
+  vm.runInNewContext(controller.slice(controller.indexOf('function isAndroidPlaybackActionAvailable(action)'),
+    controller.indexOf('function androidPlaybackStateCopy(snapshot)')), actionContext);
+  assert.strictEqual(actionContext.isAndroidPlaybackActionAvailable('mode'), true,
+    'mode is a configuration command, not one of the six transport action flags');
+  assert.strictEqual(actionContext.isAndroidPlaybackActionAvailable('pause'), false);
+  actionContext.$scope.androidPlaybackSnapshot.revision = 0;
+  assert.strictEqual(actionContext.isAndroidPlaybackActionAvailable('mode'), false);
+  const seekCommands = [];
+  const seekContext = {
+    $scope: {
+      androidPlaybackSeekDraft: 52000,
+      sendAndroidPlaybackCommand: (command, payload) => seekCommands.push({command, payload}),
+    },
+    isAndroidPlaybackActionAvailable: () => true,
+  };
+  vm.runInNewContext(controller.slice(
+    controller.indexOf('$scope.commitAndroidSeek ='),
+    controller.indexOf('$scope.openAndroidPlayerDetail =')
+  ), seekContext);
+  seekContext.$scope.commitAndroidSeek(90000);
+  assert.strictEqual(seekCommands[0].payload.positionMs, 90000,
+    'seek must use the input child scope draft, not the older parent snapshot');
+  requireText(markup, 'ng-change="commitAndroidSeek(androidUi.seekMs)"',
+    'range input passes its current draft to the native controller');
+
+  const stateCopySource = controller.slice(
+    controller.indexOf('function androidPlaybackStateCopy(snapshot)'),
+    controller.indexOf('$scope.androidPlaybackStateCopy =')
+  );
+  const copyContext = { $scope: {} };
+  vm.runInNewContext(stateCopySource, copyContext);
+  const copy = (status) => copyContext.androidPlaybackStateCopy({
+    revision: 4,
+    state: 'error',
+    metadata: { title: 'Selected track' },
+    recovery: { status, retryable: true },
+  });
+  assert.strictEqual(copy('bilibili-detail-http-0'), '网络连接失败，暂时无法播放这首歌曲');
+  assert.strictEqual(copy('bilibili-manifest-http-412'), '来源暂时拒绝提供这首歌曲的音频');
+  assert.strictEqual(copy('bilibili-manifest-provider--404'), '来源暂时拒绝提供这首歌曲的音频');
+  assert.strictEqual(copy('bilibili-manifest-map-identity-mismatch'), '来源返回的音频信息暂时无法使用');
+  assert.strictEqual(copy('candidate-rejected'), '音频地址暂时无法使用');
+  assert.strictEqual(copy('media-network-unavailable'), '音频网络连接失败，请稍后重试');
+  assert.strictEqual(copy('https://private.invalid/?token=secret'), '当前歌曲暂时无法播放');
+  const detailErrorCard = markup.match(
+    /class="android-player-state"\s+ng-if="androidPlaybackSnapshot.state === 'error'"[\s\S]*?<\/p>/
+  );
+  assert.ok(detailErrorCard, 'native detail error card exists');
+  requireText(
+    detailErrorCard[0],
+    '<strong>{{androidPlaybackStateCopy()}}</strong>',
+    'visible detail error uses the same safe classified state copy'
+  );
+  [
+    'applyAndroidPlaybackSnapshot',
+    'sendAndroidPlaybackCommand',
+    'openAndroidPlayerDetail',
+    'closeAndroidPlayerDetail',
+    'commitAndroidSeek',
+    'handleAndroidPlayerBack',
+  ].forEach((name) =>
+    requireText(controller, name, 'native controller contract')
+  );
+
+  [
+    '正在连接播放器…',
+    '正在准备播放…',
+    '正在缓冲…',
+    '正在尝试恢复播放（',
+    'androidPlaybackRetryAttempt',
+    'androidPlaybackRetryMax',
+  ].forEach((text) =>
+    requireText(controller, text, 'safe playback state copy')
+  );
+
+  [
+    '当前歌曲暂时无法播放',
+    '请重试，或选择其他歌曲。',
+    '重试播放',
+    '暂时无法跳转进度',
+    '播放当前歌曲',
+    '暂停当前歌曲',
+    '播放队列（{{androidPlaybackQueue.length}}）',
+  ].forEach((text) => requireText(markup, text, 'safe playback copy'));
+
+  [
+    'data-android-mini-player',
+    'data-android-player-detail',
+    'data-android-playback-live-region',
+    'role="slider"',
+    'aria-busy="{{androidPlaybackBusy}}"',
+    'ng-disabled="androidPlaybackCommandPending',
+    'ng-click="openPrimaryLyrics()',
+  ].forEach((text) => requireText(markup, text, 'semantic playback markup'));
+
+  assert.ok(
+    !markup.includes('当前设备无法播放此音频'),
+    'legacy unsafe Android error copy must not remain in the phone player'
+  );
+
+  [
+    '--android-player-target: 48px',
+    '--android-mini-player-height: 72px',
+    'min-height: var(--android-player-target)',
+    'min-width: var(--android-player-target)',
+    'height: 100svh',
+    'prefers-reduced-motion: reduce',
+    'env(safe-area-inset-bottom, 0px)',
+    'forced-colors: active',
+  ].forEach((text) => requireText(css, text, 'phone layout contract'));
+  console.log('android native playback UI tests passed');
+}
+
+run();

@@ -327,6 +327,7 @@
  "_MACHINE_TRANSLATION_CLEAR_KEY": "Remover chave de API",
  "_MACHINE_TRANSLATION_KEY_CLEARED": "A chave de API do DeepSeek foi removida.",
  "_MACHINE_TRANSLATION_TEST_SUCCESS": "Conexão com o DeepSeek concluída.",
+ "_MACHINE_TRANSLATION_TEST_INVALID_RESPONSE": "O teste de conexão falhou: o DeepSeek retornou um formato inesperado. Tente novamente.",
  "_MACHINE_TRANSLATION_SETTINGS_SAVED": "Chave de API do DeepSeek salva.",
  "_MACHINE_TRANSLATION_READY": "O {{source}} traduziu a letra completa.",
  "_LYRIC_MACHINE_TRANSLATED": "Tradução DeepSeek",

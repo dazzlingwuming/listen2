@@ -211,7 +211,7 @@ check('classic and modern bodies each render the library page', () => {
 
 check('each library page has total, space and refresh summaries', () => {
   assert.strictEqual(
-    countMatches(html, /audioCacheManager\.entries\.length/g),
+    countMatches(html, /\{\{\s*audioCacheManager\.entries\.length\s*\}\}/g),
     2,
     'total track count must be rendered in both library pages'
   );
