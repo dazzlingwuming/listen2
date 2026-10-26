@@ -74,7 +74,8 @@
           ]
         }
       ],
-      "category": "public.app-category.music"
+      "category": "public.app-category.music",
+      "identity": null
     },
     "linux": {
       "target": [

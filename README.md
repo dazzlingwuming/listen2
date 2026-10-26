@@ -277,7 +277,7 @@ npm run dist:win
 npm run dist:mac
 ```
 
-构建产物位于 `dist/`。macOS 沿用 v2.35.1 的 electron-builder 流程；项目仅对 macOS 明确选择不做代码签名或 Apple 公证，不配置签名 hook、不要求创建本机签名证书或修改钥匙串信任。此策略不代表 Windows 构建的签名状态。
+构建产物位于 `dist/`。macOS 沿用 v2.35.1 的构建目标和 electron-builder 流程，并按[直接安装与签名约定](doc/2026-10-21/macOS直接安装与签名约定.md)显式设置 `build.mac.identity: null`、保留 `CSC_IDENTITY_AUTO_DISCOVERY=false`；不做项目代码签名或 Apple 公证，不配置签名 hook、不要求创建本机签名证书或修改钥匙串信任。此策略不代表 Windows 构建的签名状态，也不保证系统不会显示首次打开提示。
 
 ### 运行测试
 
