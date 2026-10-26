@@ -57,6 +57,13 @@ final class BilibiliPlaybackResolver implements PlaybackMediaResolver.ManifestPo
     }
 
     private final HttpPort http;
+    private volatile DefaultPartDetail defaultPartDetail;
+    private static final class DefaultPartDetail {
+        final String bvid;
+        final Response response;
+        final long createdAtNanos = System.nanoTime();
+        DefaultPartDetail(String bvid, Response response) { this.bvid = bvid; this.response = response; }
+    }
     // resolve() and unavailableStatus() run on the same resolver lane. Keep
     // each lane's safe diagnostic isolated if this provider is shared.
     private final ThreadLocal<String> resolutionStatus = ThreadLocal.withInitial(
@@ -90,7 +97,11 @@ final class BilibiliPlaybackResolver implements PlaybackMediaResolver.ManifestPo
             }
             AndroidRpcContract.TypedRequest detailRequest = AndroidRpcContract.TypedRequest.videoDetail(
                     "native-media", 0, bvid);
-            Response detail = http.get(AndroidRpcContract.buildVideoDetailUri(detailRequest));
+            DefaultPartDetail cached = defaultPartDetail;
+            defaultPartDetail = null;
+            Response detail = cached != null && bvid.equals(cached.bvid)
+                    && System.nanoTime() - cached.createdAtNanos < 60_000_000_000L
+                    ? cached.response : http.get(AndroidRpcContract.buildVideoDetailUri(detailRequest));
             if (!checkResponse(detail, stage)) return Collections.emptyList();
             BilibiliResponseMapper.MappingResult detailProjection = BilibiliResponseMapper.mapVideoDetail(
                     detailRequest, detail.body);
@@ -126,16 +137,22 @@ final class BilibiliPlaybackResolver implements PlaybackMediaResolver.ManifestPo
     }
 
     PlaybackMediaResolver.Descriptor resolveDefaultPart(PlaybackMediaResolver.Descriptor descriptor) {
+        resolutionStatus.set("bilibili-detail-unavailable");
         try {
             AndroidRpcContract.TypedRequest request = AndroidRpcContract.TypedRequest.videoDetail("native-default-part", 0,
                     descriptor.getProviderTrackId());
             Response response = http.get(AndroidRpcContract.buildVideoDetailUri(request));
-            if (!response.isSuccess()) return null;
+            if (!checkResponse(response, "detail")) return null;
             BilibiliResponseMapper.MappingResult detail = BilibiliResponseMapper.mapVideoDetail(request, response.body);
-            if (!detail.isValid()) return null;
+            if (!detail.isValid()) {
+                fail(mappingStatus("detail", detail.errorCode));
+                return null;
+            }
             JSONObject first = detail.value.getJSONArray("pages").getJSONObject(0);
             long cid = first.getLong("cid");
             if (cid <= 0) return null;
+            defaultPartDetail = new DefaultPartDetail(descriptor.getProviderTrackId(), response);
+            resolutionStatus.set("ready");
             return new PlaybackMediaResolver.Descriptor("bilibili", descriptor.getProviderTrackId(), cid,
                     descriptor.getTitle(), descriptor.getArtist(), Math.min(28_800_000L,
                     first.optLong("duration", 0L) * 1000L), "audio");
@@ -317,6 +334,7 @@ final class BilibiliPlaybackResolver implements PlaybackMediaResolver.ManifestPo
         }
 
         private Response fetch(URI uri, String cookieHeader) {
+            if (Thread.currentThread().isInterrupted()) return new Response(0, null);
             HttpsURLConnection connection = null;
             try {
                 connection = (HttpsURLConnection) new URL(uri.toASCIIString()).openConnection();
@@ -354,6 +372,7 @@ final class BilibiliPlaybackResolver implements PlaybackMediaResolver.ManifestPo
                 int total = 0;
                 int read;
                 while ((read = input.read(buffer)) != -1) {
+                    if (Thread.currentThread().isInterrupted()) return null;
                     if (read > HttpBridgePolicy.MAX_RESPONSE_BYTES - total) return null;
                     output.write(buffer, 0, read);
                     total += read;

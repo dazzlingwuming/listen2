@@ -14,6 +14,21 @@ import java.util.List;
 
 public final class PlaybackMediaResolverTest {
     @Test
+    public void providerIssuedOverseasMirrorAndBackupSurviveAllResolutionChecks() {
+        FakeManifest manifest = new FakeManifest();
+        String primary = "https://upos-hz-mirrorakam.akamaized.net/audio.m4s?deadline=9999999999";
+        String backup = "https://upos-sz-mirrorcosov.bilivideo.com/audio.m4s?deadline=9999999999";
+        manifest.candidates = Arrays.asList(primary, backup,
+                "https://other.akamaized.net/audio.m4s?deadline=9999999999");
+        PlaybackMediaResolver resolver = resolver(manifest);
+        PlaybackMediaResolver.Prepared prepared = resolver.prepare(descriptor());
+        resolver.select(prepared.getTrackHandle(), prepared.getOccurrenceId(), 4L, "replace-current", true);
+        PlaybackMediaResolver.Resolution result = resolver.resolveCurrent(prepared.getOccurrenceId(), 4L);
+        assertTrue(result.isReady());
+        assertEquals(Arrays.asList(URI.create(primary), URI.create(backup)), result.mediaUris());
+    }
+
+    @Test
     public void mcdnEndpointSurvivesThroughThePlaybackResolution() {
         FakeManifest manifest = new FakeManifest();
         String primary = "https://node.mcdn.bilivideo.cn:8082/audio.m4s?deadline=9999999999&token=a%2Bb";

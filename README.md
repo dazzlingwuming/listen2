@@ -13,7 +13,7 @@
 
 [下载最新版](https://github.com/dazzlingwuming/listen2/releases/latest) · [报告问题](https://github.com/dazzlingwuming/listen2/issues) · [构建说明](#本地开发与构建)
 
-[安卓 B 站版 APK](https://github.com/dazzlingwuming/listen2/releases/tag/v2.35.7-android.2) · [安卓功能与构建](android/README.md)
+[安卓 B 站版 APK](https://github.com/dazzlingwuming/listen2/releases/tag/v2.35.7-android.3) · [安卓功能与构建](android/README.md)
 
 </div>
 

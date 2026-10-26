@@ -28,9 +28,11 @@ public final class PlaybackServiceQueueIdentityTest {
 
     @Test
     public void failedResolutionProjectsErrorInsteadOfEmptyPlayerIdleAndRemainsRetryable() {
-        assertEquals(PlaybackSnapshot.State.ERROR, PlaybackService.projectPlaybackState(true, false, 1));
-        assertEquals(PlaybackSnapshot.State.IDLE, PlaybackService.projectPlaybackState(false, false, 1));
-        assertEquals(PlaybackSnapshot.State.PLAYING, PlaybackService.projectPlaybackState(false, true, 3));
+        assertEquals(PlaybackSnapshot.State.ERROR, PlaybackService.projectPlaybackState(true, false, false, 1));
+        assertEquals(PlaybackSnapshot.State.IDLE, PlaybackService.projectPlaybackState(false, false, false, 1));
+        assertEquals(PlaybackSnapshot.State.PLAYING, PlaybackService.projectPlaybackState(false, true, true, 3));
+        assertEquals(PlaybackSnapshot.State.PAUSED, PlaybackService.projectPlaybackState(false, false, false, 2));
+        assertEquals(PlaybackSnapshot.State.RESOLVING, PlaybackService.projectPlaybackState(false, false, true, 2));
         assertTrue(PlaybackService.isRetryableRecovery("bilibili-manifest-map-identity-mismatch"));
         assertTrue(PlaybackService.isRetryableRecovery("bilibili-detail-http-412"));
         assertTrue(PlaybackService.isRetryableRecovery("candidate-rejected"));
@@ -67,7 +69,7 @@ public final class PlaybackServiceQueueIdentityTest {
         String failure = "media-network-unavailable";
         assertEquals(failure, PlaybackService.projectRecoveryCode(failure, "ready"));
         assertEquals(failure, PlaybackService.projectRecoveryCode(failure, "interrupted"));
-        assertEquals(PlaybackSnapshot.State.ERROR, PlaybackService.projectPlaybackState(true, false, 1));
+        assertEquals(PlaybackSnapshot.State.ERROR, PlaybackService.projectPlaybackState(true, false, false, 1));
         assertTrue(PlaybackService.isRetryableRecovery(failure));
         assertEquals("ready", PlaybackService.projectRecoveryCode("", "ready"));
     }

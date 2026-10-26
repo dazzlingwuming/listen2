@@ -271,6 +271,33 @@ async function run() {
   reordered.snapshot.queue = [...longQueue].reverse();
   nativeBridge.emit(reordered);
   assert.strictEqual(adapter.getPlaybackSnapshot().queue[0].occurrenceId, 'occ-745');
+
+  // A native progress event can get ahead of a just-issued transport command.
+  // Only an explicit rejection before execution permits one refreshed attempt.
+  const pausing = adapter.command('pause', {});
+  const stalePause = nativeBridge.posted[nativeBridge.posted.length - 1];
+  nativeBridge.emit({ version: 2, terminal: 'error', requestId: stalePause.requestId,
+    pageEpoch: 9, status: 0, error: 'STALE_REVISION' });
+  nativeBridge.emit(snapshot(9, 5));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const freshPause = nativeBridge.posted[nativeBridge.posted.length - 1];
+  assert.notStrictEqual(freshPause.requestId, stalePause.requestId);
+  assert.strictEqual(freshPause.payload.command, 'pause');
+  assert.strictEqual(freshPause.payload.expectedRevision, 5);
+  nativeBridge.emit({ version: 2, terminal: 'ok', requestId: freshPause.requestId,
+    pageEpoch: 9, status: 0, result: { accepted: true, revision: 6 } });
+  nativeBridge.emit(snapshot(9, 6));
+  await pausing;
+  const commandCount = nativeBridge.posted.length;
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.strictEqual(nativeBridge.posted.length, commandCount, 'success must not be replayed');
+
+  const failing = adapter.command('next', {});
+  const failedRequest = nativeBridge.posted[nativeBridge.posted.length - 1];
+  nativeBridge.emit({ version: 2, terminal: 'error', requestId: failedRequest.requestId,
+    pageEpoch: 9, status: 0, error: 'SERVICE_UNAVAILABLE' });
+  await assert.rejects(failing, (error) => error.code === 'android-playback-rejected');
+  assert.strictEqual(nativeBridge.posted.length, commandCount + 1, 'unknown outcomes must not be retried');
   adapter.detach();
   console.log('android native playback bridge tests passed');
 }

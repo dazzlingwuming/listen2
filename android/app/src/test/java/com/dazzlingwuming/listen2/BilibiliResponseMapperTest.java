@@ -11,6 +11,37 @@ import org.junit.Test;
 public final class BilibiliResponseMapperTest {
     private static final String BVID = "BV1xx411c7mD";
 
+    @Test public void pagelistResponseSupportsDefaultAndExplicitAudioWithoutVideoView() throws Exception {
+        JSONArray pages = detailWithPages().getJSONObject("data").getJSONArray("pages");
+        pages.put(new JSONObject().put("cid", 23).put("page", 2).put("part", "P2").put("duration", 120));
+        String parts = new JSONObject().put("code", 0).put("data", pages).toString();
+        BilibiliResponseMapper.MappingResult detail = BilibiliResponseMapper.mapVideoDetail(
+                AndroidRpcContract.TypedRequest.videoDetail("detail", 1, BVID), parts);
+        assertTrue(detail.isValid());
+        assertEquals(BVID, detail.value.getString("bvid"));
+        assertTrue(BilibiliResponseMapper.mapAudioManifest(
+                AndroidRpcContract.TypedRequest.audioManifest("audio", 1, BVID, "default-first", 0L),
+                parts, manifestFor(22).toString()).isValid());
+        assertTrue(BilibiliResponseMapper.mapAudioManifest(
+                AndroidRpcContract.TypedRequest.audioManifest("audio", 1, BVID, "explicit", 23L),
+                parts, manifestFor(23).toString()).isValid());
+        assertEquals("INVALID_PART", BilibiliResponseMapper.mapAudioManifest(
+                AndroidRpcContract.TypedRequest.audioManifest("audio", 1, BVID, "explicit", 99L),
+                parts, manifestFor(99).toString()).errorCode);
+    }
+
+    @Test public void pagelistRejectsProviderFailureEmptyAndDuplicateParts() throws Exception {
+        AndroidRpcContract.TypedRequest request = AndroidRpcContract.TypedRequest.videoDetail("detail", 1, BVID);
+        JSONArray parts = detailWithPages().getJSONObject("data").getJSONArray("pages");
+        assertFalse(BilibiliResponseMapper.mapVideoDetail(request,
+                new JSONObject().put("code", -403).put("data", parts).toString()).isValid());
+        assertFalse(BilibiliResponseMapper.mapVideoDetail(request,
+                "{\"code\":0,\"data\":[]}").isValid());
+        parts.put(parts.getJSONObject(0));
+        assertFalse(BilibiliResponseMapper.mapVideoDetail(request,
+                new JSONObject().put("code", 0).put("data", parts).toString()).isValid());
+    }
+
     @Test public void importedTracksInLargeCollectionsResolveTheirExplicitPart() throws Exception {
         JSONArray pages = new JSONArray();
         for (int i = 0; i < 198; i++) pages.put(new JSONObject().put("cid", 22 + i)
@@ -95,6 +126,22 @@ public final class BilibiliResponseMapperTest {
         absent.getJSONObject("data").remove("cid");
         assertEquals("IDENTITY_MISMATCH", BilibiliResponseMapper.mapAudioManifest(
                 request, wrongDetail, absent.toString()).errorCode);
+    }
+
+    @Test
+    public void overseasPrimaryIsKeptAlongsideTheDomesticBackup() throws Exception {
+        AndroidRpcContract.TypedRequest request = AndroidRpcContract.TypedRequest.audioManifest(
+                "manifest", 1, BVID, "explicit", 22L);
+        JSONObject manifest = manifestFor(22);
+        String primary = "https://upos-hz-mirrorakam.akamaized.net/audio.m4s?deadline=4102444800";
+        String backup = "https://upos-sz-mirrorcosov.bilivideo.com/audio.m4s?deadline=4102444800";
+        manifest.getJSONObject("data").getJSONObject("dash").getJSONArray("audio").getJSONObject(0)
+                .put("baseUrl", primary).put("backupUrl", new JSONArray().put(backup));
+        BilibiliResponseMapper.MappingResult result = BilibiliResponseMapper.mapAudioManifest(
+                request, detailWithPages(), manifest.toString());
+        assertTrue(result.isValid());
+        assertEquals(primary, result.value.getJSONArray("candidates").getString(0));
+        assertEquals(backup, result.value.getJSONArray("candidates").getString(1));
     }
 
     @Test

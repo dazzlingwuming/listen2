@@ -18,8 +18,16 @@ public final class BilibiliMediaPolicy {
         if (host.endsWith(".mcdn.bilivideo.cn")) {
             return port == -1 || port > 0 && port <= 65535;
         }
-        return (port == -1 || port == 443)
-                && (host.equals("bilivideo.com") || host.endsWith(".bilivideo.com")
-                || host.equals("bilivideo.cn") || host.endsWith(".bilivideo.cn"));
+        return (port == -1 || port == 443) && permitsHost(host);
+    }
+
+    static boolean permitsHost(String host) {
+        if (host == null) return false;
+        host = host.toLowerCase(Locale.ROOT);
+        // The public playurl response also issues this specific overseas mirror.
+        // Other Akamai tenants are not Bilibili media hosts.
+        return host.equals("bilivideo.com") || host.endsWith(".bilivideo.com")
+                || host.equals("bilivideo.cn") || host.endsWith(".bilivideo.cn")
+                || host.equals("upos-hz-mirrorakam.akamaized.net");
     }
 }
