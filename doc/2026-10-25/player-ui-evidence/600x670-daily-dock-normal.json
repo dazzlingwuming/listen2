@@ -1,0 +1,551 @@
+{
+  "viewport": {
+    "width": 600,
+    "height": 670,
+    "scrollWidth": 600,
+    "scrollHeight": 670
+  },
+  "state": {
+    "theme": "body modern-body ng-scope theme-modern-dark theme-designed theme-scenic theme-daily",
+    "title": "夜色穿过城市尽头的长街与微光仍在远方回响",
+    "position": "12:34:56",
+    "duration": "23:45:56"
+  },
+  "rects": {
+    "metadata": {
+      "x": 9,
+      "y": 573,
+      "top": 573,
+      "right": 127,
+      "bottom": 661,
+      "left": 9,
+      "width": 118,
+      "height": 88
+    },
+    "metadataText": {
+      "x": 26.3125,
+      "y": 606,
+      "top": 606,
+      "right": 109.6875,
+      "bottom": 624,
+      "left": 26.3125,
+      "width": 83.375,
+      "height": 18
+    },
+    "utilities": {
+      "x": 427,
+      "y": 573,
+      "top": 573,
+      "right": 591,
+      "bottom": 661,
+      "left": 427,
+      "width": 164,
+      "height": 88
+    },
+    "transport": {
+      "x": 297,
+      "y": 577,
+      "top": 577,
+      "right": 343,
+      "bottom": 623,
+      "left": 297,
+      "width": 46,
+      "height": 46
+    },
+    "mainInfo": {
+      "x": 127,
+      "y": 573,
+      "top": 573,
+      "right": 427,
+      "bottom": 661,
+      "left": 127,
+      "width": 300,
+      "height": 88
+    },
+    "volume": {
+      "x": 369,
+      "y": 625.5,
+      "top": 625.5,
+      "right": 421,
+      "bottom": 654.5,
+      "left": 369,
+      "width": 52,
+      "height": 29
+    },
+    "layout": {
+      "x": 9,
+      "y": 589,
+      "top": 589,
+      "right": 591,
+      "bottom": 1033.390625,
+      "left": 9,
+      "width": 582,
+      "height": 444.390625
+    },
+    "elapsed": {
+      "x": 133,
+      "y": 634.5,
+      "top": 634.5,
+      "right": 183.46875,
+      "bottom": 645.5,
+      "left": 133,
+      "width": 50.46875,
+      "height": 11
+    },
+    "total": {
+      "x": 286.53125,
+      "y": 634.5,
+      "top": 634.5,
+      "right": 337,
+      "bottom": 645.5,
+      "left": 286.53125,
+      "width": 50.46875,
+      "height": 11
+    },
+    "left": {
+      "x": 9,
+      "y": 569,
+      "top": 569,
+      "right": 576,
+      "bottom": 784.59375,
+      "left": 9,
+      "width": 567,
+      "height": 215.59375
+    },
+    "spectrum": {
+      "x": 37,
+      "y": 731.59375,
+      "top": 731.59375,
+      "right": 548,
+      "bottom": 776.59375,
+      "left": 37,
+      "width": 511,
+      "height": 45
+    },
+    "caption": {
+      "x": 37,
+      "y": 772.59375,
+      "top": 772.59375,
+      "right": 548,
+      "bottom": 784.59375,
+      "left": 37,
+      "width": 511,
+      "height": 12
+    },
+    "seek": {
+      "x": 190.46875,
+      "y": 625.5,
+      "top": 625.5,
+      "right": 279.53125,
+      "bottom": 654.5,
+      "left": 190.46875,
+      "width": 89.0625,
+      "height": 29
+    },
+    "time": {
+      "x": 133,
+      "y": 634.5,
+      "top": 634.5,
+      "right": 183.46875,
+      "bottom": 645.5,
+      "left": 133,
+      "width": 50.46875,
+      "height": 11
+    },
+    "shelf": {
+      "x": 9,
+      "y": 573,
+      "top": 573,
+      "right": 591,
+      "bottom": 661,
+      "left": 9,
+      "width": 582,
+      "height": 88
+    }
+  },
+  "horizontal": {
+    "captionTimes": [
+      {
+        "text": "12:34:56",
+        "rect": {
+          "x": 37,
+          "y": 772.59375,
+          "top": 772.59375,
+          "right": 283.5,
+          "bottom": 784.59375,
+          "left": 37,
+          "width": 246.5,
+          "height": 12
+        },
+        "clientWidth": 247,
+        "scrollWidth": 247
+      },
+      {
+        "text": "23:45:56",
+        "rect": {
+          "x": 301.5,
+          "y": 772.59375,
+          "top": 772.59375,
+          "right": 548,
+          "bottom": 784.59375,
+          "left": 301.5,
+          "width": 246.5,
+          "height": 12
+        },
+        "clientWidth": 247,
+        "scrollWidth": 247
+      }
+    ],
+    "card": {
+      "rect": {
+        "x": 9,
+        "y": 569,
+        "top": 569,
+        "right": 576,
+        "bottom": 713.59375,
+        "left": 9,
+        "width": 567,
+        "height": 144.59375
+      },
+      "clientWidth": 567,
+      "scrollWidth": 567
+    },
+    "copy": {
+      "rect": {
+        "x": 125,
+        "y": 584,
+        "top": 584,
+        "right": 558,
+        "bottom": 698.59375,
+        "left": 125,
+        "width": 433,
+        "height": 114.59375
+      },
+      "clientWidth": 433,
+      "scrollWidth": 433
+    },
+    "left": {
+      "rect": {
+        "x": 9,
+        "y": 569,
+        "top": 569,
+        "right": 576,
+        "bottom": 784.59375,
+        "left": 9,
+        "width": 567,
+        "height": 215.59375
+      },
+      "clientWidth": 567,
+      "scrollWidth": 567
+    },
+    "spectrumShell": {
+      "rect": {
+        "x": 35,
+        "y": 731.59375,
+        "top": 731.59375,
+        "right": 550,
+        "bottom": 784.59375,
+        "left": 35,
+        "width": 515,
+        "height": 53
+      },
+      "clientWidth": 515,
+      "scrollWidth": 515
+    }
+  },
+  "leftScroll": {
+    "clientHeight": 216,
+    "scrollHeight": 216,
+    "scrollTop": 0,
+    "clientTop": 0,
+    "visibleTop": 569,
+    "visibleBottom": 785
+  },
+  "utilityChildren": [
+    {
+      "class": "ctrl",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0,
+        "width": 0,
+        "height": 0
+      },
+      "display": "none",
+      "width": "auto",
+      "minWidth": "0px",
+      "flexBasis": "auto",
+      "margin": "0px",
+      "padding": "0px",
+      "children": [
+        {
+          "class": "",
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0,
+            "width": 0,
+            "height": 0
+          },
+          "display": "flex"
+        },
+        {
+          "class": "",
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0,
+            "width": 0,
+            "height": 0
+          },
+          "display": "none"
+        }
+      ]
+    },
+    {
+      "class": "audio-effects-toggle ng-scope",
+      "rect": {
+        "x": 427,
+        "y": 600,
+        "top": 600,
+        "right": 457,
+        "bottom": 634,
+        "left": 427,
+        "width": 30,
+        "height": 34
+      },
+      "display": "flex",
+      "width": "30px",
+      "minWidth": "30px",
+      "flexBasis": "30px",
+      "margin": "0px",
+      "padding": "0px",
+      "children": [
+        {
+          "class": "",
+          "rect": {
+            "x": 427,
+            "y": 601,
+            "top": 601,
+            "right": 457,
+            "bottom": 633,
+            "left": 427,
+            "width": 30,
+            "height": 32
+          },
+          "display": "block"
+        }
+      ]
+    },
+    {
+      "class": "lyric-toggle desktop-lyric-toggle ng-scope",
+      "rect": {
+        "x": 457,
+        "y": 602,
+        "top": 602,
+        "right": 487,
+        "bottom": 632,
+        "left": 457,
+        "width": 30,
+        "height": 30
+      },
+      "display": "flex",
+      "width": "30px",
+      "minWidth": "auto",
+      "flexBasis": "30px",
+      "margin": "0px",
+      "padding": "0px",
+      "children": [
+        {
+          "class": "lyric-icon",
+          "rect": {
+            "x": 458,
+            "y": 603,
+            "top": 603,
+            "right": 486,
+            "bottom": 631,
+            "left": 458,
+            "width": 28,
+            "height": 28
+          },
+          "display": "flex"
+        },
+        {
+          "class": "lyric-icon ng-hide",
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0,
+            "width": 0,
+            "height": 0
+          },
+          "display": "none"
+        }
+      ]
+    },
+    {
+      "class": "translate-switch",
+      "rect": {
+        "x": 487,
+        "y": 602,
+        "top": 602,
+        "right": 517,
+        "bottom": 632,
+        "left": 487,
+        "width": 30,
+        "height": 30
+      },
+      "display": "flex",
+      "width": "30px",
+      "minWidth": "auto",
+      "flexBasis": "30px",
+      "margin": "0px",
+      "padding": "0px",
+      "children": [
+        {
+          "class": {},
+          "rect": {
+            "x": 487,
+            "y": 602,
+            "top": 602,
+            "right": 507,
+            "bottom": 622,
+            "left": 487,
+            "width": 20,
+            "height": 20
+          },
+          "display": "block"
+        }
+      ]
+    },
+    {
+      "class": "bilibili-mv-switch ng-hide",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0,
+        "width": 0,
+        "height": 0
+      },
+      "display": "none",
+      "width": "auto",
+      "minWidth": "0px",
+      "flexBasis": "auto",
+      "margin": "0px",
+      "padding": "0px",
+      "children": []
+    },
+    {
+      "class": "mask",
+      "rect": {
+        "x": 517,
+        "y": 602,
+        "top": 602,
+        "right": 547,
+        "bottom": 632,
+        "left": 517,
+        "width": 30,
+        "height": 30
+      },
+      "display": "flex",
+      "width": "30px",
+      "minWidth": "auto",
+      "flexBasis": "30px",
+      "margin": "0px",
+      "padding": "0px",
+      "children": [
+        {
+          "class": {},
+          "rect": {
+            "x": 517,
+            "y": 602,
+            "top": 602,
+            "right": 535,
+            "bottom": 620,
+            "left": 517,
+            "width": 18,
+            "height": 18
+          },
+          "display": "block"
+        }
+      ]
+    }
+  ],
+  "layoutScroll": {
+    "clientHeight": 444,
+    "scrollHeight": 464,
+    "scrollTop": 20
+  },
+  "clearances": {
+    "spectrumWithinStageVisibleArea": true,
+    "captionWithinStageVisibleArea": true,
+    "transportWithinShelf": true,
+    "progressAndVolumeWithinShelf": true,
+    "timesWithinMainInfo": true,
+    "seekTimesDoNotOverlap": true,
+    "spectrumWithinLeftVisibleArea": true,
+    "spectrumRelativeToLeftVisibleArea": {
+      "topPx": 162.59375,
+      "bottomPx": 8.40625
+    },
+    "captionWithinLeftVisibleArea": true,
+    "captionRelativeToLeftVisibleArea": {
+      "topPx": 203.59375,
+      "bottomPx": 0.40625
+    },
+    "captionToTransportShelfPx": -211.59375,
+    "captionFullyAboveTransportShelf": false,
+    "captionAboveShelfRequiredAt1367": null
+  },
+  "checks": {
+    "documentHorizontalOverflow": false,
+    "modernBodyHorizontalOverflow": false,
+    "elementsOutsideViewport": [
+      {
+        "selector": ".l1-button.filter-item.ng-binding.ng-scope",
+        "left": 578.28125,
+        "right": 628.421875,
+        "width": 50.140625
+      },
+      {
+        "selector": ".l1-button.filter-item.ng-binding.ng-scope",
+        "left": 636.421875,
+        "right": 686.5625,
+        "width": 50.140625
+      },
+      {
+        "selector": ".l1-button.filter-item",
+        "left": 694.5625,
+        "right": 735.5625,
+        "width": 41
+      },
+      {
+        "selector": "svg",
+        "left": 707.5625,
+        "right": 722.5625,
+        "width": 15
+      },
+      {
+        "selector": "path",
+        "left": 708.734375,
+        "right": 721.390625,
+        "width": 12.65625
+      }
+    ]
+  }
+}

@@ -1,0 +1,338 @@
+[
+  {
+    "capture": "1000x670-default",
+    "widths": {
+      "metadata": 180,
+      "metadataText": 74.8125,
+      "mainInfo": 477,
+      "utilities": 247,
+      "seek": 90.0625,
+      "volume": 52
+    },
+    "rects": {
+      "metadata": {
+        "x": 48,
+        "y": 548,
+        "top": 548,
+        "right": 228,
+        "bottom": 635.828125,
+        "left": 48,
+        "width": 180,
+        "height": 87.828125
+      },
+      "metadataText": {
+        "x": 99.59375,
+        "y": 572.90625,
+        "top": 572.90625,
+        "right": 174.40625,
+        "bottom": 590.90625,
+        "left": 99.59375,
+        "width": 74.8125,
+        "height": 18
+      },
+      "mainInfo": {
+        "x": 228,
+        "y": 548,
+        "top": 548,
+        "right": 705,
+        "bottom": 636,
+        "left": 228,
+        "width": 477,
+        "height": 88
+      },
+      "utilities": {
+        "x": 705,
+        "y": 548,
+        "top": 548,
+        "right": 952,
+        "bottom": 636,
+        "left": 705,
+        "width": 247,
+        "height": 88
+      },
+      "shelf": {
+        "x": 47,
+        "y": 547,
+        "top": 547,
+        "right": 953,
+        "bottom": 637,
+        "left": 47,
+        "width": 906,
+        "height": 90
+      }
+    },
+    "checks": {
+      "spectrumWithinStageVisibleArea": true,
+      "captionWithinStageVisibleArea": true,
+      "transportWithinShelf": true,
+      "progressAndVolumeWithinShelf": true,
+      "timesWithinMainInfo": true,
+      "seekTimesDoNotOverlap": true,
+      "spectrumWithinLeftVisibleArea": true,
+      "spectrumRelativeToLeftVisibleArea": {
+        "topPx": 247,
+        "bottomPx": 8
+      },
+      "captionWithinLeftVisibleArea": true,
+      "captionRelativeToLeftVisibleArea": {
+        "topPx": 329,
+        "bottomPx": 0
+      },
+      "captionToTransportShelfPx": 79.5,
+      "captionFullyAboveTransportShelf": true,
+      "captionAboveShelfRequiredAt1367": null
+    }
+  },
+  {
+    "capture": "1000x670-default-dock-normal",
+    "widths": {
+      "metadata": 180,
+      "metadataText": 160,
+      "mainInfo": 534,
+      "utilities": 252,
+      "seek": 161.0625,
+      "volume": 52
+    },
+    "rects": {
+      "metadata": {
+        "x": 17,
+        "y": 571,
+        "top": 571,
+        "right": 197,
+        "bottom": 655.265625,
+        "left": 17,
+        "width": 180,
+        "height": 84.265625
+      },
+      "metadataText": {
+        "x": 27,
+        "y": 594.125,
+        "top": 594.125,
+        "right": 187,
+        "bottom": 612.125,
+        "left": 27,
+        "width": 160,
+        "height": 18
+      },
+      "mainInfo": {
+        "x": 197,
+        "y": 571,
+        "top": 571,
+        "right": 731,
+        "bottom": 655,
+        "left": 197,
+        "width": 534,
+        "height": 84
+      },
+      "utilities": {
+        "x": 731,
+        "y": 571,
+        "top": 571,
+        "right": 983,
+        "bottom": 655,
+        "left": 731,
+        "width": 252,
+        "height": 84
+      },
+      "shelf": {
+        "x": 17,
+        "y": 571,
+        "top": 571,
+        "right": 983,
+        "bottom": 655,
+        "left": 17,
+        "width": 966,
+        "height": 84
+      }
+    },
+    "checks": {
+      "spectrumWithinStageVisibleArea": true,
+      "captionWithinStageVisibleArea": true,
+      "transportWithinShelf": true,
+      "progressAndVolumeWithinShelf": true,
+      "timesWithinMainInfo": true,
+      "seekTimesDoNotOverlap": true,
+      "spectrumWithinLeftVisibleArea": true,
+      "spectrumRelativeToLeftVisibleArea": {
+        "topPx": 247,
+        "bottomPx": 8
+      },
+      "captionWithinLeftVisibleArea": true,
+      "captionRelativeToLeftVisibleArea": {
+        "topPx": 329,
+        "bottomPx": 0
+      },
+      "captionToTransportShelfPx": -413,
+      "captionFullyAboveTransportShelf": false,
+      "captionAboveShelfRequiredAt1367": null
+    }
+  },
+  {
+    "capture": "600x670-daily",
+    "widths": {
+      "metadata": 139,
+      "metadataText": 74.421875,
+      "mainInfo": 300,
+      "utilities": 121,
+      "seek": 67.0625,
+      "volume": 52
+    },
+    "rects": {
+      "metadata": {
+        "x": 20,
+        "y": 562,
+        "top": 562,
+        "right": 159,
+        "bottom": 650,
+        "left": 20,
+        "width": 139,
+        "height": 88
+      },
+      "metadataText": {
+        "x": 67.984375,
+        "y": 595,
+        "top": 595,
+        "right": 142.40625,
+        "bottom": 613,
+        "left": 67.984375,
+        "width": 74.421875,
+        "height": 18
+      },
+      "mainInfo": {
+        "x": 159,
+        "y": 562,
+        "top": 562,
+        "right": 459,
+        "bottom": 650,
+        "left": 159,
+        "width": 300,
+        "height": 88
+      },
+      "utilities": {
+        "x": 459,
+        "y": 562,
+        "top": 562,
+        "right": 580,
+        "bottom": 650,
+        "left": 459,
+        "width": 121,
+        "height": 88
+      },
+      "shelf": {
+        "x": 19,
+        "y": 561,
+        "top": 561,
+        "right": 581,
+        "bottom": 651,
+        "left": 19,
+        "width": 562,
+        "height": 90
+      }
+    },
+    "checks": {
+      "spectrumWithinStageVisibleArea": true,
+      "captionWithinStageVisibleArea": true,
+      "transportWithinShelf": true,
+      "progressAndVolumeWithinShelf": true,
+      "timesWithinMainInfo": true,
+      "seekTimesDoNotOverlap": true,
+      "spectrumWithinLeftVisibleArea": true,
+      "spectrumRelativeToLeftVisibleArea": {
+        "topPx": 162.59375,
+        "bottomPx": 8.40625
+      },
+      "captionWithinLeftVisibleArea": true,
+      "captionRelativeToLeftVisibleArea": {
+        "topPx": 203.59375,
+        "bottomPx": 0.40625
+      },
+      "captionToTransportShelfPx": 288.40625,
+      "captionFullyAboveTransportShelf": true,
+      "captionAboveShelfRequiredAt1367": null
+    }
+  },
+  {
+    "capture": "600x670-daily-dock-normal",
+    "widths": {
+      "metadata": 118,
+      "metadataText": 83.375,
+      "mainInfo": 300,
+      "utilities": 164,
+      "seek": 89.0625,
+      "volume": 52
+    },
+    "rects": {
+      "metadata": {
+        "x": 9,
+        "y": 573,
+        "top": 573,
+        "right": 127,
+        "bottom": 661,
+        "left": 9,
+        "width": 118,
+        "height": 88
+      },
+      "metadataText": {
+        "x": 26.3125,
+        "y": 606,
+        "top": 606,
+        "right": 109.6875,
+        "bottom": 624,
+        "left": 26.3125,
+        "width": 83.375,
+        "height": 18
+      },
+      "mainInfo": {
+        "x": 127,
+        "y": 573,
+        "top": 573,
+        "right": 427,
+        "bottom": 661,
+        "left": 127,
+        "width": 300,
+        "height": 88
+      },
+      "utilities": {
+        "x": 427,
+        "y": 573,
+        "top": 573,
+        "right": 591,
+        "bottom": 661,
+        "left": 427,
+        "width": 164,
+        "height": 88
+      },
+      "shelf": {
+        "x": 9,
+        "y": 573,
+        "top": 573,
+        "right": 591,
+        "bottom": 661,
+        "left": 9,
+        "width": 582,
+        "height": 88
+      }
+    },
+    "checks": {
+      "spectrumWithinStageVisibleArea": true,
+      "captionWithinStageVisibleArea": true,
+      "transportWithinShelf": true,
+      "progressAndVolumeWithinShelf": true,
+      "timesWithinMainInfo": true,
+      "seekTimesDoNotOverlap": true,
+      "spectrumWithinLeftVisibleArea": true,
+      "spectrumRelativeToLeftVisibleArea": {
+        "topPx": 162.59375,
+        "bottomPx": 8.40625
+      },
+      "captionWithinLeftVisibleArea": true,
+      "captionRelativeToLeftVisibleArea": {
+        "topPx": 203.59375,
+        "bottomPx": 0.40625
+      },
+      "captionToTransportShelfPx": -211.59375,
+      "captionFullyAboveTransportShelf": false,
+      "captionAboveShelfRequiredAt1367": null
+    }
+  }
+]

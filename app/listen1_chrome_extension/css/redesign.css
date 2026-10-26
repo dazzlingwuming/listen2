@@ -2799,7 +2799,7 @@
   position: absolute;
   z-index: 6;
   right: clamp(16px, 3vw, 36px);
-  bottom: 18px;
+  bottom: var(--now-playing-shelf-inset, 18px);
   left: clamp(16px, 3vw, 36px);
   width: auto;
   height: var(--now-playing-shelf-height);
@@ -6773,8 +6773,7 @@
     border-radius: 50%;
   }
 
-  .modern-body .now-playing-facts,
-  .modern-body .now-playing-spectrum-caption {
+  .modern-body .now-playing-facts {
     display: none;
   }
 
@@ -7164,6 +7163,7 @@
 
 .modern-body .footer .footer-main.player-dock-surface.slidedown {
   --now-playing-shelf-height: 88px;
+  --now-playing-shelf-inset: 18px;
 
   background: var(--stage-bg) !important;
   border-color: var(--stage-border);
@@ -8030,7 +8030,7 @@
 
   .modern-body .footer .footer-main.player-dock-surface.slidedown .footerwrap {
     right: 10px;
-    bottom: 10px;
+    bottom: var(--now-playing-shelf-inset);
     left: 10px;
     grid-template-columns: minmax(0, 0.9fr) minmax(226px, 1.28fr) auto;
     border-radius: 18px;
@@ -8077,7 +8077,7 @@
   }
 
   .modern-body .footer .footer-main.player-dock-surface.slidedown .footerwrap {
-    bottom: 10px;
+    bottom: var(--now-playing-shelf-inset);
   }
 }
 
@@ -8767,25 +8767,311 @@ body.modern-white .audio-effects-summary p {
 
 @media screen and (max-width: 1000px) {
   .modern-body .footer .footerwrap {
-    grid-template-columns: minmax(0, 0.72fr) minmax(350px, 1.58fr) max-content;
+    grid-template-columns: minmax(0, 0.5fr) minmax(430px, 1.8fr) max-content;
   }
 
   .modern-body .footer .footer-main.player-dock-surface.slidedown .footerwrap {
-    grid-template-columns: minmax(0, 0.72fr) minmax(370px, 1.58fr) max-content;
+    grid-template-columns: minmax(0, 0.5fr) minmax(430px, 1.8fr) max-content;
   }
 }
 
 @media screen and (max-width: 820px) {
   .modern-body .footer .footerwrap,
   .modern-body .footer .footer-main.player-dock-surface.slidedown .footerwrap {
-    grid-template-columns: minmax(0, 1fr) minmax(290px, 1.6fr) max-content;
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 1.6fr) max-content;
   }
 }
 
 @media screen and (max-width: 680px) {
   .modern-body .footer .footerwrap,
   .modern-body .footer .footer-main.player-dock-surface.slidedown .footerwrap {
-    grid-template-columns: minmax(0, 1fr) minmax(220px, 1.25fr) max-content;
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 1.25fr) max-content;
+  }
+}
+
+@media screen and (max-width: 1000px) {
+  .modern-body .footer .main-info,
+  .modern-body .footer .footer-main.player-dock-surface.slidedown .main-info {
+    gap: 8px;
+  }
+
+  .modern-body .footer .main-info .bottomprogressbar,
+  .modern-body .footer .footer-main.player-dock-surface.slidedown .bottomprogressbar {
+    gap: 8px;
+  }
+
+  .modern-body .footer .main-info .volume-ctrl,
+  .modern-body .footer .footer-main.player-dock-surface.slidedown .main-info .volume-ctrl {
+    display: flex;
+    width: 76px;
+    min-width: 76px;
+    flex: 0 0 76px;
+  }
+
+  .modern-body .footer .main-info .volume-ctrl .m-pbar {
+    min-width: 52px;
+  }
+}
+
+/* At the minimum desktop width, give transport and seek their own rows. */
+@media screen and (max-width: 820px) {
+  .modern-body {
+    --dock-height: 88px;
+  }
+
+  .modern-body .footer .footer-main.player-dock-surface.slidedown {
+    --now-playing-shelf-height: 88px;
+  }
+
+  .modern-body .footer .main-info,
+  .modern-body .footer .footer-main.player-dock-surface.slidedown .main-info {
+    flex-direction: column !important;
+    justify-content: center;
+    gap: 2px;
+  }
+
+  .modern-body .footer .main-info .cover,
+  .modern-body .footer .main-info .cover .cover-list,
+  .modern-body .footer .footer-main.player-dock-surface.slidedown .main-info .cover {
+    width: 128px !important;
+    height: 44px !important;
+    flex: 0 0 44px !important;
+  }
+
+  .modern-body .footer .footer-main.player-dock-surface.slidedown .main-info .cover > div.cover-list {
+    width: 128px !important;
+    height: 44px !important;
+  }
+
+  .modern-body .footer .main-info .cover > ul.cover-list {
+    display: none;
+  }
+
+  .modern-body .footer .main-info .cover > div.cover-list {
+    position: relative;
+    top: 0;
+    left: 0;
+    display: block;
+  }
+
+  .modern-body .footer .main-info .cover > div.cover-list span {
+    top: auto;
+    bottom: 0;
+    opacity: 1;
+    transform: none;
+  }
+
+  .modern-body .footer .main-info .cover .cover-list .b,
+  .modern-body .footer .footer-main.player-dock-surface.slidedown .main-info .cover > div.cover-list .b {
+    left: 42px !important;
+    width: 44px !important;
+    height: 44px !important;
+  }
+
+  .modern-body .footer .main-info .cover .cover-list .c,
+  .modern-body .footer .footer-main.player-dock-surface.slidedown .main-info .cover > div.cover-list .c {
+    left: 98px !important;
+  }
+
+  .modern-body .footer .main-info .footertime,
+  .modern-body .footer .footer-main.player-dock-surface.slidedown .main-info .footertime {
+    width: 100%;
+    height: 30px !important;
+    flex: 0 0 30px;
+  }
+
+  .modern-body .footer .main-info .bottomprogressbar .playbar,
+  .modern-body .footer .footer-main.player-dock-surface.slidedown .main-info .bottomprogressbar .playbar {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+}
+
+/* Keep readable track metadata at the default desktop size. Utility buttons
+ * retain their actions while using the same compact hit areas as small docks. */
+@media screen and (min-width: 940px) and (max-width: 1000px) {
+  .modern-body .footer .footerwrap,
+  .modern-body .footer .footer-main.player-dock-surface.slidedown .footerwrap {
+    grid-template-columns: 180px minmax(0, 1fr) max-content;
+  }
+
+  .modern-body .footer .left-control,
+  .modern-body .footer .footer-main.player-dock-surface.slidedown .left-control {
+    padding-right: 10px;
+    padding-left: 10px;
+    gap: 6px;
+  }
+
+  .modern-body .footer .main-info,
+  .modern-body .footer .footer-main.player-dock-surface.slidedown .main-info {
+    gap: 6px;
+  }
+
+  .modern-body .footer .right-control,
+  .modern-body .footer .footer-main.player-dock-surface.slidedown .right-control {
+    padding-left: 4px;
+    padding-right: 4px;
+    gap: 0;
+  }
+
+  .modern-body .footer .right-control .ctrl,
+  .modern-body .footer .footer-main.player-dock-surface.slidedown .right-control .ctrl {
+    gap: 0;
+  }
+
+  .modern-body .footer .right-control .ctrl a,
+  .modern-body .footer .right-control > .lyric-toggle,
+  .modern-body .footer .right-control > .translate-switch,
+  .modern-body .footer .right-control > .mask,
+  .modern-body .footer .footer-main.player-dock-surface.slidedown .right-control .ctrl a,
+  .modern-body .footer .footer-main.player-dock-surface.slidedown .right-control > .lyric-toggle,
+  .modern-body .footer .footer-main.player-dock-surface.slidedown .right-control > .translate-switch,
+  .modern-body .footer .footer-main.player-dock-surface.slidedown .right-control > .mask {
+    width: 30px;
+    height: 30px;
+    flex: 0 0 30px;
+    margin: 0;
+  }
+}
+
+@media screen and (max-width: 680px) {
+  .modern-body .footer .footer-main.player-dock-surface .right-control {
+    gap: 0;
+    padding-left: 0;
+  }
+
+  .modern-body .footer .footer-main.player-dock-surface.slidedown .right-control {
+    padding-left: 0;
+    padding-right: 0;
+    gap: 0;
+  }
+
+  .modern-body .footer .footer-main.player-dock-surface.slidedown .left-control {
+    padding-right: 8px;
+    padding-left: 8px;
+    gap: 4px;
+  }
+
+  .modern-body .footer .footer-main.player-dock-surface .right-control > .audio-effects-toggle,
+  .modern-body .footer .footer-main.player-dock-surface .right-control > .audio-effects-toggle button {
+    width: 30px;
+    min-width: 30px;
+    flex: 0 0 30px;
+  }
+
+  .modern-body .footer .footer-main.player-dock-surface .right-control > .lyric-toggle,
+  .modern-body .footer .footer-main.player-dock-surface .right-control > .translate-switch,
+  .modern-body .footer .footer-main.player-dock-surface .right-control > .mask,
+  .modern-body .footer .footer-main.player-dock-surface.slidedown .right-control > .lyric-toggle,
+  .modern-body .footer .footer-main.player-dock-surface.slidedown .right-control > .translate-switch.slidedown,
+  .modern-body .footer .footer-main.player-dock-surface.slidedown .right-control > .mask.slidedown {
+    width: 30px;
+    height: 30px;
+    box-sizing: border-box;
+    flex: 0 0 30px;
+    margin: 0;
+    padding: 0;
+  }
+}
+
+/* The stage ends above the shelf. Its grid cannot grow behind fixed controls;
+ * unusually tall track metadata remains reachable in the left column. */
+.modern-body .songdetail-wrapper.now-playing-stage .now-playing-layout {
+  bottom: calc(var(--now-playing-shelf-height) + var(--now-playing-shelf-inset) + 12px);
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+  padding-bottom: 12px;
+}
+
+.modern-body .songdetail-wrapper.now-playing-stage .now-playing-left {
+  min-height: 0;
+  max-height: 100%;
+  justify-content: flex-start;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.modern-body .now-playing-left > .now-playing-card-core,
+.modern-body .now-playing-left > .now-playing-spectrum-shell {
+  flex-shrink: 0;
+}
+
+.modern-body .songdetail-wrapper.now-playing-stage .now-playing-copy,
+.modern-body .songdetail-wrapper.now-playing-stage .now-playing-spectrum-caption {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Scenic themes inset the meter with margins; auto width includes those margins. */
+.modern-body .songdetail-wrapper.now-playing-stage .now-playing-spectrum-shell {
+  width: auto;
+  min-width: 0;
+  align-self: stretch;
+}
+
+.modern-body .footer .main-info .playbar .dock-time {
+  position: static;
+  display: block;
+  flex: 0 0 auto;
+  min-width: 4ch;
+  color: var(--stage-text, var(--ui-text));
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.modern-body .footer .main-info .playbar .dock-time.current {
+  text-align: right;
+}
+
+.modern-body .footer .main-info .bottomprogressbar .playbar {
+  gap: 7px;
+}
+
+/* The pin beside seek was decorative; its space now belongs to elapsed time. */
+.modern-body .footer .bottomprogressbar .playbar > .icon {
+  display: none;
+}
+
+.modern-body .footer .main-info .playbar .playbar-clickable {
+  min-width: 24px;
+}
+
+@media screen and (max-width: 760px), screen and (max-height: 520px) {
+  .modern-body .footer .footer-main.player-dock-surface.slidedown {
+    --now-playing-shelf-inset: 10px;
+  }
+}
+
+@media screen and (max-width: 760px) {
+  .modern-body .songdetail-wrapper.now-playing-stage .now-playing-layout {
+    grid-template-rows: auto minmax(120px, 1fr);
+    align-content: start;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .modern-body .songdetail-wrapper.now-playing-stage .now-playing-left {
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+/* Designed themes switch to a stacked stage in short wide windows as well. */
+@media screen and (max-height: 570px) and (min-width: 761px) {
+  .modern-body.theme-designed .songdetail-wrapper.now-playing-stage .now-playing-layout {
+    grid-template-rows: auto minmax(120px, 1fr);
+    align-content: start;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .modern-body.theme-designed .songdetail-wrapper.now-playing-stage .now-playing-left {
+    max-height: none;
+    overflow: visible;
   }
 }
 

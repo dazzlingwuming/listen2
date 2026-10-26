@@ -7370,6 +7370,7 @@
                                     ></path>
                                   </svg>
                                 </span>
+                                <span class="dock-time current">{{ currentPosition }}</span>
                                 <div
                                   class="playbar-clickable"
                                   id="progressbar"
@@ -7385,6 +7386,7 @@
                                     </div>
                                   </div>
                                 </div>
+                                <span class="dock-time total">{{ currentDuration }}</span>
                               </div>
                               <div class="volume-ctrl" volume-wheel="">
                                 <span
@@ -7443,11 +7445,6 @@
                                   </div>
                                 </div>
                               </div>
-                            </div>
-                            <div class="timeswitch">
-                              <span class="current">{{ currentPosition }}</span>
-                              <span style="font-weight: 700"> / </span>
-                              <span class="total">{{ currentDuration }}</span>
                             </div>
                           </div>
                         </div>

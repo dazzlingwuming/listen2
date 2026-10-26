@@ -1,0 +1,14 @@
+{
+  "during": {
+    "preview": "1:00:00",
+    "changing": true,
+    "progress": 100
+  },
+  "after": {
+    "changing": false,
+    "calls": [
+      1
+    ]
+  },
+  "note": "Real mousedown/mousemove/mouseup directive and controller; l1Player.seek replaced with recorder; no audio playback."
+}

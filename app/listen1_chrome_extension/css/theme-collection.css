@@ -1135,7 +1135,8 @@
 .modern-body.theme-designed .now-playing-spectrum-shell {
   margin-top: 14px;
 }
-.modern-body.theme-designed .now-playing-spectrum {
+.modern-body.theme-designed .now-playing-spectrum,
+.modern-body.theme-designed .now-playing-layout.now-playing-no-lyrics .now-playing-spectrum {
   height: 45px;
 }
 .modern-body.theme-designed .now-playing-layout .now-playing-lyrics {
@@ -1605,9 +1606,10 @@ html[data-performance='quality'] .terminal-cursor {
     padding: 20px;
   }
   .modern-body.theme-designed .now-playing-layout .detail-head-cover {
-    width: min(100%, 25vh, 230px);
+    width: min(100%, 21vh, 230px);
   }
-  .modern-body.theme-designed .now-playing-spectrum {
+  .modern-body.theme-designed .now-playing-spectrum,
+  .modern-body.theme-designed .now-playing-layout.now-playing-no-lyrics .now-playing-spectrum {
     height: 28px;
   }
   .modern-body.theme-designed .now-playing-spectrum-shell {
@@ -1639,8 +1641,7 @@ html[data-performance='quality'] .terminal-cursor {
     width: 80px;
     height: 80px;
   }
-  .modern-body.theme-designed .collection-player-label,
-  .modern-body.theme-designed .now-playing-spectrum-shell {
+  .modern-body.theme-designed .collection-player-label {
     display: none;
   }
   .modern-body.theme-designed .now-playing-copy {
@@ -1871,12 +1872,38 @@ html[data-performance='quality'] .terminal-cursor {
   --stage-subtle: var(--daily-stage-muted, #bfd1db);
   --stage-control-muted: var(--daily-stage-muted, #bfd1db);
 }
-/* Text keeps a stable, dark surface even when today's photo is snow or sky. */
-.modern-body.theme-daily .now-playing-copy,
-.modern-body.theme-daily .now-playing-layout .now-playing-lyrics {
+/* The song card keeps its own surface; lyrics remain directly on the scene. */
+.modern-body.theme-daily .now-playing-copy {
   background: rgba(var(--daily-stage-rgb, 20, 33, 43), 0.96);
   border-radius: 16px;
   padding: 16px 20px;
+}
+.modern-body.theme-daily .now-playing-layout .now-playing-lyrics {
+  padding: 16px 20px;
+}
+
+/* Photograph and illustrated themes show the scene through the entire lyric
+ * column. Compact search, AI and timing controls retain their own surfaces. */
+.modern-body:is(.theme-scenic, .theme-custom, .theme-daily, .theme-anime)
+  .now-playing-layout .now-playing-lyrics {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.modern-body:is(.theme-scenic, .theme-custom, .theme-daily, .theme-anime)
+  .now-playing-layout .now-playing-lyrics::before,
+.modern-body:is(.theme-scenic, .theme-custom, .theme-daily, .theme-anime)
+  .now-playing-layout .now-playing-lyrics::after {
+  display: none;
+}
+.modern-body:is(.theme-scenic, .theme-custom, .theme-daily, .theme-anime)
+  .modern-player-state .songdetail-wrapper .now-playing-layout .lyric p,
+.modern-body:is(.theme-scenic, .theme-custom, .theme-daily, .theme-anime)
+  .modern-player-state .songdetail-wrapper .now-playing-layout .lyric p.highlight {
+  text-shadow: 0 1px 3px var(--stage-bg);
 }
 .modern-body.theme-daily .collection-player-label {
   color: var(--daily-stage-text, #edf5f7);

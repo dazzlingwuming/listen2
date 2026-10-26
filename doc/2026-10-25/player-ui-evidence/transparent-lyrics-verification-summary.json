@@ -1,0 +1,571 @@
+[
+  {
+    "capture": "1367x684-daily-lyrics",
+    "lyricSurface": {
+      "background": "rgba(0, 0, 0, 0)",
+      "backgroundImage": "none",
+      "borderWidth": "0px",
+      "boxShadow": "none",
+      "backdropFilter": "none",
+      "beforeDisplay": "none",
+      "afterDisplay": "none",
+      "lyricListBackground": "rgba(0, 0, 0, 0)",
+      "activeText": "把每一个平凡瞬间唱成歌",
+      "activeColor": "rgb(237, 245, 247)",
+      "activeShadow": "rgb(20, 33, 43) 0px 1px 3px",
+      "toolbarButtons": [
+        {
+          "text": "搜索歌词",
+          "rect": {
+            "x": 932.6875,
+            "y": 91,
+            "top": 91,
+            "right": 1016.6875,
+            "bottom": 125,
+            "left": 932.6875,
+            "width": 84,
+            "height": 34
+          },
+          "color": "rgb(191, 209, 219)",
+          "background": "color(srgb 0.170588 0.216471 0.251765)"
+        },
+        {
+          "text": "AI\n                                  AI 重译",
+          "rect": {
+            "x": 1024.6875,
+            "y": 91,
+            "top": 91,
+            "right": 1104.6875,
+            "bottom": 125,
+            "left": 1024.6875,
+            "width": 80,
+            "height": 34
+          },
+          "color": "rgb(191, 209, 219)",
+          "background": "color(srgb 0.170588 0.216471 0.251765)"
+        },
+        {
+          "text": "−1s",
+          "rect": {
+            "x": 1116.6875,
+            "y": 92,
+            "top": 92,
+            "right": 1150.6875,
+            "bottom": 124,
+            "left": 1116.6875,
+            "width": 34,
+            "height": 32
+          },
+          "color": "rgb(191, 209, 219)",
+          "background": "rgba(0, 0, 0, 0)"
+        },
+        {
+          "text": "0.0s",
+          "rect": {
+            "x": 1150.6875,
+            "y": 92,
+            "top": 92,
+            "right": 1198.6875,
+            "bottom": 124,
+            "left": 1150.6875,
+            "width": 48,
+            "height": 32
+          },
+          "color": "rgb(191, 209, 219)",
+          "background": "rgba(0, 0, 0, 0)"
+        },
+        {
+          "text": "+1s",
+          "rect": {
+            "x": 1198.6875,
+            "y": 92,
+            "top": 92,
+            "right": 1232.6875,
+            "bottom": 124,
+            "left": 1198.6875,
+            "width": 34,
+            "height": 32
+          },
+          "color": "rgb(191, 209, 219)",
+          "background": "rgba(0, 0, 0, 0)"
+        }
+      ]
+    },
+    "clearances": {
+      "spectrumWithinStageVisibleArea": true,
+      "captionWithinStageVisibleArea": true,
+      "transportWithinShelf": true,
+      "progressAndVolumeWithinShelf": true,
+      "timesWithinMainInfo": true,
+      "seekTimesDoNotOverlap": true,
+      "spectrumWithinLeftVisibleArea": true,
+      "spectrumRelativeToLeftVisibleArea": {
+        "topPx": 432.59375,
+        "bottomPx": 8.40625
+      },
+      "captionWithinLeftVisibleArea": true,
+      "captionRelativeToLeftVisibleArea": {
+        "topPx": 456.59375,
+        "bottomPx": 0.40625
+      },
+      "captionToTransportShelfPx": 23.203125,
+      "captionFullyAboveTransportShelf": true,
+      "captionAboveShelfRequiredAt1367": true
+    },
+    "leftScroll": {
+      "clientHeight": 469,
+      "scrollHeight": 469,
+      "scrollTop": 0,
+      "clientTop": 0,
+      "visibleTop": 69.203125,
+      "visibleBottom": 538.203125
+    },
+    "limits": null
+  },
+  {
+    "capture": "1367x684-daily-lyric-panel-empty",
+    "lyricSurface": {
+      "background": "rgba(0, 0, 0, 0)",
+      "backgroundImage": "none",
+      "borderWidth": "0px",
+      "boxShadow": "none",
+      "backdropFilter": "none",
+      "beforeDisplay": "none",
+      "afterDisplay": "none",
+      "lyricListBackground": "rgba(0, 0, 0, 0)",
+      "activeColor": null,
+      "activeShadow": null,
+      "toolbarButtons": [
+        {
+          "text": "搜索歌词",
+          "rect": {
+            "x": 1064.6875,
+            "y": 88,
+            "top": 88,
+            "right": 1148.6875,
+            "bottom": 122,
+            "left": 1064.6875,
+            "width": 84,
+            "height": 34
+          },
+          "color": "rgb(191, 209, 219)",
+          "background": "color(srgb 0.170588 0.216471 0.251765)"
+        },
+        {
+          "text": "AI\n                                  AI 重译",
+          "rect": {
+            "x": 1156.6875,
+            "y": 88,
+            "top": 88,
+            "right": 1236.6875,
+            "bottom": 122,
+            "left": 1156.6875,
+            "width": 80,
+            "height": 34
+          },
+          "color": "rgb(191, 209, 219)",
+          "background": "color(srgb 0.170588 0.216471 0.251765)"
+        }
+      ]
+    },
+    "clearances": {
+      "spectrumWithinStageVisibleArea": true,
+      "captionWithinStageVisibleArea": true,
+      "transportWithinShelf": true,
+      "progressAndVolumeWithinShelf": true,
+      "timesWithinMainInfo": true,
+      "seekTimesDoNotOverlap": true,
+      "spectrumWithinLeftVisibleArea": true,
+      "spectrumRelativeToLeftVisibleArea": {
+        "topPx": 405.59375,
+        "bottomPx": 8.40625
+      },
+      "captionWithinLeftVisibleArea": true,
+      "captionRelativeToLeftVisibleArea": {
+        "topPx": 429.59375,
+        "bottomPx": 0.40625
+      },
+      "captionToTransportShelfPx": 36.703125,
+      "captionFullyAboveTransportShelf": true,
+      "captionAboveShelfRequiredAt1367": true
+    },
+    "leftScroll": {
+      "clientHeight": 442,
+      "scrollHeight": 442,
+      "scrollTop": 0,
+      "clientTop": 0,
+      "visibleTop": 82.703125,
+      "visibleBottom": 524.703125
+    },
+    "limits": null
+  },
+  {
+    "capture": "1367x953-daily-lyrics",
+    "lyricSurface": {
+      "background": "rgba(0, 0, 0, 0)",
+      "backgroundImage": "none",
+      "borderWidth": "0px",
+      "boxShadow": "none",
+      "backdropFilter": "none",
+      "beforeDisplay": "none",
+      "afterDisplay": "none",
+      "lyricListBackground": "rgba(0, 0, 0, 0)",
+      "activeText": "把每一个平凡瞬间唱成歌",
+      "activeColor": "rgb(237, 245, 247)",
+      "activeShadow": "rgb(20, 33, 43) 0px 1px 3px",
+      "toolbarButtons": [
+        {
+          "text": "搜索歌词",
+          "rect": {
+            "x": 932.703125,
+            "y": 102,
+            "top": 102,
+            "right": 1016.703125,
+            "bottom": 136,
+            "left": 932.703125,
+            "width": 84,
+            "height": 34
+          },
+          "color": "rgb(191, 209, 219)",
+          "background": "color(srgb 0.170588 0.216471 0.251765)"
+        },
+        {
+          "text": "AI\n                                  AI 重译",
+          "rect": {
+            "x": 1024.703125,
+            "y": 102,
+            "top": 102,
+            "right": 1104.703125,
+            "bottom": 136,
+            "left": 1024.703125,
+            "width": 80,
+            "height": 34
+          },
+          "color": "rgb(191, 209, 219)",
+          "background": "color(srgb 0.170588 0.216471 0.251765)"
+        },
+        {
+          "text": "−1s",
+          "rect": {
+            "x": 1116.703125,
+            "y": 103,
+            "top": 103,
+            "right": 1150.703125,
+            "bottom": 135,
+            "left": 1116.703125,
+            "width": 34,
+            "height": 32
+          },
+          "color": "rgb(191, 209, 219)",
+          "background": "rgba(0, 0, 0, 0)"
+        },
+        {
+          "text": "0.0s",
+          "rect": {
+            "x": 1150.703125,
+            "y": 103,
+            "top": 103,
+            "right": 1198.703125,
+            "bottom": 135,
+            "left": 1150.703125,
+            "width": 48,
+            "height": 32
+          },
+          "color": "rgb(191, 209, 219)",
+          "background": "rgba(0, 0, 0, 0)"
+        },
+        {
+          "text": "+1s",
+          "rect": {
+            "x": 1198.703125,
+            "y": 103,
+            "top": 103,
+            "right": 1232.703125,
+            "bottom": 135,
+            "left": 1198.703125,
+            "width": 34,
+            "height": 32
+          },
+          "color": "rgb(191, 209, 219)",
+          "background": "rgba(0, 0, 0, 0)"
+        }
+      ]
+    },
+    "clearances": {
+      "spectrumWithinStageVisibleArea": true,
+      "captionWithinStageVisibleArea": true,
+      "transportWithinShelf": true,
+      "progressAndVolumeWithinShelf": true,
+      "timesWithinMainInfo": true,
+      "seekTimesDoNotOverlap": true,
+      "spectrumWithinLeftVisibleArea": true,
+      "spectrumRelativeToLeftVisibleArea": {
+        "topPx": 632.96875,
+        "bottomPx": 8.03125
+      },
+      "captionWithinLeftVisibleArea": true,
+      "captionRelativeToLeftVisibleArea": {
+        "topPx": 673.96875,
+        "bottomPx": 0.03125
+      },
+      "captionToTransportShelfPx": 43.515625,
+      "captionFullyAboveTransportShelf": true,
+      "captionAboveShelfRequiredAt1367": true
+    },
+    "leftScroll": {
+      "clientHeight": 686,
+      "scrollHeight": 686,
+      "scrollTop": 0,
+      "clientTop": 0,
+      "visibleTop": 100.515625,
+      "visibleBottom": 786.515625
+    },
+    "limits": null
+  },
+  {
+    "capture": "1367x684-ocean-lyrics",
+    "lyricSurface": {
+      "background": "rgba(0, 0, 0, 0)",
+      "backgroundImage": "none",
+      "borderWidth": "0px",
+      "boxShadow": "none",
+      "backdropFilter": "none",
+      "beforeDisplay": "none",
+      "afterDisplay": "none",
+      "lyricListBackground": "rgba(0, 0, 0, 0)",
+      "activeText": "把每一个平凡瞬间唱成歌",
+      "activeColor": "rgb(255, 244, 235)",
+      "activeShadow": "rgb(20, 24, 33) 0px 1px 3px",
+      "toolbarButtons": [
+        {
+          "text": "搜索歌词",
+          "rect": {
+            "x": 952.6875,
+            "y": 75,
+            "top": 75,
+            "right": 1036.6875,
+            "bottom": 109,
+            "left": 952.6875,
+            "width": 84,
+            "height": 34
+          },
+          "color": "rgb(224, 213, 212)",
+          "background": "rgb(37, 37, 47)"
+        },
+        {
+          "text": "AI\n                                  AI 重译",
+          "rect": {
+            "x": 1044.6875,
+            "y": 75,
+            "top": 75,
+            "right": 1124.6875,
+            "bottom": 109,
+            "left": 1044.6875,
+            "width": 80,
+            "height": 34
+          },
+          "color": "rgb(224, 213, 212)",
+          "background": "rgb(37, 37, 47)"
+        },
+        {
+          "text": "−1s",
+          "rect": {
+            "x": 1136.6875,
+            "y": 76,
+            "top": 76,
+            "right": 1170.6875,
+            "bottom": 108,
+            "left": 1136.6875,
+            "width": 34,
+            "height": 32
+          },
+          "color": "rgb(224, 213, 212)",
+          "background": "rgba(0, 0, 0, 0)"
+        },
+        {
+          "text": "0.0s",
+          "rect": {
+            "x": 1170.6875,
+            "y": 76,
+            "top": 76,
+            "right": 1218.6875,
+            "bottom": 108,
+            "left": 1170.6875,
+            "width": 48,
+            "height": 32
+          },
+          "color": "rgb(224, 213, 212)",
+          "background": "rgba(0, 0, 0, 0)"
+        },
+        {
+          "text": "+1s",
+          "rect": {
+            "x": 1218.6875,
+            "y": 76,
+            "top": 76,
+            "right": 1252.6875,
+            "bottom": 108,
+            "left": 1218.6875,
+            "width": 34,
+            "height": 32
+          },
+          "color": "rgb(224, 213, 212)",
+          "background": "rgba(0, 0, 0, 0)"
+        }
+      ]
+    },
+    "clearances": {
+      "spectrumWithinStageVisibleArea": true,
+      "captionWithinStageVisibleArea": true,
+      "transportWithinShelf": true,
+      "progressAndVolumeWithinShelf": true,
+      "timesWithinMainInfo": true,
+      "seekTimesDoNotOverlap": true,
+      "spectrumWithinLeftVisibleArea": true,
+      "spectrumRelativeToLeftVisibleArea": {
+        "topPx": 415.96875,
+        "bottomPx": 8.03125
+      },
+      "captionWithinLeftVisibleArea": true,
+      "captionRelativeToLeftVisibleArea": {
+        "topPx": 439.96875,
+        "bottomPx": 0.03125
+      },
+      "captionToTransportShelfPx": 31.515625,
+      "captionFullyAboveTransportShelf": true,
+      "captionAboveShelfRequiredAt1367": true
+    },
+    "leftScroll": {
+      "clientHeight": 452,
+      "scrollHeight": 452,
+      "scrollTop": 0,
+      "clientTop": 0,
+      "visibleTop": 77.515625,
+      "visibleBottom": 529.515625
+    },
+    "limits": null
+  },
+  {
+    "capture": "1367x684-mint-lyrics",
+    "lyricSurface": {
+      "background": "rgba(0, 0, 0, 0)",
+      "backgroundImage": "none",
+      "borderWidth": "0px",
+      "boxShadow": "none",
+      "backdropFilter": "none",
+      "beforeDisplay": "none",
+      "afterDisplay": "none",
+      "lyricListBackground": "rgba(0, 0, 0, 0)",
+      "activeText": "把每一个平凡瞬间唱成歌",
+      "activeColor": "rgb(40, 125, 104)",
+      "activeShadow": "none",
+      "toolbarButtons": [
+        {
+          "text": "搜索歌词",
+          "rect": {
+            "x": 966.03125,
+            "y": 98,
+            "top": 98,
+            "right": 1050.03125,
+            "bottom": 132,
+            "left": 966.03125,
+            "width": 84,
+            "height": 34
+          },
+          "color": "rgb(32, 63, 53)",
+          "background": "rgb(252, 255, 253)"
+        },
+        {
+          "text": "AI\n                                  AI 重译",
+          "rect": {
+            "x": 1058.03125,
+            "y": 98,
+            "top": 98,
+            "right": 1138.03125,
+            "bottom": 132,
+            "left": 1058.03125,
+            "width": 80,
+            "height": 34
+          },
+          "color": "rgb(81, 110, 96)",
+          "background": "rgb(252, 255, 253)"
+        },
+        {
+          "text": "−1s",
+          "rect": {
+            "x": 1150.03125,
+            "y": 99,
+            "top": 99,
+            "right": 1184.03125,
+            "bottom": 131,
+            "left": 1150.03125,
+            "width": 34,
+            "height": 32
+          },
+          "color": "rgb(81, 110, 96)",
+          "background": "rgba(0, 0, 0, 0)"
+        },
+        {
+          "text": "0.0s",
+          "rect": {
+            "x": 1184.03125,
+            "y": 99,
+            "top": 99,
+            "right": 1232.03125,
+            "bottom": 131,
+            "left": 1184.03125,
+            "width": 48,
+            "height": 32
+          },
+          "color": "rgb(81, 110, 96)",
+          "background": "rgba(0, 0, 0, 0)"
+        },
+        {
+          "text": "+1s",
+          "rect": {
+            "x": 1232.03125,
+            "y": 99,
+            "top": 99,
+            "right": 1266.03125,
+            "bottom": 131,
+            "left": 1232.03125,
+            "width": 34,
+            "height": 32
+          },
+          "color": "rgb(81, 110, 96)",
+          "background": "rgba(0, 0, 0, 0)"
+        }
+      ]
+    },
+    "clearances": {
+      "spectrumWithinStageVisibleArea": false,
+      "captionWithinStageVisibleArea": true,
+      "transportWithinShelf": true,
+      "progressAndVolumeWithinShelf": true,
+      "timesWithinMainInfo": true,
+      "seekTimesDoNotOverlap": true,
+      "spectrumWithinLeftVisibleArea": false,
+      "spectrumRelativeToLeftVisibleArea": {
+        "topPx": -71,
+        "bottomPx": 71
+      },
+      "captionWithinLeftVisibleArea": false,
+      "captionRelativeToLeftVisibleArea": {
+        "topPx": 144,
+        "bottomPx": -174
+      },
+      "captionToTransportShelfPx": 316,
+      "captionFullyAboveTransportShelf": true,
+      "captionAboveShelfRequiredAt1367": true
+    },
+    "leftScroll": {
+      "clientHeight": 0,
+      "scrollHeight": 190,
+      "scrollTop": 0,
+      "clientTop": 0,
+      "visibleTop": 71,
+      "visibleBottom": 71
+    },
+    "limits": "Mint has a theme-specific hidden left layout; the shared fixture left geometry assertion is not applicable. Used only for transparent/light text comparison."
+  }
+]
