@@ -563,5 +563,15 @@
  "_SEARCH_RETRY": "重新搜索",
  "_SEARCH_ALL_SOURCES": "搜索全部平台",
  "_SEARCH_VERIFY": "打开官方验证",
- "_SEARCH_NETEASE_NOTE": "网易云结果可能包含翻唱或不同版本，请核对歌手。"
+ "_SEARCH_NETEASE_NOTE": "网易云结果可能包含翻唱或不同版本，请核对歌手。",
+  "_THEME_DAILY": "每日主题",
+  "_THEME_DAILY_DESC": "每天一张必应风景，从照片自动提取协调配色。",
+  "_THEME_DAILY_INTRO": "今天的风景，陪伴今天的音乐。",
+  "_DAILY_THEME_LOADING": "正在获取今日风景，期间保留当前背景。",
+  "_DAILY_THEME_FRESH": "今日风景已更新，界面配色已跟随照片。",
+  "_DAILY_THEME_CACHED": "正在使用本机保存的今日风景。",
+  "_DAILY_THEME_STALE": "暂时无法获取今日风景，保留上次照片并稍后重试。",
+  "_DAILY_THEME_UNAVAILABLE": "暂时无法获取今日风景，使用内置背景并稍后重试。",
+  "_DAILY_THEME_SOURCE": "图片来源：必应 Bing",
+  "_DAILY_THEME_NETWORK_NOTE": "仅选中每日主题时联网，按本地日期更新；离线时保留上次成功获取的照片。"
 }

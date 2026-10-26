@@ -7,6 +7,7 @@ permissions:
 
 jobs:
   release:
+    if: ${{ !contains(github.ref, '-android.') }}
     runs-on: ${{ matrix.os }}
 
     strategy:
@@ -44,6 +45,68 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
           GH_TOKEN: ${{ github.token }}
 
+      - name: Verify plain drag-and-drop macOS DMGs
+        if: ${{ matrix.os == 'macos-latest' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          active_mount=""
+          mounted=false
+          cleanup_mount() {
+            if [[ "$mounted" == true ]]; then
+              hdiutil detach "$active_mount" >/dev/null 2>&1 || true
+              mounted=false
+            fi
+            if [[ -n "$active_mount" ]]; then
+              rmdir "$active_mount" >/dev/null 2>&1 || true
+              active_mount=""
+            fi
+          }
+          trap cleanup_mount EXIT
+          for arch in x64 arm64 universal; do
+            image="dist/listen1_${version}_mac_${arch}.dmg"
+            test -s "$image"
+            mount_dir="$(mktemp -d "${RUNNER_TEMP}/listen1-${arch}-XXXXXX")"
+            active_mount="$mount_dir"
+            hdiutil attach -readonly -nobrowse -noautoopen -mountpoint "$mount_dir" "$image" >/dev/null
+            mounted=true
+            app="$mount_dir/Listen1.app"
+            if [[ ! -d "$app" || -L "$app" ]]; then
+              echo "Missing real Listen1.app in $image" >&2
+              exit 1
+            fi
+            applications="$mount_dir/Applications"
+            if [[ ! -L "$applications" || "$(readlink "$applications")" != "/Applications" ]]; then
+              echo "Missing Applications link in $image" >&2
+              exit 1
+            fi
+            for file in 'Install Listen1.command' 'Listen1.integrity.tsv' 'INSTALL-LISTEN1.txt'; do
+              if [[ -e "$mount_dir/$file" || -L "$mount_dir/$file" ]]; then
+                echo "Unexpected installation helper in plain DMG: $file" >&2
+                exit 1
+              fi
+            done
+            bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")"
+            bundle_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
+            executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")"
+            if [[ "$bundle_id" != "com.listen1.listen1" || "$bundle_version" != "$version" || "$executable" != "Listen1" ]]; then
+              echo "Unexpected bundle identity in $image: $bundle_id $bundle_version $executable" >&2
+              exit 1
+            fi
+            actual_arch="$(lipo -archs "$app/Contents/MacOS/$executable" | tr ' ' '\n' | LC_ALL=C sort | paste -sd ' ' -)"
+            case "$arch:$actual_arch" in
+              x64:x86_64|arm64:arm64|universal:arm64\ x86_64) ;;
+              *)
+                echo "Unexpected architecture in $image: $actual_arch" >&2
+                exit 1
+                ;;
+            esac
+            hdiutil detach "$mount_dir" >/dev/null
+            mounted=false
+            rmdir "$mount_dir"
+            active_mount=""
+          done
 
   publish-release:
     if: ${{ startsWith(github.ref, 'refs/tags/v') }}
@@ -68,13 +131,55 @@ jobs:
           const content = readme.slice(start + heading.length).split('\n## ')[0].trim();
           fs.writeFileSync(`${process.env.RUNNER_TEMP}/release-notes.md`, content + '\n');
           NODE
-          gh release view "$RELEASE_TAG" --json assets > "$RUNNER_TEMP/release-assets.json"
+          # BEGIN release ID lookup
+          release_id="$(gh release view "$RELEASE_TAG" --repo "$GH_REPO" --json databaseId --jq .databaseId)"
+          if [[ ! "$release_id" =~ ^[0-9]+$ ]]; then
+            echo "Invalid GitHub release ID returned for $RELEASE_TAG" >&2
+            exit 1
+          fi
+          gh api "repos/$GH_REPO/releases/$release_id" > "$RUNNER_TEMP/release.json"
+          # END release ID lookup
           node <<'NODE'
           const fs = require('fs');
           const version = require('./package.json').version;
-          const assets = JSON.parse(fs.readFileSync(`${process.env.RUNNER_TEMP}/release-assets.json`)).assets;
-          const names = new Set(assets.filter(a => a.size > 0).map(a => a.name));
-          const required = [`listen1_${version}_win_x64.exe`, `listen1_${version}_win_x64.7z`, `listen1_${version}_win_x64.exe.blockmap`, 'latest.yml', 'latest-mac.yml', ...['x64','arm64','universal'].map(a => `listen1_${version}_mac_${a}.dmg`)];
-          for (const name of required) if (!names.has(name)) throw new Error(`Missing release asset: ${name}`);
+          const release = JSON.parse(fs.readFileSync(`${process.env.RUNNER_TEMP}/release.json`));
+          const assets = release.assets;
+          const required = [
+            `listen1_${version}_win_x64.exe`,
+            `listen1_${version}_win_x64.7z`,
+            `listen1_${version}_win_x64.exe.blockmap`,
+            'latest.yml',
+            'latest-mac.yml',
+            ...['x64', 'arm64', 'universal'].flatMap(arch => [
+              `listen1_${version}_mac_${arch}.dmg`,
+              `listen1_${version}_mac_${arch}.dmg.blockmap`,
+            ]),
+          ];
+          const assetsByName = new Map();
+          for (const asset of assets) {
+            if (asset.name === 'SHA256SUMS.txt') continue;
+            if (!/^[A-Za-z0-9._-]+$/.test(asset.name)) {
+              throw new Error(`Unsafe release asset name: ${JSON.stringify(asset.name)}`);
+            }
+            if (!Number.isSafeInteger(asset.size) || asset.size <= 0) {
+              throw new Error(`Release asset is empty or has invalid size: ${asset.name}`);
+            }
+            if (typeof asset.digest !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(asset.digest)) {
+              throw new Error(`Missing or invalid GitHub SHA-256 digest: ${asset.name}`);
+            }
+            if (assetsByName.has(asset.name)) {
+              throw new Error(`Duplicate release asset: ${asset.name}`);
+            }
+            assetsByName.set(asset.name, asset);
+          }
+          for (const name of required) {
+            if (!assetsByName.has(name)) throw new Error(`Missing release asset: ${name}`);
+          }
+          const checksums = [...assetsByName.values()]
+            .sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
+            .map(asset => `${asset.digest.slice('sha256:'.length)}  ${asset.name}`)
+            .join('\n') + '\n';
+          fs.writeFileSync(`${process.env.RUNNER_TEMP}/SHA256SUMS.txt`, checksums);
           NODE
+          gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/SHA256SUMS.txt" --clobber
           gh release edit "$RELEASE_TAG" --title "Listen2 $RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md" --draft=false

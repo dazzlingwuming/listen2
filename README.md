@@ -5,7 +5,7 @@
 ### 把 Bilibili 与多平台音乐内容，整理成更好用的桌面播放器
 
 [![License](https://img.shields.io/badge/license-MIT-7c5cff.svg)](./LICENSE.md)
-[![Version](https://img.shields.io/badge/version-2.35.6-8b5cf6.svg)](https://github.com/dazzlingwuming/listen2/releases/tag/v2.35.6)
+[![Version](https://img.shields.io/github/v/release/dazzlingwuming/listen2?color=8b5cf6)](https://github.com/dazzlingwuming/listen2/releases/latest)
 [![Electron](https://img.shields.io/badge/Electron-32-38bdf8.svg)](https://www.electronjs.org/)
 [![Windows](https://img.shields.io/badge/Windows-x64-2563eb.svg)](https://github.com/dazzlingwuming/listen2/releases/latest)
 [![macOS](https://img.shields.io/badge/macOS-Universal-111827.svg)](#平台支持)
@@ -13,7 +13,7 @@
 
 [下载最新版](https://github.com/dazzlingwuming/listen2/releases/latest) · [报告问题](https://github.com/dazzlingwuming/listen2/issues) · [构建说明](#本地开发与构建)
 
-[安卓 B 站版 APK](https://github.com/dazzlingwuming/listen2/releases/tag/v2.35.6-android.1) · [安卓功能与构建](android/README.md)
+[安卓 B 站版 APK](https://github.com/dazzlingwuming/listen2/releases/tag/v2.35.7-android.1) · [安卓功能与构建](android/README.md)
 
 </div>
 
@@ -24,6 +24,13 @@ Listen2 是 [Listen1](https://github.com/listen1/listen1) 的社区增强版本�
 ![用户实机截图：自定义图片背景与自动配色](docs/screenshots/personal-theme-user.png)
 
 用户实机效果：选择喜欢的背景，侧栏、按钮、频谱和歌词高亮会一起跟随图片配色。
+
+## v2.35.7 更新
+
+- 新增「每日主题」：从顶部调色盘进入并选择后，按天获取必应首页图像；仅使用 `wp=true` 且标记可作为壁纸的图片，并展示必应提供的署名与说明链接。自动配色会跟随图像更新。
+- 成功获取的图片会保存在本机；网络失败时继续显示上次成功的图片，不清空现有背景。必应图片的授权因图片而异，本功能不表示所有图片均可用于其他用途。
+- macOS 附件按最初 v2.35.1 的配置和命令重新打包，恢复普通 `Listen1.app` 与 Applications 链接的布局，提供 x64、arm64 和 Universal。移除额外安装辅助及其打包入口，不新增项目签名、证书或公证。
+- 本次直接更新原 v2.35.7 的 Mac 附件，不新建版本。包完整性与实际首次打开分别验收；系统“Apple 无法验证”弹窗目前未解决，不能把重新打包视为该问题已修复。
 
 ## v2.35.6 更新
 
@@ -88,7 +95,7 @@ Listen2 是 [Listen1](https://github.com/listen1/listen1) 的社区增强版本�
 
 Windows 安装版选择 `listen1_2.35.2_win_x64.exe`，免安装压缩包选择 `.7z`。macOS 提供 x64、arm64、universal DMG。
 
-Windows 未使用商业代码签名；macOS 沿用 v2.35.1 的打包流程，无需新增证书配置，未使用 Developer ID 或 Apple 公证。频谱与缓存后续修正通过语法和前端静态检查；未执行本轮自动化回归或实机播放回归。主题预览、首版实测数据及具体修正记录见 [交付记录](docs/APPEARANCE_AND_WINDOWS.md)，其中首版性能数字不代表本次全部改动的回归结果。
+Windows 未使用商业代码签名；macOS 沿用 v2.35.1 的打包流程，按项目对 macOS 的明确选择不做代码签名或 Apple 公证。频谱与缓存后续修正通过语法和前端静态检查；未执行本轮自动化回归或实机播放回归。主题预览、首版实测数据及具体修正记录见 [交付记录](docs/APPEARANCE_AND_WINDOWS.md)，其中首版性能数字不代表本次全部改动的回归结果。
 
 ## v2.35.1 更新
 
@@ -207,13 +214,7 @@ Windows 未使用商业代码签名；macOS 沿用 v2.35.1 的打包流程，无
 
 Intel Mac 下载 x64 DMG，Apple Silicon（M 系列）下载 arm64 DMG；Universal DMG 同时支持两者。打开 DMG 后将 Listen1 拖入“应用程序”。
 
-macOS 沿用 v2.35.1 的打包流程，无需新增签名证书或信任配置。安装包未使用 Apple Developer ID，也未经过 Apple 公证，因此首次从浏览器下载后仍可能被 Gatekeeper 拦截。请先核对 [官方 Release](https://github.com/dazzlingwuming/listen2/releases/latest) 来源和 SHA-256，然后：
-
-1. 从“应用程序”打开 Listen1 一次，关闭系统拦截提示。
-2. 打开“系统设置 → 隐私与安全性”，在安全性区域找到 Listen1 的提示，点击“仍要打开”（Open Anyway）。
-3. 按系统要求确认或输入管理员密码，再点击“打开”。此操作仅允许这份应用运行；后续通常可正常打开。更新后系统可能再次要求确认。
-
-更新后的系统确认和钥匙串授权取决于本机状态，不能保证所有版本均免密码。如果系统未提供“仍要打开”，请保留提示文字并反馈，不要关闭 Gatekeeper。
+当前 v2.35.7 Mac 附件按 v2.35.1 的原流程重新打包，不包含安装辅助，不配置项目签名或证书。真实浏览器下载后的首次打开结果会独立记录在 Release 验收说明中。
 
 本版本只发布 Windows x64 的 NSIS 与 7z，以及 macOS x64、arm64 和 Universal DMG；不发布 Linux、Windows ia32 或 Windows arm64 制品。
 
@@ -221,12 +222,12 @@ macOS 沿用 v2.35.1 的打包流程，无需新增签名证书或信任配置�
 
 核心播放器界面、Bilibili 适配、频谱和歌词逻辑由 Windows 与 macOS 共享。操作系统原生窗口行为会有少量差异。
 
-| 平台                        | 状态         | 说明                                                                  |
-| --------------------------- | ------------ | --------------------------------------------------------------------- |
-| Windows 10/11 x64           | 发布目标     | 提供 NSIS 安装包与 7z；包含现代 UI、Bilibili、MV、桌面歌词与 DeepSeek 翻译 |
-| macOS Intel / Apple Silicon | 发布目标     | 提供 x64、arm64 与 Universal DMG；无需新增证书配置，未使用 Developer ID 或公证 |
-| Windows ia32 / arm64        | 不发布       | 本版本不提供对应制品                                                  |
-| Linux                       | 不发布       | 本版本不提供 Linux 制品                                               |
+| 平台                        | 状态     | 说明                                                                       |
+| --------------------------- | -------- | -------------------------------------------------------------------------- |
+| Windows 10/11 x64           | 发布目标 | 提供 NSIS 安装包与 7z；包含现代 UI、Bilibili、MV、桌面歌词与 DeepSeek 翻译 |
+| macOS Intel / Apple Silicon | 发布目标 | 提供 x64、arm64 与 Universal DMG；按项目选择不做代码签名或 Apple 公证      |
+| Windows ia32 / arm64        | 不发布   | 本版本不提供对应制品                                                       |
+| Linux                       | 不发布   | 本版本不提供 Linux 制品                                                    |
 
 ## 使用提示
 
@@ -278,7 +279,7 @@ npm run dist:win
 npm run dist:mac
 ```
 
-构建产物位于 `dist/`。macOS 沿用 v2.35.1 的 electron-builder 流程，不配置自定义签名 hook，也不要求创建本机签名证书或修改钥匙串信任。公开分发前，请在目标系统实机测试。
+构建产物位于 `dist/`。macOS 沿用 v2.35.1 的构建目标和 electron-builder 流程，并按[直接安装与签名约定](doc/2026-10-21/macOS直接安装与签名约定.md)显式设置 `build.mac.identity: null`、保留 `CSC_IDENTITY_AUTO_DISCOVERY=false`；不做项目代码签名或 Apple 公证，不配置签名 hook、不要求创建本机签名证书或修改钥匙串信任。此策略不代表 Windows 构建的签名状态，也不保证系统不会显示首次打开提示。
 
 ### 运行测试
 

@@ -19,6 +19,7 @@ const { createDesktopUpdater } = require("./desktopUpdater");
 const { createDesktopNetworkPolicy } = require("./desktopNetworkPolicy");
 const { createDesktopNetworkBridge } = require("./desktopNetworkBridge");
 const { createWindowAppearance } = require("./windowAppearance");
+const { createDailyWallpaperService, registerDailyWallpaperIpc } = require("./dailyWallpaper");
 const { pathToFileURL } = require("url");
 const remoteMain = require("@electron/remote/main");
 const { createHash } = require("crypto");
@@ -226,6 +227,23 @@ const desktopNetworkBridge = createDesktopNetworkBridge({
   startUpdater: () => desktopUpdater.start(),
 });
 desktopNetworkBridge.register();
+let dailyWallpaperService;
+function getDailyWallpaperService() {
+  if (!dailyWallpaperService) {
+    dailyWallpaperService = createDailyWallpaperService({
+      fetch: (url, options) => session.defaultSession.fetch(url, options),
+      cacheDirectory: join(app.getPath("userData"), "appearance"),
+      decodeImage: (bytes) => electron.nativeImage.createFromBuffer(bytes),
+    });
+  }
+  return dailyWallpaperService;
+}
+registerDailyWallpaperIpc({
+  ipcMain,
+  getMainWindow: () => mainWindow,
+  mainUrl: mainPlayerUrl,
+  getService: getDailyWallpaperService,
+});
 
 
 function getStoredMachineTranslationConfig() {
@@ -1392,6 +1410,7 @@ function createWindow() {
     }
   });
   mainWindow.on("close", (e) => {
+    if (dailyWallpaperService) dailyWallpaperService.cancel();
     if (willQuitApp) {
       /* the user tried to quit the app */
       mainWindow = null;
@@ -1821,6 +1840,7 @@ app.on("activate", () => mainWindow.show());
 /* 'before-quit' is emitted when Electron receives
  * the signal to exit and wants to start closing windows */
 app.on("before-quit", (event) => {
+  if (dailyWallpaperService) dailyWallpaperService.cancel();
   windowAppearance.flush();
   willQuitApp = true;
   if (

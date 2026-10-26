@@ -1,6 +1,6 @@
 {
   "name": "listen1",
-  "version": "2.35.6",
+  "version": "2.35.7",
   "description": "A modern Listen1 desktop experience with enhanced Bilibili, lyrics, and visualizations",
   "main": "app/main.js",
   "scripts": {
@@ -23,7 +23,8 @@
     "test:listening-history": "node app/test/listeningHistoryStore.test.js",
     "test:lyrics-search": "node --test app/test/lyricSearch.test.js",
     "dist:win:unsigned": "electron-builder --win nsis 7z --x64 --config.win.signAndEditExecutable=false",
-    "test:desktop-network": "node --test app/test/desktop_network_policy.test.js app/test/desktopNetworkIntegration.test.js app/listen1_chrome_extension/test/app_direct_network_ui_contract.test.js"
+    "test:desktop-network": "node --test app/test/desktop_network_policy.test.js app/test/desktopNetworkIntegration.test.js app/listen1_chrome_extension/test/app_direct_network_ui_contract.test.js",
+    "test:mac-packaging": "node --test app/test/macPackaging.test.js"
   },
   "repository": {
     "type": "git",
@@ -73,7 +74,8 @@
           ]
         }
       ],
-      "category": "public.app-category.music"
+      "category": "public.app-category.music",
+      "identity": null
     },
     "linux": {
       "target": [

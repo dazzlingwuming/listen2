@@ -445,5 +445,15 @@
  "_LYRIC_LYRICS_UNAVAILABLE": "Échec de la récupération des paroles",
  "_LYRIC_CATALOG_INVALID_RESPONSE": "Réponse de recherche invalide",
  "_LYRIC_LYRICS_INVALID_RESPONSE": "Réponse de paroles invalide",
- "_PROXY_APP_DIRECT_HELP": "Concerne uniquement la recherche, la lecture, les paroles, la traduction et les mises à jour de cette application. Le proxy de votre ordinateur reste inchangé."
+ "_PROXY_APP_DIRECT_HELP": "Concerne uniquement la recherche, la lecture, les paroles, la traduction et les mises à jour de cette application. Le proxy de votre ordinateur reste inchangé.",
+  "_THEME_DAILY": "Daily theme",
+  "_THEME_DAILY_DESC": "A new Bing landscape each day, with colors drawn from the photograph.",
+  "_THEME_DAILY_INTRO": "A new landscape for today’s listening.",
+  "_DAILY_THEME_LOADING": "Loading today’s landscape… Your current background stays in place.",
+  "_DAILY_THEME_FRESH": "Today’s landscape is ready. Its colors now follow the photograph.",
+  "_DAILY_THEME_CACHED": "Using today’s saved landscape.",
+  "_DAILY_THEME_STALE": "Today’s landscape is unavailable. Keeping the last saved photograph and retrying later.",
+  "_DAILY_THEME_UNAVAILABLE": "Today’s landscape is unavailable. Using a built-in background and retrying later.",
+  "_DAILY_THEME_SOURCE": "Photo source: Bing",
+  "_DAILY_THEME_NETWORK_NOTE": "Connects only while Daily theme is selected. Updates each local day; the last successful photograph stays available offline."
 }

@@ -90,6 +90,18 @@
       colors: ['#211b30', '#edb9d2', '#a293c0'],
     },
     {
+      id: 'daily',
+      label: '_THEME_DAILY',
+      base: 'dark',
+      layout: 'cinema',
+      collection: 'scenery',
+      edition: 'DAILY',
+      headline: 'A new day.',
+      scene: 'daily',
+      desktopOnly: true,
+      colors: ['#14212b', '#b6d9df', '#edf5f7'],
+    },
+    {
       id: 'custom',
       label: '_THEME_CUSTOM',
       base: 'dark',
