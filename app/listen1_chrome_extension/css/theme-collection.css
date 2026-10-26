@@ -164,6 +164,29 @@
   --collection-scene: var(--custom-wallpaper);
 }
 
+/* Daily photographs have a separate palette from the personal upload. */
+.modern-body.theme-daily {
+  --ui-bg: var(--daily-bg, #14212b);
+  --ui-surface: var(--daily-surface, #20303d);
+  --ui-surface-raised: var(--daily-raised, #2d414f);
+  --ui-surface-soft: var(--daily-soft, #304552);
+  --ui-surface-hover: var(--daily-hover, #394f60);
+  --ui-text: var(--daily-text, #edf5f7);
+  --ui-muted: var(--daily-muted, #bfd1db);
+  --ui-subtle: var(--daily-subtle, #b0c4ce);
+  --ui-accent: var(--daily-accent, #b6d9df);
+  --ui-accent-rgb: var(--daily-accent-rgb, 182, 217, 223);
+  --ui-accent-soft: var(--daily-accent-soft, #304552);
+  --ui-border: var(--daily-border, #3b515e);
+  --ui-border-strong: var(--daily-border-strong, #5e7d8d);
+  --theme-on-accent: var(--daily-on-accent, #14212b);
+  --collection-radius: 20px;
+  --collection-scene: var(
+    --daily-wallpaper,
+    url('../images/themes/ocean-scene.webp')
+  );
+}
+
 /* Make the listening stage, dialogs and dock follow the complete palette. */
 .modern-body.theme-designed,
 .modern-body.theme-anime {
@@ -1800,6 +1823,107 @@ html[data-performance='quality'] .terminal-cursor {
   --stage-muted: var(--custom-stage-muted);
   --stage-subtle: var(--custom-stage-muted);
   --stage-control-muted: var(--custom-stage-muted);
+}
+.modern-body.theme-daily .main .content {
+  background: linear-gradient(
+      color-mix(in srgb, var(--ui-bg) 94%, transparent),
+      color-mix(in srgb, var(--ui-bg) 94%, transparent)
+    ),
+    var(--daily-wallpaper, url('../images/themes/ocean-scene.webp')) center /
+      cover;
+}
+.modern-body.theme-daily .editorial-hero::before {
+  background: linear-gradient(
+    90deg,
+    rgba(var(--daily-stage-rgb, 20, 33, 43), 0.86),
+    rgba(var(--daily-stage-rgb, 20, 33, 43), 0.78)
+  );
+}
+.modern-body.theme-daily .collection-stage-backdrop::after {
+  background: linear-gradient(
+    90deg,
+    rgba(var(--daily-stage-rgb, 20, 33, 43), 0.46),
+    rgba(var(--daily-stage-rgb, 20, 33, 43), 0.83) 65%,
+    rgba(var(--daily-stage-rgb, 20, 33, 43), 0.94)
+  );
+}
+.modern-body.theme-daily .now-playing-stage,
+.modern-body.theme-daily .player-dock-surface.slidedown {
+  --ui-accent: var(--daily-stage-accent, #b6d9df);
+  --ui-accent-rgb: var(--daily-stage-accent-rgb, 182, 217, 223);
+  --ui-accent-soft: var(--daily-stage-bg, #14212b);
+  --ui-text: var(--daily-stage-text, #edf5f7);
+  --ui-muted: var(--daily-stage-muted, #bfd1db);
+  --ui-control-muted: var(--daily-stage-muted, #bfd1db);
+  --theme-on-accent: var(--daily-stage-bg, #14212b);
+  --stage-bg: var(--daily-stage-bg, #14212b);
+  --stage-surface: color-mix(in srgb, var(--stage-bg) 90%, white);
+  --stage-surface-strong: color-mix(in srgb, var(--stage-bg) 84%, white);
+  --stage-surface-soft: color-mix(in srgb, var(--stage-bg) 80%, white);
+  --stage-surface-hover: color-mix(in srgb, var(--stage-bg) 75%, white);
+  --stage-picker-bg: var(--stage-bg);
+  --stage-lyric-gradient: linear-gradient(
+    var(--daily-stage-text, #edf5f7),
+    var(--daily-stage-text, #edf5f7)
+  );
+  --stage-text: var(--daily-stage-text, #edf5f7);
+  --stage-muted: var(--daily-stage-muted, #bfd1db);
+  --stage-subtle: var(--daily-stage-muted, #bfd1db);
+  --stage-control-muted: var(--daily-stage-muted, #bfd1db);
+}
+/* Text keeps a stable, dark surface even when today's photo is snow or sky. */
+.modern-body.theme-daily .now-playing-copy,
+.modern-body.theme-daily .now-playing-layout .now-playing-lyrics {
+  background: rgba(var(--daily-stage-rgb, 20, 33, 43), 0.96);
+  border-radius: 16px;
+  padding: 16px 20px;
+}
+.modern-body.theme-daily .collection-player-label {
+  color: var(--daily-stage-text, #edf5f7);
+  background: var(--daily-stage-bg, #14212b);
+  border-radius: 8px;
+  padding: 8px 12px;
+  align-self: flex-start;
+}
+.daily-theme-info {
+  display: grid;
+  gap: 8px;
+  padding: 20px;
+  margin: 20px 0;
+  color: var(--ui-text);
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
+  border-radius: 16px;
+}
+.daily-theme-info p {
+  margin: 0;
+  line-height: 1.6;
+}
+.daily-theme-info .daily-theme-title {
+  font-weight: 600;
+}
+.daily-theme-title span {
+  margin-left: 8px;
+  font-weight: 400;
+}
+.daily-theme-info small,
+.daily-theme-credit {
+  color: var(--ui-muted);
+  line-height: 1.6;
+}
+.modern-body .settings-content .daily-theme-info button {
+  justify-self: start;
+  padding: 8px 12px;
+  min-height: 36px;
+  color: var(--ui-accent);
+  background: var(--ui-surface-raised);
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.daily-theme-info button:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 3px;
 }
 .wallpaper-studio {
   display: grid;

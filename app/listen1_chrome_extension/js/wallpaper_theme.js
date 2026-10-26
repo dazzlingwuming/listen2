@@ -153,10 +153,57 @@
   function imageFromUrl(url) {
     return new Promise((resolve, reject) => {
       const image = new root.Image();
-      image.onload = () => resolve(image);
-      image.onerror = () => reject(new Error('invalid-image'));
+      const timer = root.setTimeout(() => {
+        image.src = '';
+        reject(new Error('invalid-image'));
+      }, 8000);
+      image.onload = () => {
+        root.clearTimeout(timer);
+        resolve(image);
+      };
+      image.onerror = () => {
+        root.clearTimeout(timer);
+        reject(new Error('invalid-image'));
+      };
       image.src = url;
     });
+  }
+  function recordFromImage(image, name) {
+    if (!image.naturalWidth || !image.naturalHeight)
+      throw new Error('invalid-image');
+    const canvas = root.document.createElement('canvas');
+    const scale = Math.min(
+      1,
+      1920 / Math.max(image.naturalWidth, image.naturalHeight)
+    );
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const context = canvas.getContext('2d');
+    context.fillStyle = '#17191c';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const sample = root.document.createElement('canvas');
+    sample.width = 64;
+    sample.height = 64;
+    const sampling = sample.getContext('2d', { willReadFrequently: true });
+    sampling.drawImage(canvas, 0, 0, 64, 64);
+    const seed = extractSeed(sampling.getImageData(0, 0, 64, 64).data);
+    return {
+      version: 1,
+      image: canvas.toDataURL('image/webp', 0.88),
+      seed,
+      mode: 'auto',
+      name: name.replace(/\.[^.]+$/, '').slice(0, 80),
+    };
+  }
+  async function fromDataUrl(url) {
+    if (
+      typeof url !== 'string' ||
+      url.length > 8 * 1024 * 1024 ||
+      !/^data:image\/(jpeg|png|webp);base64,[A-Za-z\d+/=]+$/.test(url)
+    )
+      throw new Error('invalid-image');
+    return recordFromImage(await imageFromUrl(url), 'Daily wallpaper');
   }
   async function fromFile(file) {
     if (!file || !/^image\/(png|jpeg|webp)$/.test(file.type))
@@ -165,32 +212,7 @@
     const url = root.URL.createObjectURL(file);
     try {
       const image = await imageFromUrl(url);
-      if (!image.naturalWidth || !image.naturalHeight)
-        throw new Error('invalid-image');
-      const canvas = root.document.createElement('canvas');
-      const scale = Math.min(
-        1,
-        1920 / Math.max(image.naturalWidth, image.naturalHeight)
-      );
-      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-      const context = canvas.getContext('2d');
-      context.fillStyle = '#17191c';
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      context.drawImage(image, 0, 0, canvas.width, canvas.height);
-      const sample = root.document.createElement('canvas');
-      sample.width = 64;
-      sample.height = 64;
-      const sampling = sample.getContext('2d', { willReadFrequently: true });
-      sampling.drawImage(canvas, 0, 0, 64, 64);
-      const seed = extractSeed(sampling.getImageData(0, 0, 64, 64).data);
-      return {
-        version: 1,
-        image: canvas.toDataURL('image/webp', 0.88),
-        seed,
-        mode: 'auto',
-        name: file.name.replace(/\.[^.]+$/, '').slice(0, 80),
-      };
+      return recordFromImage(image, file.name);
     } finally {
       root.URL.revokeObjectURL(url);
     }
@@ -251,6 +273,7 @@
     makePalette,
     contrast,
     fromFile,
+    fromDataUrl,
     load,
     save: (record) => storage('put', record),
     remove: () => storage('delete'),

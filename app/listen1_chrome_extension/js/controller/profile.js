@@ -315,9 +315,19 @@ angular.module('listenone').controller('ProfileController', [
       white: 'white2',
       black: 'black2',
     };
-    $scope.themeOptions = window.Listen2Appearance.themes.filter(
-      (item) => item.id !== 'custom'
+    const availableThemes = window.Listen2Appearance.themes.filter(
+      (item) => !item.desktopOnly || isElectron()
     );
+    const wallpaper = window.Listen2Wallpaper;
+    let dailyTheme = null;
+    $scope.dailyWallpaper = null;
+    $scope.dailyThemeStatus = '_DAILY_THEME_LOADING';
+    function refreshThemeOptions() {
+      $scope.themeOptions = availableThemes.filter(
+        (item) => item.id !== 'custom' || $scope.customWallpaper
+      );
+    }
+    refreshThemeOptions();
     $scope.themeFilters = window.Listen2Appearance.filters;
     $scope.themeFilter = 'all';
     $scope.setThemeFilter = (filter) => {
@@ -325,9 +335,7 @@ angular.module('listenone').controller('ProfileController', [
     };
     $scope.matchesThemeFilter = (item) =>
       window.Listen2Appearance.matchesFilter(item, $scope.themeFilter);
-    const supportedThemes = window.Listen2Appearance.themes.map(
-      (item) => item.id
-    );
+    const supportedThemes = availableThemes.map((item) => item.id);
     const savedTheme = localStorage.getObject('theme');
     const fallbackTheme = savedTheme === null ? 'sakura' : 'black2';
     const defaultTheme =
@@ -349,7 +357,7 @@ angular.module('listenone').controller('ProfileController', [
       const normalizedTheme =
         legacyThemeMap[theme] ||
         (supportedThemes.includes(theme) ? theme : 'black2');
-      const selected = window.Listen2Appearance.themes.find(
+      const selected = availableThemes.find(
         (item) => item.id === normalizedTheme
       );
       $scope.theme = normalizedTheme;
@@ -360,6 +368,11 @@ angular.module('listenone').controller('ProfileController', [
       if (selected.id === 'custom')
         $scope.themeSceneUrl =
           ($scope.customWallpaper && $scope.customWallpaper.image) || '';
+      if (selected.id === 'daily')
+        $scope.themeSceneUrl = $scope.dailyWallpaper
+          ? $scope.dailyWallpaper.image
+          : 'images/themes/ocean-scene.webp';
+      if (dailyTheme) dailyTheme.select(selected.id === 'daily');
       $scope.themeClass = {
         'theme-modern-light': selected.base === 'light',
         'theme-modern-dark': selected.base === 'dark',
@@ -377,6 +390,52 @@ angular.module('listenone').controller('ProfileController', [
         window.requestAnimationFrame(() => window.Listen2Appearance.publish())
       );
     };
+    // Daily work starts only through selection. The lifecycle is ready before
+    // the saved theme is restored, including when daily is the saved theme.
+    if (isElectron() && window.Listen2DailyTheme && wallpaper) {
+      const { ipcRenderer } = require('electron');
+      dailyTheme = window.Listen2DailyTheme.createDailyTheme({
+        request: (payload) =>
+          ipcRenderer.invoke('daily-wallpaper:get', payload),
+        cancel: () => ipcRenderer.send('daily-wallpaper:cancel'),
+        prepare: async (record) => {
+          const image = await wallpaper.fromDataUrl(record.image);
+          return {
+            wallpaper: { ...record, image: image.image },
+            palette: wallpaper.makePalette(image.seed, 'auto'),
+          };
+        },
+        onChange: (state) =>
+          $scope.$evalAsync(() => {
+            if ($scope.theme !== 'daily') return;
+            $scope.dailyThemeStatus =
+              {
+                loading: '_DAILY_THEME_LOADING',
+                fresh: '_DAILY_THEME_FRESH',
+                cached: '_DAILY_THEME_CACHED',
+                stale: '_DAILY_THEME_STALE',
+                unavailable: '_DAILY_THEME_UNAVAILABLE',
+              }[state.status] || '_DAILY_THEME_LOADING';
+            if (!state.wallpaper || !state.palette) return;
+            const theme = availableThemes.find((item) => item.id === 'daily');
+            theme.base = state.palette.base;
+            theme.colors = state.palette.colors;
+            Object.entries(state.palette.variables).forEach(([key, value]) => {
+              document.documentElement.style.setProperty(
+                `--daily-${key}`,
+                value
+              );
+            });
+            document.documentElement.style.setProperty(
+              '--daily-wallpaper',
+              `url("${state.wallpaper.image}")`
+            );
+            $scope.dailyWallpaper = state.wallpaper;
+            if ($scope.theme === 'daily') $scope.setTheme('daily');
+          }),
+      });
+      $scope.$on('$destroy', () => dailyTheme.dispose());
+    }
     axios.get('images/feather-sprite.svg').then((res) => {
       const container = document.getElementById('feather-container');
       if (container) container.innerHTML = res.data;
@@ -386,7 +445,6 @@ angular.module('listenone').controller('ProfileController', [
     $scope.customWallpaper = null;
     $scope.customWallpaperBusy = true;
     $scope.customWallpaperError = '';
-    const wallpaper = window.Listen2Wallpaper;
     function showWallpaperError(error) {
       const keys = {
         'image-format': '_WALLPAPER_FORMAT_ERROR',
@@ -412,7 +470,7 @@ angular.module('listenone').controller('ProfileController', [
       );
       $scope.customWallpaper = record;
       $scope.customPalette = palette;
-      $scope.themeOptions = window.Listen2Appearance.themes;
+      refreshThemeOptions();
       if (select || $scope.theme === 'custom') $scope.setTheme('custom');
     }
     $scope.chooseWallpaper = () =>
@@ -465,9 +523,7 @@ angular.module('listenone').controller('ProfileController', [
         $scope.$evalAsync(() => {
           if ($scope.theme === 'custom') $scope.setTheme('black2');
           $scope.customWallpaper = null;
-          $scope.themeOptions = window.Listen2Appearance.themes.filter(
-            (item) => item.id !== 'custom'
-          );
+          refreshThemeOptions();
           document.documentElement.style.removeProperty('--custom-wallpaper');
         });
       } catch (error) {

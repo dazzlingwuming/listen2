@@ -1,0 +1,31 @@
+Listen1 — unsigned macOS installation helper
+
+1. Download this DMG from the project's Release page. Before opening it, compare
+   `shasum -a 256 "path/to/download.dmg"` with the SHA-256 published with that release.
+2. Open the DMG. Open Terminal, type `bash ` (including the space), drag
+   “Install Listen1.command” from this disk into Terminal, then press Return.
+   Running it through bash avoids depending on Finder opening a downloaded script.
+3. The helper verifies the bundle and displays the exact install destination.
+   Quit Listen1 yourself first. Type INSTALL to confirm installation.
+
+The helper verifies every file, directory, permission mode and internal symlink
+against the packaged manifest, then verifies the staged copy again. It removes
+only com.apple.quarantine from that verified Listen1 copy. It does not sign,
+notarize, request a password, use sudo, change Gatekeeper or touch user settings.
+The local manifest checks integrity, not the identity of the software publisher.
+It cannot authenticate a maliciously replaced DMG and helper together.
+
+/Applications/Listen1.app is preferred when writable. If it is absent and that
+folder is not writable, ~/Applications/Listen1.app is used. Existing apps in both
+locations or a protected existing app cause a refusal; no duplicate is created.
+The previous app is retained in a clearly printed hidden backup directory beside
+the installation. On a failed replacement the helper attempts rollback and prints
+the backup path if manual recovery is needed. Settings and playlists stay in your
+existing user data folder. After success, open Listen1 yourself in Finder.
+
+Optional read-only verification (no installation):
+  bash "/Volumes/<mounted disk name>/Install Listen1.command" --verify-only
+
+Unsigned software may still show a security warning on some macOS versions.
+If verification or installation fails, keep the message and stop; do not disable
+system security or run broad xattr commands. The helper has no force option.

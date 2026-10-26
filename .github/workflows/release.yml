@@ -44,6 +44,44 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
           GH_TOKEN: ${{ github.token }}
 
+      - name: Verify unsigned Listen1 helper in macOS DMGs
+        if: ${{ matrix.os == 'macos-latest' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          for arch in x64 arm64 universal; do
+            image="dist/listen1_${version}_mac_${arch}.dmg"
+            test -s "$image"
+            mount_dir="$(mktemp -d "${RUNNER_TEMP}/listen1-${arch}-XXXXXX")"
+            if ! hdiutil attach -readonly -nobrowse -noautoopen -mountpoint "$mount_dir" "$image" >/dev/null; then
+              rmdir "$mount_dir"
+              exit 1
+            fi
+            for file in 'Install Listen1.command' 'Listen1.integrity.tsv' 'INSTALL-LISTEN1.txt'; do
+              if [[ ! -f "$mount_dir/$file" ]]; then
+                hdiutil detach "$mount_dir" >/dev/null
+                rmdir "$mount_dir"
+                echo "Missing $file in $image" >&2
+                exit 1
+              fi
+            done
+            header="$(head -n 1 "$mount_dir/Listen1.integrity.tsv")"
+            case "$arch:$header" in
+              x64:$'LISTEN1-INTEGRITY-1\tcom.listen1.listen1\t'"$version"$'\tx86_64') ;;
+              arm64:$'LISTEN1-INTEGRITY-1\tcom.listen1.listen1\t'"$version"$'\tarm64') ;;
+              universal:$'LISTEN1-INTEGRITY-1\tcom.listen1.listen1\t'"$version"$'\tarm64 x86_64') ;;
+              *)
+                hdiutil detach "$mount_dir" >/dev/null
+                rmdir "$mount_dir"
+                echo "Invalid Listen1 integrity header in $image: $header" >&2
+                exit 1
+                ;;
+            esac
+            bash "$mount_dir/Install Listen1.command" --verify-only
+            hdiutil detach "$mount_dir" >/dev/null
+            rmdir "$mount_dir"
+          done
 
   publish-release:
     if: ${{ startsWith(github.ref, 'refs/tags/v') }}
@@ -68,13 +106,48 @@ jobs:
           const content = readme.slice(start + heading.length).split('\n## ')[0].trim();
           fs.writeFileSync(`${process.env.RUNNER_TEMP}/release-notes.md`, content + '\n');
           NODE
-          gh release view "$RELEASE_TAG" --json assets > "$RUNNER_TEMP/release-assets.json"
+          gh api "repos/$GH_REPO/releases/tags/$RELEASE_TAG" > "$RUNNER_TEMP/release.json"
           node <<'NODE'
           const fs = require('fs');
           const version = require('./package.json').version;
-          const assets = JSON.parse(fs.readFileSync(`${process.env.RUNNER_TEMP}/release-assets.json`)).assets;
-          const names = new Set(assets.filter(a => a.size > 0).map(a => a.name));
-          const required = [`listen1_${version}_win_x64.exe`, `listen1_${version}_win_x64.7z`, `listen1_${version}_win_x64.exe.blockmap`, 'latest.yml', 'latest-mac.yml', ...['x64','arm64','universal'].map(a => `listen1_${version}_mac_${a}.dmg`)];
-          for (const name of required) if (!names.has(name)) throw new Error(`Missing release asset: ${name}`);
+          const release = JSON.parse(fs.readFileSync(`${process.env.RUNNER_TEMP}/release.json`));
+          const assets = release.assets;
+          const required = [
+            `listen1_${version}_win_x64.exe`,
+            `listen1_${version}_win_x64.7z`,
+            `listen1_${version}_win_x64.exe.blockmap`,
+            'latest.yml',
+            'latest-mac.yml',
+            ...['x64', 'arm64', 'universal'].flatMap(arch => [
+              `listen1_${version}_mac_${arch}.dmg`,
+              `listen1_${version}_mac_${arch}.dmg.blockmap`,
+            ]),
+          ];
+          const assetsByName = new Map();
+          for (const asset of assets) {
+            if (asset.name === 'SHA256SUMS.txt') continue;
+            if (!/^[A-Za-z0-9._-]+$/.test(asset.name)) {
+              throw new Error(`Unsafe release asset name: ${JSON.stringify(asset.name)}`);
+            }
+            if (!Number.isSafeInteger(asset.size) || asset.size <= 0) {
+              throw new Error(`Release asset is empty or has invalid size: ${asset.name}`);
+            }
+            if (typeof asset.digest !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(asset.digest)) {
+              throw new Error(`Missing or invalid GitHub SHA-256 digest: ${asset.name}`);
+            }
+            if (assetsByName.has(asset.name)) {
+              throw new Error(`Duplicate release asset: ${asset.name}`);
+            }
+            assetsByName.set(asset.name, asset);
+          }
+          for (const name of required) {
+            if (!assetsByName.has(name)) throw new Error(`Missing release asset: ${name}`);
+          }
+          const checksums = [...assetsByName.values()]
+            .sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
+            .map(asset => `${asset.digest.slice('sha256:'.length)}  ${asset.name}`)
+            .join('\n') + '\n';
+          fs.writeFileSync(`${process.env.RUNNER_TEMP}/SHA256SUMS.txt`, checksums);
           NODE
+          gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/SHA256SUMS.txt" --clobber
           gh release edit "$RELEASE_TAG" --title "Listen2 $RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md" --draft=false
