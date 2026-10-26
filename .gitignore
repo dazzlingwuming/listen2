@@ -11,3 +11,4 @@ yarn.lock
 
 output/
 .playwright-cli/
+.task-workspaces/

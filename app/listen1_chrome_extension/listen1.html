@@ -27,6 +27,7 @@
     <link href="css/performance.css" rel="stylesheet" />
     <script src="js/appearance.js"></script>
     <script src="js/wallpaper_theme.js"></script>
+    <script src="js/daily_theme.js"></script>
     <link href="images/logo_16.png" rel="shortcut icon" />
     <link href="images/logo_16.png" rel="bookmark" />
     <script>
@@ -4916,7 +4917,7 @@
                                     <span class="theme-preview-wrap"
                                       ><img
                                         class="theme-preview"
-                                        ng-src="{{item.id === 'custom' ? customWallpaper.image : 'images/themes/' + item.id + '-preview.webp'}}"
+                                        ng-src="{{item.id === 'custom' ? customWallpaper.image : item.id === 'daily' ? (dailyWallpaper.image || 'images/themes/ocean-preview.webp') : 'images/themes/' + item.id + '-preview.webp'}}"
                                         alt=""
                                         loading="lazy"
                                         width="480"
@@ -4948,6 +4949,13 @@
                                     >
                                   </button>
                                 </div>
+                                <section class="daily-theme-info" ng-if="theme === 'daily'" aria-label="{{_THEME_DAILY}}">
+                                  <p role="status" aria-live="polite" aria-atomic="true">{{this[dailyThemeStatus]}}</p>
+                                  <p class="daily-theme-title" ng-if="dailyWallpaper">{{dailyWallpaper.title}} <span>{{dailyWallpaper.date}}</span></p>
+                                  <p class="daily-theme-credit" ng-if="dailyWallpaper.copyright">{{dailyWallpaper.copyright}}</p>
+                                  <button type="button" open-url="dailyWallpaper.attributionUrl || 'https://www.bing.com/'">{{_DAILY_THEME_SOURCE}}</button>
+                                  <small>{{_DAILY_THEME_NETWORK_NOTE}}</small>
+                                </section>
                                 <div class="appearance-preferences">
                                   <label class="appearance-toggle"
                                     ><input
