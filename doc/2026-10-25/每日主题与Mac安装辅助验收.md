@@ -1,6 +1,6 @@
 # 每日主题与 Mac 安装辅助验收
 
-最后更新：2026-10-25，America/Los_Angeles。状态：本地候选验收通过，准备推送合并与发布，尚未覆盖本机应用。
+最后更新：2026-10-25，America/Los_Angeles。状态：功能已合并，本地及云端构建验收通过，正在恢复最后的草稿发布步骤；尚未公开或覆盖本机应用。
 
 ## 修改范围
 
@@ -53,3 +53,10 @@ node --test app/test/dailyWallpaper.test.js app/test/dailyWallpaperIpc.test.js a
 - 隔离界面没有注册与本任务无关的音频/账户桥接，因此相关“缺少处理器”诊断不作为真实应用故障；完整应用仍使用原桥接。
 - 安装辅助会保留旧应用备份，失败时回滚；意外断电/强制终止及并发外部文件系统改动不在保证范围。临时诊断目录需待发布核验及子任务结束后，按登记入口清理。
 - GitHub 合并、tag、构建与实际资产的结果在下方后续补充；截至本节创建时均尚未执行。
+
+## GitHub 发布进展
+
+- 功能提交 `94e271e15c47af719312c95dbed763f65a5418c4` 已推送；[PR #7](https://github.com/dazzlingwuming/listen2/pull/7) 合并为 `3b970f2e899498da1382a96aa2caea7309ee6dea`。合并树与本地已测树完全相同，现有相关验证适用。发布者为已核对的 `dazzlingwuming`。
+- tag `v2.35.7` 保持指向上述合并 SHA。[正式 tag run](https://github.com/dazzlingwuming/listen2/actions/runs/40254294068) 的 Mac/Windows 构建和三架构 DMG 辅助验证通过，11 个资产已上传至草稿。
+- 最后的发布 job 在按 tag 查询草稿时返回 404，整个 run 为 failure，未把它计作发布成功。改用 `gh release view --json databaseId` 获取数字 ID，再读取 REST release 元数据；真实只读查询成功。此工作流修复及草稿回归测试 8/8 通过，不改业务运行源码，不重指 tag。
+- 后续将对现有草稿执行相同附件/摘要校验和发布；最终公开状态、实际下载摘要与正式回执在验收后补写。
