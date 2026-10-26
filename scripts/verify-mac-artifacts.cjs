@@ -21,8 +21,11 @@ const sourceFiles = Object.freeze([
   "app/main.js",
   "app/dailyWallpaper.js",
   "app/listen1_chrome_extension/js/daily_theme.js",
-  "app/package.json",
 ]);
+const manifestSourceFile = "app/package.json";
+// app-builder-lib 25.1.8 out/fileTransformer.js removes these by default.
+// Keep this independent, narrow contract instead of calling its transformer.
+const allowedRemovedManifestFields = Object.freeze(["scripts", "keywords"]);
 const architectures = Object.freeze({
   x64: ["x86_64"],
   arm64: ["arm64"],
@@ -59,6 +62,51 @@ function metadata(file) {
     sha256: digest(fs.readFileSync(file)),
   };
 }
+function verifyManifest(sourceBytes, bundledBytes, expectedVersion) {
+  const source = JSON.parse(sourceBytes.toString("utf8"));
+  const bundled = JSON.parse(bundledBytes.toString("utf8"));
+  for (const manifest of [source, bundled]) {
+    assert.ok(
+      manifest && typeof manifest === "object" && !Array.isArray(manifest)
+    );
+    for (const field of ["name", "version", "main"]) {
+      assert.ok(
+        typeof manifest[field] === "string" && manifest[field].length > 0,
+        `Invalid manifest ${field}`
+      );
+    }
+    assert.equal(
+      manifest.version,
+      expectedVersion,
+      "Manifest version mismatch"
+    );
+  }
+  const expected = { ...source };
+  const removedFields = [];
+  for (const field of allowedRemovedManifestFields) {
+    if (Object.hasOwn(source, field) && !Object.hasOwn(bundled, field)) {
+      delete expected[field];
+      removedFields.push(field);
+    }
+  }
+  // Every remaining property, including name/main/dependencies, is exact JSON.
+  // An allowed field may be absent, but cannot be modified or newly added.
+  assert.deepEqual(
+    bundled,
+    expected,
+    "ASAR manifest structure mismatch outside permitted field removal"
+  );
+  return {
+    file: manifestSourceFile,
+    version: bundled.version,
+    sourceSha256: digest(sourceBytes),
+    bundledSha256: digest(bundledBytes),
+    byteMatch: sourceBytes.equals(bundledBytes),
+    allowedRemovedFields: [...allowedRemovedManifestFields],
+    removedFields,
+    structureMatch: true,
+  };
+}
 function verifyAsar(archive, expectedVersion) {
   realFile(archive);
   const files = sourceFiles.map((file) => {
@@ -73,19 +121,17 @@ function verifyAsar(archive, expectedVersion) {
       bundledSha256: digest(bundled),
     };
   });
-  const appPackage = JSON.parse(
-    asar.extractFile(archive, "package.json").toString("utf8")
-  );
-  assert.equal(
-    appPackage.version,
-    expectedVersion,
-    "ASAR app version mismatch"
+  const manifest = verifyManifest(
+    fs.readFileSync(path.join(root, manifestSourceFile)),
+    asar.extractFile(archive, "package.json"),
+    expectedVersion
   );
   return {
-    appVersion: appPackage.version,
+    appVersion: manifest.version,
     allSourceFilesMatch: true,
     fileCount: files.length,
     files,
+    manifest,
   };
 }
 function plistField(file, key) {
@@ -253,6 +299,7 @@ function main() {
       "--untracked-files=no",
       "--",
       "package.json",
+      manifestSourceFile,
       ...sourceFiles,
     ]),
     "",
@@ -298,6 +345,7 @@ function main() {
       "--untracked-files=no",
       "--",
       "package.json",
+      manifestSourceFile,
       ...sourceFiles,
     ]),
     "",
@@ -323,7 +371,8 @@ function main() {
     },
     limits: [
       "No installation, launch or real user download/Gatekeeper acceptance was tested.",
-      "UI visual/interaction acceptance is a separate task; this report binds the packaged bytes to the recorded commit.",
+      "Seven runtime source files are compared byte for byte; app/package.json uses a separate strict JSON contract allowing only removal of scripts/keywords.",
+      "UI visual/interaction acceptance is a separate task; this report binds the packaged bytes and manifest structure to the recorded commit.",
     ],
   };
   fs.mkdirSync(path.dirname(output), { recursive: true });
@@ -347,5 +396,5 @@ function main() {
     )
   );
 }
-module.exports = { sourceFiles, verifyAsar };
+module.exports = { sourceFiles, verifyAsar, verifyManifest };
 if (require.main === module) main();
