@@ -1,0 +1,463 @@
+{
+  "finding": "The previous 600x420 capture predates the <=680 utility fix; no production source change was required.",
+  "results": [
+    {
+      "capture": "600x420-daily",
+      "widths": {
+        "metadata": 140,
+        "metadataText": 76.421875,
+        "mainInfo": 300,
+        "utilities": 120,
+        "seek": 67.0625,
+        "volume": 52
+      },
+      "metadataClipping": {
+        "title": "夜色穿过城市尽头的长街与微光仍在远方回响",
+        "titleRect": {
+          "x": 67.984375,
+          "y": 345,
+          "top": 345,
+          "right": 144.40625,
+          "bottom": 363,
+          "left": 67.984375,
+          "width": 76.421875,
+          "height": 18
+        },
+        "visibleWidth": 76.421875,
+        "visibleHeight": 18,
+        "ancestors": [
+          {
+            "class": "detail ng-scope",
+            "rect": {
+              "x": 67.984375,
+              "y": 345,
+              "top": 345,
+              "right": 152.40625,
+              "bottom": 367,
+              "left": 67.984375,
+              "width": 84.421875,
+              "height": 22
+            },
+            "display": "flex",
+            "visibility": "visible",
+            "overflowX": "hidden",
+            "overflowY": "hidden",
+            "opacity": "1"
+          },
+          {
+            "class": "left-control slidedown",
+            "rect": {
+              "x": 20,
+              "y": 312,
+              "top": 312,
+              "right": 160,
+              "bottom": 400,
+              "left": 20,
+              "width": 140,
+              "height": 88
+            },
+            "display": "flex",
+            "visibility": "visible",
+            "overflowX": "hidden",
+            "overflowY": "hidden",
+            "opacity": "0.95038"
+          },
+          {
+            "class": "footerwrap",
+            "rect": {
+              "x": 19,
+              "y": 311,
+              "top": 311,
+              "right": 581,
+              "bottom": 401,
+              "left": 19,
+              "width": 562,
+              "height": 90
+            },
+            "display": "grid",
+            "visibility": "visible",
+            "overflowX": "hidden",
+            "overflowY": "hidden",
+            "opacity": "1"
+          },
+          {
+            "class": "footer-main player-dock-surface slidedown",
+            "rect": {
+              "x": 8,
+              "y": 6,
+              "top": 6,
+              "right": 592,
+              "bottom": 412,
+              "left": 8,
+              "width": 584,
+              "height": 406
+            },
+            "display": "flex",
+            "visibility": "visible",
+            "overflowX": "hidden",
+            "overflowY": "hidden",
+            "opacity": "1"
+          },
+          {
+            "class": "footer player-dock",
+            "rect": {
+              "x": 8,
+              "y": 324,
+              "top": 324,
+              "right": 592,
+              "bottom": 412,
+              "left": 8,
+              "width": 584,
+              "height": 88
+            },
+            "display": "flex",
+            "visibility": "visible",
+            "overflowX": "visible",
+            "overflowY": "visible",
+            "opacity": "1"
+          },
+          {
+            "class": "wrap",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "top": 0,
+              "right": 600,
+              "bottom": 420,
+              "left": 0,
+              "width": 600,
+              "height": 420
+            },
+            "display": "flex",
+            "visibility": "visible",
+            "overflowX": "visible",
+            "overflowY": "visible",
+            "opacity": "1"
+          },
+          {
+            "class": "ng-scope",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "top": 0,
+              "right": 600,
+              "bottom": 420,
+              "left": 0,
+              "width": 600,
+              "height": 420
+            },
+            "display": "block",
+            "visibility": "visible",
+            "overflowX": "visible",
+            "overflowY": "visible",
+            "opacity": "1"
+          },
+          {
+            "class": "",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "top": 0,
+              "right": 600,
+              "bottom": 420,
+              "left": 0,
+              "width": 600,
+              "height": 420
+            },
+            "display": "block",
+            "visibility": "visible",
+            "overflowX": "visible",
+            "overflowY": "visible",
+            "opacity": "1"
+          },
+          {
+            "class": "ng-scope",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "top": 0,
+              "right": 600,
+              "bottom": 420,
+              "left": 0,
+              "width": 600,
+              "height": 420
+            },
+            "display": "block",
+            "visibility": "visible",
+            "overflowX": "visible",
+            "overflowY": "visible",
+            "opacity": "1"
+          },
+          {
+            "class": "modern-player-state ng-scope has-track",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "top": 0,
+              "right": 600,
+              "bottom": 420,
+              "left": 0,
+              "width": 600,
+              "height": 420
+            },
+            "display": "block",
+            "visibility": "visible",
+            "overflowX": "visible",
+            "overflowY": "visible",
+            "opacity": "1"
+          }
+        ]
+      },
+      "checks": {
+        "spectrumWithinStageVisibleArea": true,
+        "captionWithinStageVisibleArea": true,
+        "transportWithinShelf": true,
+        "progressAndVolumeWithinShelf": true,
+        "timesWithinMainInfo": true,
+        "seekTimesDoNotOverlap": true,
+        "spectrumWithinLeftVisibleArea": true,
+        "spectrumRelativeToLeftVisibleArea": {
+          "topPx": 139.59375,
+          "bottomPx": 8.40625
+        },
+        "captionWithinLeftVisibleArea": true,
+        "captionRelativeToLeftVisibleArea": {
+          "topPx": 180.59375,
+          "bottomPx": 0.40625
+        },
+        "captionToTransportShelfPx": 110.703125,
+        "captionFullyAboveTransportShelf": true,
+        "captionAboveShelfRequiredAt1367": null
+      }
+    },
+    {
+      "capture": "600x420-daily-dock-normal",
+      "widths": {
+        "metadata": 118,
+        "metadataText": 83.375,
+        "mainInfo": 300,
+        "utilities": 164,
+        "seek": 89.0625,
+        "volume": 52
+      },
+      "metadataClipping": {
+        "title": "夜色穿过城市尽头的长街与微光仍在远方回响",
+        "titleRect": {
+          "x": 26.3125,
+          "y": 356,
+          "top": 356,
+          "right": 109.6875,
+          "bottom": 374,
+          "left": 26.3125,
+          "width": 83.375,
+          "height": 18
+        },
+        "visibleWidth": 83.375,
+        "visibleHeight": 18,
+        "ancestors": [
+          {
+            "class": "detail ng-scope",
+            "rect": {
+              "x": 26.3125,
+              "y": 356,
+              "top": 356,
+              "right": 109.6875,
+              "bottom": 378,
+              "left": 26.3125,
+              "width": 83.375,
+              "height": 22
+            },
+            "display": "flex",
+            "visibility": "visible",
+            "overflowX": "hidden",
+            "overflowY": "hidden",
+            "opacity": "1"
+          },
+          {
+            "class": "left-control",
+            "rect": {
+              "x": 9,
+              "y": 323,
+              "top": 323,
+              "right": 127,
+              "bottom": 411,
+              "left": 9,
+              "width": 118,
+              "height": 88
+            },
+            "display": "flex",
+            "visibility": "visible",
+            "overflowX": "hidden",
+            "overflowY": "hidden",
+            "opacity": "1"
+          },
+          {
+            "class": "footerwrap",
+            "rect": {
+              "x": 9,
+              "y": 323,
+              "top": 323,
+              "right": 591,
+              "bottom": 411,
+              "left": 9,
+              "width": 582,
+              "height": 88
+            },
+            "display": "grid",
+            "visibility": "visible",
+            "overflowX": "visible",
+            "overflowY": "visible",
+            "opacity": "1"
+          },
+          {
+            "class": "footer-main player-dock-surface",
+            "rect": {
+              "x": 8,
+              "y": 322,
+              "top": 322,
+              "right": 592,
+              "bottom": 412,
+              "left": 8,
+              "width": 584,
+              "height": 90
+            },
+            "display": "flex",
+            "visibility": "visible",
+            "overflowX": "visible",
+            "overflowY": "visible",
+            "opacity": "1"
+          },
+          {
+            "class": "footer player-dock",
+            "rect": {
+              "x": 8,
+              "y": 324,
+              "top": 324,
+              "right": 592,
+              "bottom": 412,
+              "left": 8,
+              "width": 584,
+              "height": 88
+            },
+            "display": "flex",
+            "visibility": "visible",
+            "overflowX": "visible",
+            "overflowY": "visible",
+            "opacity": "1"
+          },
+          {
+            "class": "wrap",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "top": 0,
+              "right": 600,
+              "bottom": 420,
+              "left": 0,
+              "width": 600,
+              "height": 420
+            },
+            "display": "flex",
+            "visibility": "visible",
+            "overflowX": "visible",
+            "overflowY": "visible",
+            "opacity": "1"
+          },
+          {
+            "class": "ng-scope",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "top": 0,
+              "right": 600,
+              "bottom": 420,
+              "left": 0,
+              "width": 600,
+              "height": 420
+            },
+            "display": "block",
+            "visibility": "visible",
+            "overflowX": "visible",
+            "overflowY": "visible",
+            "opacity": "1"
+          },
+          {
+            "class": "",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "top": 0,
+              "right": 600,
+              "bottom": 420,
+              "left": 0,
+              "width": 600,
+              "height": 420
+            },
+            "display": "block",
+            "visibility": "visible",
+            "overflowX": "visible",
+            "overflowY": "visible",
+            "opacity": "1"
+          },
+          {
+            "class": "ng-scope",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "top": 0,
+              "right": 600,
+              "bottom": 420,
+              "left": 0,
+              "width": 600,
+              "height": 420
+            },
+            "display": "block",
+            "visibility": "visible",
+            "overflowX": "visible",
+            "overflowY": "visible",
+            "opacity": "1"
+          },
+          {
+            "class": "modern-player-state ng-scope has-track",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "top": 0,
+              "right": 600,
+              "bottom": 420,
+              "left": 0,
+              "width": 600,
+              "height": 420
+            },
+            "display": "block",
+            "visibility": "visible",
+            "overflowX": "visible",
+            "overflowY": "visible",
+            "opacity": "1"
+          }
+        ]
+      },
+      "checks": {
+        "spectrumWithinStageVisibleArea": true,
+        "captionWithinStageVisibleArea": true,
+        "transportWithinShelf": true,
+        "progressAndVolumeWithinShelf": true,
+        "timesWithinMainInfo": true,
+        "seekTimesDoNotOverlap": true,
+        "spectrumWithinLeftVisibleArea": true,
+        "spectrumRelativeToLeftVisibleArea": {
+          "topPx": 139.59375,
+          "bottomPx": 8.40625
+        },
+        "captionWithinLeftVisibleArea": true,
+        "captionRelativeToLeftVisibleArea": {
+          "topPx": 180.59375,
+          "bottomPx": 0.40625
+        },
+        "captionToTransportShelfPx": -188.59375,
+        "captionFullyAboveTransportShelf": false,
+        "captionAboveShelfRequiredAt1367": null
+      }
+    }
+  ]
+}

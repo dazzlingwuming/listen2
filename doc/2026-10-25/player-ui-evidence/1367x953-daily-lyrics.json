@@ -1,0 +1,623 @@
+{
+  "viewport": {
+    "width": 1367,
+    "height": 953,
+    "scrollWidth": 1367,
+    "scrollHeight": 953
+  },
+  "state": {
+    "theme": "body modern-body ng-scope theme-modern-dark theme-designed theme-scenic theme-daily",
+    "title": "夜色穿过城市尽头的长街与微光仍在远方回响",
+    "position": "12:34:56",
+    "duration": "23:45:56"
+  },
+  "rects": {
+    "metadata": {
+      "x": 56,
+      "y": 831,
+      "top": 831,
+      "right": 356.515625,
+      "bottom": 918.75,
+      "left": 56,
+      "width": 300.515625,
+      "height": 87.75
+    },
+    "metadataText": {
+      "x": 117.125,
+      "y": 855.875,
+      "top": 855.875,
+      "right": 293.390625,
+      "bottom": 873.875,
+      "left": 117.125,
+      "width": 176.265625,
+      "height": 18
+    },
+    "utilities": {
+      "x": 1015.984375,
+      "y": 831,
+      "top": 831,
+      "right": 1310.984375,
+      "bottom": 919,
+      "left": 1015.984375,
+      "width": 295,
+      "height": 88
+    },
+    "transport": {
+      "x": 417.515625,
+      "y": 845,
+      "top": 845,
+      "right": 475.515625,
+      "bottom": 903,
+      "left": 417.515625,
+      "width": 58,
+      "height": 58
+    },
+    "mainInfo": {
+      "x": 356.515625,
+      "y": 831,
+      "top": 831,
+      "right": 1015.984375,
+      "bottom": 919,
+      "left": 356.515625,
+      "width": 659.46875,
+      "height": 88
+    },
+    "volume": {
+      "x": 849.984375,
+      "y": 860.5,
+      "top": 860.5,
+      "right": 1001.984375,
+      "bottom": 889.5,
+      "left": 849.984375,
+      "width": 152,
+      "height": 29
+    },
+    "layout": {
+      "x": 17,
+      "y": 13,
+      "top": 13,
+      "right": 1350,
+      "bottom": 820,
+      "left": 17,
+      "width": 1333,
+      "height": 807
+    },
+    "elapsed": {
+      "x": 532.515625,
+      "y": 869.5,
+      "top": 869.5,
+      "right": 582.984375,
+      "bottom": 880.5,
+      "left": 532.515625,
+      "width": 50.46875,
+      "height": 11
+    },
+    "total": {
+      "x": 761.515625,
+      "y": 869.5,
+      "top": 869.5,
+      "right": 811.984375,
+      "bottom": 880.5,
+      "left": 761.515625,
+      "width": 50.46875,
+      "height": 11
+    },
+    "left": {
+      "x": 110.296875,
+      "y": 100.515625,
+      "top": 100.515625,
+      "right": 615.875,
+      "bottom": 786.484375,
+      "left": 110.296875,
+      "width": 505.578125,
+      "height": 685.96875
+    },
+    "spectrum": {
+      "x": 138.296875,
+      "y": 733.484375,
+      "top": 733.484375,
+      "right": 587.875,
+      "bottom": 778.484375,
+      "left": 138.296875,
+      "width": 449.578125,
+      "height": 45
+    },
+    "caption": {
+      "x": 138.296875,
+      "y": 774.484375,
+      "top": 774.484375,
+      "right": 587.875,
+      "bottom": 786.484375,
+      "left": 138.296875,
+      "width": 449.578125,
+      "height": 12
+    },
+    "seek": {
+      "x": 589.984375,
+      "y": 860.5,
+      "top": 860.5,
+      "right": 754.515625,
+      "bottom": 889.5,
+      "left": 589.984375,
+      "width": 164.53125,
+      "height": 29
+    },
+    "time": {
+      "x": 532.515625,
+      "y": 869.5,
+      "top": 869.5,
+      "right": 582.984375,
+      "bottom": 880.5,
+      "left": 532.515625,
+      "width": 50.46875,
+      "height": 11
+    },
+    "shelf": {
+      "x": 55,
+      "y": 830,
+      "top": 830,
+      "right": 1312,
+      "bottom": 920,
+      "left": 55,
+      "width": 1257,
+      "height": 90
+    }
+  },
+  "horizontal": {
+    "captionTimes": [
+      {
+        "text": "12:34:56",
+        "rect": {
+          "x": 138.296875,
+          "y": 774.484375,
+          "top": 774.484375,
+          "right": 354.078125,
+          "bottom": 786.484375,
+          "left": 138.296875,
+          "width": 215.78125,
+          "height": 12
+        },
+        "clientWidth": 216,
+        "scrollWidth": 216
+      },
+      {
+        "text": "23:45:56",
+        "rect": {
+          "x": 372.078125,
+          "y": 774.484375,
+          "top": 774.484375,
+          "right": 587.875,
+          "bottom": 786.484375,
+          "left": 372.078125,
+          "width": 215.796875,
+          "height": 12
+        },
+        "clientWidth": 216,
+        "scrollWidth": 216
+      }
+    ],
+    "card": {
+      "rect": {
+        "x": 110.296875,
+        "y": 100.515625,
+        "top": 100.515625,
+        "right": 615.875,
+        "bottom": 715.484375,
+        "left": 110.296875,
+        "width": 505.578125,
+        "height": 614.96875
+      },
+      "clientWidth": 506,
+      "scrollWidth": 506
+    },
+    "copy": {
+      "rect": {
+        "x": 136.296875,
+        "y": 525.515625,
+        "top": 525.515625,
+        "right": 589.875,
+        "bottom": 705.484375,
+        "left": 136.296875,
+        "width": 453.578125,
+        "height": 179.96875
+      },
+      "clientWidth": 454,
+      "scrollWidth": 454
+    },
+    "left": {
+      "rect": {
+        "x": 110.296875,
+        "y": 100.515625,
+        "top": 100.515625,
+        "right": 615.875,
+        "bottom": 786.484375,
+        "left": 110.296875,
+        "width": 505.578125,
+        "height": 685.96875
+      },
+      "clientWidth": 506,
+      "scrollWidth": 506
+    },
+    "spectrumShell": {
+      "rect": {
+        "x": 136.296875,
+        "y": 733.484375,
+        "top": 733.484375,
+        "right": 589.875,
+        "bottom": 786.484375,
+        "left": 136.296875,
+        "width": 453.578125,
+        "height": 53
+      },
+      "clientWidth": 454,
+      "scrollWidth": 454
+    }
+  },
+  "leftScroll": {
+    "clientHeight": 686,
+    "scrollHeight": 686,
+    "scrollTop": 0,
+    "clientTop": 0,
+    "visibleTop": 100.515625,
+    "visibleBottom": 786.515625
+  },
+  "lyricSurface": {
+    "background": "rgba(0, 0, 0, 0)",
+    "backgroundImage": "none",
+    "borderWidth": "0px",
+    "boxShadow": "none",
+    "backdropFilter": "none",
+    "beforeDisplay": "none",
+    "afterDisplay": "none",
+    "lyricListBackground": "rgba(0, 0, 0, 0)",
+    "activeText": "把每一个平凡瞬间唱成歌",
+    "activeColor": "rgb(237, 245, 247)",
+    "activeShadow": "rgb(20, 33, 43) 0px 1px 3px",
+    "toolbarButtons": [
+      {
+        "text": "搜索歌词",
+        "rect": {
+          "x": 932.703125,
+          "y": 102,
+          "top": 102,
+          "right": 1016.703125,
+          "bottom": 136,
+          "left": 932.703125,
+          "width": 84,
+          "height": 34
+        },
+        "color": "rgb(191, 209, 219)",
+        "background": "color(srgb 0.170588 0.216471 0.251765)"
+      },
+      {
+        "text": "AI\n                                  AI 重译",
+        "rect": {
+          "x": 1024.703125,
+          "y": 102,
+          "top": 102,
+          "right": 1104.703125,
+          "bottom": 136,
+          "left": 1024.703125,
+          "width": 80,
+          "height": 34
+        },
+        "color": "rgb(191, 209, 219)",
+        "background": "color(srgb 0.170588 0.216471 0.251765)"
+      },
+      {
+        "text": "−1s",
+        "rect": {
+          "x": 1116.703125,
+          "y": 103,
+          "top": 103,
+          "right": 1150.703125,
+          "bottom": 135,
+          "left": 1116.703125,
+          "width": 34,
+          "height": 32
+        },
+        "color": "rgb(191, 209, 219)",
+        "background": "rgba(0, 0, 0, 0)"
+      },
+      {
+        "text": "0.0s",
+        "rect": {
+          "x": 1150.703125,
+          "y": 103,
+          "top": 103,
+          "right": 1198.703125,
+          "bottom": 135,
+          "left": 1150.703125,
+          "width": 48,
+          "height": 32
+        },
+        "color": "rgb(191, 209, 219)",
+        "background": "rgba(0, 0, 0, 0)"
+      },
+      {
+        "text": "+1s",
+        "rect": {
+          "x": 1198.703125,
+          "y": 103,
+          "top": 103,
+          "right": 1232.703125,
+          "bottom": 135,
+          "left": 1198.703125,
+          "width": 34,
+          "height": 32
+        },
+        "color": "rgb(191, 209, 219)",
+        "background": "rgba(0, 0, 0, 0)"
+      }
+    ]
+  },
+  "utilityChildren": [
+    {
+      "class": "ctrl",
+      "rect": {
+        "x": 1028.984375,
+        "y": 858,
+        "top": 858,
+        "right": 1100.984375,
+        "bottom": 892,
+        "left": 1028.984375,
+        "width": 72,
+        "height": 34
+      },
+      "display": "flex",
+      "width": "72px",
+      "minWidth": "auto",
+      "flexBasis": "auto",
+      "margin": "0px",
+      "padding": "0px",
+      "children": [
+        {
+          "class": "",
+          "rect": {
+            "x": 1028.984375,
+            "y": 858,
+            "top": 858,
+            "right": 1062.984375,
+            "bottom": 892,
+            "left": 1028.984375,
+            "width": 34,
+            "height": 34
+          },
+          "display": "flex"
+        },
+        {
+          "class": "",
+          "rect": {
+            "x": 1066.984375,
+            "y": 858,
+            "top": 858,
+            "right": 1100.984375,
+            "bottom": 892,
+            "left": 1066.984375,
+            "width": 34,
+            "height": 34
+          },
+          "display": "flex"
+        }
+      ]
+    },
+    {
+      "class": "audio-effects-toggle ng-scope",
+      "rect": {
+        "x": 1104.984375,
+        "y": 858,
+        "top": 858,
+        "right": 1184.984375,
+        "bottom": 892,
+        "left": 1104.984375,
+        "width": 80,
+        "height": 34
+      },
+      "display": "flex",
+      "width": "80px",
+      "minWidth": "34px",
+      "flexBasis": "auto",
+      "margin": "0px",
+      "padding": "0px",
+      "children": [
+        {
+          "class": "",
+          "rect": {
+            "x": 1104.984375,
+            "y": 859,
+            "top": 859,
+            "right": 1184.984375,
+            "bottom": 891,
+            "left": 1104.984375,
+            "width": 80,
+            "height": 32
+          },
+          "display": "block"
+        }
+      ]
+    },
+    {
+      "class": "lyric-toggle desktop-lyric-toggle ng-scope",
+      "rect": {
+        "x": 1188.984375,
+        "y": 858,
+        "top": 858,
+        "right": 1222.984375,
+        "bottom": 892,
+        "left": 1188.984375,
+        "width": 34,
+        "height": 34
+      },
+      "display": "flex",
+      "width": "34px",
+      "minWidth": "auto",
+      "flexBasis": "34px",
+      "margin": "0px",
+      "padding": "0px",
+      "children": [
+        {
+          "class": "lyric-icon",
+          "rect": {
+            "x": 1189.984375,
+            "y": 859,
+            "top": 859,
+            "right": 1221.984375,
+            "bottom": 891,
+            "left": 1189.984375,
+            "width": 32,
+            "height": 32
+          },
+          "display": "flex"
+        },
+        {
+          "class": "lyric-icon ng-hide",
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0,
+            "width": 0,
+            "height": 0
+          },
+          "display": "none"
+        }
+      ]
+    },
+    {
+      "class": "translate-switch slidedown",
+      "rect": {
+        "x": 1226.984375,
+        "y": 858,
+        "top": 858,
+        "right": 1260.984375,
+        "bottom": 892,
+        "left": 1226.984375,
+        "width": 34,
+        "height": 34
+      },
+      "display": "flex",
+      "width": "34px",
+      "minWidth": "auto",
+      "flexBasis": "34px",
+      "margin": "0px",
+      "padding": "0px",
+      "children": [
+        {
+          "class": {},
+          "rect": {
+            "x": 1233.984375,
+            "y": 865,
+            "top": 865,
+            "right": 1253.984375,
+            "bottom": 885,
+            "left": 1233.984375,
+            "width": 20,
+            "height": 20
+          },
+          "display": "block"
+        }
+      ]
+    },
+    {
+      "class": "bilibili-mv-switch ng-hide slidedown",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0,
+        "width": 0,
+        "height": 0
+      },
+      "display": "none",
+      "width": "34px",
+      "minWidth": "0px",
+      "flexBasis": "auto",
+      "margin": "0px",
+      "padding": "0px",
+      "children": []
+    },
+    {
+      "class": "mask slidedown",
+      "rect": {
+        "x": 1264.984375,
+        "y": 858,
+        "top": 858,
+        "right": 1298.984375,
+        "bottom": 892,
+        "left": 1264.984375,
+        "width": 34,
+        "height": 34
+      },
+      "display": "flex",
+      "width": "34px",
+      "minWidth": "auto",
+      "flexBasis": "34px",
+      "margin": "0px",
+      "padding": "0px",
+      "children": [
+        {
+          "class": {},
+          "rect": {
+            "x": 1272.984375,
+            "y": 866,
+            "top": 866,
+            "right": 1290.984375,
+            "bottom": 884,
+            "left": 1272.984375,
+            "width": 18,
+            "height": 18
+          },
+          "display": "block"
+        }
+      ]
+    }
+  ],
+  "layoutScroll": {
+    "clientHeight": 807,
+    "scrollHeight": 827,
+    "scrollTop": 0
+  },
+  "clearances": {
+    "spectrumWithinStageVisibleArea": true,
+    "captionWithinStageVisibleArea": true,
+    "transportWithinShelf": true,
+    "progressAndVolumeWithinShelf": true,
+    "timesWithinMainInfo": true,
+    "seekTimesDoNotOverlap": true,
+    "spectrumWithinLeftVisibleArea": true,
+    "spectrumRelativeToLeftVisibleArea": {
+      "topPx": 632.96875,
+      "bottomPx": 8.03125
+    },
+    "captionWithinLeftVisibleArea": true,
+    "captionRelativeToLeftVisibleArea": {
+      "topPx": 673.96875,
+      "bottomPx": 0.03125
+    },
+    "captionToTransportShelfPx": 43.515625,
+    "captionFullyAboveTransportShelf": true,
+    "captionAboveShelfRequiredAt1367": true
+  },
+  "checks": {
+    "documentHorizontalOverflow": false,
+    "modernBodyHorizontalOverflow": false,
+    "elementsOutsideViewport": [],
+    "captionAboveShelfRequiredAt1367": true
+  },
+  "fixture": {
+    "source": "/Users/fluenteng/gsd-workspaces/listen2-mac-daily-theme-20261025/listen1_desktop/app/main.js",
+    "viewportRequested": "1367x953",
+    "themeRequested": "daily",
+    "controlled": {
+      "theme": "daily",
+      "windowType": "track"
+    },
+    "capture": "/Users/fluenteng/gsd-workspaces/listen2-mac-daily-theme-20261025/listen1_desktop/.task-workspaces/player-layout-progress-20261025/scratch/ui-captures/1367x953-daily-lyrics.png",
+    "isolatedUserData": "/Users/fluenteng/gsd-workspaces/listen2-mac-daily-theme-20261025/listen1_desktop/.task-workspaces/player-layout-progress-20261025/scratch/ui-userdata",
+    "note": "Hidden Electron main window; genuine app renderer and production CSS; fake track metadata; no playback/search/login invoked."
+  }
+}

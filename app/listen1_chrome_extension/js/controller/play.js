@@ -2846,7 +2846,10 @@ angular.module('listenone').controller('PlayController', [
     $rootScope.$on('dragbar:myprogress', (event, data) => {
       $scope.$evalAsync(() => {
         // should use apply to force refresh ui
-        $scope.myProgress = data;
+        const progress = Number(data);
+        $scope.myProgress = Number.isFinite(progress)
+          ? Math.min(100, Math.max(0, progress))
+          : 0;
 
         const posSec = Math.floor(
           ($scope.currentDurationSeconds * $scope.myProgress) / 100
@@ -4166,7 +4169,7 @@ angular.module('listenone').controller('PlayController', [
       const artist = String($scope.lyricSearch.artist || '').trim();
       if (!track || !title) {
         $scope.lyricSearchState = 'required';
-        return;
+        return undefined;
       }
       const key = JSON.stringify([track.id, title, artist]);
       if (
@@ -4175,7 +4178,7 @@ angular.module('listenone').controller('PlayController', [
         activeLyricSearchKey === key &&
         $scope.lyricSearchPending
       )
-        return;
+        return undefined;
       if (activeLyricSearch) activeLyricSearch.cancel();
       activeLyricSearchKey = key;
       const sourceDetails = document.querySelector('.lyric-source-details');
@@ -4231,6 +4234,7 @@ angular.module('listenone').controller('PlayController', [
             }),
         }
       );
+      return undefined;
     };
     $scope.lyricSourceStatus = (source) => {
       const status = source.status.toUpperCase().replace(/-/g, '_');
@@ -4608,29 +4612,24 @@ angular.module('listenone').controller('PlayController', [
 
             // 'currentTrack:duration'
             (() => {
-              const durationSec = Math.floor(msg.data.duration);
-              const durationStr = `${Math.floor(durationSec / 60)}:${`0${
-                durationSec % 60
-              }`.substr(-2)}`;
-              if (
-                msg.data.duration === 0 ||
-                $scope.currentDuration === durationStr
-              ) {
-                return;
-              }
-              $scope.currentDuration = durationStr;
-              $scope.currentDurationSeconds = msg.data.duration;
+              const duration = Number(msg.data.duration);
+              const durationSec = Number.isFinite(duration) && duration > 0
+                ? duration
+                : 0;
+              $scope.currentDuration = formatSecond(durationSec);
+              $scope.currentDurationSeconds = durationSec;
             })();
 
             // 'track:progress'
             if ($scope.changingProgress === false) {
               $scope.$evalAsync(() => {
-                if (msg.data.duration === 0) {
-                  $scope.myProgress = 0;
-                } else {
-                  $scope.myProgress = (msg.data.pos / msg.data.duration) * 100;
-                }
-                const posSec = Math.floor(msg.data.pos);
+                const position = Number(msg.data.pos);
+                const posSec = Number.isFinite(position) && position > 0
+                  ? position
+                  : 0;
+                $scope.myProgress = $scope.currentDurationSeconds > 0
+                  ? Math.min(100, (posSec / $scope.currentDurationSeconds) * 100)
+                  : 0;
                 const posStr = formatSecond(posSec);
                 $scope.currentPosition = posStr;
               });
@@ -4642,6 +4641,12 @@ angular.module('listenone').controller('PlayController', [
             const previousTrackId =
               $scope.currentPlaying && $scope.currentPlaying.id;
             $scope.currentPlaying = msg.data.currentPlaying;
+            if (previousTrackId !== msg.data.currentPlaying.id) {
+              $scope.currentPosition = '0:00';
+              $scope.currentDuration = '0:00';
+              $scope.currentDurationSeconds = 0;
+              $scope.myProgress = 0;
+            }
             const isVideoTrack = isBilibiliVideoTrack(msg.data.currentPlaying);
             if (
               bilibiliMvPlayer &&
