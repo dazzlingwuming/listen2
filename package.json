@@ -74,9 +74,7 @@
           ]
         }
       ],
-      "category": "public.app-category.music",
-      "identity": null,
-      "notarize": false
+      "category": "public.app-category.music"
     },
     "linux": {
       "target": [
