@@ -23,7 +23,7 @@ const V2_35_1_MAC = {
 const readJson = (relativePath) =>
   JSON.parse(fs.readFileSync(path.join(root, relativePath), "utf8"));
 
-test("desktop package versions are aligned for the 2.35.8 release", () => {
+test("desktop package versions are aligned for the 2.35.7 release", () => {
   for (const relativePath of [
     "package.json",
     "app/package.json",
@@ -31,9 +31,9 @@ test("desktop package versions are aligned for the 2.35.8 release", () => {
     "app/package-lock.json",
   ]) {
     const pkg = readJson(relativePath);
-    assert.equal(pkg.version, "2.35.8", relativePath);
+    assert.equal(pkg.version, "2.35.7", relativePath);
     if (pkg.lockfileVersion) {
-      assert.equal(pkg.packages[""].version, "2.35.8", `${relativePath} root`);
+      assert.equal(pkg.packages[""].version, "2.35.7", `${relativePath} root`);
     }
   }
 });
