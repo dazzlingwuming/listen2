@@ -38,10 +38,12 @@ test("desktop package versions are aligned for the 2.35.7 release", () => {
   }
 });
 
-test(`macOS packaging exactly matches archived ${V2_35_1_PACKAGING_SOURCE}`, () => {
+test(`macOS packaging follows ${V2_35_1_PACKAGING_SOURCE} with explicit unsigned identity`, () => {
   const rootPackage = readJson("package.json");
   assert.deepEqual(rootPackage.build.dmg, V2_35_1_DMG);
-  assert.deepEqual(rootPackage.build.mac, V2_35_1_MAC);
+  const { identity, ...macWithoutIdentity } = rootPackage.build.mac;
+  assert.deepEqual(macWithoutIdentity, V2_35_1_MAC);
+  assert.equal(identity, null);
   assert.equal(rootPackage.scripts["dist:mac"], V2_35_1_DIST_MAC);
   assert.equal(rootPackage.build.afterPack, undefined);
 });
