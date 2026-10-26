@@ -13,6 +13,7 @@ tasks.register('syncListen1Assets', Copy) {
         // documentation, lockfiles, and tests are not packaged in the APK.
         include 'listen1.html'
         include 'annual_recap.html'
+        include 'android_artwork.html'
         include 'css/**'
         include 'fonts/**'
         include 'images/**'
@@ -55,8 +56,8 @@ android {
         applicationId 'com.dazzlingwuming.listen2'
         minSdk 26
         targetSdk 35
-        versionCode 2350701
-        versionName '2.35.7-android.1'
+        versionCode 2350702
+        versionName '2.35.7-android.2'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
 
         javaCompileOptions {

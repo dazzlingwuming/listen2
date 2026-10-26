@@ -22,8 +22,9 @@
     <link href="css/appearance.css" rel="stylesheet" />
     <link href="css/theme-collection.css" rel="stylesheet" />
     <link href="css/performance.css" rel="stylesheet" />
-    <link href="css/android_mobile.css" rel="stylesheet" />
-    <link href="css/android_refined.css?v=20261026" rel="stylesheet" />
+    <link href="css/android_mobile.css?v=20261026-2" rel="stylesheet" />
+    <link href="css/android_refined.css?v=20261026-2" rel="stylesheet" />
+    <link href="css/android_visual.css?v=20261026-2" rel="stylesheet" />
     <script src="js/appearance.js"></script>
     <script src="js/wallpaper_theme.js"></script>
     <script src="js/daily_theme.js"></script>
@@ -4760,27 +4761,26 @@
                           <header class="android-section-heading"><div><p class="android-eyebrow">LISTEN2</p><h1>音乐库</h1></div><button type="button" class="android-icon-button" ng-click="openMobileCapability('playlists'); beginMobilePlaylistCreate()" aria-label="新建歌单"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></header>
                           <div class="android-library-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg><input type="search" ng-model="mobileLibraryQuery.value" placeholder="搜索你的歌单" aria-label="搜索你的歌单" /></div>
                           <div class="android-library-shortcuts"><button type="button" ng-click="openMobileCapability('backup')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 16v5h16v-5"/></svg>导入 / 导出</button><button type="button" ng-click="openMobileGitHub()"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m17 3 4 4-4 4M3 10V7h18M7 21l-4-4 4-4m14 1v3H3"/></svg>同步歌单</button></div>
-                          <div class="android-library-tabs" role="tablist" aria-label="音乐库分类"><button type="button" role="tab" aria-selected="{{mobileLibraryQuery.tab === 'playlists'}}" ng-class="{'is-active': mobileLibraryQuery.tab === 'playlists'}" ng-click="mobileLibraryQuery.tab='playlists'">歌单 <span>{{mobileLocalData.playlists.length}}</span></button><button type="button" role="tab" aria-selected="{{mobileLibraryQuery.tab === 'favorites'}}" ng-class="{'is-active': mobileLibraryQuery.tab === 'favorites'}" ng-click="mobileLibraryQuery.tab='favorites'">收藏 <span>{{mobileLocalData.favorites.length}}</span></button></div>
+                          <div class="android-library-category"><div class="android-library-tabs" role="tablist" aria-label="音乐库分类"><button type="button" role="tab" aria-selected="{{mobileLibraryQuery.tab === 'playlists'}}" ng-class="{'is-active': mobileLibraryQuery.tab === 'playlists'}" ng-click="mobileLibraryQuery.tab='playlists'">歌单 <span>{{mobileLocalData.playlists.length}}</span></button><button type="button" role="tab" aria-selected="{{mobileLibraryQuery.tab === 'favorites'}}" ng-class="{'is-active': mobileLibraryQuery.tab === 'favorites'}" ng-click="mobileLibraryQuery.tab='favorites'">收藏 <span>{{mobileLocalData.favorites.length}}</span></button></div><button type="button" class="android-library-manage" ng-if="mobileLibraryQuery.tab === 'playlists'" ng-click="openMobileCapability('playlists')">管理 ›</button></div>
                           <p class="android-helper" ng-if="mobileLocalData.loading">正在读取音乐库…</p><p class="android-helper" ng-if="mobileLocalData.error" role="status">{{mobileLocalData.error}}</p>
                           <div class="android-section-subheading" ng-if="mobileLibraryQuery.tab === 'favorites'"><h2>我喜欢的</h2><button type="button" ng-if="currentPlaying.id" ng-click="toggleCurrentMobileFavorite(true)" ng-disabled="mobileLocalData.actionPending">收藏当前歌曲 ＋</button></div>
                           <p class="android-library-empty" ng-if="mobileLibraryQuery.tab === 'favorites' && !mobileLocalData.favorites.length">还没有收藏，可以在播放器中收藏歌曲。</p>
                           <div class="android-saved-tracks" ng-if="mobileLibraryQuery.tab === 'favorites'"><button type="button" ng-repeat="item in mobileLocalData.favorites track by item.source + ':' + item.providerTrackId" ng-click="playMobileSavedTrack(item)" ng-disabled="mobileLocalData.actionPending"><span class="android-library-note">♪</span><span><strong>{{androidTrackDisplay({id:'bitrack_v_'+item.providerTrackId, title:item.title, artist:item.artist}).title}}</strong><small>{{item.artist}}</small></span><b>▷</b></button></div>
-                          <div class="android-section-subheading" ng-if="mobileLibraryQuery.tab === 'playlists'"><h2>我的歌单</h2><button type="button" ng-click="openMobileCapability('playlists')">管理 ›</button></div>
                           <button type="button" class="android-library-create" ng-if="mobileLibraryQuery.tab === 'playlists' && !mobileLocalData.loading && !mobileLocalData.playlists.length" ng-click="openMobileCapability('playlists'); beginMobilePlaylistCreate()"><span>＋</span><strong>创建第一张歌单</strong><small>把喜欢的 B 站音乐收在一起</small></button>
-                          <div class="android-saved-tracks android-playlist-library" ng-if="mobileLibraryQuery.tab === 'playlists'"><button type="button" ng-repeat="item in mobileLibraryPlaylists() track by item.playlistId" ng-click="openMobilePlaylist(item)"><span class="android-library-note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5l11-2v13M9 9l11-2"/><ellipse cx="6" cy="18" rx="3" ry="2.5"/><ellipse cx="17" cy="16" rx="3" ry="2.5"/></svg></span><span><strong>{{item.name}}</strong><small>{{item.tracks.length}} 首歌曲</small></span><b>›</b></button></div>
+                          <div class="android-saved-tracks android-playlist-library" ng-if="mobileLibraryQuery.tab === 'playlists'"><button type="button" ng-repeat="item in mobileLibraryPlaylists() track by item.playlistId" ng-click="openMobilePlaylist(item)"><span class="android-library-note android-collection-cover" ng-attr-data-pattern="{{$index % 4}}" aria-hidden="true"><i></i><b>{{item.name.slice(0, 1)}}</b></span><span><strong>{{item.name}}</strong><small>{{item.tracks.length}} 首歌曲</small></span><b>›</b></button></div>
                           <div class="android-library-empty" ng-if="mobileLibraryQuery.tab === 'playlists' && !mobileLocalData.loading && !mobileLibraryPlaylists().length"><p>{{mobileLibraryQuery.value ? '没有找到这个歌单' : '把喜欢的音乐放进歌单'}}</p><button type="button" class="android-text-action" ng-if="!mobileLibraryQuery.value" ng-click="openMobileCapability('backup')">导入已有歌单</button></div>
                         </section>
                         <section class="mobile-product-home mobile-product-surface" ng-if="current_tag==2 && is_window_hidden==1 && !mobileProductPage" aria-labelledby="mobile-product-home-title">
-                          <header class="android-section-heading"><div><p class="android-eyebrow">音乐随行</p><h1 id="mobile-product-home-title">Listen2<span class="android-brand-dot">.</span></h1></div><button type="button" class="android-home-theme" ng-click="openMobileAppearance()" aria-label="打开主题馆"><img ng-src="{{mobileThemeArtwork()}}" alt="" /></button></header>
+                          <header class="android-section-heading"><div><p class="android-eyebrow">音乐随行</p><h1 id="mobile-product-home-title">Listen2<span class="android-brand-dot">.</span></h1></div><button type="button" class="android-home-theme" ng-click="openMobileAppearance()" aria-label="打开主题馆"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18h1a2 2 0 0 0 1-3.7 1.5 1.5 0 0 1 1-2.7h2a4 4 0 0 0 4-4C21 6.4 17 3 12 3Z"/><circle cx="7.5" cy="10" r=".8"/><circle cx="11" cy="7" r=".8"/><circle cx="15.5" cy="8.5" r=".8"/></svg><span>{{this[selectedTheme.label]}}</span></button></header>
 
                           <section class="android-home-now" ng-if="androidPlaybackHasCurrent()" aria-label="继续聆听">
                             <button type="button" class="android-home-current" ng-click="openAndroidPlayerDetail($event)" aria-label="打开正在播放">
-                              <span class="android-home-art"><img referrerpolicy="no-referrer" ng-if="currentPlaying.img_url" ng-src="{{currentPlaying.img_url}}" alt="" /><span ng-if="!currentPlaying.img_url" aria-hidden="true">♪</span></span>
+                              <span class="android-home-art" ng-class="{'is-playing': androidPlaybackSnapshot.state === 'playing' && !androidPlaybackDetailOpen}" ng-include="'android_artwork.html'"></span>
                               <span class="android-home-current-copy"><small>{{androidPlaybackBusy ? '正在准备…' : androidPlaybackSnapshot.state === 'playing' ? '正在播放' : '继续聆听'}}</small><strong>{{androidTrackDisplay().title}}</strong><span>{{androidTrackDisplay().artist}}</span></span>
                             </button>
                             <button type="button" class="android-home-play" ng-click="toggleAndroidPlayback()" ng-disabled="androidPlaybackCommandPending || !androidPlaybackCan(androidPlaybackSnapshot.state === 'playing' ? 'pause' : 'play')" aria-label="{{androidPlaybackSnapshot.state === 'playing' ? '暂停' : '继续播放'}}"><svg viewBox="0 0 24 24" aria-hidden="true"><path ng-if="androidPlaybackSnapshot.state !== 'playing'" d="m9 5 11 7-11 7Z"/><path ng-if="androidPlaybackSnapshot.state === 'playing'" d="M8 5v14m8-14v14"/></svg></button>
                           </section>
-                          <div class="android-home-empty" ng-if="!androidPlaybackHasCurrent()"><span aria-hidden="true">♪</span><h2>今天想听什么？</h2><p>从 B 站找到喜欢的音乐。</p></div>
+                          <div class="android-home-empty" ng-if="!androidPlaybackHasCurrent()"><div class="android-home-art" ng-include="'android_artwork.html'"></div><h2>今天想听什么？</h2><p>从 B 站找到喜欢的音乐。</p></div>
                           <button type="button" class="android-home-search" ng-click="showTag(3); focusMobileSearch()"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg><span>搜索歌曲、歌手或视频</span><span>›</span></button>
                           <div class="android-section-heading android-recent-heading"><h2>最近播放</h2><button type="button" class="android-text-action" ng-click="showTag(1)">音乐库 ›</button></div>
                           <p class="android-helper" ng-if="!androidRecentTracks.length">听过的歌曲会显示在这里。</p>
@@ -4843,6 +4843,7 @@
                             <p class="mobile-product-unavailable" ng-if="mobileCapabilityNotice">{{mobileCapabilityNotice}}</p>
                             <section ng-if="mobileProductPage === 'playlist'" class="android-playlist-detail">
                               <div class="android-playlist-heading">
+                                <span class="android-collection-cover android-playlist-cover" data-pattern="0" aria-hidden="true"><i></i><b>{{mobilePlaylistView.playlist.name.slice(0, 1)}}</b></span>
                                 <div><h1>{{mobilePlaylistView.playlist.name}}</h1><p>{{mobilePlaylistView.playlist.tracks.length}} 首歌曲</p></div>
                                 <button type="button" class="android-playlist-edit" ng-click="editOpenMobilePlaylist()" aria-label="编辑歌单">编辑</button>
                               </div>
@@ -9494,10 +9495,7 @@
                       <div class="android-player-detail-scroll">
                         <div class="android-player-stage" ng-class="{'is-lyrics': androidUi.tab === 'lyrics'}">
                           <div class="android-cover-view" ng-show="androidUi.tab === 'cover'">
-                            <div class="android-player-artwork">
-                              <img referrerpolicy="no-referrer" ng-if="currentPlaying.img_url" ng-src="{{currentPlaying.img_url}}" alt="歌曲封面" />
-                              <span class="android-artwork-fallback" ng-if="!currentPlaying.img_url" aria-hidden="true">♪</span>
-                            </div>
+                            <div class="android-player-artwork" ng-class="{'is-playing': androidPlaybackSnapshot.state === 'playing' && androidUi.tab === 'cover'}" ng-include="'android_artwork.html'" role="img" aria-label="{{androidTrackDisplay().title}}的封面"></div>
                             <span class="android-source-caption"><i></i> 哔哩哔哩 · 音频</span>
                           </div>
                           <div class="android-lyrics-view" ng-show="androidUi.tab === 'lyrics'">
