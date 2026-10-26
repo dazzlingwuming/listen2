@@ -1,6 +1,6 @@
 {
   "name": "listen1",
-  "version": "2.35.7",
+  "version": "2.35.8",
   "description": "A modern Listen1 desktop experience with enhanced Bilibili, lyrics, and visualizations",
   "main": "app/main.js",
   "scripts": {
@@ -50,10 +50,6 @@
     "artifactName": "${name}_${version}_${os}_${arch}.${ext}",
     "dmg": {
       "icon": "build/disk.icns",
-      "window": {
-        "width": 760,
-        "height": 580
-      },
       "contents": [
         {
           "x": 192,
@@ -82,7 +78,6 @@
       "identity": null,
       "notarize": false
     },
-    "afterPack": "./build/macInstallHelper.cjs",
     "linux": {
       "target": [
         "tar.gz",

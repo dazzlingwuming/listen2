@@ -9,7 +9,7 @@ const root = path.resolve(__dirname, "../..");
 const readJson = (relativePath) =>
   JSON.parse(fs.readFileSync(path.join(root, relativePath), "utf8"));
 
-test("desktop package versions are aligned for the 2.35.7 release", () => {
+test("desktop package versions are aligned for the 2.35.8 release", () => {
   for (const relativePath of [
     "package.json",
     "app/package.json",
@@ -17,51 +17,49 @@ test("desktop package versions are aligned for the 2.35.7 release", () => {
     "app/package-lock.json",
   ]) {
     const pkg = readJson(relativePath);
-    assert.equal(pkg.version, "2.35.7", relativePath);
+    assert.equal(pkg.version, "2.35.8", relativePath);
     if (pkg.lockfileVersion) {
-      assert.equal(pkg.packages[""].version, "2.35.7", `${relativePath} root`);
+      assert.equal(pkg.packages[""].version, "2.35.8", `${relativePath} root`);
     }
   }
 });
 
-test("macOS release targets remain x64, arm64, and universal DMGs", () => {
+test("macOS release uses the plain app and Applications link in default DMG geometry", () => {
   const { dmg, mac } = readJson("package.json").build;
   assert.deepEqual(mac.target, [
     { target: "dmg", arch: ["x64", "arm64", "universal"] },
   ]);
-  assert.deepEqual(dmg.window, { width: 760, height: 580 });
+  assert.equal(dmg.window, undefined);
+  assert.deepEqual(dmg.contents, [
+    { x: 192, y: 344 },
+    { x: 448, y: 344, type: "link", path: "/Applications" },
+  ]);
 });
 
-test("macOS packaging explicitly disables signing and notarization", () => {
+test("macOS packaging keeps the unsigned v1 identity and notarization settings", () => {
   const rootPackage = readJson("package.json");
   assert.equal(rootPackage.build.mac.identity, null);
   assert.equal(rootPackage.build.mac.notarize, false);
   assert.equal(rootPackage.build.mac.sign, undefined);
-  assert.equal(rootPackage.build.afterPack, "./build/macInstallHelper.cjs");
+  assert.equal(rootPackage.build.afterPack, undefined);
   assert.match(
     rootPackage.scripts["dist:mac"],
     /CSC_IDENTITY_AUTO_DISCOVERY=false/
   );
 });
 
-test("DMG helper filenames are kept stable for the installation workflow", () => {
+test("DMG workflow validates plain app drag-and-drop without a helper routine", () => {
   const workflow = fs.readFileSync(
     path.join(root, ".github/workflows/release.yml"),
     "utf8"
   );
-  for (const file of [
-    "Install Listen1.command",
-    "Listen1.integrity.tsv",
-    "INSTALL-LISTEN1.txt",
-  ]) {
-    assert.ok(workflow.includes(file), `workflow must check ${file}`);
-  }
   assert.match(workflow, /hdiutil attach -readonly -nobrowse -noautoopen/);
-  assert.match(workflow, /LISTEN1-INTEGRITY-1/);
-  assert.match(
-    workflow,
-    /bash "\$mount_dir\/Install Listen1\.command" --verify-only/
-  );
+  assert.match(workflow, /Applications link in \$image/);
+  assert.match(workflow, /com\.listen1\.listen1/);
+  assert.match(workflow, /CFBundleShortVersionString/);
+  assert.match(workflow, /lipo -archs/);
+  assert.match(workflow, /Unexpected installation helper in plain DMG/);
+  assert.doesNotMatch(workflow, /--verify-only|codesign|spctl|xattr/);
 });
 
 test("GitHub macOS release build keeps identity auto-discovery disabled", () => {

@@ -44,43 +44,67 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
           GH_TOKEN: ${{ github.token }}
 
-      - name: Verify unsigned Listen1 helper in macOS DMGs
+      - name: Verify plain drag-and-drop macOS DMGs
         if: ${{ matrix.os == 'macos-latest' }}
         shell: bash
         run: |
           set -euo pipefail
           version="$(node -p "require('./package.json').version")"
+          active_mount=""
+          mounted=false
+          cleanup_mount() {
+            if [[ "$mounted" == true ]]; then
+              hdiutil detach "$active_mount" >/dev/null 2>&1 || true
+              mounted=false
+            fi
+            if [[ -n "$active_mount" ]]; then
+              rmdir "$active_mount" >/dev/null 2>&1 || true
+              active_mount=""
+            fi
+          }
+          trap cleanup_mount EXIT
           for arch in x64 arm64 universal; do
             image="dist/listen1_${version}_mac_${arch}.dmg"
             test -s "$image"
             mount_dir="$(mktemp -d "${RUNNER_TEMP}/listen1-${arch}-XXXXXX")"
-            if ! hdiutil attach -readonly -nobrowse -noautoopen -mountpoint "$mount_dir" "$image" >/dev/null; then
-              rmdir "$mount_dir"
+            active_mount="$mount_dir"
+            hdiutil attach -readonly -nobrowse -noautoopen -mountpoint "$mount_dir" "$image" >/dev/null
+            mounted=true
+            app="$mount_dir/Listen1.app"
+            if [[ ! -d "$app" || -L "$app" ]]; then
+              echo "Missing real Listen1.app in $image" >&2
+              exit 1
+            fi
+            applications="$mount_dir/Applications"
+            if [[ ! -L "$applications" || "$(readlink "$applications")" != "/Applications" ]]; then
+              echo "Missing Applications link in $image" >&2
               exit 1
             fi
             for file in 'Install Listen1.command' 'Listen1.integrity.tsv' 'INSTALL-LISTEN1.txt'; do
-              if [[ ! -f "$mount_dir/$file" ]]; then
-                hdiutil detach "$mount_dir" >/dev/null
-                rmdir "$mount_dir"
-                echo "Missing $file in $image" >&2
+              if [[ -e "$mount_dir/$file" || -L "$mount_dir/$file" ]]; then
+                echo "Unexpected installation helper in plain DMG: $file" >&2
                 exit 1
               fi
             done
-            header="$(head -n 1 "$mount_dir/Listen1.integrity.tsv")"
-            case "$arch:$header" in
-              x64:$'LISTEN1-INTEGRITY-1\tcom.listen1.listen1\t'"$version"$'\tx86_64') ;;
-              arm64:$'LISTEN1-INTEGRITY-1\tcom.listen1.listen1\t'"$version"$'\tarm64') ;;
-              universal:$'LISTEN1-INTEGRITY-1\tcom.listen1.listen1\t'"$version"$'\tarm64 x86_64') ;;
+            bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")"
+            bundle_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
+            executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")"
+            if [[ "$bundle_id" != "com.listen1.listen1" || "$bundle_version" != "$version" || "$executable" != "Listen1" ]]; then
+              echo "Unexpected bundle identity in $image: $bundle_id $bundle_version $executable" >&2
+              exit 1
+            fi
+            actual_arch="$(lipo -archs "$app/Contents/MacOS/$executable" | tr ' ' '\n' | LC_ALL=C sort | paste -sd ' ' -)"
+            case "$arch:$actual_arch" in
+              x64:x86_64|arm64:arm64|universal:arm64\ x86_64) ;;
               *)
-                hdiutil detach "$mount_dir" >/dev/null
-                rmdir "$mount_dir"
-                echo "Invalid Listen1 integrity header in $image: $header" >&2
+                echo "Unexpected architecture in $image: $actual_arch" >&2
                 exit 1
                 ;;
             esac
-            bash "$mount_dir/Install Listen1.command" --verify-only
             hdiutil detach "$mount_dir" >/dev/null
+            mounted=false
             rmdir "$mount_dir"
+            active_mount=""
           done
 
   publish-release:
