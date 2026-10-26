@@ -23,11 +23,17 @@ Listen2 是 [Listen1](https://github.com/listen1/listen1) 的社区增强版本�
 
 用户实机效果：选择喜欢的背景，侧栏、按钮、频谱和歌词高亮会一起跟随图片配色。
 
+## v2.35.8 更新
+
+- macOS 恢复最初 v2.35.1 的打包配置、构建命令和普通 DMG 布局，提供 x64、arm64 与 Universal 三种安装包。打开 DMG，将 `Listen1.app` 拖入“应用程序”。
+- 移除 v2.35.7 增加的安装辅助及其打包入口，不新增项目签名、证书或公证。保留每日主题、现有功能和用户配置。
+- 本次分别核验打包流程和制品；浏览器下载后首次打开的系统行为另行验收，不把制品检查等同于该场景已通过。
+
 ## v2.35.7 更新
 
 - 新增「每日主题」：从顶部调色盘进入并选择后，按天获取必应首页图像；仅使用 `wp=true` 且标记可作为壁纸的图片，并展示必应提供的署名与说明链接。自动配色会跟随图像更新。
 - 成功获取的图片会保存在本机；网络失败时继续显示上次成功的图片，不清空现有背景。必应图片的授权因图片而异，本功能不表示所有图片均可用于其他用途。
-- macOS 版本继续不做代码签名、不进行 Apple 公证，这是仅适用于 macOS 的项目发布选择。DMG 内附 `Install Listen1.command`，核对 DMG 清单后，在用户确认时只处理 Listen1.app 的下载隔离标记，不修改系统安全策略。首次打开仍可能遇到 macOS 安全提示，详见[未签名安装辅助说明](https://github.com/dazzlingwuming/listen2/blob/main/doc/2026-10-25/macOS未签名安装辅助说明.md)。
+- macOS 保留普通 DMG 的拖装入口：将 `Listen1.app` 拖入“应用程序”。安装辅助不是必要步骤，不作为正常安装要求。浏览器下载后首次打开的系统拦截问题仍在核验，尚不能宣布已修复；本版没有新增签名或公证。
 
 ## v2.35.6 更新
 
@@ -211,11 +217,7 @@ Windows 未使用商业代码签名；macOS 沿用 v2.35.1 的打包流程，按
 
 Intel Mac 下载 x64 DMG，Apple Silicon（M 系列）下载 arm64 DMG；Universal DMG 同时支持两者。打开 DMG 后将 Listen1 拖入“应用程序”。
 
-macOS 发布明确选择不做代码签名或 Apple 公证；这一策略只适用于 macOS，Windows 安装包签名状态见上文。首次从浏览器下载后仍可能被 Gatekeeper 拦截。请先核对 [官方 Release](https://github.com/dazzlingwuming/listen2/releases/latest) 来源和 SHA-256，再查看 [未签名安装辅助说明](doc/2026-10-25/macOS未签名安装辅助说明.md)。DMG 中的 `Install Listen1.command` 会核对 DMG 清单，并在你确认后只处理 Listen1.app 的下载隔离标记；它不修改系统范围的安全策略。macOS 仍可能显示默认安全提示。
-
-如果未使用安装辅助，或你选择不运行它，请按系统提示在“系统设置 → 隐私与安全性”允许打开 Listen1；不要关闭 Gatekeeper。
-
-系统确认和钥匙串授权取决于本机状态；不能保证所有版本都免提示或免密码。若系统未提供“仍要打开”，请保留提示文字并反馈。
+v2.35.8 按 v2.35.1 的原流程打包，不包含安装辅助，不配置项目签名或证书。真实浏览器下载后的首次打开结果会独立记录在 Release 验收说明中。
 
 本版本只发布 Windows x64 的 NSIS 与 7z，以及 macOS x64、arm64 和 Universal DMG；不发布 Linux、Windows ia32 或 Windows arm64 制品。
 
