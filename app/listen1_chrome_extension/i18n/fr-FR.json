@@ -343,6 +343,7 @@
  "_MACHINE_TRANSLATION_CLEAR_KEY": "Supprimer la clé API",
  "_MACHINE_TRANSLATION_KEY_CLEARED": "La clé API DeepSeek a été supprimée.",
  "_MACHINE_TRANSLATION_TEST_SUCCESS": "Connexion à DeepSeek réussie.",
+ "_MACHINE_TRANSLATION_TEST_INVALID_RESPONSE": "Échec du test de connexion : DeepSeek a renvoyé un format inattendu. Réessayez.",
  "_MACHINE_TRANSLATION_SETTINGS_SAVED": "Clé API DeepSeek enregistrée.",
  "_MACHINE_TRANSLATION_READY": "{{source}} a traduit les paroles complètes.",
  "_LYRIC_MACHINE_TRANSLATED": "Traduction DeepSeek",

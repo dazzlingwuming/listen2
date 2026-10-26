@@ -52,6 +52,46 @@ const sourceTranslationHelpers = vm.runInThisContext(
   })()`
 );
 
+// Saving must update the descendant Android settings page without broadcasting
+// the API key that is still in the input until the save callback clears it.
+const configEvents = [];
+const configScope = {
+  machineTranslationConfig: { apiKeyInput: 'fixture-key-only', hasApiKey: false },
+};
+const applyConfig = vm.runInNewContext(
+  `(${topLevelFunctionSource('applyMachineTranslationConfigResponse')})`,
+  {
+    $scope: configScope,
+    $rootScope: {
+      $broadcast: (event, value) => configEvents.push({ event, value }),
+    },
+    isAndroidTranslationSurface: () => true,
+  }
+);
+assert.strictEqual(applyConfig({ ok: false }), false);
+assert.strictEqual(configEvents.length, 0);
+[true, false].forEach((hasApiKey) => {
+  assert.strictEqual(
+    applyConfig({
+      ok: true,
+      config: {
+        hasApiKey,
+        secureStorageAvailable: true,
+        nativeClientAvailable: true,
+      },
+    }),
+    true
+  );
+  const event = configEvents[configEvents.length - 1];
+  assert.strictEqual(event.event, 'android:deepseek-config-changed');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(event.value)), {
+    hasApiKey,
+    secureStorageAvailable: true,
+    nativeClientAvailable: true,
+  });
+  assert.strictEqual(configScope.machineTranslationConfig.hasApiKey, hasApiKey);
+});
+
 const automaticResolver = functionBody('resolveCandidateTranslation');
 const confirmationOpener = functionBody('openLyricTranslationConfirmation');
 const confirmedRequest = playSource.slice(
@@ -122,6 +162,10 @@ assert.doesNotMatch(
 assert.match(htmlSource, /lyricTranslationConfirmationAction\(\)/);
 assert.match(htmlSource, /ng-if="!isChrome"/);
 assert.match(htmlSource, /requestAiLyricRetranslation\(\)/);
+assert.match(htmlSource, /class="android-lyric-translate"[\s\S]*?ng-click="requestAndroidLyricTranslation\(\)"/);
+assert.match(htmlSource, /class="android-connection-result"[\s\S]*?role="status"/);
+assert.doesNotMatch(htmlSource, /ng-model="lyricTranslationConsent\./);
+assert.match(htmlSource, /retryAndroidLyricSave\(\)/);
 assert.match(htmlSource, /restoreSourceLyricTranslation\(\)/);
 assert.match(htmlSource, /machineTranslationConfig\.immutableSystemPrompt/);
 assert.match(htmlSource, /machineTranslationConfig\.promptTemplatePreview/);
@@ -142,14 +186,14 @@ assert.strictEqual(
 assert.strictEqual(
   (htmlSource.match(/ng-click="saveMachineTranslationStyle\(\)"/g) || [])
     .length,
-  2,
-  'classic and modern settings need a save action next to the style editor'
+  3,
+  'classic, modern, and Android settings need a save action next to the style editor'
 );
 assert.strictEqual(
   (htmlSource.match(/ng-click="saveMachineTranslationApiKey\(\)"/g) || [])
     .length,
-  2,
-  'API key save must remain a separate action in both settings layouts'
+  3,
+  'API key save must remain a separate action in classic, modern, and Android settings'
 );
 assert.doesNotMatch(htmlSource, /ng-click="saveMachineTranslationConfig\(\)"/);
 const styleSaveHandler = playSource.slice(
@@ -251,6 +295,7 @@ fs.readdirSync(path.join(extensionRoot, 'i18n'))
     [
       '_MACHINE_TRANSLATION_CONFIRM_TITLE',
       '_MACHINE_TRANSLATION_INVALID_RESPONSE',
+      '_MACHINE_TRANSLATION_TEST_INVALID_RESPONSE',
       '_MACHINE_TRANSLATION_RETRANSLATE',
       '_MACHINE_TRANSLATION_RETRANSLATE_CONFIRM_TITLE',
       '_MACHINE_TRANSLATION_RETRANSLATE_CONFIRM_ACTION',
@@ -284,6 +329,7 @@ async function verifyTranslationSettingsPendingLock() {
   const context = {
     $scope: scope,
     isElectron: () => true,
+    isAndroidTranslationSurface: () => false,
     i18next: { t: (key) => key },
     notyf: { error: (message) => notices.push(message), success() {} },
     MediaService: {

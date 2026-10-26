@@ -1,0 +1,15 @@
+<div class="android-listening-art" aria-hidden="true">
+  <img class="android-art-scene" ng-if="selectedTheme.scene || (selectedTheme.assets && showCharacterArt)" ng-src="{{selectedTheme.assets ? 'images/themes/' + selectedTheme.assets + '-scene.webp' : themeSceneUrl}}" alt="" />
+  <div class="android-art-body">
+    <div class="android-art-label"><span>LISTEN2</span><span>{{selectedTheme.edition || 'STEREO'}}</span></div>
+    <div class="android-art-disc">
+      <img class="android-album-image" referrerpolicy="no-referrer" ng-if="currentPlaying.img_url" ng-src="{{currentPlaying.img_url}}" err-src="images/themes/ocean-scene.webp" alt="" />
+      <span class="android-album-monogram" ng-if="!currentPlaying.img_url">L<span>2</span></span>
+    </div>
+    <div class="android-art-reel"><i></i></div>
+    <div class="android-art-tonearm"><i></i></div>
+    <div class="android-art-footer"><span><i class="android-art-status"></i>{{androidPlaybackSnapshot.state === 'playing' ? 'PLAY' : androidPlaybackHasCurrent() ? 'SIDE A' : 'READY'}}</span><span class="android-art-rpm">33⅓</span></div>
+    <span class="android-art-sticker">L2.</span>
+  </div>
+  <img class="android-art-character" ng-if="selectedTheme.assets && showCharacterArt" ng-src="images/themes/{{selectedTheme.assets}}-character.webp" alt="" />
+</div>

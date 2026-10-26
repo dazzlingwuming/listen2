@@ -297,9 +297,48 @@ class netease {
     return result;
   }
 
-  static ne_get_playlist(url) {
+  static ne_get_playlist(url, options = {}) {
     // special thanks for @Binaryify
     // https://github.com/Binaryify/NeteaseCloudMusicApi
+    const androidHttp = this.get_android_http_adapter();
+    if (androidHttp) {
+      const listId = getParameterByName('list_id', url).split('_').pop();
+      const handle = androidHttp.request(
+        'netease.directory.detail',
+        { trackId: listId },
+        {
+          pageEpoch: Number.isInteger(options.pageEpoch)
+            ? options.pageEpoch
+            : 0,
+        }
+      );
+      const promise = handle.promise
+        .then((response) => {
+          const result = response && response.result;
+          if (!result || typeof result !== 'object' || Array.isArray(result)) {
+            throw this.map_android_search_error({
+              code: 'android-rpc-malformed-response',
+            });
+          }
+          return result;
+        })
+        .catch((error) => ({
+          tracks: [],
+          info: null,
+          error: this.map_android_search_error(error),
+        }));
+      return {
+        requestId: handle.requestId,
+        pageEpoch: handle.pageEpoch,
+        cancel: handle.cancel,
+        promise,
+        then: promise.then.bind(promise),
+        catch: promise.catch.bind(promise),
+        success(fn) {
+          promise.then(fn);
+        },
+      };
+    }
     return {
       success: (fn) => {
         const list_id = getParameterByName('list_id', url).split('_').pop();
@@ -352,7 +391,48 @@ class netease {
     };
   }
 
-  static bootstrap_track(track, success, failure) {
+  static bootstrap_track(track, success, failure, options = {}) {
+    const androidHttp = this.get_android_http_adapter();
+    if (androidHttp) {
+      const handle = androidHttp.request(
+        'netease.rendition.default',
+        {
+          trackId: this.get_android_track_id(track) || '',
+          selectionRevision: Number.isSafeInteger(options.selectionRevision)
+            ? options.selectionRevision
+            : 0,
+        },
+        {
+          pageEpoch: Number.isInteger(options.pageEpoch)
+            ? options.pageEpoch
+            : 0,
+        }
+      );
+      handle.promise.then(
+        (response) => {
+          const result = response && response.result;
+          if (!result || typeof result !== 'object' || Array.isArray(result)) {
+            failure(
+              this.map_android_search_error({
+                code: 'android-rpc-malformed-response',
+              })
+            );
+            return;
+          }
+          // Native owns rendition transport. The legacy callback gets only a
+          // logical prepared state and never a URL, candidate, header or cookie.
+          success({
+            source: 'netease',
+            provider: 'netease',
+            prepared: result.prepared === true,
+            trackHandle:
+              typeof result.trackHandle === 'string' ? result.trackHandle : '',
+          });
+        },
+        (error) => failure(this.map_android_search_error(error))
+      );
+      return handle;
+    }
     const sound = {};
     const target_url = `https://interface3.music.163.com/eapi/song/enhance/player/url`;
     let song_id = track.id;
@@ -392,19 +472,435 @@ class netease {
         });
       }
     );
+    return undefined;
   }
 
   static is_playable(song) {
     return song.fee !== 4 && song.fee !== 1;
   }
 
-  static search(url) {
+  static get_android_http_adapter() {
+    if (typeof window === 'undefined') return null;
+    const adapter = window.Listen2AndroidHttpAdapter;
+    if (
+      !adapter ||
+      typeof adapter.isAvailable !== 'function' ||
+      typeof adapter.request !== 'function'
+    ) {
+      return null;
+    }
+    try {
+      return adapter.isAvailable() ? adapter : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  static parse_android_search_response(response, searchType) {
+    if (!response || typeof response.body !== 'string') {
+      throw new Error(
+        'Android HTTP returned an invalid NetEase search response.'
+      );
+    }
+    const data = JSON.parse(response.body);
+    if (!data || data.code !== 200) {
+      throw new Error('NetEase search returned an unsuccessful response.');
+    }
+    let result = [];
+    let total = 0;
+    if (searchType === '0') {
+      if (!data.result || !Array.isArray(data.result.songs)) {
+        throw new Error('NetEase song search returned an invalid response.');
+      }
+      result = data.result.songs.map((song_info) => ({
+        id: `netrack_${song_info.id}`,
+        title: song_info.name,
+        artist: song_info.artists[0].name,
+        artist_id: `neartist_${song_info.artists[0].id}`,
+        album: song_info.album.name,
+        album_id: `nealbum_${song_info.album.id}`,
+        source: 'netease',
+        source_url: `https://music.163.com/#/song?id=${song_info.id}`,
+        img_url: song_info.album.picUrl,
+        url: !this.is_playable(song_info) ? '' : undefined,
+      }));
+      total = data.result.songCount;
+    } else if (searchType === '1') {
+      if (!data.result || !Array.isArray(data.result.playlists)) {
+        throw new Error(
+          'NetEase playlist search returned an invalid response.'
+        );
+      }
+      result = data.result.playlists.map((info) => ({
+        id: `neplaylist_${info.id}`,
+        title: info.name,
+        source: 'netease',
+        source_url: `https://music.163.com/#/playlist?id=${info.id}`,
+        img_url: info.coverImgUrl,
+        url: `neplaylist_${info.id}`,
+        author: info.creator.nickname,
+        count: info.trackCount,
+      }));
+      total = data.result.playlistCount;
+    }
+    return { result, total, type: searchType };
+  }
+
+  static map_android_search_error(error) {
+    const code = error && typeof error.code === 'string' ? error.code : '';
+    const safeErrors = {
+      'android-rpc-cancelled': {
+        status: 'android-rpc-cancelled',
+        message: 'NetEase request was cancelled.',
+      },
+      'android-rpc-timeout': {
+        status: 'android-rpc-timeout',
+        message: 'NetEase request timed out.',
+      },
+      'android-rpc-network': {
+        status: 'android-rpc-network',
+        message: 'NetEase is unavailable while this device is offline.',
+      },
+      'android-rpc-tls': {
+        status: 'android-rpc-tls',
+        message: 'NetEase could not be reached securely on this device.',
+      },
+      'android-rpc-permission': {
+        status: 'android-rpc-permission',
+        message: 'NetEase requires permission or an eligible account.',
+      },
+      'android-rpc-malformed-response': {
+        status: 'android-rpc-malformed-response',
+        message: 'NetEase returned data this device cannot use safely.',
+      },
+      'android-rpc-provider-status': {
+        status: 'android-rpc-provider-status',
+        message: 'NetEase rejected this request.',
+      },
+      'android-rpc-unavailable-route': {
+        status: 'android-rpc-unavailable-route',
+        message: 'NetEase is unavailable on this Android device.',
+      },
+      'android-rpc-unavailable': {
+        status: 'android-rpc-unavailable',
+        message: 'NetEase is unavailable on this Android device.',
+      },
+    };
+    return (
+      safeErrors[code] || {
+        status: 'android-rpc-failed',
+        message: 'NetEase could not complete this request.',
+      }
+    );
+  }
+
+  static parse_android_typed_search_response(response, searchType) {
+    if (searchType !== '0') {
+      throw new Error('Android NetEase search supports songs only.');
+    }
+    const result = response && response.result;
+    if (
+      !result ||
+      result.source !== 'netease' ||
+      !Array.isArray(result.rows) ||
+      !Number.isSafeInteger(result.total) ||
+      result.total < 0
+    ) {
+      throw new Error('Android typed NetEase response was invalid.');
+    }
+    const rows = result.rows.map((row) => {
+      if (
+        !row ||
+        row.source !== 'netease' ||
+        row.provider !== 'netease' ||
+        typeof row.id !== 'string' ||
+        !/^netrack_[1-9][0-9]{0,17}$/.test(row.id) ||
+        typeof row.title !== 'string' ||
+        typeof row.artist !== 'string' ||
+        typeof row.capability !== 'string'
+      ) {
+        throw new Error('Android typed NetEase row was invalid.');
+      }
+      const safe = {
+        id: row.id,
+        title: row.title,
+        artist: row.artist,
+        source: 'netease',
+        provider: 'netease',
+        capability: row.capability,
+      };
+      if (Number.isSafeInteger(row.durationMs) && row.durationMs > 0) {
+        safe.duration = Math.floor(row.durationMs / 1000);
+      }
+      // Capability is logical UI state. A media URL or candidate must never
+      // cross this Android boundary; native owns the eventual rendition.
+      return safe;
+    });
+    return { result: rows, total: result.total, type: searchType };
+  }
+
+  static create_android_search_facade(handle, searchType) {
+    const promise = handle.promise
+      .then((response) =>
+        this.parse_android_typed_search_response(response, searchType)
+      )
+      .catch((error) => ({
+        result: [],
+        total: 0,
+        type: searchType,
+        error: this.map_android_search_error(error),
+      }));
+    return {
+      requestId: handle.requestId,
+      pageEpoch: handle.pageEpoch,
+      cancel: handle.cancel,
+      promise,
+      then: promise.then.bind(promise),
+      catch: promise.catch.bind(promise),
+      success(fn) {
+        promise.then(fn);
+      },
+    };
+  }
+
+  static create_android_unavailable_search_facade(searchType, pageEpoch) {
+    const result = {
+      result: [],
+      total: 0,
+      type: searchType || '0',
+      error: {
+        status: 'android-provider-unavailable',
+        message:
+          'NetEase playlist search is unavailable on this Android device.',
+      },
+    };
+    const promise = Promise.resolve(result);
+    return {
+      requestId: '',
+      pageEpoch: Number.isInteger(pageEpoch) ? pageEpoch : 0,
+      cancel() {},
+      promise,
+      then: promise.then.bind(promise),
+      catch: promise.catch.bind(promise),
+      success(fn) {
+        promise.then(fn);
+      },
+    };
+  }
+
+  static get_android_track_id(trackOrId) {
+    const value = String(
+      typeof trackOrId === 'string'
+        ? trackOrId
+        : (trackOrId && trackOrId.id) || ''
+    );
+    const match = /^netrack_([1-9][0-9]{0,17})$/.exec(value);
+    return match ? match[1] : null;
+  }
+
+  static get_android_lyric_identity(trackInfo = {}) {
+    const identity = trackInfo.nativeLyricIdentity || trackInfo.lyricIdentity;
+    if (!identity || typeof identity !== 'object') return null;
+    const trackId = this.get_android_track_id(trackInfo.id) || identity.trackId;
+    if (
+      !/^[1-9][0-9]{0,17}$/.test(String(trackId || '')) ||
+      !/^[A-Za-z0-9:._-]{1,128}$/.test(
+        String(identity.selectionIdentity || '')
+      ) ||
+      !Number.isSafeInteger(identity.selectionRevision) ||
+      identity.selectionRevision < 0 ||
+      !/^[A-Za-z0-9:._-]{1,128}$/.test(String(identity.selectionToken || ''))
+    ) {
+      return null;
+    }
+    return {
+      trackId: String(trackId),
+      selectionIdentity: identity.selectionIdentity,
+      selectionRevision: identity.selectionRevision,
+      selectionToken: identity.selectionToken,
+    };
+  }
+
+  static create_android_lyric_facade(handle) {
+    const promise = handle.promise
+      .then((response) => {
+        const result = response && response.result;
+        if (!result || typeof result !== 'object' || Array.isArray(result)) {
+          throw new Error('Android typed NetEase lyric response was invalid.');
+        }
+        return {
+          lyric: typeof result.lyric === 'string' ? result.lyric : '',
+          tlyric: typeof result.tlyric === 'string' ? result.tlyric : '',
+          source: 'netease',
+        };
+      })
+      .catch((error) => ({
+        lyric: '',
+        tlyric: '',
+        error: this.map_android_search_error(error),
+      }));
+    return {
+      requestId: handle.requestId,
+      pageEpoch: handle.pageEpoch,
+      cancel: handle.cancel,
+      promise,
+      then: promise.then.bind(promise),
+      catch: promise.catch.bind(promise),
+      success(fn) {
+        promise.then(fn);
+      },
+    };
+  }
+
+  static create_android_operation_handle(handle, mapResult) {
+    const promise = handle.promise
+      .then((response) => mapResult(response && response.result))
+      .catch((error) => {
+        throw this.map_android_search_error(error);
+      });
+    return {
+      requestId: handle.requestId,
+      pageEpoch: handle.pageEpoch,
+      cancel: handle.cancel,
+      promise,
+      then: promise.then.bind(promise),
+      catch: promise.catch.bind(promise),
+    };
+  }
+
+  static search_lyric_candidates(hints = {}) {
+    const androidHttp = this.get_android_http_adapter();
+    if (!androidHttp) return Promise.resolve([]);
+    const identity = this.get_android_lyric_identity(hints);
+    if (!identity) {
+      return Promise.reject(
+        this.map_android_search_error({ code: 'android-rpc-invalid-payload' })
+      );
+    }
+    const handle = androidHttp.request(
+      'netease.lyric.search',
+      { ...identity, keyword: String(hints.query || '') },
+      { pageEpoch: Number.isInteger(hints.pageEpoch) ? hints.pageEpoch : 0 }
+    );
+    return this.create_android_operation_handle(handle, (result) => {
+      if (!result || !Array.isArray(result.rows)) {
+        throw this.map_android_search_error({
+          code: 'android-rpc-malformed-response',
+        });
+      }
+      return result.rows
+        .filter(
+          (row) =>
+            row &&
+            typeof row.id === 'string' &&
+            /^[A-Za-z0-9:._-]{1,128}$/.test(row.id) &&
+            typeof row.lyric === 'string'
+        )
+        .map((row) => ({
+          id: row.id,
+          lyric: row.lyric,
+          tlyric: typeof row.tlyric === 'string' ? row.tlyric : '',
+          title: typeof row.title === 'string' ? row.title : '',
+          artist: typeof row.artist === 'string' ? row.artist : '',
+          source: 'netease',
+        }));
+    });
+  }
+
+  static save_manual_lyric(trackId, candidate, trackInfo = {}) {
+    const androidHttp = this.get_android_http_adapter();
+    if (!androidHttp) return { ok: false, status: 'unsupported' };
+    const identity = this.get_android_lyric_identity({
+      ...trackInfo,
+      id: trackId,
+    });
+    const lyricId = candidate && candidate.id;
+    if (!identity || !/^[A-Za-z0-9:._-]{1,128}$/.test(String(lyricId || ''))) {
+      return { ok: false, status: 'invalid-selection' };
+    }
+    return this.create_android_operation_handle(
+      androidHttp.request(
+        'lyric.selection.set',
+        { ...identity, lyricId },
+        {
+          pageEpoch: Number.isInteger(trackInfo.pageEpoch)
+            ? trackInfo.pageEpoch
+            : 0,
+        }
+      ),
+      () => ({ ok: true, status: 'saved' })
+    );
+  }
+
+  static clear_manual_lyric(trackId, trackInfo = {}) {
+    const androidHttp = this.get_android_http_adapter();
+    if (!androidHttp) return { ok: false, status: 'unsupported' };
+    const identity = this.get_android_lyric_identity({
+      ...trackInfo,
+      id: trackId,
+    });
+    if (!identity) return { ok: false, status: 'invalid-selection' };
+    return this.create_android_operation_handle(
+      androidHttp.request('lyric.selection.clear', identity, {
+        pageEpoch: Number.isInteger(trackInfo.pageEpoch)
+          ? trackInfo.pageEpoch
+          : 0,
+      }),
+      () => ({ ok: true, status: 'cleared' })
+    );
+  }
+
+  static set_lyric_offset(trackId, offsetMs, trackInfo = {}) {
+    const androidHttp = this.get_android_http_adapter();
+    if (!androidHttp) return { ok: false, status: 'unsupported' };
+    const identity = this.get_android_lyric_identity({
+      ...trackInfo,
+      id: trackId,
+    });
+    if (!identity || !Number.isSafeInteger(offsetMs)) {
+      return { ok: false, status: 'invalid-selection' };
+    }
+    return this.create_android_operation_handle(
+      androidHttp.request(
+        'lyric.offset.set',
+        { ...identity, offsetMs },
+        {
+          pageEpoch: Number.isInteger(trackInfo.pageEpoch)
+            ? trackInfo.pageEpoch
+            : 0,
+        }
+      ),
+      () => ({ ok: true, status: 'saved' })
+    );
+  }
+
+  static search(url, options = {}) {
     const keyword = String(getParameterByName('keywords', url) || '').trim();
     const page = Math.min(
       100,
       Math.max(1, Math.floor(Number(getParameterByName('curpage', url)) || 1))
     );
     const searchType = String(getParameterByName('type', url) || '0');
+    const androidHttp = this.get_android_http_adapter();
+    if (androidHttp) {
+      if (searchType !== '0') {
+        return this.create_android_unavailable_search_facade(
+          searchType,
+          options.pageEpoch
+        );
+      }
+      const pageEpoch = Number.isInteger(options.pageEpoch)
+        ? options.pageEpoch
+        : 0;
+      return this.create_android_search_facade(
+        androidHttp.request(
+          'netease.search',
+          { keyword, page: page },
+          { pageEpoch }
+        ),
+        searchType
+      );
+    }
     const params = new URLSearchParams({
       s: keyword,
       offset: String(20 * (page - 1)),
@@ -418,6 +914,7 @@ class netease {
       isElectron()
         ? Listen2LyricHttp
         : axios;
+
     return {
       success: (fn) => {
         if (!keyword) {
@@ -600,7 +1097,29 @@ class netease {
     };
   }
 
-  static lyric(url) {
+  static lyric(url, options = {}) {
+    const androidHttp = this.get_android_http_adapter();
+    if (androidHttp) {
+      const identity = this.get_android_lyric_identity(options.trackInfo || {});
+      const pageEpoch = Number.isInteger(options.pageEpoch)
+        ? options.pageEpoch
+        : 0;
+      if (!identity) {
+        const invalidIdentity = new Error(
+          'Android lyric identity was invalid.'
+        );
+        invalidIdentity.code = 'android-rpc-invalid-payload';
+        return this.create_android_lyric_facade({
+          requestId: '',
+          pageEpoch,
+          cancel() {},
+          promise: Promise.reject(invalidIdentity),
+        });
+      }
+      return this.create_android_lyric_facade(
+        androidHttp.request('netease.lyric.primary', identity, { pageEpoch })
+      );
+    }
     const track_id = getParameterByName('track_id', url).split('_').pop();
     // use chrome extension to modify referer.
     const target_url = 'https://music.163.com/weapi/song/lyric?csrf_token=';
@@ -673,11 +1192,11 @@ class netease {
     };
   }
 
-  static get_playlist(url) {
+  static get_playlist(url, options = {}) {
     const list_id = getParameterByName('list_id', url).split('_')[0];
     switch (list_id) {
       case 'neplaylist':
-        return this.ne_get_playlist(url);
+        return this.ne_get_playlist(url, options);
       case 'nealbum':
         return this.ne_album(url);
       case 'neartist':

@@ -97,7 +97,7 @@ function fixture({ electron = true, savedTheme = "sakura", getDaily } = {}) {
         },
       }),
     },
-    i18next: { changeLanguage: async () => (key) => key },
+    i18next: { changeLanguage: async () => (key) => key, getResourceBundle: () => ({}) },
     axios: { get: async () => ({ data: {} }) },
     sourceList: [],
     platformSourceList: [],

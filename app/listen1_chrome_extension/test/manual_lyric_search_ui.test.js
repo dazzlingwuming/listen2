@@ -49,6 +49,8 @@ function makeController(options = {}) {
       },
       decorateLyricCandidate: (candidate) => candidate,
       compareLyricCandidates: (a, b) => a.id.localeCompare(b.id),
+      androidPlaybackAdapter: null,
+      canUseManualLyric: (track) => track && track.id.startsWith('bitrack_'),
       isBilibiliTrack: (track) => track && track.id.startsWith('bitrack_'),
       i18next: { t: (key) => key },
     }
@@ -235,7 +237,7 @@ assert.match(html, /ng-model="lyricSearch.title"/);
 assert.match(html, /ng-model="lyricSearch.artist"/);
 assert.strictEqual(
   (html.match(/ng-change="editLyricSearch\(\)"/g) || []).length,
-  2
+  3
 );
 for (const locale of ['zh-CN', 'zh-TC', 'en-US', 'fr-FR', 'ko-KR', 'pt-BR']) {
   const translations = JSON.parse(

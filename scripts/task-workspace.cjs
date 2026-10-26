@@ -89,7 +89,7 @@ if (action === "prepare" || action === "resume") {
   const receipt = JSON.parse(fs.readFileSync(receiptPath, "utf8"));
   if (
     !receipt.verified ||
-    !/^https:\/\/github\.com\/dazzlingwuming\/listen2\/releases\/tag\/v[\d.]+$/.test(
+    !/^https:\/\/github\.com\/dazzlingwuming\/listen2\/releases\/tag\/v[\d.]+(?:-android\.\d+)?$/.test(
       receipt.releaseUrl || ""
     )
   )

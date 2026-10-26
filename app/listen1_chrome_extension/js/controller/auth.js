@@ -1,25 +1,82 @@
 /* eslint-disable import/no-unresolved */
+/* eslint-disable import/no-extraneous-dependencies */
 /* eslint-disable global-require */
+/* eslint-disable no-param-reassign */
 /* global angular MediaService isElectron require notyf BilibiliQrCode */
 angular.module('listenone').controller('AuthController', [
   '$scope',
   '$timeout',
   ($scope, $timeout) => {
+    const isAndroidTyped = () =>
+      Boolean(
+        typeof isElectron === 'function' &&
+          !isElectron() &&
+          window.Listen2AndroidHttpAdapter &&
+          window.Listen2AndroidHttpAdapter.isAvailable &&
+          window.Listen2AndroidHttpAdapter.isAvailable()
+      );
+    const getAndroidAccount = () => {
+      if (!isAndroidTyped()) return null;
+      const adapter = window.Listen2AndroidHttpAdapter;
+      return adapter && adapter.account ? adapter.account : null;
+    };
     $scope.loginProgress = false;
     $scope.loginType = 'email';
+    $scope.androidAccountState = {
+      available: !isAndroidTyped(),
+      message: isAndroidTyped() ? '正在读取账户状态…' : '',
+    };
+    $scope.androidAccountUnavailable = () => {
+      $scope.androidAccountState = {
+        available: false,
+        message: '暂时无法连接账号服务，请稍后重试。',
+      };
+      if (typeof notyf !== 'undefined' && typeof notyf.info === 'function') {
+        notyf.info($scope.androidAccountState.message);
+      }
+    };
     $scope.loginSourceList = MediaService.getLoginProviders().map(
       (i) => i.name
     );
+    let initialAuthRefreshPending = true;
+    const runAfterFirstPaint = (task) => {
+      const scheduleIdle = () => {
+        if (typeof window.requestIdleCallback === 'function') {
+          window.requestIdleCallback(task, { timeout: 2500 });
+          return;
+        }
+        window.setTimeout(task, 600);
+      };
+      if (typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(() =>
+          window.requestAnimationFrame(scheduleIdle)
+        );
+        return;
+      }
+      scheduleIdle();
+    };
     $scope.refreshAuthStatus = () => {
-      $scope.loginSourceList.map((source) =>
-        MediaService.getUser(source).success((data) => {
-          if (data.status === 'success') {
-            $scope.setMusicAuth(source, data.data);
-          } else {
-            $scope.setMusicAuth(source, {});
-          }
-        })
-      );
+      if (isAndroidTyped()) {
+        $scope.refreshAndroidAccountStatus();
+        return;
+      }
+      const refresh = () => {
+        $scope.loginSourceList.map((source) =>
+          MediaService.getUser(source).success((data) => {
+            if (data.status === 'success') {
+              $scope.setMusicAuth(source, data.data);
+            } else {
+              $scope.setMusicAuth(source, {});
+            }
+          })
+        );
+      };
+      if (initialAuthRefreshPending) {
+        initialAuthRefreshPending = false;
+        runAfterFirstPaint(refresh);
+        return;
+      }
+      refresh();
     };
 
     $scope.bilibiliQr = {
@@ -31,6 +88,7 @@ angular.module('listenone').controller('AuthController', [
     };
     let removeBilibiliQrListener = () => {};
     let qrCountdownPromise = null;
+    let androidQrPollPromise = null;
 
     function getBilibiliQrStatusText(status, error) {
       if (status === 'waiting') {
@@ -119,7 +177,14 @@ angular.module('listenone').controller('AuthController', [
       if (secondsRemaining === 0) {
         $scope.bilibiliQr.status = 'expired';
         $scope.bilibiliQr.statusText = getBilibiliQrStatusText('expired');
-        MediaService.cancelBilibiliQrLogin($scope.bilibiliQr.sessionId);
+        if (isAndroidTyped()) {
+          const account = getAndroidAccount();
+          if (account && typeof account.cancel === 'function') {
+            account.cancel($scope.bilibiliQr.sessionId).catch(() => {});
+          }
+        } else {
+          MediaService.cancelBilibiliQrLogin($scope.bilibiliQr.sessionId);
+        }
         qrCountdownPromise = null;
         return;
       }
@@ -133,8 +198,124 @@ angular.module('listenone').controller('AuthController', [
       });
     }
 
+    function applyAndroidAccountState(state) {
+      const next = state || {};
+      updateBilibiliQr({
+        status: next.status || 'error',
+        sessionId: next.sessionId || '',
+        expiresAt: Number(next.expiresAtEpochMs || 0),
+        qrUrl: next.qrUrl || '',
+        error: next.status === 'unavailable' ? 'route-unavailable' : '',
+      });
+      if (next.status === 'authenticated') {
+        $scope.setMusicAuth('bilibili', {
+          is_login: true,
+          avatar: 'images/placeholder.png',
+          nickname: '哔哩哔哩已登录',
+        });
+        $scope.androidAccountState = {
+          available: true,
+          message: '已登录哔哩哔哩',
+        };
+        $scope.$broadcast('bilibili-auth:login-success');
+        return false;
+      }
+      if (next.status === 'unavailable') {
+        $scope.androidAccountState = {
+          available: false,
+          message: 'Android 账号服务当前不可用。',
+        };
+        return false;
+      }
+      $scope.androidAccountState = {
+        available: true,
+        message: ['waiting', 'scanned'].includes(next.status) ? '等待扫码确认' : '未登录 · 可扫码登录',
+      };
+      return ['waiting', 'scanned'].includes(next.status);
+    }
+
+    function scheduleAndroidQrPoll() {
+      if (androidQrPollPromise) $timeout.cancel(androidQrPollPromise);
+      if (
+        !isAndroidTyped() ||
+        !['waiting', 'scanned'].includes($scope.bilibiliQr.status)
+      )
+        return;
+      androidQrPollPromise = $timeout(() => {
+        const account = getAndroidAccount();
+        const { sessionId } = $scope.bilibiliQr;
+        if (!account || !sessionId || typeof account.poll !== 'function')
+          return;
+        const handle = account.poll(sessionId);
+        const request =
+          handle && handle.promise ? handle.promise : Promise.resolve(handle);
+        request
+          .then((state) => {
+            $scope.$evalAsync(() => {
+              if (applyAndroidAccountState(state)) scheduleAndroidQrPoll();
+            });
+          })
+          .catch(() => {
+            $scope.$evalAsync(() =>
+              updateBilibiliQr({ status: 'error', error: 'request-failed' })
+            );
+          });
+      }, 1000);
+    }
+
+    $scope.refreshAndroidAccountStatus = () => {
+      const account = getAndroidAccount();
+      if (!account || typeof account.status !== 'function') {
+        $scope.androidAccountState = {
+          available: false,
+          message: '登录功能将在后续版本提供',
+        };
+        return;
+      }
+      const handle = account.status();
+      const request =
+        handle && handle.promise ? handle.promise : Promise.resolve(handle);
+      request
+        .then((state) =>
+          $scope.$evalAsync(() => {
+            if (applyAndroidAccountState(state)) scheduleAndroidQrPoll();
+          })
+        )
+        .catch(() => $scope.$evalAsync($scope.androidAccountUnavailable));
+    };
+
+    $scope.startAndroidBilibiliQrLogin = () => {
+      const account = getAndroidAccount();
+      if (!account || typeof account.begin !== 'function') {
+        $scope.androidAccountUnavailable();
+        return;
+      }
+      updateBilibiliQr({
+        status: 'loading',
+        sessionId: '',
+        expiresAt: 0,
+        error: '',
+      });
+      $scope.$broadcast('bilibili-auth:open-dialog');
+      const handle = account.begin();
+      const request =
+        handle && handle.promise ? handle.promise : Promise.resolve(handle);
+      request
+        .then((state) =>
+          $scope.$evalAsync(() => {
+            if (applyAndroidAccountState(state)) scheduleAndroidQrPoll();
+          })
+        )
+        .catch(() =>
+          $scope.$evalAsync(() =>
+            updateBilibiliQr({ status: 'error', error: 'request-failed' })
+          )
+        );
+    };
+
     $scope.startBilibiliQrLogin = () => {
       if (!isElectron()) {
+        if (isAndroidTyped()) $scope.startAndroidBilibiliQrLogin();
         return;
       }
       if (qrCountdownPromise) {
@@ -176,13 +357,23 @@ angular.module('listenone').controller('AuthController', [
     $scope.refreshBilibiliQrLogin = () => $scope.startBilibiliQrLogin();
 
     $scope.cancelBilibiliQrLogin = () => {
-      const sessionId = $scope.bilibiliQr.sessionId;
+      const { sessionId } = $scope.bilibiliQr;
       if (qrCountdownPromise) {
         $timeout.cancel(qrCountdownPromise);
         qrCountdownPromise = null;
       }
+      if (androidQrPollPromise) {
+        $timeout.cancel(androidQrPollPromise);
+        androidQrPollPromise = null;
+      }
       if (sessionId) {
-        MediaService.cancelBilibiliQrLogin(sessionId);
+        if (isAndroidTyped()) {
+          const account = getAndroidAccount();
+          if (account && typeof account.cancel === 'function')
+            account.cancel(sessionId).catch(() => {});
+        } else {
+          MediaService.cancelBilibiliQrLogin(sessionId);
+        }
       }
       $scope.bilibiliQr = {
         ...$scope.bilibiliQr,
@@ -202,10 +393,35 @@ angular.module('listenone').controller('AuthController', [
       if (qrCountdownPromise) {
         $timeout.cancel(qrCountdownPromise);
       }
+      if (androidQrPollPromise) $timeout.cancel(androidQrPollPromise);
       removeBilibiliQrListener();
     });
 
     $scope.logout = (source) => {
+      if (isAndroidTyped()) {
+        if (source !== 'bilibili') {
+          $scope.androidAccountUnavailable();
+          return;
+        }
+        const account = getAndroidAccount();
+        if (!account || typeof account.logout !== 'function') {
+          $scope.androidAccountUnavailable();
+          return;
+        }
+        const handle = account.logout();
+        const request =
+          handle && handle.promise ? handle.promise : Promise.resolve(handle);
+        request
+          .then((state) =>
+            $scope.$evalAsync(() => {
+              applyAndroidAccountState(state);
+              $scope.setMusicAuth(source, {});
+              notyf.success('已退出哔哩哔哩登录');
+            })
+          )
+          .catch(() => $scope.$evalAsync($scope.androidAccountUnavailable));
+        return;
+      }
       if (source === 'bilibili') {
         MediaService.logoutBilibili().then(() => {
           $scope.$evalAsync(() => {
@@ -231,6 +447,11 @@ angular.module('listenone').controller('AuthController', [
     $scope.getLoginUrl = (source) => MediaService.getLoginUrl(source);
 
     $scope.openLogin = (source) => {
+      if (isAndroidTyped()) {
+        if (source === 'bilibili') $scope.startAndroidBilibiliQrLogin();
+        else $scope.androidAccountUnavailable();
+        return undefined;
+      }
       if (source === 'bilibili') {
         $scope.startBilibiliQrLogin();
         return undefined;

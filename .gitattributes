@@ -1,0 +1,8 @@
+*.js text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.java text eol=lf
+*.gradle text eol=lf
+*.sh text eol=lf
+gradlew text eol=lf
+*.bat text eol=crlf

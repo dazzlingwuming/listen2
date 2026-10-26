@@ -1,5 +1,6 @@
 /* eslint-disable import/no-extraneous-dependencies */
 /* eslint-disable import/no-unresolved */
+/* eslint-disable import/no-extraneous-dependencies */
 /* eslint-disable global-require */
 /* eslint-disable no-undef */
 /* eslint-disable no-param-reassign */
@@ -7,6 +8,22 @@
 angular.module('listenone').controller('ProfileController', [
   '$scope',
   ($scope) => {
+    const runAfterFirstPaint = (task) => {
+      const scheduleIdle = () => {
+        if (typeof window.requestIdleCallback === 'function') {
+          window.requestIdleCallback(task, { timeout: 2000 });
+          return;
+        }
+        window.setTimeout(task, 400);
+      };
+      if (typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(() =>
+          window.requestAnimationFrame(scheduleIdle)
+        );
+        return;
+      }
+      scheduleIdle();
+    };
     let defaultLang = 'zh-CN';
     const supportLangs = ['zh-CN', 'en-US'];
     if (supportLangs.indexOf(navigator.language) !== -1) {
@@ -37,6 +54,13 @@ angular.module('listenone').controller('ProfileController', [
 
     $scope.proxyProtocol = 'http';
     $scope.proxyRules = '';
+    $scope.mobileSettingsState = {
+      storage: 'Android 存储、下载与备份能力等待受控 bridge 验证。',
+      translation:
+        'DeepSeek 密钥仅由 Android Keystore 安全保存，不会写入页面存储。',
+      media:
+        '音质、MV/PiP、响度和音效仅在 native capability 明确返回可用时启用。',
+    };
 
     $scope.changeProxyProtocol = (newProtocol) => {
       $scope.proxyProtocol = newProtocol;
@@ -281,9 +305,12 @@ angular.module('listenone').controller('ProfileController', [
       $scope[$scope.proxyFeedbackKey] || $scope._PROXY_STATE_UNKNOWN || '';
 
     $scope.initProfile = () => {
-      const url = `https://api.github.com/repos/listen1/listen1_chrome_extension/releases/latest`;
-      axios.get(url).then((response) => {
-        $scope.lastestVersion = response.data.tag_name;
+      runAfterFirstPaint(() => {
+        if (document.documentElement.dataset.listen2Platform === 'android') return;
+        const url = `https://api.github.com/repos/listen1/listen1_chrome_extension/releases/latest`;
+        axios.get(url).then((response) => {
+          $scope.lastestVersion = response.data.tag_name;
+        }).catch(() => {});
       });
 
       $scope.getProxyConfig();
@@ -291,19 +318,19 @@ angular.module('listenone').controller('ProfileController', [
     $scope.setLang = (langKey) => {
       // You can change the language during runtime
       i18next.changeLanguage(langKey).then((t) => {
-        axios.get('i18n/zh-CN.json').then((res) => {
-          Object.keys(res.data).forEach((key) => {
-            $scope[key] = t(key);
-          });
-          sourceList.forEach((item) => {
-            item.displayText = t(item.displayId);
-          });
-          platformSourceList.forEach((item) => {
-            item.displayText = t(item.displayId);
-          });
-          $scope.proxyModes.forEach((item) => {
-            item.displayText = t(item.displayId);
-          });
+        const resources =
+          i18next.getResourceBundle(langKey, 'translation') || {};
+        Object.keys(resources).forEach((key) => {
+          $scope[key] = t(key);
+        });
+        sourceList.forEach((item) => {
+          item.displayText = t(item.displayId);
+        });
+        platformSourceList.forEach((item) => {
+          item.displayText = t(item.displayId);
+        });
+        $scope.proxyModes.forEach((item) => {
+          item.displayText = t(item.displayId);
         });
         localStorage.setObject('language', langKey);
       });

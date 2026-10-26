@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Listen2</string>
+    <string name="loading">Loading Listen2…</string>
+    <string name="load_failed">The local UI could not be loaded.</string>
+</resources>

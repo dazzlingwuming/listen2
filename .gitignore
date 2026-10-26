@@ -11,4 +11,11 @@ yarn.lock
 
 output/
 .playwright-cli/
+/android/.gradle/
+/android/build/
+/android/app/build/
+/android/local.properties
+*.jks
+*.keystore
+/android/keystore.properties
 .task-workspaces/
