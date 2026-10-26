@@ -18,7 +18,7 @@ function requireText(source, expected, explanation) {
   assert.ok(source.includes(expected), `${explanation}: missing ${expected}`);
 }
 
-function run() {
+async function run() {
   const keyboardScope = {
     androidPlaybackEnabled: true,
     androidPlaybackDetailOpen: true,
@@ -60,7 +60,10 @@ function run() {
   const seekContext = {
     $scope: {
       androidPlaybackSeekDraft: 52000,
-      sendAndroidPlaybackCommand: (command, payload) => seekCommands.push({command, payload}),
+      androidUi: {},
+      androidPlaybackSnapshot: { positionMs: 90000, durationMs: 120000 },
+      $evalAsync: (fn) => fn(),
+      sendAndroidPlaybackCommand: (command, payload) => { seekCommands.push({command, payload}); return Promise.resolve(); },
     },
     isAndroidPlaybackActionAvailable: () => true,
   };
@@ -68,11 +71,37 @@ function run() {
     controller.indexOf('$scope.commitAndroidSeek ='),
     controller.indexOf('$scope.openAndroidPlayerDetail =')
   ), seekContext);
-  seekContext.$scope.commitAndroidSeek(90000);
+  vm.runInNewContext(controller.slice(
+    controller.indexOf('$scope.previewAndroidSeek ='),
+    controller.indexOf('$scope.commitAndroidSeek =')
+  ), seekContext);
+  for (const position of [40000, 60000, 90000]) seekContext.$scope.previewAndroidSeek(position);
+  assert.strictEqual(seekCommands.length, 0, 'dragging stays local until release');
+  assert.strictEqual(seekContext.$scope.androidUi.seekMs, 90000);
+  const updateScope = {
+    ...seekContext.$scope, androidPlaybackSnapshot: { revision: 1 },
+    androidPlaybackCommandPending: 'seek', currentPlaying: null,
+  };
+  const updateContext = {
+    $scope: updateScope, androidPlaybackAdapter: {}, androidPlaybackLastAnnouncementRevision: 0,
+    l1Player: {},
+  };
+  vm.runInNewContext(controller.slice(
+    controller.indexOf('function applyAndroidPlaybackSnapshot(snapshot)'),
+    controller.indexOf('$scope.sendAndroidPlaybackCommand =')
+  ), updateContext);
+  updateScope.applyAndroidPlaybackSnapshot({ revision: 2, positionMs: 12000, durationMs: 120000 });
+  assert.strictEqual(updateScope.androidUi.seekMs, 90000, 'incoming progress must not pull back the drag');
+  assert.strictEqual(updateScope.androidPlaybackCommandPending, 'seek', 'progress does not prematurely unlock pending commands');
+  updateScope.applyAndroidPlaybackSnapshot({ revision: 2, positionMs: 13000 });
+  assert.strictEqual(updateScope.androidPlaybackSnapshot.positionMs, 12000, 'duplicate revisions are ignored');
+  await seekContext.$scope.commitAndroidSeek(90000);
   assert.strictEqual(seekCommands[0].payload.positionMs, 90000,
     'seek must use the input child scope draft, not the older parent snapshot');
-  requireText(markup, 'ng-change="commitAndroidSeek(androidUi.seekMs)"',
-    'range input passes its current draft to the native controller');
+  requireText(markup, 'ng-change="previewAndroidSeek(androidUi.seekMs)"',
+    'dragging previews locally without flooding the native player');
+  requireText(markup, 'android-seek-commit="commitAndroidSeek($value)"',
+    'range commits the final native value when the drag ends');
 
   const stateCopySource = controller.slice(
     controller.indexOf('function androidPlaybackStateCopy(snapshot)'),
@@ -162,4 +191,4 @@ function run() {
   console.log('android native playback UI tests passed');
 }
 
-run();
+run().catch((error) => { console.error(error); process.exitCode = 1; });

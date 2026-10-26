@@ -82,7 +82,16 @@ angular.module('listenone').controller('NavigationController', [
       playlistNewName: '',
     };
     $scope.mobileAdvancedMediaEnabled = false;
-    $scope.mobileLibraryQuery = { value: '' };
+    $scope.mobileLibraryQuery = { value: '', tab: 'playlists' };
+    let libraryFilterCache = { items: null, query: '', result: [] };
+    $scope.mobileLibraryPlaylists = () => {
+      const items = $scope.mobileLocalData.playlists;
+      const query = $scope.mobileLibraryQuery.value.trim().toLocaleLowerCase();
+      if (libraryFilterCache.items !== items || libraryFilterCache.query !== query) {
+        libraryFilterCache = { items, query, result: items.filter((item) => !query || item.name.toLocaleLowerCase().includes(query)) };
+      }
+      return libraryFilterCache.result;
+    };
     $scope.mobileThemeFilter = { value: 'all' };
     $scope.mobileThemeVisible = (item) => $scope.mobileThemeFilter.value === 'all' || item.base === $scope.mobileThemeFilter.value;
     $scope.mobileThemeArtwork = () => $scope.theme === 'custom' && $scope.customWallpaper

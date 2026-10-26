@@ -164,6 +164,8 @@
       });
   };
 
+  const nativeSnapshotListeners = new Set();
+  let nativeQueueSnapshot = null;
   const syncNativeSnapshot = (snapshot) => {
     if (!snapshot || !androidPlayback) return;
     nativeLyricSnapshot = lyricSafeNativeSnapshot(snapshot);
@@ -214,7 +216,7 @@
     l1Player.status.muted = snapshot.muted;
     l1Player.status.volume = snapshot.volumePercent;
     l1Player.status.loop_mode = snapshot.mode;
-    l1Player.status.playNextQueue = snapshot.queue.map((entry) => ({
+    if (nativeQueueSnapshot !== snapshot.queue) l1Player.status.playNextQueue = snapshot.queue.map((entry) => ({
       queueId: entry.occurrenceId,
       track: {
         title: entry.title,
@@ -222,6 +224,8 @@
         duration: entry.durationMs / 1000,
       },
     }));
+    nativeQueueSnapshot = snapshot.queue;
+    nativeSnapshotListeners.forEach((listener) => listener(snapshot));
   };
 
   const myPlayer = getPlayer(mode);
@@ -235,6 +239,12 @@
     },
     isNativePlayback() {
       return androidPlayback !== null;
+    },
+    onNativeSnapshot(listener) {
+      nativeSnapshotListeners.add(listener);
+      const current = androidPlayback && androidPlayback.getPlaybackSnapshot();
+      if (current) listener(current);
+      return () => nativeSnapshotListeners.delete(listener);
     },
     getNativeLyricSnapshot() {
       return nativeLyricSnapshot;

@@ -37,6 +37,7 @@ import java.util.concurrent.Executors;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -924,7 +925,6 @@ public final class PlaybackService extends MediaSessionService
             event = LyricClockProjection.Event.ERROR;
         }
         PlaybackSnapshot previous = latestPageSnapshot;
-        Map<String, Object> prior = previous.toMap();
         long revision = Math.max(snapshotRevision, previous.getRevision()) + 1L;
         snapshotRevision = revision;
         long position = Math.max(0L, player.getCurrentPosition());
@@ -944,9 +944,9 @@ public final class PlaybackService extends MediaSessionService
                     position, duration, state, lyricCapability, event);
             lyric = lyricProjection.toLyricContext();
         }
-        latestPageSnapshot = new PlaybackSnapshot(1, number(prior.get("pageEpoch")), revision, state,
-                currentMetadata(prior, duration), position, duration, settings.getVolumePercent(), settings.isMuted(),
-                mode(prior.get("mode")), actions(duration), previous.getQueue(), previous.getPreparedSelection(),
+        latestPageSnapshot = new PlaybackSnapshot(1, previous.getPageEpoch(), revision, state,
+                currentMetadata(previous, duration), position, duration, settings.getVolumePercent(), settings.isMuted(),
+                previous.getMode(), actions(duration), previous.getQueue(), previous.getPreparedSelection(),
                 new PlaybackSnapshot.RecoveryStatus(recoveryCode, isRetryableRecovery(recoveryCode)), lyric,
                 advancedCapabilities);
         checkpointSemanticState(latestPageSnapshot, position, event != LyricClockProjection.Event.CADENCE, "position");
@@ -977,8 +977,8 @@ public final class PlaybackService extends MediaSessionService
 
     static boolean shouldPublishForegroundCadence(boolean rendererAttached, PlaybackSnapshot snapshot) {
         if (!rendererAttached || snapshot == null || !snapshot.getLyricContext().isAvailable()) return false;
-        Object state = snapshot.toMap().get("state");
-        return "playing".equals(state) || "resolving".equals(state);
+        return snapshot.getState() == PlaybackSnapshot.State.PLAYING
+                || snapshot.getState() == PlaybackSnapshot.State.RESOLVING;
     }
 
     /** Installs only freshly-minted resolver state; no transport survives this boundary. */
@@ -1083,15 +1083,15 @@ public final class PlaybackService extends MediaSessionService
         long now = System.currentTimeMillis();
         long safePosition = Math.max(0L, positionMs);
         if (!force && now - lastCheckpointAtMs < PlaybackCoordinator.POSITION_CHECKPOINT_INTERVAL_MS) return;
-        List<String> orderedIds = new ArrayList<>();
+        Set<String> uniqueIds = new LinkedHashSet<>();
         for (PlaybackSnapshot.QueueOccurrence occurrence : snapshot.getQueue()) {
-            if (occurrence != null && !orderedIds.contains(occurrence.getOccurrenceId())) {
-                orderedIds.add(occurrence.getOccurrenceId());
-            }
+            if (occurrence != null) uniqueIds.add(occurrence.getOccurrenceId());
         }
+        List<String> orderedIds = new ArrayList<>(uniqueIds);
         if (!orderedIds.contains(currentOccurrenceId)) orderedIds.add(0, currentOccurrenceId);
         int queueSize = orderedIds.size();
-        for (String id : selectedMediaByOccurrenceId.keySet()) if (!orderedIds.contains(id)) orderedIds.add(id);
+        uniqueIds.add(currentOccurrenceId);
+        for (String id : selectedMediaByOccurrenceId.keySet()) if (uniqueIds.add(id)) orderedIds.add(id);
         List<PlaybackCheckpointRepository.OccurrenceState> occurrences = new ArrayList<>();
         for (int index = 0; index < orderedIds.size(); index += 1) {
             SelectedMedia selected = selectedMediaByOccurrenceId.get(orderedIds.get(index));
@@ -1192,14 +1192,15 @@ public final class PlaybackService extends MediaSessionService
         return new PlaybackSnapshot.Metadata("Listen2", "Listen2", duration, "bundled-placeholder");
     }
 
-    private PlaybackSnapshot.Metadata currentMetadata(Map<String, Object> prior, long duration) {
+    private PlaybackSnapshot.Metadata currentMetadata(PlaybackSnapshot prior, long duration) {
         SelectedMedia selected = selectedMediaByOccurrenceId.get(currentOccurrenceId);
         if (selected != null) {
             PlaybackMediaResolver.Descriptor descriptor = selected.nativePrepared.descriptor();
             return new PlaybackSnapshot.Metadata(descriptor.getTitle(), descriptor.getArtist(), duration,
                     "bundled-placeholder");
         }
-        return metadata(prior, duration);
+        return new PlaybackSnapshot.Metadata(prior.getMetadata().getTitle(), prior.getMetadata().getArtist(),
+                duration, "bundled-placeholder");
     }
 
     static PlaybackSnapshot.State projectPlaybackState(boolean resolutionFailed,

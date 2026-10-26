@@ -256,7 +256,6 @@ angular.module('listenone').controller('PlayController', [
       window.Listen2AndroidHttpAdapter.isAvailable()
         ? window.Listen2AndroidHttpAdapter
         : null;
-    let androidPlaybackRefreshTimer = null;
     let androidPlaybackLastAnnouncementRevision = 0;
     let androidPlaybackReturnFocus = null;
     let playControllerDestroyed = false;
@@ -268,9 +267,16 @@ angular.module('listenone').controller('PlayController', [
       lyricFontSize: Number(localStorage.getObject('android-lyric-font-size')) || 22,
     };
     $scope.androidRecentTracks = [];
-    $scope.androidTrackDisplay = (track) => MediaService.getMobileTrackDisplay(
-      track || $scope.currentPlaying || $scope.androidPlaybackSnapshot.metadata
-    );
+    const androidDisplayCache = new Map();
+    $scope.androidTrackDisplay = (track) => {
+      const item = track || $scope.currentPlaying || $scope.androidPlaybackSnapshot.metadata;
+      const key = `${item.id || ''}\n${item.title || ''}\n${item.artist || ''}`;
+      if (!androidDisplayCache.has(key)) {
+        if (androidDisplayCache.size > 256) androidDisplayCache.clear();
+        androidDisplayCache.set(key, MediaService.getMobileTrackDisplay(item));
+      }
+      return androidDisplayCache.get(key);
+    };
     $scope.setAndroidLyricFontSize = (size) => {
       $scope.androidUi.lyricFontSize = Math.max(16, Math.min(30, Number(size) || 22));
       localStorage.setObject('android-lyric-font-size', $scope.androidUi.lyricFontSize);
@@ -376,8 +382,14 @@ angular.module('listenone').controller('PlayController', [
     };
     $scope.androidPlaybackElapsed = () =>
       formatSecond(
-        Number($scope.androidPlaybackSnapshot.positionMs || 0) / 1000
+        Number(($scope.androidPlaybackSeekAdjusting ? $scope.androidUi.seekMs : $scope.androidPlaybackSnapshot.positionMs) || 0) / 1000
       );
+    $scope.androidPlaybackProgress = () => Math.max(0, Math.min(100,
+      (Number($scope.androidUi.seekMs) || 0) / ($scope.androidPlaybackSnapshot.durationMs || 1) * 100));
+    $scope.cancelAndroidSeek = () => {
+      $scope.androidPlaybackSeekAdjusting = false;
+      $scope.androidUi.seekMs = $scope.androidPlaybackSnapshot.positionMs;
+    };
     $scope.androidPlaybackDuration = () =>
       formatSecond(
         Number($scope.androidPlaybackSnapshot.durationMs || 0) / 1000
@@ -394,7 +406,7 @@ angular.module('listenone').controller('PlayController', [
       const revision = Number(snapshot.revision || 0);
       if (
         revision &&
-        revision < Number($scope.androidPlaybackSnapshot.revision || 0)
+        revision <= Number($scope.androidPlaybackSnapshot.revision || 0)
       ) {
         return;
       }
@@ -456,10 +468,10 @@ angular.module('listenone').controller('PlayController', [
       $scope.androidPlaybackVolumeDraft = safeSnapshot.volumePercent;
       $scope.androidPlaybackBusy =
         !safeSnapshot.revision || safeSnapshot.state === 'resolving';
-      $scope.androidPlaybackCommandPending = '';
-      $scope.androidPlaybackSeekDraft = safeSnapshot.positionMs;
-      $scope.androidUi.seekMs = safeSnapshot.positionMs;
-      $scope.androidPlaybackSeekAdjusting = false;
+      if (!$scope.androidPlaybackSeekAdjusting) {
+        $scope.androidPlaybackSeekDraft = safeSnapshot.positionMs;
+        $scope.androidUi.seekMs = safeSnapshot.positionMs;
+      }
       $scope.androidPlaybackSeekUnavailable = false;
       if (revision > androidPlaybackLastAnnouncementRevision) {
         androidPlaybackLastAnnouncementRevision = revision;
@@ -473,18 +485,6 @@ angular.module('listenone').controller('PlayController', [
 
     $scope.applyAndroidPlaybackSnapshot = applyAndroidPlaybackSnapshot;
 
-    function refreshAndroidPlaybackSnapshot() {
-      if (!androidPlaybackAdapter || playControllerDestroyed) return;
-      const snapshot = androidPlaybackAdapter.getPlaybackSnapshot();
-      if (snapshot) {
-        $scope.$evalAsync(() => applyAndroidPlaybackSnapshot(snapshot));
-      }
-      androidPlaybackRefreshTimer = $timeout(
-        refreshAndroidPlaybackSnapshot,
-        350
-      );
-    }
-
     $scope.sendAndroidPlaybackCommand = (command, payload = {}) => {
       if (
         !androidPlaybackAdapter ||
@@ -497,12 +497,16 @@ angular.module('listenone').controller('PlayController', [
       return androidPlaybackAdapter
         .command(command, payload)
         .then((snapshot) => {
-          $scope.$evalAsync(() => applyAndroidPlaybackSnapshot(snapshot));
+          $scope.$evalAsync(() => {
+            $scope.androidPlaybackCommandPending = '';
+            applyAndroidPlaybackSnapshot(snapshot);
+          });
           return snapshot;
         })
         .catch(() => {
           $scope.$evalAsync(() => {
             $scope.androidPlaybackCommandPending = '';
+            notyf.error('操作未完成，请再试一次。');
           });
           return null;
         });
@@ -549,9 +553,10 @@ angular.module('listenone').controller('PlayController', [
         0,
         Math.min(
           Number($scope.androidPlaybackSnapshot.durationMs || 0),
-          Number(event.target.value) || 0
+          Number(event && event.target ? event.target.value : event) || 0
         )
       );
+      $scope.androidUi.seekMs = $scope.androidPlaybackSeekDraft;
       $scope.androidPlaybackSeekAdjusting = true;
     };
     $scope.commitAndroidSeek = (draft = $scope.androidPlaybackSeekDraft) => {
@@ -565,7 +570,12 @@ angular.module('listenone').controller('PlayController', [
       if (!Number.isFinite(requestedPosition)) return Promise.resolve(null);
       const positionMs = Math.max(0, Math.round(requestedPosition));
       $scope.androidPlaybackSeekAdjusting = true;
-      return $scope.sendAndroidPlaybackCommand('seek', { positionMs });
+      return $scope.sendAndroidPlaybackCommand('seek', { positionMs }).finally(() => {
+        $scope.$evalAsync(() => {
+          $scope.androidPlaybackSeekAdjusting = false;
+          $scope.androidUi.seekMs = $scope.androidPlaybackSnapshot.positionMs;
+        });
+      });
     };
     $scope.openAndroidPlayerDetail = (event) => {
       if (!$scope.androidPlaybackHasCurrent()) return;
@@ -622,7 +632,10 @@ angular.module('listenone').controller('PlayController', [
       return androidPlaybackAdapter
         .command(command, payload)
         .then((snapshot) => {
-          $scope.$evalAsync(() => applyAndroidPlaybackSnapshot(snapshot));
+          $scope.$evalAsync(() => {
+            $scope.androidPlaybackCommandPending = '';
+            applyAndroidPlaybackSnapshot(snapshot);
+          });
           return snapshot;
         })
         .catch(() => {
@@ -648,7 +661,7 @@ angular.module('listenone').controller('PlayController', [
     };
 
     $scope.openAndroidQueueSheet = (event) => {
-      if (!$scope.androidPlaybackDetailOpen) return;
+      if (!$scope.androidPlaybackEnabled) return;
       androidQueueReturnFocus = event && event.currentTarget;
       $scope.androidQueueSheetOpen = true;
       $scope.androidQueueView = { limit: 80, editing: false, error: '' };
@@ -4848,14 +4861,13 @@ angular.module('listenone').controller('PlayController', [
       });
     }
     if (androidPlaybackAdapter) {
-      refreshAndroidPlaybackSnapshot();
+      const removeSnapshotListener = l1Player.onNativeSnapshot((snapshot) => {
+        if (!playControllerDestroyed) $scope.$evalAsync(() => applyAndroidPlaybackSnapshot(snapshot));
+      });
       document.addEventListener('keydown', handleAndroidPlayerKeydown);
       $scope.$on('$destroy', () => {
+        removeSnapshotListener();
         playControllerDestroyed = true;
-        if (androidPlaybackRefreshTimer) {
-          $timeout.cancel(androidPlaybackRefreshTimer);
-          androidPlaybackRefreshTimer = null;
-        }
         document.removeEventListener('keydown', handleAndroidPlayerKeydown);
       });
     }

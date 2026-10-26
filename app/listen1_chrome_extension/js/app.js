@@ -121,6 +121,25 @@ const main = () => {
     });
   });
 
+  // Native range input emits change only when a drag ends (or a keyboard step commits).
+  app.directive('androidSeekCommit', ['$parse', ($parse) => ({
+    restrict: 'A',
+    link(scope, element, attrs) {
+      const commit = $parse(attrs.androidSeekCommit);
+      const onChange = (event) => {
+        const value = Number(event.target.value);
+        scope.$evalAsync(() => commit(scope, { $value: value }));
+      };
+      const onCancel = () => scope.$evalAsync(() => scope.cancelAndroidSeek());
+      element.on('change', onChange);
+      element.on('pointercancel', onCancel);
+      scope.$on('$destroy', () => {
+        element.off('change', onChange);
+        element.off('pointercancel', onCancel);
+      });
+    },
+  })]);
+
   app.directive('pagination', () => ({
     restrict: 'EA',
     replace: false,

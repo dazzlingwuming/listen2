@@ -2835,6 +2835,13 @@ const Listen2AndroidHttpAdapter = (() => {
   }
 
   function safePlaybackSnapshot(snapshot) {
+    const previousQueue = playback.snapshot && playback.snapshot.queue;
+    const sameQueue = previousQueue && previousQueue.length === snapshot.queue.length &&
+      previousQueue.every((entry, index) => {
+        const next = snapshot.queue[index];
+        return next && entry.occurrenceId === next.occurrenceId && entry.title === next.title &&
+          entry.artist === next.artist && entry.durationMs === next.durationMs;
+      });
     const result = {
       version: snapshot.version,
       pageEpoch: snapshot.pageEpoch,
@@ -2854,7 +2861,7 @@ const Listen2AndroidHttpAdapter = (() => {
         snapshot.actions && typeof snapshot.actions === 'object'
           ? { ...snapshot.actions }
           : {},
-      queue: snapshot.queue.map((entry) => ({
+      queue: sameQueue ? previousQueue : snapshot.queue.map((entry) => ({
         occurrenceId: entry && entry.occurrenceId,
         title: entry && entry.title,
         artist: entry && entry.artist,

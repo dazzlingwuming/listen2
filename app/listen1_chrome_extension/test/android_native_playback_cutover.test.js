@@ -32,9 +32,11 @@ async function run() {
   const calls = [];
   let howlCount = 0;
   let browserMediaSessionCount = 0;
+  let publishSnapshot;
   const adapter = {
     isAvailable: () => true,
     connect({ onSnapshot }) {
+      publishSnapshot = onSnapshot;
       onSnapshot(snapshot);
       return { promise: Promise.resolve(snapshot), cancel() {} };
     },
@@ -237,6 +239,16 @@ async function run() {
     'paused',
     'facade status comes from native snapshots'
   );
+  const events = [];
+  const unsubscribe = player.onNativeSnapshot((value) => events.push(value));
+  assert.strictEqual(events.length, 1, 'new subscribers receive the current state');
+  const oldQueue = player.status.playNextQueue;
+  publishSnapshot({ ...snapshot, revision: 10, positionMs: 2500 });
+  assert.strictEqual(events.length, 2, 'native progress updates reach the UI without polling');
+  assert.strictEqual(player.status.playNextQueue, oldQueue, 'progress does not rebuild the legacy queue');
+  unsubscribe();
+  publishSnapshot({ ...snapshot, revision: 11, positionMs: 3000 });
+  assert.strictEqual(events.length, 2, 'destroyed views stop receiving progress');
   console.log('android native playback cutover tests passed');
 }
 

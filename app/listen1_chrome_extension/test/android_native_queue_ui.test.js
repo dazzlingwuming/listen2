@@ -4,6 +4,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 
 const root = path.join(__dirname, '..');
 const controller = fs.readFileSync(
@@ -17,7 +18,32 @@ function requireText(source, expected, explanation) {
   assert.ok(source.includes(expected), `${explanation}: missing ${expected}`);
 }
 
-function run() {
+async function run() {
+  const commands = [];
+  const scope = {
+    androidPlaybackEnabled: true, androidPlaybackDetailOpen: false,
+    androidPlaybackSnapshot: { revision: 1 }, androidPlaybackCommandPending: '',
+    $evalAsync: (fn) => fn(),
+  };
+  const context = {
+    $scope: scope, androidQueueReturnFocus: null, focusAndroidQueueTarget() {},
+    androidPlaybackAdapter: { command: (command) => {
+      commands.push(command);
+      return Promise.resolve({ revision: commands.length + 1 });
+    } },
+    applyAndroidPlaybackSnapshot: (snapshot) => { scope.androidPlaybackSnapshot = snapshot; },
+  };
+  vm.runInNewContext(controller.slice(controller.indexOf('$scope.openAndroidQueueSheet ='),
+    controller.indexOf('$scope.closeAndroidQueueSheet =')), context);
+  scope.openAndroidQueueSheet({ currentTarget: {} });
+  assert.strictEqual(scope.androidQueueSheetOpen, true, 'mini-player can open the queue directly');
+  assert.strictEqual(scope.androidPlaybackDetailOpen, false, 'queue does not need the full player');
+  vm.runInNewContext(controller.slice(controller.indexOf('function sendAndroidQueueCommand('),
+    controller.indexOf('$scope.retryAndroidPlayback =')), context);
+  await context.sendAndroidQueueCommand('jump', { occurrenceId: 'first' });
+  assert.strictEqual(scope.androidPlaybackCommandPending, '', 'completed queue commands unlock controls');
+  await context.sendAndroidQueueCommand('jump', { occurrenceId: 'second' });
+  assert.strictEqual(commands.length, 2, 'a second queue selection remains responsive');
   [
     'openAndroidQueueSheet',
     'requestAndroidQueueMove',
@@ -75,4 +101,4 @@ function run() {
   console.log('android native queue UI tests passed');
 }
 
-run();
+run().catch((error) => { console.error(error); process.exitCode = 1; });
