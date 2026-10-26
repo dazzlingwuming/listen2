@@ -53,6 +53,7 @@ public final class PlaybackService extends MediaSessionService
     private ExoPlayer player;
     private MediaSession mediaSession;
     private ExecutorService transitionExecutor;
+    private LatestMediaTaskRunner mediaTasks;
     private Listen2Database database;
     private LocalPlaybackResolver<Uri> localPlaybackResolver;
     private LocalDataRepository localDataRepository;
@@ -151,6 +152,7 @@ public final class PlaybackService extends MediaSessionService
                 localMediaPort::resolveAuthorizedUri);
         checkpointRepository = new PlaybackCheckpointRepository(database);
         transitionExecutor = Executors.newSingleThreadExecutor();
+        mediaTasks = new LatestMediaTaskRunner();
         transitionExecutor.execute(() -> {
             PlaybackCheckpointRepository.RestoredState restored = checkpointRepository.restore();
             if (playerHandler != null) playerHandler.post(() -> applyRestoredCheckpoint(restored));
@@ -436,27 +438,34 @@ public final class PlaybackService extends MediaSessionService
             currentOccurrenceId = selectedMedia.pageOccurrenceId;
             currentLyricIdentity = null;
             long generation = ++mediaResolutionGeneration;
+            resetCandidateFallback();
             player.stop(); player.clearMediaItems();
-            transitionExecutor.execute(() -> {
+            player.setPlayWhenReady(playWhenReady);
+            mediaTasks.submit(() -> {
                 BilibiliPlaybackResolver resolver = new BilibiliPlaybackResolver(() -> CookieManager.getInstance().getCookie("https://api.bilibili.com"));
                 PlaybackMediaResolver.Descriptor resolved = resolver.resolveDefaultPart(descriptor);
+                String failureStatus = resolver.unavailableStatus();
                 if (playerHandler != null) playerHandler.post(() -> {
                     if (released || generation != mediaResolutionGeneration) return;
                     if (resolved == null) {
-                        publishPlayerSnapshot("bilibili-default-part-unavailable", LyricClockProjection.Event.ERROR, true);
+                        playerFailureStatus = failureStatus;
+                        publishPlayerSnapshot(playerFailureStatus, LyricClockProjection.Event.ERROR, true);
                         return;
                     }
-                    PlaybackMediaResolver owner = newResolver("bilibili");
+                    PlaybackMediaResolver owner = new PlaybackMediaResolver(resolver,
+                            new PlaybackMediaResolver.IncrementingHandleSource("service"),
+                            () -> System.currentTimeMillis() / 1000L);
                     PlaybackMediaResolver.Prepared prepared = owner.prepare(resolved);
                     if (prepared == null) {
                         publishPlayerSnapshot("bilibili-default-part-unavailable", LyricClockProjection.Event.ERROR, true);
                         return;
                     }
-                    owner.select(prepared.getTrackHandle(), prepared.getOccurrenceId(), selectedMedia.selectionRevision, "replace-current", playWhenReady);
+                    boolean stillWantsPlayback = player.getPlayWhenReady();
+                    owner.select(prepared.getTrackHandle(), prepared.getOccurrenceId(), selectedMedia.selectionRevision, "replace-current", stillWantsPlayback);
                     SelectedMedia ready = new SelectedMedia(owner, prepared, selectedMedia.pageTrackHandle,
                             selectedMedia.pageOccurrenceId, selectedMedia.selectionRevision);
                     selectedMediaByOccurrenceId.put(ready.pageOccurrenceId, ready);
-                    activateSelection(ready, latestPageSnapshot, playWhenReady, recordHistory, restartListeningHistory, targetPositionMs);
+                    activateSelection(ready, latestPageSnapshot, stillWantsPlayback, recordHistory, restartListeningHistory, targetPositionMs);
                 });
             });
             return;
@@ -496,7 +505,7 @@ public final class PlaybackService extends MediaSessionService
         player.setPlayWhenReady(playWhenReady);
         // Manifest fetching uses a bounded native network client. Keep it off
         // Media3's main looper while retaining player mutation on that looper.
-        transitionExecutor.execute(() -> {
+        mediaTasks.submit(() -> {
             PlaybackMediaResolver.Resolution resolution = cachedResolution(descriptor);
             if (resolution == null) {
                 resolution = resolverForSelection.resolveCurrent(nativeOccurrenceId, expectedRevision);
@@ -887,6 +896,10 @@ public final class PlaybackService extends MediaSessionService
             transitionExecutor.shutdownNow();
             transitionExecutor = null;
         }
+        if (mediaTasks != null) {
+            mediaTasks.close();
+            mediaTasks = null;
+        }
         playerHandler = null;
         if (database != null) {
             database.close();
@@ -933,7 +946,7 @@ public final class PlaybackService extends MediaSessionService
         listeningHistory.observe(position, player.isPlaying(), System.currentTimeMillis());
         persistListeningHistory(!player.isPlaying());
         PlaybackSnapshot.State state = projectPlaybackState(resolutionFailed,
-                player.isPlaying(), player.getPlaybackState());
+                player.isPlaying(), player.getPlayWhenReady(), player.getPlaybackState());
         PlaybackSnapshot.LyricContext lyric = currentLyricIdentity == null
                 ? PlaybackSnapshot.LyricContext.unavailable() : previous.getLyricContext();
         if (currentLyricIdentity != null) {
@@ -1204,11 +1217,11 @@ public final class PlaybackService extends MediaSessionService
     }
 
     static PlaybackSnapshot.State projectPlaybackState(boolean resolutionFailed,
-            boolean playing, int playerState) {
+            boolean playing, boolean playWhenReady, int playerState) {
         if (resolutionFailed) return PlaybackSnapshot.State.ERROR;
         if (playing) return PlaybackSnapshot.State.PLAYING;
         if (playerState == Player.STATE_IDLE) return PlaybackSnapshot.State.IDLE;
-        if (playerState == Player.STATE_BUFFERING) return PlaybackSnapshot.State.RESOLVING;
+        if (playerState == Player.STATE_BUFFERING && playWhenReady) return PlaybackSnapshot.State.RESOLVING;
         return PlaybackSnapshot.State.PAUSED;
     }
 
@@ -1228,8 +1241,11 @@ public final class PlaybackService extends MediaSessionService
     }
 
     private PlaybackSnapshot.ActionAvailability actions(long duration) {
-        boolean hasMedia = player.getMediaItemCount() > 0;
-        return new PlaybackSnapshot.ActionAvailability(hasMedia && !player.isPlaying(), hasMedia && player.isPlaying(),
+        boolean hasSelection = player.getMediaItemCount() > 0
+                || selectedMediaByOccurrenceId.containsKey(currentOccurrenceId);
+        boolean wantsPlayback = player.getPlayWhenReady()
+                && player.getPlaybackState() != Player.STATE_ENDED && player.getPlayerError() == null;
+        return new PlaybackSnapshot.ActionAvailability(hasSelection && !wantsPlayback, hasSelection && wantsPlayback,
                 playbackHistoryCursor > 0, hasSemanticNext(), duration > 0L,
                 selectedMediaByOccurrenceId.containsKey(currentOccurrenceId));
     }

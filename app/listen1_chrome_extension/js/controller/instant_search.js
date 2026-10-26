@@ -17,21 +17,25 @@ angular.module('listenone').controller('InstantSearchController', [
       if (handle && typeof handle.cancel === 'function') handle.cancel();
     };
     const messageFor = (error, detail) => {
-      const status = error && (error.status || error.code || error.kind);
+      const status = error && (error.code || (typeof error.status === 'string' ? error.status : error.kind));
       const messages = detail
         ? {
             'android-rpc-network': '网络连接不可用',
             'android-rpc-tls': '无法建立安全连接',
             'android-rpc-timeout': '读取分P超时',
             'android-rpc-malformed': '分P信息暂时无法识别',
+            'android-rpc-malformed-response': '分P信息暂时无法识别',
+            'android-rpc-provider-status': 'B 站暂时拒绝请求，请稍后重试或检查登录状态',
+            'android-rpc-permission': '请先登录 B 站，再播放这首歌曲',
             'invalid-part': '所选分P不可用',
+            'android-rpc-invalid-part': '所选分P不可用',
           }
         : {
             'android-rpc-network': '网络连接不可用',
             'android-rpc-tls': '无法建立安全连接',
             'android-rpc-timeout': '搜索超时',
             'android-rpc-malformed': '搜索结果暂时无法识别',
-            'android-rpc-provider-status': '匿名请求暂时被来源拒绝',
+            'android-rpc-provider-status': 'B 站暂时拒绝请求，请稍后重试或检查登录状态',
           };
       return (
         messages[status] ||

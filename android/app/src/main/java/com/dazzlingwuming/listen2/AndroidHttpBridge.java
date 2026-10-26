@@ -701,9 +701,7 @@ final class AndroidHttpBridge {
 
     private AndroidRpcContract.TypedReply executeTypedOperation(
             AndroidRpcContract.TypedRequest request, BridgeRequestRegistry.RequestKey key) {
-        if (isDeepSeekOperation(request.operation) || isMediaDownloadOperation(request.operation)
-                || request.operation == AndroidRpcContract.Operation.LOCAL_LYRIC_PRIMARY
-                || request.operation == AndroidRpcContract.Operation.GITHUB_SYNC) {
+        if (!BridgeRetryPolicy.canRetryOperation(request.operation)) {
             return executeTypedOperationOnce(request, key);
         }
         long startedAt = System.nanoTime();
@@ -714,6 +712,8 @@ final class AndroidHttpBridge {
                         null, "CANCELLED");
             }
             lastReply = executeTypedOperationOnce(request, key);
+            if (!BridgeRetryPolicy.canRetryReply(request.operation, lastReply.terminal,
+                    lastReply.status, lastReply.errorCode)) return lastReply;
             long elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
             if (elapsed >= TYPED_DEADLINE_MILLIS) {
                 typedRequests.timeout(key);

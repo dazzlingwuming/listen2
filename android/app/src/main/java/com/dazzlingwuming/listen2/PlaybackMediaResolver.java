@@ -336,8 +336,7 @@ public final class PlaybackMediaResolver {
 
     private static boolean isSourceCandidateHost(String source, String host) {
         if ("bilibili".equals(source)) {
-            return host.equals("bilivideo.com") || host.endsWith(".bilivideo.com")
-                    || host.equals("bilivideo.cn") || host.endsWith(".bilivideo.cn");
+            return BilibiliMediaPolicy.permitsHost(host);
         }
         return "netease".equals(source)
                 && (host.equals("music.163.com") || host.endsWith(".music.163.com")

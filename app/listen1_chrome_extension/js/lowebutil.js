@@ -2923,45 +2923,67 @@ const Listen2AndroidHttpAdapter = (() => {
     if (playback.pendingCommands.has(command)) {
       return Promise.reject(playbackError('android-playback-pending'));
     }
-    const expectedRevision = playback.revision;
-    const envelope = { expectedRevision, command, payload };
+    const envelope = { expectedRevision: playback.revision, command, payload };
     if (!validatePlaybackEnvelope(envelope)) {
       return Promise.reject(playbackError('android-playback-invalid-command'));
     }
-    const requestHandle = request('playback.command', envelope, {
-      pageEpoch: playback.pageEpoch,
-      timeoutMs: options.timeoutMs,
+    const pageEpoch = playback.pageEpoch;
+    let activeRequest;
+    let cancelled = false;
+    const pendingHandle = {
+      cancel() {
+        cancelled = true;
+        if (activeRequest) activeRequest.cancel();
+      },
+    };
+    const waitForRevision = (revision) => new Promise((resolve, reject) => {
+      const deadline = Date.now() + 5000;
+      const check = () => {
+        if (cancelled || playback.detached || playback.pageEpoch !== pageEpoch) {
+          reject(playbackError('android-playback-cancelled'));
+        } else if (playback.revision >= revision) {
+          resolve(playback.snapshot);
+        } else if (Date.now() >= deadline) {
+          reject(playbackError('android-playback-rejected'));
+        } else {
+          setTimeout(check, 16);
+        }
+      };
+      check();
     });
-    const promise = requestHandle.promise
-      .then(({ result }) => {
-        const targetRevision = result && result.revision;
-        if (
-          !Number.isSafeInteger(targetRevision) ||
-          targetRevision <= expectedRevision
-        ) {
+    const send = (attempt) => {
+      const expectedRevision = playback.revision;
+      activeRequest = request('playback.command', { expectedRevision, command, payload }, {
+        pageEpoch, timeoutMs: options.timeoutMs,
+      });
+      return activeRequest.promise.then(({ result }) => {
+        const revision = result && result.revision;
+        if (!Number.isSafeInteger(revision) || revision <= expectedRevision) {
           throw playbackError('android-playback-rejected');
         }
-        return new Promise((resolve, reject) => {
-          const awaitSnapshot = () => {
-            if (playback.detached) {
-              reject(playbackError('android-playback-cancelled'));
-            } else if (playback.revision >= targetRevision) {
-              resolve(playback.snapshot);
-            } else {
-              setTimeout(awaitSnapshot, 0);
-            }
-          };
-          awaitSnapshot();
-        });
-      })
+        return waitForRevision(revision);
+      }, (error) => {
+        // A progress event can overtake a command in the WebView channel.
+        // STALE_REVISION is rejected before native execution, so refreshing
+        // once is safe. Never replay a successful or ambiguously failed command.
+        if (attempt === 0 && error && error.safeCode === 'STALE_REVISION'
+          && ['play', 'pause', 'next', 'previous', 'mode', 'volume', 'mute'].includes(command)) {
+          return waitForRevision(expectedRevision + 1).then(() => send(1));
+        }
+        throw error;
+      });
+    };
+    const promise = send(0)
       .catch((error) => {
-        if (error && error.code === 'android-rpc-cancelled') {
+        if (error && ['android-rpc-cancelled', 'android-playback-cancelled'].includes(error.code)) {
           throw playbackError('android-playback-cancelled');
         }
         throw playbackError('android-playback-rejected');
       })
-      .finally(() => playback.pendingCommands.delete(command));
-    playback.pendingCommands.set(command, requestHandle);
+      .finally(() => {
+        if (playback.pendingCommands.get(command) === pendingHandle) playback.pendingCommands.delete(command);
+      });
+    playback.pendingCommands.set(command, pendingHandle);
     return promise;
   }
 

@@ -31,7 +31,7 @@ final class BilibiliResponseMapper {
             return MappingResult.error("MALFORMED_PROVIDER_RESPONSE");
         }
         try {
-            JSONObject data = providerData(body);
+            JSONObject data = videoData(request, body);
             if (data == null || !request.bvid.equals(data.opt("bvid"))) {
                 return MappingResult.error("IDENTITY_MISMATCH");
             }
@@ -62,7 +62,7 @@ final class BilibiliResponseMapper {
             return MappingResult.error("MALFORMED_PROVIDER_RESPONSE");
         }
         try {
-            JSONObject detail = providerData(detailBody);
+            JSONObject detail = videoData(request, detailBody);
             if (detail == null || !request.bvid.equals(detail.opt("bvid"))) {
                 return MappingResult.error("IDENTITY_MISMATCH");
             }
@@ -122,6 +122,22 @@ final class BilibiliResponseMapper {
         } catch (JSONException ignored) {
             return MappingResult.error("MALFORMED_PROVIDER_RESPONSE");
         }
+    }
+
+    /** pagelist omits an identity echo; the fixed native request binds these parts to its BVID. */
+    private static JSONObject videoData(AndroidRpcContract.TypedRequest request, String body)
+            throws JSONException {
+        if (body == null || body.length() > HttpBridgePolicy.MAX_RESPONSE_BYTES) return null;
+        JSONObject root;
+        try { root = new JSONObject(body); } catch (JSONException ignored) { return null; }
+        Object code = root.opt("code");
+        if (!(code instanceof Number) || ((Number) code).doubleValue() != 0) return null;
+        Object data = root.opt("data");
+        if (data instanceof JSONArray) {
+            return new JSONObject().put("bvid", request.bvid).put("pages", data);
+        }
+        // Retain strict identity validation for older object-shaped provider responses.
+        return data instanceof JSONObject ? (JSONObject) data : null;
     }
 
     private static JSONObject providerData(String body) {

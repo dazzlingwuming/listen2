@@ -26,7 +26,8 @@ final class AndroidRpcContract {
     static final int MAX_PAGE = 1000;
     static final int MAX_RESULT_ROWS = 50;
     static final String BILIBILI_SEARCH_PATH = "/x/web-interface/search/type";
-    static final String BILIBILI_VIDEO_DETAIL_PATH = "/x/web-interface/view";
+    // Playback needs the ordered parts, not the heavyweight video detail page.
+    static final String BILIBILI_VIDEO_DETAIL_PATH = "/x/player/pagelist";
     static final String BILIBILI_AUDIO_MANIFEST_PATH = "/x/player/playurl";
     static final String NETEASE_SOURCE = "netease";
     static final int MAX_LYRIC_CONTENT_BYTES = 256 * 1024;

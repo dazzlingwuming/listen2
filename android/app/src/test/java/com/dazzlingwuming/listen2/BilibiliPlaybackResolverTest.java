@@ -18,6 +18,20 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class BilibiliPlaybackResolverTest {
     private static final String BVID = "BV1xx411c7mD";
 
+    @Test public void importedDefaultPartReusesVerifiedPartsAndRetainsFailureReason() throws Exception {
+        String parts = new JSONObject().put("code", 0).put("data",
+                new JSONObject(detail()).getJSONObject("data").getJSONArray("pages")).toString();
+        FakeHttp http = new FakeHttp(parts, manifest(22L));
+        BilibiliPlaybackResolver resolver = new BilibiliPlaybackResolver(http);
+        PlaybackMediaResolver.Descriptor selected = resolver.resolveDefaultPart(descriptor(0));
+        assertEquals(2, resolver.resolve(selected).size());
+        assertEquals(2, http.requests.size()); // One parts request and one audio manifest.
+        BilibiliPlaybackResolver rejected = new BilibiliPlaybackResolver(
+                uri -> new BilibiliPlaybackResolver.Response(412, null));
+        assertEquals(null, rejected.resolveDefaultPart(descriptor(0)));
+        assertEquals("bilibili-detail-http-412", rejected.unavailableStatus());
+    }
+
     @Test public void resolvesImportedVideoDefaultPartWhenItStarts() throws Exception {
         FakeHttp http = new FakeHttp(detail(), manifest(22L));
         PlaybackMediaResolver.Descriptor resolved = new BilibiliPlaybackResolver(http).resolveDefaultPart(descriptor(0L));
@@ -38,7 +52,7 @@ public final class BilibiliPlaybackResolverTest {
         assertEquals(2, candidates.size());
         assertEquals("https://upos.bilivideo.com/audio.m4s?deadline=4102444800", candidates.get(0));
         assertEquals(2, http.requests.size());
-        assertEquals("https://api.bilibili.com/x/web-interface/view?bvid=" + BVID,
+        assertEquals("https://api.bilibili.com/x/player/pagelist?bvid=" + BVID,
                 http.requests.get(0).toASCIIString());
         assertEquals("https://api.bilibili.com/x/player/playurl?fnval=16&fnver=0&fourk=1&bvid="
                         + BVID + "&cid=22", http.requests.get(1).toASCIIString());

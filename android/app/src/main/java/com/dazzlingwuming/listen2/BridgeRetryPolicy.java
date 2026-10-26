@@ -7,6 +7,35 @@ final class BridgeRetryPolicy {
 
     private BridgeRetryPolicy() {}
 
+    static boolean canRetryOperation(AndroidRpcContract.Operation operation) {
+        if (operation == null) return false;
+        switch (operation) {
+            case BILIBILI_SEARCH:
+            case BILIBILI_DIRECTORY_PAGE:
+            case BILIBILI_DIRECTORY_DETAIL:
+            case BILIBILI_VIDEO_DETAIL:
+            case BILIBILI_LYRIC_PRIMARY:
+            case BILIBILI_LYRIC_SEARCH:
+            case BILIBILI_ACCOUNT_STATUS:
+            case NETEASE_SEARCH:
+            case NETEASE_DIRECTORY_DETAIL:
+            case NETEASE_RENDITION_DEFAULT:
+            case NETEASE_LYRIC_PRIMARY:
+            case NETEASE_LYRIC_SEARCH:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    static boolean canRetryReply(AndroidRpcContract.Operation operation,
+            AndroidRpcContract.Terminal terminal, int status, String errorCode) {
+        if (!canRetryOperation(operation) || terminal != AndroidRpcContract.Terminal.ERROR) return false;
+        // Semantic/local success uses HTTP status 0. It is not a failed connection.
+        if (status == 0) return "NETWORK_IO_ERROR".equals(errorCode) || "NETWORK_TIMEOUT".equals(errorCode);
+        return isTransient(status);
+    }
+
     static Decision decide(int completedAttempts, long elapsedMillis, long deadlineMillis,
             boolean cancelled, int httpStatus) {
         if (cancelled) return Decision.noRetry("cancelled");

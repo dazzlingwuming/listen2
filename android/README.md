@@ -1,6 +1,8 @@
 # Listen2 Android · B 站版
 
-下载 [Android 2.35.7-android.2 预览版 APK](https://github.com/dazzlingwuming/listen2/releases/tag/v2.35.7-android.2)。支持 Android 8.0 及以上，下载后安装。
+下载 [Android 2.35.7-android.3 预览版 APK](https://github.com/dazzlingwuming/listen2/releases/tag/v2.35.7-android.3)。支持 Android 8.0 及以上，下载后安装。
+
+本版修复 B 站分 P 解析失败和部分音频节点不可用；修复成功操作重复执行、连续切歌与暂停冲突，加载音频时也可暂停。
 
 共享桌面 2.35.7 的主题与页面，使用 Media3 原生服务播放音频。音乐入口仅提供哔哩哔哩。
 

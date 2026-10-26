@@ -291,7 +291,7 @@ public final class AndroidRpcContractTest {
     public void detailAndManifestHaveClosedPayloadsAndNativeRoutes() throws Exception {
         AndroidRpcContract.TypedRequest detail = AndroidRpcContract.TypedRequest.videoDetail(
                 "detail", 3, "BV1xx411c7mD");
-        assertEquals("https://api.bilibili.com/x/web-interface/view?bvid=BV1xx411c7mD",
+        assertEquals("https://api.bilibili.com/x/player/pagelist?bvid=BV1xx411c7mD",
                 AndroidRpcContract.buildVideoDetailUri(detail).toASCIIString());
 
         AndroidRpcContract.TypedRequest explicit = AndroidRpcContract.TypedRequest.audioManifest(
