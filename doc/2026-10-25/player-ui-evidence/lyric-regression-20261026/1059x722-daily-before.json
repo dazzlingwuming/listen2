@@ -1,0 +1,274 @@
+{
+  "fixtureKey": "1059x722-daily-before",
+  "viewport": {
+    "width": 1059,
+    "height": 722,
+    "requested": "1059x722"
+  },
+  "theme": {
+    "id": "daily",
+    "bodyClass": "body modern-body ng-scope theme-modern-dark theme-designed theme-scenic theme-daily"
+  },
+  "input": {
+    "case": "before",
+    "templateGate": "pre-fix HEAD HTML",
+    "testHook": "served production play.js with an in-memory window hook only",
+    "applyAccepted": true,
+    "manualResultSource": "manual-selection",
+    "expectedOriginalLines": 4,
+    "expectedTranslationLines": 4
+  },
+  "state": {
+    "primaryLyricState": {
+      "state": "synchronized",
+      "trackId": "fixture-manual-lyric-track",
+      "token": 0
+    },
+    "trackId": "fixture-manual-lyric-track",
+    "trackMatches": true,
+    "lyricArrayCount": 8,
+    "originalCount": 4,
+    "translationCount": 4,
+    "lyricSource": "manual-selection",
+    "manualBadgeVisible": false,
+    "searchVisible": true,
+    "aiVisible": true,
+    "offsetControlsVisible": true
+  },
+  "lyric": {
+    "className": "lyric ng-hide",
+    "display": "none",
+    "visibility": "visible",
+    "ngHide": true,
+    "rect": {
+      "x": 0,
+      "y": 0,
+      "top": 0,
+      "right": 0,
+      "bottom": 0,
+      "left": 0,
+      "width": 0,
+      "height": 0
+    },
+    "containerVisible": false,
+    "highlightVisible": false,
+    "highlightText": "把平凡瞬间唱成歌",
+    "highlightColor": "rgb(237, 245, 247)",
+    "highlightTextFill": "rgb(237, 245, 247)",
+    "highlightTextFillVisible": true,
+    "paragraphs": [
+      {
+        "text": "风从窗边轻轻经过",
+        "translation": false,
+        "highlight": false,
+        "visible": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0,
+          "width": 0,
+          "height": 0
+        },
+        "color": "rgb(191, 209, 219)",
+        "textFill": "rgb(191, 209, 219)"
+      },
+      {
+        "text": "The wind passes by the window",
+        "translation": true,
+        "highlight": false,
+        "visible": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0,
+          "width": 0,
+          "height": 0
+        },
+        "color": "rgb(191, 209, 219)",
+        "textFill": "rgb(191, 209, 219)"
+      },
+      {
+        "text": "城市灯光落在肩头",
+        "translation": false,
+        "highlight": false,
+        "visible": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0,
+          "width": 0,
+          "height": 0
+        },
+        "color": "rgb(191, 209, 219)",
+        "textFill": "rgb(191, 209, 219)"
+      },
+      {
+        "text": "City lights fall across my shoulder",
+        "translation": true,
+        "highlight": false,
+        "visible": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0,
+          "width": 0,
+          "height": 0
+        },
+        "color": "rgb(191, 209, 219)",
+        "textFill": "rgb(191, 209, 219)"
+      },
+      {
+        "text": "把平凡瞬间唱成歌",
+        "translation": false,
+        "highlight": true,
+        "visible": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0,
+          "width": 0,
+          "height": 0
+        },
+        "color": "rgb(237, 245, 247)",
+        "textFill": "rgb(237, 245, 247)"
+      },
+      {
+        "text": "Turn each small moment into a song",
+        "translation": true,
+        "highlight": true,
+        "visible": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0,
+          "width": 0,
+          "height": 0
+        },
+        "color": "rgb(237, 245, 247)",
+        "textFill": "rgb(237, 245, 247)"
+      },
+      {
+        "text": "沿着自己的节奏向前",
+        "translation": false,
+        "highlight": false,
+        "visible": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0,
+          "width": 0,
+          "height": 0
+        },
+        "color": "rgb(191, 209, 219)",
+        "textFill": "rgb(191, 209, 219)"
+      },
+      {
+        "text": "Keep moving at our own pace",
+        "translation": true,
+        "highlight": false,
+        "visible": false,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0,
+          "width": 0,
+          "height": 0
+        },
+        "color": "rgb(191, 209, 219)",
+        "textFill": "rgb(191, 209, 219)"
+      }
+    ],
+    "panelBackground": "rgba(0, 0, 0, 0)",
+    "panelBackgroundImage": "none",
+    "panelBorder": "0px none rgb(237, 245, 247)",
+    "panelShadow": "none"
+  },
+  "layout": {
+    "spectrum": {
+      "x": 86,
+      "y": 1105.984375,
+      "top": 1105.984375,
+      "right": 450.765625,
+      "bottom": 1199.84375,
+      "left": 86,
+      "width": 364.765625,
+      "height": 93.859375
+    },
+    "caption": {
+      "x": 86,
+      "y": 1195.84375,
+      "top": 1195.84375,
+      "right": 450.765625,
+      "bottom": 1207.84375,
+      "left": 86,
+      "width": 364.765625,
+      "height": 12
+    },
+    "shelf": {
+      "x": 48.765625,
+      "y": 599,
+      "top": 599,
+      "right": 1010.234375,
+      "bottom": 689,
+      "left": 48.765625,
+      "width": 961.46875,
+      "height": 90
+    },
+    "captionToShelfPx": -608.84375,
+    "dockElapsed": {
+      "x": 423.75,
+      "y": 638.5,
+      "top": 638.5,
+      "right": 452.265625,
+      "bottom": 649.5,
+      "left": 423.75,
+      "width": 28.515625,
+      "height": 11
+    },
+    "dockTotal": {
+      "x": 531.234375,
+      "y": 638.5,
+      "top": 638.5,
+      "right": 559.75,
+      "bottom": 649.5,
+      "left": 531.234375,
+      "width": 28.515625,
+      "height": 11
+    },
+    "dockSeek": {
+      "x": 459.265625,
+      "y": 629.5,
+      "top": 629.5,
+      "right": 524.234375,
+      "bottom": 658.5,
+      "left": 459.265625,
+      "width": 64.96875,
+      "height": 29
+    }
+  },
+  "errors": []
+}

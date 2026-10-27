@@ -1,0 +1,334 @@
+{
+  "fixtureKey": "1059x722-daily-after",
+  "viewport": {
+    "width": 1059,
+    "height": 722,
+    "requested": "1059x722"
+  },
+  "theme": {
+    "id": "daily",
+    "bodyClass": "body modern-body ng-scope theme-modern-dark theme-designed theme-scenic theme-daily"
+  },
+  "input": {
+    "case": "after",
+    "templateGate": "current working HTML",
+    "testHook": "served production play.js with an in-memory window hook only",
+    "applyAccepted": true,
+    "manualResultSource": "manual-selection",
+    "expectedOriginalLines": 4,
+    "expectedTranslationLines": 4
+  },
+  "state": {
+    "primaryLyricState": {
+      "state": "synchronized",
+      "trackId": "fixture-manual-lyric-track",
+      "token": 0
+    },
+    "trackId": "fixture-manual-lyric-track",
+    "trackMatches": true,
+    "lyricArrayCount": 8,
+    "originalCount": 4,
+    "translationCount": 4,
+    "lyricSource": "manual-selection",
+    "manualBadgeVisible": true,
+    "searchVisible": true,
+    "aiVisible": true,
+    "offsetControlsVisible": true
+  },
+  "lyric": {
+    "className": "lyric",
+    "display": "block",
+    "visibility": "visible",
+    "ngHide": false,
+    "rect": {
+      "x": 543.765625,
+      "y": 146,
+      "top": 146,
+      "right": 980.984375,
+      "bottom": 593,
+      "left": 543.765625,
+      "width": 437.21875,
+      "height": 447
+    },
+    "containerVisible": true,
+    "highlightVisible": true,
+    "highlightText": "把平凡瞬间唱成歌",
+    "highlightColor": "rgb(237, 245, 247)",
+    "highlightTextFill": "rgb(237, 245, 247)",
+    "highlightTextFillVisible": true,
+    "paragraphs": [
+      {
+        "text": "风从窗边轻轻经过",
+        "translation": false,
+        "highlight": false,
+        "visible": true,
+        "rect": {
+          "x": 569.765625,
+          "y": 216.296875,
+          "top": 216.296875,
+          "right": 954.984375,
+          "bottom": 245.984375,
+          "left": 569.765625,
+          "width": 385.21875,
+          "height": 29.6875
+        },
+        "color": "rgb(191, 209, 219)",
+        "textFill": "rgb(191, 209, 219)"
+      },
+      {
+        "text": "The wind passes by the window",
+        "translation": true,
+        "highlight": false,
+        "visible": true,
+        "rect": {
+          "x": 569.765625,
+          "y": 253.421875,
+          "top": 253.421875,
+          "right": 954.984375,
+          "bottom": 278.171875,
+          "left": 569.765625,
+          "width": 385.21875,
+          "height": 24.75
+        },
+        "color": "rgb(191, 209, 219)",
+        "textFill": "rgb(191, 209, 219)"
+      },
+      {
+        "text": "城市灯光落在肩头",
+        "translation": false,
+        "highlight": false,
+        "visible": true,
+        "rect": {
+          "x": 569.765625,
+          "y": 292.609375,
+          "top": 292.609375,
+          "right": 954.984375,
+          "bottom": 322.296875,
+          "left": 569.765625,
+          "width": 385.21875,
+          "height": 29.6875
+        },
+        "color": "rgb(191, 209, 219)",
+        "textFill": "rgb(191, 209, 219)"
+      },
+      {
+        "text": "City lights fall across my shoulder",
+        "translation": true,
+        "highlight": false,
+        "visible": true,
+        "rect": {
+          "x": 569.765625,
+          "y": 329.734375,
+          "top": 329.734375,
+          "right": 954.984375,
+          "bottom": 354.484375,
+          "left": 569.765625,
+          "width": 385.21875,
+          "height": 24.75
+        },
+        "color": "rgb(191, 209, 219)",
+        "textFill": "rgb(191, 209, 219)"
+      },
+      {
+        "text": "把平凡瞬间唱成歌",
+        "translation": false,
+        "highlight": true,
+        "visible": true,
+        "rect": {
+          "x": 570.765625,
+          "y": 368.921875,
+          "top": 368.921875,
+          "right": 955.984375,
+          "bottom": 412.59375,
+          "left": 570.765625,
+          "width": 385.21875,
+          "height": 43.671875
+        },
+        "color": "rgb(237, 245, 247)",
+        "textFill": "rgb(237, 245, 247)"
+      },
+      {
+        "text": "Turn each small moment into a song",
+        "translation": true,
+        "highlight": true,
+        "visible": true,
+        "rect": {
+          "x": 569.765625,
+          "y": 423.03125,
+          "top": 423.03125,
+          "right": 954.984375,
+          "bottom": 447.78125,
+          "left": 569.765625,
+          "width": 385.21875,
+          "height": 24.75
+        },
+        "color": "rgb(237, 245, 247)",
+        "textFill": "rgb(237, 245, 247)"
+      },
+      {
+        "text": "沿着自己的节奏向前",
+        "translation": false,
+        "highlight": false,
+        "visible": true,
+        "rect": {
+          "x": 569.765625,
+          "y": 460.78125,
+          "top": 460.78125,
+          "right": 954.984375,
+          "bottom": 490.46875,
+          "left": 569.765625,
+          "width": 385.21875,
+          "height": 29.6875
+        },
+        "color": "rgb(191, 209, 219)",
+        "textFill": "rgb(191, 209, 219)"
+      },
+      {
+        "text": "Keep moving at our own pace",
+        "translation": true,
+        "highlight": false,
+        "visible": true,
+        "rect": {
+          "x": 569.765625,
+          "y": 497.90625,
+          "top": 497.90625,
+          "right": 954.984375,
+          "bottom": 522.65625,
+          "left": 569.765625,
+          "width": 385.21875,
+          "height": 24.75
+        },
+        "color": "rgb(191, 209, 219)",
+        "textFill": "rgb(191, 209, 219)"
+      }
+    ],
+    "panelBackground": "rgba(0, 0, 0, 0)",
+    "panelBackgroundImage": "none",
+    "panelBorder": "0px none rgb(237, 245, 247)",
+    "panelShadow": "none"
+  },
+  "layout": {
+    "stage": {
+      "rect": {
+        "x": 17,
+        "y": 13,
+        "top": 13,
+        "right": 1042,
+        "bottom": 707,
+        "left": 17,
+        "width": 1025,
+        "height": 694
+      },
+      "className": "songdetail-wrapper now-playing-stage",
+      "display": "block",
+      "position": "absolute",
+      "top": "0px",
+      "bottom": "0px",
+      "transform": "matrix(1, 0, 0, 1, 0, 0)",
+      "overflow": "hidden"
+    },
+    "stageLayout": {
+      "rect": {
+        "x": 17,
+        "y": 13,
+        "top": 13,
+        "right": 1042,
+        "bottom": 589,
+        "left": 17,
+        "width": 1025,
+        "height": 576
+      },
+      "className": "playsong-detail now-playing-layout",
+      "display": "grid",
+      "position": "absolute",
+      "top": "0px",
+      "bottom": "118px",
+      "transform": "none",
+      "overflow": "visible"
+    },
+    "left": {
+      "rect": {
+        "x": 58,
+        "y": 90.5,
+        "top": 90.5,
+        "right": 489.765625,
+        "bottom": 554.484375,
+        "left": 58,
+        "width": 431.765625,
+        "height": 463.984375
+      },
+      "className": "detail-head now-playing-left",
+      "display": "flex",
+      "position": "relative",
+      "top": "0px",
+      "bottom": "0px",
+      "transform": "none",
+      "overflow": "hidden auto"
+    },
+    "spectrum": {
+      "x": 86,
+      "y": 518.484375,
+      "top": 518.484375,
+      "right": 461.765625,
+      "bottom": 546.484375,
+      "left": 86,
+      "width": 375.765625,
+      "height": 28
+    },
+    "caption": {
+      "x": 86,
+      "y": 542.484375,
+      "top": 542.484375,
+      "right": 461.765625,
+      "bottom": 554.484375,
+      "left": 86,
+      "width": 375.765625,
+      "height": 12
+    },
+    "shelf": {
+      "x": 48.765625,
+      "y": 599,
+      "top": 599,
+      "right": 1010.234375,
+      "bottom": 689,
+      "left": 48.765625,
+      "width": 961.46875,
+      "height": 90
+    },
+    "captionToShelfPx": 44.515625,
+    "dockElapsed": {
+      "x": 433.765625,
+      "y": 638.5,
+      "top": 638.5,
+      "right": 462.28125,
+      "bottom": 649.5,
+      "left": 433.765625,
+      "width": 28.515625,
+      "height": 11
+    },
+    "dockTotal": {
+      "x": 541.25,
+      "y": 638.5,
+      "top": 638.5,
+      "right": 569.765625,
+      "bottom": 649.5,
+      "left": 541.25,
+      "width": 28.515625,
+      "height": 11
+    },
+    "dockSeek": {
+      "x": 469.28125,
+      "y": 629.5,
+      "top": 629.5,
+      "right": 534.25,
+      "bottom": 658.5,
+      "left": 469.28125,
+      "width": 64.96875,
+      "height": 29
+    }
+  },
+  "errors": [
+    "Uncaught IndexSizeError: Failed to execute 'arc' on 'CanvasRenderingContext2D': The radius provided (-3.601) is negative.",
+    "Uncaught IndexSizeError: Failed to execute 'arc' on 'CanvasRenderingContext2D': The radius provided (-3.601) is negative."
+  ]
+}

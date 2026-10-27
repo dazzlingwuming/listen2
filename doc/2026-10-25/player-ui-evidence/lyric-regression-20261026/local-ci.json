@@ -1,0 +1,114 @@
+{
+  "startedAt": "2026-10-27T01:05:33.442Z",
+  "timezone": "America/Los_Angeles",
+  "root": "/Users/fluenteng/gsd-workspaces/listen2-mac-daily-theme-20261025/listen1_desktop",
+  "branch": "fix/lyric-visible-20261026",
+  "head": "13e8ee85bd56ca3c9fe68636038c9b8f16e14475",
+  "worktreeBefore": " M app/listen1_chrome_extension/listen1.html\n M app/listen1_chrome_extension/package.json\n M \"doc/2026-10-25/\\346\\222\\255\\346\\224\\276\\351\\241\\265\\351\\242\\221\\350\\260\\261\\351\\201\\277\\350\\256\\251\\344\\270\\216\\350\\277\\233\\345\\272\\246\\346\\227\\266\\351\\227\\264-2026-10-25\\350\\207\\2632026-10-26.md\"\n?? app/listen1_chrome_extension/test/desktop_lyric_visibility.test.js\n",
+  "host": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "node": "v24.15.0"
+  },
+  "runtime": "native; Docker not used",
+  "stages": [
+    {
+      "label": "desktop-lyric-flow",
+      "command": [
+        "node",
+        "test/desktop_lyric_visibility.test.js"
+      ],
+      "cwd": "/Users/fluenteng/gsd-workspaces/listen2-mac-daily-theme-20261025/listen1_desktop/app/listen1_chrome_extension",
+      "startedAt": "2026-10-27T01:05:33.511Z",
+      "endedAt": "2026-10-27T01:05:33.545Z",
+      "exitCode": 0
+    },
+    {
+      "label": "manual-picker",
+      "command": [
+        "node",
+        "test/manual_lyric_search_ui.test.js"
+      ],
+      "cwd": "/Users/fluenteng/gsd-workspaces/listen2-mac-daily-theme-20261025/listen1_desktop/app/listen1_chrome_extension",
+      "startedAt": "2026-10-27T01:05:33.545Z",
+      "endedAt": "2026-10-27T01:05:33.571Z",
+      "exitCode": 0
+    },
+    {
+      "label": "native-lyric-contract",
+      "command": [
+        "node",
+        "test/android_native_lyric_state.test.js"
+      ],
+      "cwd": "/Users/fluenteng/gsd-workspaces/listen2-mac-daily-theme-20261025/listen1_desktop/app/listen1_chrome_extension",
+      "startedAt": "2026-10-27T01:05:33.571Z",
+      "endedAt": "2026-10-27T01:05:33.595Z",
+      "exitCode": 0
+    },
+    {
+      "label": "player-layout-contract",
+      "command": [
+        "node",
+        "test/player_dock_layout_contract.test.js"
+      ],
+      "cwd": "/Users/fluenteng/gsd-workspaces/listen2-mac-daily-theme-20261025/listen1_desktop/app/listen1_chrome_extension",
+      "startedAt": "2026-10-27T01:05:33.595Z",
+      "endedAt": "2026-10-27T01:05:33.621Z",
+      "exitCode": 0
+    },
+    {
+      "label": "new-test-syntax",
+      "command": [
+        "node",
+        "--check",
+        "test/desktop_lyric_visibility.test.js"
+      ],
+      "cwd": "/Users/fluenteng/gsd-workspaces/listen2-mac-daily-theme-20261025/listen1_desktop/app/listen1_chrome_extension",
+      "startedAt": "2026-10-27T01:05:33.621Z",
+      "endedAt": "2026-10-27T01:05:33.639Z",
+      "exitCode": 0
+    },
+    {
+      "label": "new-test-lint",
+      "command": [
+        "npx",
+        "--no-install",
+        "eslint",
+        "test/desktop_lyric_visibility.test.js"
+      ],
+      "cwd": "/Users/fluenteng/gsd-workspaces/listen2-mac-daily-theme-20261025/listen1_desktop/app/listen1_chrome_extension",
+      "startedAt": "2026-10-27T01:05:33.639Z",
+      "endedAt": "2026-10-27T01:05:34.228Z",
+      "exitCode": 0
+    },
+    {
+      "label": "new-test-format",
+      "command": [
+        "npx",
+        "--no-install",
+        "prettier",
+        "--check",
+        "test/desktop_lyric_visibility.test.js"
+      ],
+      "cwd": "/Users/fluenteng/gsd-workspaces/listen2-mac-daily-theme-20261025/listen1_desktop/app/listen1_chrome_extension",
+      "startedAt": "2026-10-27T01:05:34.228Z",
+      "endedAt": "2026-10-27T01:05:34.465Z",
+      "exitCode": 0
+    },
+    {
+      "label": "diff-check",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "cwd": "/Users/fluenteng/gsd-workspaces/listen2-mac-daily-theme-20261025/listen1_desktop",
+      "startedAt": "2026-10-27T01:05:34.465Z",
+      "endedAt": "2026-10-27T01:05:34.482Z",
+      "exitCode": 0
+    }
+  ],
+  "endedAt": "2026-10-27T01:05:34.482Z",
+  "pass": true,
+  "worktreeAfter": " M app/listen1_chrome_extension/listen1.html\n M app/listen1_chrome_extension/package.json\n M \"doc/2026-10-25/\\346\\222\\255\\346\\224\\276\\351\\241\\265\\351\\242\\221\\350\\260\\261\\351\\201\\277\\350\\256\\251\\344\\270\\216\\350\\277\\233\\345\\272\\246\\346\\227\\266\\351\\227\\264-2026-10-25\\350\\207\\2632026-10-26.md\"\n?? app/listen1_chrome_extension/test/desktop_lyric_visibility.test.js\n"
+}

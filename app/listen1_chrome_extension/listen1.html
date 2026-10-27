@@ -8468,7 +8468,7 @@
                             </div>
                             <div
                               class="lyric"
-                              ng-show="primaryLyricState.state === 'content' && lyricArray && lyricArray.length"
+                              ng-show="currentPlaying.id === primaryLyricState.trackId && ['content', 'synchronized', 'text-only', 'insufficient-timestamp'].indexOf(primaryLyricState.state) !== -1 && lyricArray && lyricArray.length"
                             >
                               <div class="placeholder"></div>
                               <p
@@ -8482,7 +8482,7 @@
                             </div>
                             <div
                               class="now-playing-empty-lyrics"
-                              ng-if="primaryLyricState.state === 'loading'"
+                              ng-if="currentPlaying.id === primaryLyricState.trackId && primaryLyricState.state === 'loading'"
                               role="status"
                               aria-live="polite"
                               aria-busy="true"
@@ -8497,7 +8497,7 @@
                             </div>
                             <div
                               class="now-playing-empty-lyrics"
-                              ng-if="primaryLyricState.state === 'unavailable' || (primaryLyricState.state === 'idle' && (!lyricArray || lyricArray.length === 0))"
+                              ng-if="currentPlaying.id === primaryLyricState.trackId && (['unavailable', 'no-lyric', 'provider-refusal', 'duration-mismatch', 'cancelled', 'idle'].indexOf(primaryLyricState.state) !== -1 || (['content', 'synchronized', 'text-only', 'insufficient-timestamp'].indexOf(primaryLyricState.state) !== -1 && (!lyricArray || lyricArray.length === 0)))"
                               role="status"
                               aria-live="polite"
                             >
@@ -8506,7 +8506,7 @@
                             </div>
                             <div
                               class="now-playing-empty-lyrics"
-                              ng-if="primaryLyricState.state === 'error'"
+                              ng-if="currentPlaying.id === primaryLyricState.trackId && ['error', 'timeout', 'schema-error'].indexOf(primaryLyricState.state) !== -1"
                               role="status"
                               aria-live="polite"
                             >
