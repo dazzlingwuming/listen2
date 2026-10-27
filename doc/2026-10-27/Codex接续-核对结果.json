@@ -1,0 +1,22 @@
+{
+  "status": "PASS",
+  "checkedAt": "2026-10-27",
+  "checks": {
+    "handoffKeyPathsExist": true,
+    "commitsExistAndFixPresent": true,
+    "localCiPass8Exit0": true,
+    "afterFixture1059VisibleAndClearanceMatches": true,
+    "afterFixture1059TransparentPanelMatches": true,
+    "candidateDirectoryAbsent": true,
+    "priorPackageReceiptA0eac89": true,
+    "handoffStatesPushMergeBuildPublishInstallPending": true
+  },
+  "transparencyEvidence": {
+    "file": "doc/2026-10-25/player-ui-evidence/lyric-regression-20261026/1059x722-daily-after.json",
+    "fields": {
+      "lyric.panelBackground": "rgba(0, 0, 0, 0)",
+      "lyric.panelBackgroundImage": "none",
+      "lyric.panelShadow": "none"
+    }
+  }
+}
