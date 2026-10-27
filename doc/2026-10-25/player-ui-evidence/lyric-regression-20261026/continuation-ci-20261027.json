@@ -1,0 +1,59 @@
+{
+  "startedAt": "2026-10-27T10:28:09.425+08:00",
+  "endedAt": "2026-10-27T10:28:09.468+08:00",
+  "timezone": "CST",
+  "root": "/Users/fluenteng/gsd-workspaces/listen2-mac-daily-theme-20261025/listen1_desktop",
+  "branch": "fix/lyric-visible-20261026",
+  "head": "0e298112cb2ce54296fbd487c6973b94e184a503",
+  "worktreeStatus": "M \"doc/2026-10-25/\\346\\222\\255\\346\\224\\276\\351\\241\\265\\351\\242\\221\\350\\260\\261\\351\\201\\277\\350\\256\\251\\344\\270\\216\\350\\277\\233\\345\\272\\246\\346\\227\\266\\351\\227\\264-2026-10-25\\350\\207\\2632026-10-27.md\"",
+  "previousEvidence": {
+    "path": "doc/2026-10-25/player-ui-evidence/lyric-regression-20261026/local-ci.json",
+    "startedAt": "2026-10-27T01:05:33.442Z",
+    "endedAt": "2026-10-27T01:05:34.482Z",
+    "head": "13e8ee85bd56ca3c9fe68636038c9b8f16e14475",
+    "allEightExitZero": true
+  },
+  "applicability": {
+    "businessInputsAtE867AndHeadIdentical": true,
+    "businessOrBuildInputDiffNamesFromE867ToHead": [],
+    "priorEvidenceWorktreeStateContainedCorrespondingHtmlPackageAndNewTestChanges": true
+  },
+  "host": {
+    "platform": "macOS-26.4-arm64-arm-64bit",
+    "node": "v24.15.0",
+    "docker": "not used"
+  },
+  "stages": [
+    {
+      "label": "desktop-lyric-flow",
+      "command": [
+        "node",
+        "test/desktop_lyric_visibility.test.js"
+      ],
+      "cwd": "/Users/fluenteng/gsd-workspaces/listen2-mac-daily-theme-20261025/listen1_desktop/app/listen1_chrome_extension",
+      "startedAt": "2026-10-27T10:28:09.425+08:00",
+      "endedAt": "2026-10-27T10:28:09.457+08:00",
+      "exitCode": 0,
+      "stdout": "desktop lyric visibility tests passed\n",
+      "stderr": ""
+    },
+    {
+      "label": "diff-check",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "cwd": "/Users/fluenteng/gsd-workspaces/listen2-mac-daily-theme-20261025/listen1_desktop",
+      "startedAt": "2026-10-27T10:28:09.457+08:00",
+      "endedAt": "2026-10-27T10:28:09.468+08:00",
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "pass": true,
+  "coverageLimits": [
+    "Only the new desktop lyric regression and git diff --check were re-run. Prior eight-stage local CI is applicable: e867c91..HEAD changes no app, script, package, or workflow inputs; the original CI dirty-tree HTML/package/test changes correspond to the committed e867c91 inputs. No full repository suite or release/build workflow was run."
+  ]
+}
