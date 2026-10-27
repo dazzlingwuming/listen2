@@ -1,0 +1,19 @@
+{
+  "verified": true,
+  "scope": "local handoff syntax and mocked publication contracts only; no remote writes",
+  "at": "2026-10-26T18:34:28.507628-07:00",
+  "sourceFixCommit": "e867c910c2f7df1ddcef5a7229587bc77badea3a",
+  "commands": [
+    "node --check .task-workspaces/player-layout-progress-20261025/scratch/lyric-publish/publish.cjs",
+    "node .task-workspaces/player-layout-progress-20261025/scratch/lyric-publish/publish.test.cjs",
+    "node .task-workspaces/player-layout-progress-20261025/scratch/lyric-publish/publish.cjs --check"
+  ],
+  "exitCodes": [
+    0,
+    0,
+    0
+  ],
+  "pushExitCode": 128,
+  "publicationPerformed": false,
+  "currentUserAppUpdated": false
+}
