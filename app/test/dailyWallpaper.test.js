@@ -3,24 +3,42 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const test = require("node:test");
 const { createDailyWallpaperService } = require("../dailyWallpaper");
+const TASK_ID =
+  process.env.LISTEN2_TASK_ID || "daily-wallpaper-refresh-20261028";
+if (!/^[a-z0-9][a-z0-9-]{0,79}$/.test(TASK_ID)) {
+  throw new Error("Invalid LISTEN2_TASK_ID");
+}
 const ROOT = path.join(
   __dirname,
   "../..",
-  ".task-workspaces/macos-daily-theme-20261025/scratch/daily-backend"
+  `.task-workspaces/${TASK_ID}/scratch/daily-backend`
 );
 const META =
   "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8&mkt=zh-CN";
 const JPEG = Buffer.from([255, 216, 255, 224, 0, 1, 2, 3]);
 const PNG = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1]);
-const entry = (overrides = {}) => ({
-  startdate: "20261025",
-  wp: true,
-  url: "/th?id=OHR.Test_1920x1080.jpg",
-  title: "A landscape",
-  copyright: "Photographer ©",
-  copyrightlink: "https://www.bing.com/search?q=landscape",
-  ...overrides,
-});
+const compactUtc = (date) =>
+  date
+    .toISOString()
+    .replace(/[-:TZ.]/g, "")
+    .slice(0, 12);
+const entry = (overrides = {}) => {
+  const localNoon = new Date(2026, 9, 25, 12);
+  const fullstartdate = compactUtc(localNoon);
+  const startdate = fullstartdate.slice(0, 8);
+  const nextLocalDay = new Date(2026, 9, 26, 12);
+  return {
+    startdate,
+    fullstartdate,
+    enddate: nextLocalDay.toISOString().slice(0, 10).replace(/-/g, ""),
+    wp: true,
+    url: "/th?id=OHR.Test_1920x1080.jpg",
+    title: "A landscape",
+    copyright: "Photographer ©",
+    copyrightlink: "https://www.bing.com/search?q=landscape",
+    ...overrides,
+  };
+};
 const response = (bytes, mime, init = {}) =>
   new Response(bytes, {
     status: 200,
@@ -39,16 +57,21 @@ async function setup(t, options = {}) {
   t.after(() => fs.rm(cacheDirectory, { recursive: true, force: true }));
   const calls = [];
   let time = new Date(2026, 9, 25, 12);
+  const { fetch: fetchOverride, ...configOptions } = options;
   const fetch = async (url, fetchOptions) => {
     calls.push({ url, options: fetchOptions });
-    return url === META ? metadata() : response(JPEG, "image/jpeg");
+    return fetchOverride
+      ? fetchOverride(url, fetchOptions)
+      : url === META
+      ? metadata()
+      : response(JPEG, "image/jpeg");
   };
   const config = {
     cacheDirectory,
     fetch,
     decodeImage: () => ({ width: 1920, height: 1080 }),
     now: () => time,
-    ...options,
+    ...configOptions,
   };
   return {
     calls,
@@ -118,7 +141,12 @@ test("local date wins over UTC/market future record and permission must be expli
       selected.push(url);
       return url === META
         ? metadata([
-            entry({ startdate: "20261026", url: "/th?id=future" }),
+            entry({
+              startdate: "20261026",
+              fullstartdate: "202610261600",
+              enddate: "20261027",
+              url: "/th?id=future",
+            }),
             entry(),
           ])
         : response(JPEG, "image/jpeg");
@@ -137,6 +165,167 @@ test("local date wins over UTC/market future record and permission must be expli
     assert.equal(result.errorCode, "no-eligible-image");
     assert.equal(result.ok, false);
   }
+});
+
+test("selects by Bing fullstartdate in the runtime local calendar and keeps a daily cache", async (t) => {
+  await fs.mkdir(ROOT, { recursive: true });
+  const scratchRoot = JSON.stringify(ROOT);
+  const script = String.raw`
+    const assert = require('node:assert/strict');
+    const fs = require('node:fs/promises');
+    const path = require('node:path');
+    const { createDailyWallpaperService } = require(${JSON.stringify(
+      require.resolve("../dailyWallpaper")
+    )});
+    const META = 'https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8&mkt=zh-CN';
+    const JPEG = Buffer.from([255,216,255,224,0,1]);
+    const records = [
+      { startdate: '20261027', fullstartdate: '202610271600', enddate: '20261028', wp: true, url: '/th?id=OHR.Shanghai.jpg', copyrightlink: 'https://www.bing.com/search?q=shanghai' },
+      { startdate: '20261028', fullstartdate: '202610281600', enddate: '20261029', wp: true, url: '/th?id=OHR.NextDay.jpg', copyrightlink: 'https://www.bing.com/search?q=next' }
+    ];
+    let now = new Date('2026-10-28T01:37:00Z');
+    const calls = [];
+    const fetch = async (url, options) => {
+      calls.push({url, options});
+      return url === META
+        ? new Response(JSON.stringify({images: records}), {status: 200, headers: {'content-type':'application/json'}})
+        : new Response(JPEG, {status: 200, headers: {'content-type':'image/jpeg'}});
+    };
+    (async () => {
+      const cacheDirectory = await fs.mkdtemp(path.join(${scratchRoot}, 'wallpaper-shanghai-'));
+      try {
+        const config = {cacheDirectory, fetch, decodeImage: () => ({width:1,height:1}), now: () => now};
+        const service = createDailyWallpaperService(config);
+        const fresh = await service.get();
+        assert.equal(fresh.status, 'fresh');
+        assert.equal(fresh.requestedDate, '2026-10-28');
+        assert.equal(fresh.wallpaper.date, '2026-10-28');
+        assert.equal(fresh.wallpaper.sourceDate, '2026-10-28');
+        assert.equal(calls[1].url, 'https://www.bing.com/th?id=OHR.Shanghai.jpg');
+        assert.equal((await service.get()).status, 'cached');
+        assert.equal((await createDailyWallpaperService({...config, fetch: () => {throw Error('same-day restart fetched')}}).get()).status, 'cached');
+        assert.equal(calls.length, 2);
+        now = new Date('2026-10-28T16:01:00Z');
+        const nextDay = await service.get();
+        assert.equal(nextDay.status, 'fresh');
+        assert.equal(nextDay.requestedDate, '2026-10-29');
+        assert.equal(nextDay.wallpaper.sourceDate, '2026-10-29');
+        assert.equal(calls[3].url, 'https://www.bing.com/th?id=OHR.NextDay.jpg');
+      } finally { await fs.rm(cacheDirectory, {recursive:true, force:true}); }
+    })().catch((error) => {console.error(error); process.exitCode = 1;});
+  `;
+  const child = require("node:child_process").spawnSync(
+    process.execPath,
+    ["-e", script],
+    {
+      encoding: "utf8",
+      env: { ...process.env, TZ: "Asia/Shanghai" },
+      timeout: 10000,
+    }
+  );
+  assert.equal(child.status, 0, child.stderr);
+  t.diagnostic("Shanghai timezone isolated in a child process");
+});
+
+test("UTC and Los Angeles derive eligibility from local date across calendar boundaries", async (t) => {
+  await fs.mkdir(ROOT, { recursive: true });
+  const scratchRoot = JSON.stringify(ROOT);
+  const script = String.raw`
+    const assert = require('node:assert/strict');
+    const fs = require('node:fs/promises');
+    const path = require('node:path');
+    const { createDailyWallpaperService } = require(${JSON.stringify(
+      require.resolve("../dailyWallpaper")
+    )});
+    const image = Buffer.from([255,216,255,224,0,1]);
+    const fullstartdate = '202612312359';
+    const entry = { startdate: '20261231', fullstartdate, enddate: '20270101', wp: true, url: '/th?id=OHR.Boundary.jpg', copyrightlink: 'https://www.bing.com/search?q=boundary' };
+    const fetch = async (url) => url.includes('HPImageArchive')
+      ? new Response(JSON.stringify({ images: [entry] }), { status: 200, headers: { 'content-type': 'application/json' } })
+      : new Response(image, { status: 200, headers: { 'content-type': 'image/jpeg' } });
+    (async () => {
+      const cacheDirectory = await fs.mkdtemp(path.join(${scratchRoot}, 'wallpaper-tz-'));
+      try {
+        const service = createDailyWallpaperService({ cacheDirectory, fetch, decodeImage: () => ({width: 1, height: 1}), now: () => new Date('2027-01-01T00:30:00Z') });
+        const result = await service.get();
+        assert.equal(result.requestedDate, process.env.EXPECTED_DATE);
+        if (process.env.EXPECTED_DATE === '2026-12-31') {
+          assert.equal(result.status, 'fresh');
+          assert.equal(result.wallpaper.sourceDate, '2026-12-31');
+        } else {
+          assert.equal(result.errorCode, 'no-eligible-image');
+          assert.equal((await fs.readdir(cacheDirectory)).length, 0);
+        }
+      } finally { await fs.rm(cacheDirectory, {recursive: true, force: true}); }
+    })().catch((error) => { console.error(error); process.exitCode = 1; });
+  `;
+  for (const [tz, expected] of [
+    ["UTC", "2027-01-01"],
+    ["America/Los_Angeles", "2026-12-31"],
+  ]) {
+    const child = require("node:child_process").spawnSync(
+      process.execPath,
+      ["-e", script],
+      {
+        encoding: "utf8",
+        env: { ...process.env, TZ: tz, EXPECTED_DATE: expected },
+        timeout: 10000,
+      }
+    );
+    assert.equal(child.status, 0, `${tz}: ${child.stderr}`);
+  }
+  t.diagnostic(
+    "TZ isolated in child processes; parent test process timezone unchanged"
+  );
+});
+
+test("rejects malformed, impossible, future and unlicensed Bing records without downloading or caching", async (t) => {
+  const invalid = [
+    entry({ fullstartdate: undefined }),
+    entry({ fullstartdate: "2026102512" }),
+    entry({ fullstartdate: "202602300000" }),
+    entry({ fullstartdate: "202610252460" }),
+    entry({ fullstartdate: "202610261600", startdate: "20261026" }),
+    entry({
+      fullstartdate: "202610261600",
+      startdate: "20261026",
+      enddate: "20261027",
+    }),
+    entry({ fullstartdate: "202610251200", wp: false }),
+  ];
+  for (const candidate of invalid) {
+    const f = await setup(t, {
+      now: () => new Date("2026-10-25T12:00:00Z"),
+      fetch: async (url) =>
+        url === META ? metadata([candidate]) : response(JPEG, "image/jpeg"),
+    });
+    const result = await f.service.get();
+    assert.equal(
+      result.errorCode,
+      "no-eligible-image",
+      JSON.stringify(candidate)
+    );
+    assert.equal(f.calls.length, 1);
+    assert.deepEqual(await fs.readdir(f.cacheDirectory), []);
+  }
+  const f = await setup(t, {
+    now: () => new Date("2026-10-25T12:00:00Z"),
+    fetch: async (url) =>
+      url === META
+        ? metadata([
+            entry({ fullstartdate: "202610251200", wp: false }),
+            entry({
+              startdate: "20261024",
+              fullstartdate: "202610241559",
+              enddate: "20261025",
+              url: "/th?id=historical",
+            }),
+          ])
+        : response(JPEG, "image/jpeg"),
+  });
+  assert.equal((await f.service.get()).errorCode, "no-eligible-image");
+  assert.equal(f.calls.length, 1);
+  assert.deepEqual(await fs.readdir(f.cacheDirectory), []);
 });
 
 test("failure preserves last-good bytes, applies backoff and retries after thirty minutes", async (t) => {

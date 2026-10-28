@@ -1,0 +1,91 @@
+{
+  "pass": false,
+  "sourceCommit": "5a710ecad211c333f63ecb0d9bee8fd4ad5be60a",
+  "sourceWorktreeDirty": true,
+  "sourceFiles": [
+    {
+      "file": "app/listen1_chrome_extension/listen1.html",
+      "sha256": "dc227ddab740114db404079741dcd0319d13b79cfa1aaab91a5aade4d17ddf62"
+    },
+    {
+      "file": "app/listen1_chrome_extension/css/redesign.css",
+      "sha256": "c23ec664cc82a8ff02a32d18c5d6818efcb2d08b44645caaceca6133702c0eb2"
+    },
+    {
+      "file": "app/listen1_chrome_extension/css/theme-collection.css",
+      "sha256": "647d33fc77f3f5a5cfba5863828f3b54e9b2b8871af892b63275ba3a6d764d2a"
+    },
+    {
+      "file": "app/listen1_chrome_extension/js/controller/play.js",
+      "sha256": "8cae0de53d3cf1bae5a035fc0b7555ac472a14600ac92fda8578e97e63af7057"
+    },
+    {
+      "file": "app/main.js",
+      "sha256": "ae5318458b9ca92a1237a61c02ba65437c7befc13cc0ac3bee7e49ef337355fe"
+    },
+    {
+      "file": "app/dailyWallpaper.js",
+      "sha256": "3cab341789fb180eee75f7607cd1ea886ac432ebf67983fbba89645c92239aed"
+    },
+    {
+      "file": "app/listen1_chrome_extension/js/daily_theme.js",
+      "sha256": "587623c351ceba4db459363c35d0f9f9e3436bca5a0e1510e6990f77513bfb77"
+    },
+    {
+      "file": "app/test/dailyWallpaper.test.js",
+      "sha256": "87ad3fb2cff3eb6a9b9dfceb5584575915bfc288c6e24b656582a9d4fc4d62d2"
+    },
+    {
+      "file": "package.json",
+      "sha256": "ebd1034a46ce8833a5c752ba2ae73a0a4a1338dc88f823b329f0d47ebb69191a"
+    },
+    {
+      "file": "package-lock.json",
+      "sha256": "9d779697d945076f8f86e833af63d80f73f6587ef0f28b7267598f047425dc0b"
+    },
+    {
+      "file": "app/package.json",
+      "sha256": "537a6deb73ed7562b8cd16b2e9f5030640df66b14f5925ae7f8b3a5e77bcfb4d"
+    }
+  ],
+  "branch": "fix/daily-wallpaper-refresh-20261028",
+  "startedAt": "2026-10-28T01:50:33.487Z",
+  "timezone": "Asia/Shanghai",
+  "environment": {
+    "node": "v24.15.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "container": "not applicable; native local checks"
+  },
+  "coverageLimits": [
+    "Only daily-wallpaper-related tests; no whole-repository or Android suite",
+    "Native live network check is a separate pinned receipt; no update of the current user App"
+  ],
+  "stages": [
+    {
+      "name": "daily-feature-tests",
+      "startedAt": "2026-10-28T01:50:33.496Z",
+      "commands": [
+        {
+          "argv": [
+            "/Users/fluenteng/.local/node-v24.15.0-darwin-arm64/bin/node",
+            "--test",
+            "app/test/dailyWallpaper.test.js",
+            "app/test/dailyWallpaperIpc.test.js",
+            "app/test/dailyTheme.test.js",
+            "app/test/dailyThemeController.test.js",
+            "app/test/dailyWallpaperPalette.test.js"
+          ],
+          "exitCode": 1,
+          "signal": null,
+          "stdout": "✔ inactive theme does no IPC; selection hydrates without network before refresh and decodes once (5.43075ms)\n✔ local date is calendar-based; midnight and focus refresh once and same-day focus does not (1.510292ms)\n✔ stale fallback remains usable; failed refresh retries after 30 minutes without a busy timer (1.529708ms)\n✔ missing cache and offline request keep selected fallback with unavailable state (1.3645ms)\n✔ deselection cancels immediately and neither late cache nor decode can replace another theme (1.414083ms)\n✔ invalid new image preserves last good image and reports stale (0.398ms)\n✔ gallery adds exactly one desktop daily option and does no daily IPC before selection (6.669ms)\n✔ saved daily initializes before restoration, applies palette and preserves personal storage (3.618084ms)\n✔ custom import/remove retains one daily option and custom remains independent (1.939542ms)\n✔ no cache/offline keeps daily selected on bundled background; late responses cannot change chosen theme (2.810708ms)\n✔ gallery preview stays local and source uses validated attribution with a Bing fallback (3.627083ms)\n✔ fixed-source download, local-day selection, disk restart and same-day network suppression (20.855125ms)\n✔ cache-only hydration never fetches, including absent, stale and corrupt caches (2.170542ms)\n✔ local date wins over UTC/market future record and permission must be explicit (3.844959ms)\n✔ selects by Bing fullstartdate in the runtime local calendar and keeps a daily cache (48.885125ms)\nℹ Shanghai timezone isolated in a child process\n✔ UTC and Los Angeles derive eligibility from local date across calendar boundaries (72.536167ms)\nℹ TZ isolated in child processes; parent test process timezone unchanged\n✔ rejects malformed, impossible, future and unlicensed Bing records without downloading or caching (2.968209ms)\n✔ failure preserves last-good bytes, applies backoff and retries after thirty minutes (1.811042ms)\n✔ deduplicates refresh and cancels an ignored abort without late publication (16.847792ms)\n✔ cancellation during asynchronous cache read prevents a new refresh (0.453333ms)\n✔ metadata and total deadlines finish even if injected fetch ignores abort (33.467292ms)\n✔ enforces streamed size limits without trusting content length (3.12775ms)\n✔ rejects redirects, off-host URLs, credentials, ports, fragments and unsafe attribution (5.5395ms)\n✔ requires raster MIME, matching magic bytes, native decoding and bounded dimensions (4.31425ms)\n✔ cache schema and actual native decode are revalidated after restart (6.389625ms)\n✔ bounded plain text metadata is returned without executable markup (0.8465ms)\n✔ cancellation while decoding cannot publish late native results (12.041375ms)\n✔ stalled stream and ignored stream cancellation still obey total deadline (20.969625ms)\n✔ only the actual main player main frame can get or cancel wallpapers (1.168375ms)\n✔ invalid payloads and closed windows cannot start service access (0.146541ms)\n✔ desktop wiring keeps network policy and native decode in the main process (0.330584ms)\n✔ daily data URLs use the same bounded rasterization and contrast palette as personal images (2.005417ms)\n✔ remote URLs, active formats, malformed and oversized data fail before image decoding (0.970917ms)\n✔ broken and hung decoders fail with bounded lifetime and revoke personal blob URLs (0.551ms)\n✖ daily stage text, muted text and accents stay readable over a white photograph (0.800792ms)\nℹ tests 35\nℹ suites 0\nℹ pass 34\nℹ fail 1\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 307.143917\n\n✖ failing tests:\n\ntest at app/test/dailyWallpaperPalette.test.js:120:1\n✖ daily stage text, muted text and accents stay readable over a white photograph (0.800792ms)\n  AssertionError [ERR_ASSERTION]: daily text needs a photo-independent scrim\n      at TestContext.<anonymous> (/Users/fluenteng/gsd-workspaces/listen2-mac-daily-theme-20261025/listen1_desktop/app/test/dailyWallpaperPalette.test.js:135:3)\n      at Test.runInAsyncScope (node:async_hooks:227:14)\n      at Test.run (node:internal/test_runner/test:1201:25)\n      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)\n      at Test.postRun (node:internal/test_runner/test:1330:19)\n      at Test.run (node:internal/test_runner/test:1258:12)\n      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {\n    generatedMessage: false,\n    code: 'ERR_ASSERTION',\n    actual: null,\n    expected: true,\n    operator: '==',\n    diff: 'simple'\n  }\n",
+          "stderr": ""
+        }
+      ],
+      "exitCode": 1,
+      "endedAt": "2026-10-28T01:50:33.827Z"
+    }
+  ],
+  "endedAt": "2026-10-28T01:50:33.827Z",
+  "inputsUnchanged": true
+}
