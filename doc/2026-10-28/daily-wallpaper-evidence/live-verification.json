@@ -1,0 +1,58 @@
+{
+  "verified": true,
+  "startedAt": "2026-10-28T01:46:58.192Z",
+  "endedAt": "2026-10-28T01:47:00.575Z",
+  "timezone": "Asia/Shanghai",
+  "electron": "32.3.2",
+  "status": "fresh",
+  "requestedDate": "2026-10-28",
+  "wallpaperDate": "2026-10-28",
+  "title": "历史守望之地",
+  "copyright": "库涅季采山城堡，波希米亚，捷克 (© Marek Saroch/Alamy)",
+  "attributionUrl": "https://www.bing.com/search?q=%E5%BA%93%E6%B6%85%E5%AD%A3%E9%87%87%E5%B1%B1%E5%9F%8E%E5%A0%A1&form=hpcapt&mkt=zh-cn",
+  "imageBytes": 341114,
+  "imageSha256": "e65f0b634b80a39f8cc92c9d26f222b552c67114c0a689eef678b45dd8bb7874",
+  "size": {
+    "width": 1920,
+    "height": 1080
+  },
+  "networkRequests": 2,
+  "sameDayCache": "cached",
+  "diskRestartCache": true,
+  "isolatedProfile": true,
+  "currentUserAppModified": false,
+  "coverage": "Real Bing metadata and image via isolated Electron default session, native decoder and same-day disk cache; no user App or system proxy settings changed",
+  "sourceCommit": "5a710ecad211c333f63ecb0d9bee8fd4ad5be60a",
+  "sourceWorktreeDirty": true,
+  "sourceFiles": [
+    {
+      "file": "app/listen1_chrome_extension/listen1.html",
+      "sha256": "dc227ddab740114db404079741dcd0319d13b79cfa1aaab91a5aade4d17ddf62"
+    },
+    {
+      "file": "app/listen1_chrome_extension/css/redesign.css",
+      "sha256": "c23ec664cc82a8ff02a32d18c5d6818efcb2d08b44645caaceca6133702c0eb2"
+    },
+    {
+      "file": "app/listen1_chrome_extension/css/theme-collection.css",
+      "sha256": "647d33fc77f3f5a5cfba5863828f3b54e9b2b8871af892b63275ba3a6d764d2a"
+    },
+    {
+      "file": "app/listen1_chrome_extension/js/controller/play.js",
+      "sha256": "8cae0de53d3cf1bae5a035fc0b7555ac472a14600ac92fda8578e97e63af7057"
+    },
+    {
+      "file": "app/main.js",
+      "sha256": "ae5318458b9ca92a1237a61c02ba65437c7befc13cc0ac3bee7e49ef337355fe"
+    },
+    {
+      "file": "app/dailyWallpaper.js",
+      "sha256": "3cab341789fb180eee75f7607cd1ea886ac432ebf67983fbba89645c92239aed"
+    },
+    {
+      "file": "app/listen1_chrome_extension/js/daily_theme.js",
+      "sha256": "587623c351ceba4db459363c35d0f9f9e3436bca5a0e1510e6990f77513bfb77"
+    }
+  ],
+  "inputBinding": "Runtime files unchanged between live run and this snapshot; final commit must match all hashes"
+}

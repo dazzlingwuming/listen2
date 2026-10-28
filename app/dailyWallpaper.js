@@ -24,6 +24,21 @@ function validDate(value) {
     parsed.toISOString().slice(0, 10) === value
   );
 }
+function sourceStartTime(value) {
+  if (typeof value !== "string" || !/^\d{12}$/.test(value)) return null;
+  const parsed = new Date(
+    `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(
+      6,
+      8
+    )}T${value.slice(8, 10)}:${value.slice(10, 12)}:00Z`
+  );
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    parsed.toISOString().slice(0, 16).replace(/[-T:]/g, "") !== value
+  )
+    return null;
+  return parsed;
+}
 function plainText(value, maximum) {
   return typeof value === "string"
     ? value
@@ -317,15 +332,19 @@ function createDailyWallpaperService({
       } catch (_) {
         throw failure("invalid-metadata");
       }
-      const compactDate = requestedDate.replace(/-/g, "");
+      const availableAt = currentTime().getTime();
       const entry =
         Array.isArray(parsed.images) &&
-        parsed.images.find(
-          (candidate) =>
-            candidate &&
-            candidate.startdate === compactDate &&
-            candidate.wp === true
-        );
+        parsed.images.find((candidate) => {
+          if (!candidate || candidate.wp !== true) return false;
+          // Bing fullstartdate is the UTC activation time; startdate is a label.
+          const startsAt = sourceStartTime(candidate.fullstartdate);
+          return (
+            startsAt &&
+            startsAt.getTime() <= availableAt &&
+            localDate(startsAt) === requestedDate
+          );
+        });
       if (!entry) throw failure("no-eligible-image");
       const sourceUrl = imageUrl(entry.url);
       const attributionUrl = fixedUrl(entry.copyrightlink, "/search");
@@ -335,6 +354,7 @@ function createDailyWallpaperService({
       const record = {
         version: 1,
         date: requestedDate,
+        // Keep both cache dates normalized to the local day for v1 compatibility.
         sourceDate: requestedDate,
         mime: image.mime,
         base64: image.bytes.toString("base64"),
