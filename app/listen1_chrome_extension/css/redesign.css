@@ -9370,6 +9370,13 @@
   letter-spacing: -0.08em;
 }
 
+/* The top navigation is a window drag region; without an explicit no-drag
+   the "年" entry, which Angular inserts later, can swallow real clicks. */
+.navigation .annual-recap-entry,
+.navigation .annual-recap-entry * {
+  -webkit-app-region: no-drag !important;
+}
+
 .annual-recap-page {
   position: relative;
   z-index: 3;
