@@ -7352,41 +7352,17 @@
   align-items: center;
   padding: clamp(24px, 3vw, 38px);
   overflow: visible;
-  border: 1px solid rgba(190, 198, 232, 0.13);
+  border: none;
   border-radius: 28px;
-  background: linear-gradient(
-      135deg,
-      rgba(27, 31, 48, 0.72),
-      rgba(12, 16, 28, 0.58) 52%,
-      rgba(15, 21, 37, 0.72)
-    ),
-    radial-gradient(
-      circle at 18% 26%,
-      rgba(139, 124, 246, 0.09),
-      transparent 46%
-    );
-  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.25),
-    inset 0 1px 0 rgba(255, 255, 255, 0.045),
-    0 0 42px rgba(var(--ui-accent-rgb), 0.08);
-  -webkit-backdrop-filter: blur(24px) saturate(1.12);
-  backdrop-filter: blur(24px) saturate(1.12);
+  background: none;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
   transition: border-color 180ms ease;
 }
 
 .modern-body .now-playing-card-core::before {
-  position: absolute;
-  z-index: -1;
-  inset: -1px;
-  border-radius: inherit;
-  background: linear-gradient(
-    116deg,
-    rgba(255, 255, 255, 0.08),
-    transparent 30%,
-    rgba(112, 93, 234, 0.1) 74%,
-    rgba(89, 214, 204, 0.065)
-  );
-  content: '';
-  pointer-events: none;
+  content: none;
 }
 
 .modern-body .now-playing-layout .detail-head-cover,
@@ -8390,25 +8366,9 @@
 }
 
 .modern-body .now-playing-card-core {
-  border-color: var(--stage-border);
-  background: linear-gradient(
-      135deg,
-      var(--stage-surface),
-      rgba(var(--ui-accent-rgb), 0.045) 58%,
-      rgba(93, 214, 199, 0.035)
-    ),
-    var(--stage-surface);
-  box-shadow: var(--stage-card-shadow);
-}
-
-.modern-body .now-playing-card-core::before {
-  background: linear-gradient(
-    116deg,
-    rgba(255, 255, 255, 0.09),
-    transparent 30%,
-    rgba(var(--ui-accent-rgb), 0.1) 74%,
-    rgba(93, 214, 199, 0.065)
-  );
+  border: none;
+  background: none;
+  box-shadow: none;
 }
 
 .modern-body .now-playing-layout .detail-head-cover img {

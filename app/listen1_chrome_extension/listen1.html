@@ -2639,6 +2639,18 @@
                                   <button
                                     type="button"
                                     class="btn btn-default"
+                                    ng-click="exportAudioCacheEntry(entry)"
+                                    ng-disabled="!entry.playable || audioCacheManager.exporting[entry.cacheKey]"
+                                    data-audio-cache-library-export
+                                    data-audio-cache-action="export"
+                                  >
+                                    {{audioCacheManager.exporting[entry.cacheKey]
+                                    ? _AUDIO_CACHE_EXPORTING :
+                                    _AUDIO_CACHE_EXPORT_ENTRY}}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="btn btn-default"
                                     ng-click="requestDeleteAudioCacheEntries([entry])"
                                     ng-disabled="audioCacheManager.deleting"
                                     data-audio-cache-library-delete
@@ -7347,6 +7359,17 @@
                                     {{entry.downloaded ?
                                     _AUDIO_CACHE_CANCEL_DOWNLOAD :
                                     _AUDIO_CACHE_KEEP_OFFLINE}}</button
+                                  ><button
+                                    type="button"
+                                    class="btn btn-default"
+                                    ng-click="exportAudioCacheEntry(entry)"
+                                    ng-disabled="!entry.playable || audioCacheManager.exporting[entry.cacheKey]"
+                                    data-audio-cache-library-export
+                                    data-audio-cache-action="export"
+                                  >
+                                    {{audioCacheManager.exporting[entry.cacheKey]
+                                    ? _AUDIO_CACHE_EXPORTING :
+                                    _AUDIO_CACHE_EXPORT_ENTRY}}</button
                                   ><button
                                     type="button"
                                     class="btn btn-default"
