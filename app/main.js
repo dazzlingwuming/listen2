@@ -677,6 +677,34 @@ registerLocalDataHandler("audio-cache:list", async () => {
   await ensureAudioCacheAvailable().initialize();
   return ensureAudioCacheAvailable().list(metadataByTrackId);
 });
+ipcMain.handle("audio-cache:export", async (event, payload = {}) => {
+  try {
+    ensureTrustedMachineTranslationSender(event);
+    const cacheKey =
+      typeof payload.cacheKey === "string" ? payload.cacheKey : "";
+    if (!/^[a-f0-9]{64}$/.test(cacheKey)) {
+      return { ok: false, status: "invalid-input" };
+    }
+    const cache = ensureAudioCacheAvailable();
+    await cache.initialize();
+    const suggestedName = cache.suggestedExportFileName(cacheKey);
+    if (!suggestedName) return { ok: false, status: "not-found" };
+    const browserWindow =
+      BrowserWindow.fromWebContents(event.sender) ||
+      BrowserWindow.getFocusedWindow();
+    const { canceled, filePath } = await dialog.showSaveDialog(
+      browserWindow,
+      {
+        title: "导出音频",
+        defaultPath: join(app.getPath("downloads"), suggestedName),
+      }
+    );
+    if (canceled || !filePath) return { ok: false, status: "cancelled" };
+    return await cache.exportEntry(cacheKey, filePath);
+  } catch (error) {
+    return localDataFailure(error);
+  }
+});
 registerLocalDataHandler("audio-cache:sync-playlists", (payload) =>
   ensureAudioCacheAvailable().syncPlaylistTrackIds(payload.trackIds)
 );

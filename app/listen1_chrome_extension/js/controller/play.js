@@ -919,6 +919,7 @@ angular.module('listenone').controller('PlayController', [
       entries: [],
       tasks: [],
       taskPending: {},
+      exporting: {},
       selected: {},
       deleteConfirmationOpen: false,
       pendingDeleteEntries: [],
@@ -1072,6 +1073,7 @@ angular.module('listenone').controller('PlayController', [
     let bilibiliMvPlayer = null;
     let lastMvPosition = 0;
     const AUDIO_CACHE_STATUS_POLL_MS = 2000;
+    const AUDIO_CACHE_IDLE_POLL_MS = 8000;
     let audioCacheStatusPollTimer = null;
 
     function setPrimaryLyricState(track, state) {
@@ -1333,34 +1335,43 @@ angular.module('listenone').controller('PlayController', [
     }
 
     function scheduleAudioCacheStatusPoll(status) {
+      const active =
+        status &&
+        status.supported !== false &&
+        (Number(status.queuedEntries) > 0 ||
+          (status.loudnessNormalizationEnabled !== false &&
+            Number(status.loudnessPendingEntries) > 0));
+      const libraryOpen = Boolean(
+        document.querySelector('[data-audio-cache-library-page]')
+      );
       const shouldPoll =
         !playControllerDestroyed &&
         isElectron() &&
         status &&
         status.supported !== false &&
-        (Number(status.queuedEntries) > 0 ||
-          (status.loudnessNormalizationEnabled !== false &&
-            Number(status.loudnessPendingEntries) > 0) ||
-          Boolean(document.querySelector('[data-audio-cache-library-page]')));
+        (active || libraryOpen);
       if (!shouldPoll) {
         cancelAudioCacheStatusPoll();
         return;
       }
       if (audioCacheStatusPollTimer) return;
+      // Nothing is queued and the library panel is just sitting open: refresh
+      // quietly and far less often so the list doesn't visibly flicker.
+      const delay = active ? AUDIO_CACHE_STATUS_POLL_MS : AUDIO_CACHE_IDLE_POLL_MS;
       audioCacheStatusPollTimer = $timeout(
         () => {
           audioCacheStatusPollTimer = null;
           if (!playControllerDestroyed) {
-            $scope.refreshAudioCacheStatus();
+            $scope.refreshAudioCacheStatus(true);
             if (
               !document.hidden &&
               document.querySelector('[data-audio-cache-library-page]')
             ) {
-              $scope.refreshAudioCacheInventory();
+              $scope.refreshAudioCacheInventory(true);
             }
           }
         },
-        AUDIO_CACHE_STATUS_POLL_MS,
+        delay,
         false
       );
     }
@@ -1767,19 +1778,26 @@ angular.module('listenone').controller('PlayController', [
       }));
     }
 
-    $scope.refreshAudioCacheInventory = () => {
+    $scope.refreshAudioCacheInventory = (silent) => {
       if (!isElectron() || $scope.audioCacheManager.loading) {
         return Promise.resolve(null);
       }
-      $scope.audioCacheManager.loading = true;
+      // A silent refresh (background poll while the panel just sits open)
+      // must not flip the loading flag: that mounts/unmounts the "loading"
+      // notice every cycle and reads as the list flickering.
+      if (!silent) {
+        $scope.audioCacheManager.loading = true;
+      }
       $scope.audioCacheManager.error = '';
       return MediaService.listAudioCache()
         .then((response) => {
           $scope.$evalAsync(() => {
             $scope.audioCacheManager.loading = false;
             if (!response || response.ok !== true) {
-              $scope.audioCacheManager.error =
-                (response && response.status) || 'request-failed';
+              if (!silent) {
+                $scope.audioCacheManager.error =
+                  (response && response.status) || 'request-failed';
+              }
               return;
             }
             $scope.audioCacheManager.tasks = response.tasks || [];
@@ -1962,6 +1980,35 @@ angular.module('listenone').controller('PlayController', [
       }
       l1Player.setNewPlaylist([track]);
       l1Player.play();
+    };
+
+    $scope.exportAudioCacheEntry = (entry) => {
+      if (
+        !entry ||
+        !entry.cacheKey ||
+        $scope.audioCacheManager.exporting[entry.cacheKey]
+      ) {
+        return;
+      }
+      $scope.audioCacheManager.exporting[entry.cacheKey] = true;
+      MediaService.exportAudioCacheEntry(entry.cacheKey)
+        .then((response) => {
+          $scope.$evalAsync(() => {
+            delete $scope.audioCacheManager.exporting[entry.cacheKey];
+            if (!response || !response.ok) {
+              if (response && response.status === 'cancelled') return;
+              notyf.error($scope.audioCacheErrorLabel(response && response.status));
+              return;
+            }
+            notyf.success(i18next.t('_AUDIO_CACHE_EXPORTED'));
+          });
+        })
+        .catch(() => {
+          $scope.$evalAsync(() => {
+            delete $scope.audioCacheManager.exporting[entry.cacheKey];
+            notyf.error($scope.audioCacheErrorLabel());
+          });
+        });
     };
 
     $scope.selectVisibleAudioCacheEntries = () => {

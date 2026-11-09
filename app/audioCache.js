@@ -67,6 +67,29 @@ function displayMetadata(value = {}) {
   };
 }
 
+function sanitizeExportFileName(value) {
+  const cleaned = String(value || "")
+    .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned.slice(0, 150) || "audio";
+}
+
+function extensionForAudioMimeType(mimeType) {
+  const mime = String(mimeType || "")
+    .split(";", 1)[0]
+    .trim()
+    .toLowerCase();
+  if (mime === "audio/mpeg") return ".mp3";
+  if (mime === "audio/ogg") return ".ogg";
+  if (mime === "audio/webm") return ".weba";
+  if (mime === "audio/flac" || mime === "audio/x-flac") return ".flac";
+  if (mime === "audio/wav" || mime === "audio/x-wav") return ".wav";
+  // audio/mp4, video/mp4, application/mp4 and anything unrecognized: the
+  // cached bytes are a plain MP4 audio container either way.
+  return ".m4a";
+}
+
 function stableAudioKey({ bvid, cid, audioId, codecs, kind, sid }) {
   if (kind === "audio") {
     const safeSid = safeString(sid, 32);
@@ -1343,6 +1366,46 @@ class AudioCache {
       removedBytes,
       removedLoudnessProfiles,
     };
+  }
+
+  // A display name + extension for the save dialog, derived from the
+  // entry's own metadata so main.js never needs to read cache internals
+  // (mimeType, title, artist) to build it.
+  suggestedExportFileName(cacheKey) {
+    const safeKey = safeCacheKey(cacheKey);
+    const entry = safeKey ? this.index.entries[safeKey] : null;
+    if (!entry) return "";
+    const extension = extensionForAudioMimeType(entry.mimeType);
+    const label = entry.artist ? `${entry.artist} - ${entry.title}` : entry.title;
+    return `${sanitizeExportFileName(label || "audio")}${extension}`;
+  }
+
+  // Cached/downloaded audio is stored under a hashed cache key so it can be
+  // deduplicated and looked up safely; that file is not something a user can
+  // find or play outside the app. This copies one entry out to a real
+  // filename ("Artist - Title.m4a") at a caller-chosen path so it behaves
+  // like an ordinary downloaded file.
+  async exportEntry(cacheKey, destPath) {
+    await this.initialize();
+    const safeKey = safeCacheKey(cacheKey);
+    const destination = safeString(destPath, 4096);
+    if (!safeKey || !destination) {
+      return { ok: false, status: "invalid-input" };
+    }
+    const entry = this.index.entries[safeKey];
+    if (!entry) return { ok: false, status: "not-found" };
+    const reader = (this.readers.get(safeKey) || 0) + 1;
+    this.readers.set(safeKey, reader);
+    try {
+      await fsp.copyFile(this.filePath(safeKey), destination);
+      return { ok: true, path: destination, byteLength: entry.byteLength };
+    } catch (error) {
+      return { ok: false, status: "copy-failed" };
+    } finally {
+      const count = (this.readers.get(safeKey) || 1) - 1;
+      if (count <= 0) this.readers.delete(safeKey);
+      else this.readers.set(safeKey, count);
+    }
   }
 
   async syncPlaylistTrackIds(trackIds = []) {

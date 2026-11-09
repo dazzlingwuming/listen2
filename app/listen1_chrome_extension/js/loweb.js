@@ -883,6 +883,14 @@ const MediaService = {
     return getAudioCachePlayableTrack(entry);
   },
 
+  exportAudioCacheEntry(cacheKey) {
+    const ipcRenderer = getDesktopLocalDataIpcRenderer();
+    if (!ipcRenderer || !/^[a-f0-9]{64}$/.test(String(cacheKey || ''))) {
+      return Promise.resolve({ ok: false, status: 'invalid-input' });
+    }
+    return ipcRenderer.invoke('audio-cache:export', { cacheKey });
+  },
+
   deleteAudioCacheEntry(cacheKey) {
     const ipcRenderer = getDesktopLocalDataIpcRenderer();
     if (!ipcRenderer || !/^[a-f0-9]{64}$/.test(String(cacheKey || ''))) {
